@@ -54,13 +54,6 @@ export BUILD_MODE="DEV"
 
 here is a simple script to run it in =PRODUCTION=
 
-#+Name: Change build mode
-#+begin_src emacs-lisp
-(defun hm/change-build-mode ()
-        "Change the build mode to and from dev/prod"
-        )
-#+end_src
-
 
 * Msg Queue
 ** Rabbit MQ Docker
@@ -74,8 +67,19 @@ Here is a simple
 
 
 * Tasks
+All takss can have a very egenral headline, but the NAME must be topic.possibpe-sub-topic.thing scheme.
+** Packaging
+#+Name: packaging.change-build-mode
+#+begin_src emacs-lisp
+(defun hm/change-build-mode ()
+        "Change the build mode to and from dev/prod"
+        )
+#+end_src
+
+
+#+end_src
 ** Updates
-#+Name: Update flake
+#+Name: update.flake
 #+begin_src shell :async :results output replace
 nix flake update
 direnv reload .
@@ -84,20 +88,25 @@ direnv reload .
 #+RESULTS: Update flake
 ** Docker
 *** Run a rabbitmq instance
-#+Name: Start Rabbitmq
+#+Name: docker.run.rabbitmq
 #+begin_src shell :async :results output replace :tangle start.sh
 docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS=password --name rabbitmq_org_dev  rabbitmq:3.13.1-management
 #+end_src
 
 #+RESULTS: Start Rabbitmq
-: ff0f87e186164aadcd823367eeaceff97de2b431f37c3076428a65550b557216
 
-#+Name: kill rabbitmq
+#+Name: docker.kill.rabbitmq
 #+begin_src shell :async :results output replace
 docker kill rabbitmq_org_dev
 #+end_src
+
+#+RESULTS: docker.kill.rabbitmq
+
+#+RESULTS: kill rabbitmq
+
 *** List Docker PS
 #+Name:
 #+begin_src shell :async :results output replace
 docker ps
 #+end_src
+***
