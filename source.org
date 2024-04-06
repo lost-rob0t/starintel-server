@@ -1,0 +1,103 @@
+#+title: Source
+* Ideas
+The main idea of this project is to have a single, closed source api interface that will be the SINGLE source for starintel data
+
+** allow it to be extended
+Using common vars/hooks whatever to establish a config that can be updated as i age this system out when EOL.
+
+* Packaging
+** Nix
+
+#+begin_src nix :tangle flake.nix
+{
+  description = "Starintel API server that routes the data through msg queues.";
+
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs";
+  };
+
+  outputs = { self, nixpkgs }:
+    let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    in
+    {
+      devShell.x86_64-linux =
+        pkgs.mkShell {
+          buildInputs = with pkgs; [
+            pkg-config
+            sbcl
+            openssl
+            rabbitmq-c
+          ];
+          shellHook = ''
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c])}
+          '';
+        };
+    };
+}
+
+#+end_src
+
+Here is
+#+begin_src sh :tangle .envrc
+use flake
+# When we run make in prod it will gen defaults
+# Debug is just for testing
+tangle_date=$(date '+%s')
+export tangle_date
+export BUILD_MODE="DEV"
+#+end_src
+
+#+RESULTS:
+: CONTAINER ID   IMAGE                             COMMAND                  CREATED        STATUS      PORTS                                                                                                      NAMES
+: d421e7dea3a1   zhaowde/rotating-tor-http-proxy   "/bin/sh -c /start.sh"   3 months ago   Up 8 days   3128/tcp, 0.0.0.0:1444->1444/tcp, :::1444->1444/tcp, 4444/tcp, 0.0.0.0:3128->3218/tcp, :::3128->3218/tcp   docker-rotating-tor-1
+
+here is a simple script to run it in =PRODUCTION=
+
+#+Name: Change build mode
+#+begin_src emacs-lisp
+(defun hm/change-build-mode ()
+        "Change the build mode to and from dev/prod"
+        )
+#+end_src
+
+
+* Msg Queue
+** Rabbit MQ Docker
+Here is a simple
+
+
+* Actors
+#+property: header-args : tangle: source/actors.lisp  :tangle yes
+
+
+
+
+* Tasks
+** Updates
+#+Name: Update flake
+#+begin_src shell :async :results output replace
+nix flake update
+direnv reload .
+#+end_src
+
+#+RESULTS: Update flake
+** Docker
+*** Run a rabbitmq instance
+#+Name: Start Rabbitmq
+#+begin_src shell :async :results output replace :tangle start.sh
+docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS=password --name rabbitmq_org_dev  rabbitmq:3.13.1-management
+#+end_src
+
+#+RESULTS: Start Rabbitmq
+: ff0f87e186164aadcd823367eeaceff97de2b431f37c3076428a65550b557216
+
+#+Name: kill rabbitmq
+#+begin_src shell :async :results output replace
+docker kill rabbitmq_org_dev
+#+end_src
+*** List Docker PS
+#+Name:
+#+begin_src shell :async :results output replace
+docker ps
+#+end_src
