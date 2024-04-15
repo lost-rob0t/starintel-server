@@ -1,0 +1,6 @@
+nix flake update
+direnv reload .
+
+docker kill rabbitmq_org_dev
+
+docker ps

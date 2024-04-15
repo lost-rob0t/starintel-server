@@ -28,9 +28,10 @@ Using common vars/hooks whatever to establish a config that can be updated as i 
             sbcl
             openssl
             rabbitmq-c
+            libffi
           ];
           shellHook = ''
-            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c])}
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi])}
           '';
         };
     };
@@ -52,23 +53,256 @@ export BUILD_MODE="DEV"
 : CONTAINER ID   IMAGE                             COMMAND                  CREATED        STATUS      PORTS                                                                                                      NAMES
 : d421e7dea3a1   zhaowde/rotating-tor-http-proxy   "/bin/sh -c /start.sh"   3 months ago   Up 8 days   3128/tcp, 0.0.0.0:1444->1444/tcp, :::1444->1444/tcp, 4444/tcp, 0.0.0.0:3128->3218/tcp, :::3128->3218/tcp   docker-rotating-tor-1
 
-here is a simple script to run it in =PRODUCTION=
+** Lisp stuff
+*** ASDF
+Here is the system def for it.
+#+begin_src lisp :tangle source/starintel-gserver.asd
+
+(asdf:defsystem :starintel-gserver
+  :version      "0.1.0"
+  :description  "hackable/moddable starintel acess api."
+  :author       "nsaspy@airmail.cc"
+  :serial       t
+  :license      "GPL v3"
+  :components   ((:file "package")
+                 (:file "gserver-settings")
+                 )
 
 
-* Msg Queue
-** Rabbit MQ Docker
-Here is a simple
+                 ;; (:file "rabbit")
+                 ;; (:file "actors")
+
+  :depends-on   (#:alexandria #:cl-rabbit #:sento #:starintel #:babel))
+
+ #+end_src
+*** Namespace setup
+I prefer to have my namespace done in a somewhat hierarchical style.
+
+So lets say you want to make a http frontend api, there is going to be the namespace for it:
+- star.frontends.http
+
+And a database namespace would be:
+- star.database.<database-type-or-name>
+
+
+First setup the gserver namespace
+
+#+begin_src lisp :tangle ./source/package.lisp
+(uiop:define-package   :starintel-gserver
+  (:nicknames :star)
+  (:use       :cl :cl-rabbit :sento-user))
+
+#+end_src
+
+#+RESULTS:
+: #<PACKAGE "STARINTEL-GSERVER">
+
+** Kali/parrot
+#+Name: Install docker
+#+begin_src shell :async :results output replace :tangle parrot_kali.sh
+install_docker() {
+    sudo apt update
+    sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
+    curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt update
+    sudo apt install -y docker-ce docker-ce-cli containerd.io
+    sudo apt install -y docker-compose
+    sudo usermod -aG docker $USER
+
+}
+
+
+install_docker
+
+#+end_src
+
+* Settings
+
+** Frontends
+*** Http Settings
+This section contains only settings related to http frontend
+
+**** Listen Address
+
+#+begin_src lisp :tangle ./source/frontends/settings.lisp
+(defparameter *address* "0.0.0.0")
+(defparameter *port* 5000)
+#+end_src
+** Rabbit mq settings
+*** Authentication
+#+begin_src lisp :tangle ./source/gserver-settings.lisp
+(in-package :starintel-gserver)
+(defparameter *rabbit-address* "127.0.0.1" "The address rabbitmq is running on.")
+(defparameter *rabbit-port* 5672 "The port that rabbitmq is listening on.")
+(defparameter *rabbit-user* "guest" "the username for rabbimq")
+(defparameter *rabbit-password* "guest" "the password for the rabbitmq user.")
+#+end_src
+
+#+RESULTS:
+: *RABBIT-PASSWORD*
 
 
 * Actors
 #+property: header-args : tangle: source/actors.lisp  :tangle yes
 
 
+We are going to use a "hook" system to start the internal actors, this is only needed so i can control when the actor system is loaded.
+#+begin_src lisp :tangle ./source/actors.lisp :results none
+(in-package :sento-user)
+(defparameter *sys* (make-actor-system) "the main actor system")
+#+end_src
 
+Now we have the basic, a macro to define the "startup" function, which
+
+
+** RabbitMQ
+The [[https://github.com/lokedhs/cl-rabbit][cl-rabbit]] lib is a bit lower level then I want to work with so I will create a basic macro to make the interface nicer
+
+The newer sento benchmarks are showing its VERY preforment now, so we will actually just create a agent, then use the sento actor system.
+
+#+begin_src lisp :tangle ./source/rabbit.lisp :results none
+(in-package :starintel-gserver)
+(defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port *rabbit-port*) (host *rabbit-address*) (username *rabbit-user*) (password *rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
+  `(with-connection (conn)
+     (let ((socket (tcp-socket-new conn)))
+       (socket-open socket ,host ,port)
+       (when (and ,username ,password)
+         (login-sasl-plain conn ,vhost ,username ,password))
+       (with-channel (conn 1)
+         (exchange-declare conn 1 ,exchange-name ,exchange-type)
+
+         (queue-declare conn 1 :queue ,queue-name :durable ,durable :auto-delete ,auto-delete :exclusive ,exclusive)
+         (queue-bind conn 1 :queue ,queue-name :exchange ,exchange-name :routing-key ,routing-key)
+         ,@body))))
+
+(defmacro with-rabbit-send ((queue-name exchange-name exchange-type routing-key &key (port *rabbit-port*) (host *rabbit-address*) (username *rabbit-user*) (password *rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
+  `(with-connection (conn)
+     (let ((socket (tcp-socket-new conn)))
+       (socket-open socket ,host ,port)
+       (when (and ,username ,password)
+         (login-sasl-plain conn ,vhost ,username ,password))
+       (with-channel (conn 1)
+
+         ,@body))))
+
+
+#+end_src
+
+* Frontends
+Frontends  are basicly API services that allow external stuff to tineract with this system.
+** asdf
+
+#+begin_src lisp :tangle ./source/frontends/starintel-gserver-frontend.asd
+(asdf:defsystem :starintel-gserver-frontend
+  :version      "0.1.0"
+  :description  "Front end API system(s) for the starintel data system"
+  :author       "nsaspy@airmail.cc"
+  :serial       t
+  :license      "GNU GPL, version 3"
+  :components   ((:file "settings")
+                 (:file "http"))
+  :depends-on   (#:ningle #:clack #:lack :cl-couch))
+
+#+end_src
+
+#+begin_src lisp :tangle ./source/frontends/http.lisp
+(uiop:define-package   :star.frontend.http
+  (:nicknames :frontend.http)
+  (:use       :cl)
+  (:documentation "doc"))
+
+#+end_src
+
+** http
+#+property: header-args : tangle: source/frontends/.lisp  :tangle yes
+
+
+
+*** Database
+**** TODO Move this to actors
+
+This is how i create the client
+#+begin_src lisp :tangle ./source/frontends/http.lisp
+
+(in-package :star.frontend.http)
+(defun init-database (username password &optional (host "127.0.0.1") (port 5984))
+  "Add the couchdb object to the context, should only be called once!"
+  (let ((client (cl-couch:new-couchdb host port)))
+    (cl-couch:password-auth client username password)
+    client))
+
+(defun init-state (couchdb)
+    "Create the needed databases, map-reduce views. ")
+#+end_src
+
+#+RESULTS:
+: INIT-DATABASE
+
+I based my couchdb middleware on a gist.[fn:1]
+#+begin_src lisp :tangle ./source/frontends/http.lisp
+(in-package :star.frontend.http)
+
+(defclass app (ningle:app)
+  ()
+  (:documentation "Custom application based on NINGLE:APP"))
+
+(defparameter *couchdb*
+  "*REQUEST-ENV* will be dynamically bound to the environment context
+of HTTP requests")
+
+
+
+
+
+(defun couchdb-middleware (app)
+  "A custom middleware which wraps a NINGLE:APP and injects additional
+metadata into the environment for HTTP handlers/controllers as part of
+each HTTP request"
+  (lambda (env)
+    (setf (getf env :couchdb-middleware/client) (init-database "admin" "password"))
+    (funcall app env)))
+
+(defmethod lack.component:call ((app app) env)
+  ;; Dynamically bind *REQUEST-ENV* for each request, so that ningle
+  ;; routes can access the environment.
+  (let ((*couchdb* env))
+    (call-next-method)))
+
+(defvar *app* (make-instance 'app))
+#+end_src
+
+#+RESULTS:
+: *APP*
+*** design map api
+*** Submit documents
+
+Importance:
+#+begin_src lisp :tangle ./source/frontends/http.lisp
+(setf (ningle:route *app* "/submit/:operation/:dtype/:id")
+      #'(lambda (args)
+          (format nil "~a" args)))
+#+end_src
+
+#+RESULTS:
+: #<FUNCTION (LAMBDA (ARGS)) {100871863B}>
+
+*** Start webapp
+#+begin_src lisp :tangle ./source/frontends/http.lisp
+(couchdb-middleware *app*)
+(defparameter *server* (clack:clackup *app* :address *listen-address* :port *port*))
+#+end_src
+
+#+RESULTS:
+: #S(CLACK.HANDLER::HANDLER
+:    :SERVER :HUNCHENTOOT
+:    :SWANK-PORT NIL
+:    :ACCEPTOR #<BORDEAUX-THREADS-2:THREAD "clack-handler-hunchentoot" {10051142F3}>)
 
 * Tasks
 All takss can have a very egenral headline, but the NAME must be topic.possibpe-sub-topic.thing scheme.
 ** Packaging
+here is a simple script to run it in =PRODUCTION=
 #+Name: packaging.change-build-mode
 #+begin_src emacs-lisp
 (defun hm/change-build-mode ()
@@ -85,6 +319,8 @@ nix flake update
 direnv reload .
 #+end_src
 
+#+RESULTS: update.flake
+
 #+RESULTS: Update flake
 ** Docker
 *** Run a rabbitmq instance
@@ -93,20 +329,31 @@ direnv reload .
 docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS=password --name rabbitmq_org_dev  rabbitmq:3.13.1-management
 #+end_src
 
+#+RESULTS: docker.run.rabbitmq
+: 4f99c21797bbdc4e0f9b8154ad10d5d54789b95dae4ee7b916c8d3d962e0f9e8
+
 #+RESULTS: Start Rabbitmq
 
+*** Kill Rabbitmq
 #+Name: docker.kill.rabbitmq
 #+begin_src shell :async :results output replace
 docker kill rabbitmq_org_dev
 #+end_src
 
-#+RESULTS: docker.kill.rabbitmq
-
-#+RESULTS: kill rabbitmq
 
 *** List Docker PS
-#+Name:
+#+Name: docker.ps
 #+begin_src shell :async :results output replace
 docker ps
 #+end_src
-***
+** Searching
+
+*** Search Brave
+#+NAME: search.brave
+#+begin_src emacs-lisp
+(+lookup/online (format nil "\"common lisp\" %s" (read-string "Enter Search term: ")) "Google")
+#+end_src
+
+* Footnotes
+
+[fn:1] https://gist.github.com/dnaeon/3a3f86dea1096db5a9231d1f56a565e2

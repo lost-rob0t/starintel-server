@@ -17,9 +17,10 @@
             sbcl
             openssl
             rabbitmq-c
+            libffi
           ];
           shellHook = ''
-            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c])}
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi])}
           '';
         };
     };
