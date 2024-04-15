@@ -10,6 +10,35 @@ Using common vars/hooks whatever to establish a config that can be updated as i 
 
 
 * Packaging
+** Makefile
+#+begin_src makefile :tangle Makefile
+##
+# Starintel Gserver
+#
+# @file
+# @version 0.1
+
+LISP ?= sbcl
+
+all: test
+
+run:
+	$(LISP) --load run.lisp
+
+build:
+	$(LISP)	--non-interactive \
+		--load source/starintel-gserver.asd \
+		--eval '(ql:quickload :starintel-gserver)' \
+		--eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'starintel-gserver::main :executable t :compression t)"
+install:
+	cp star-server /usr/local/bin
+
+clean:
+	rm -f ./star-server
+
+#+end_src
+
+
 ** Nix
 
 #+begin_src nix :tangle flake.nix
@@ -126,7 +155,7 @@ gserver namespace, general top level.
 
 #+end_src
 
-** Kali/parrot
+** TODO Kali/parrot
 #+Name: Install docker
 #+begin_src shell :async :results output replace :tangle parrot_kali.sh
 install_docker() {
@@ -578,6 +607,39 @@ docker kill rabbitmq_org_dev
 #+begin_src shell :async :results output replace
 docker ps
 #+end_src
+** Build
+#+Name: build.server
+#+begin_src shell :async :results output replace :tangle build.sh
+#!/usr/bin/env sh
+make build
+#+end_src
+
+#+RESULTS: build.server
+#+begin_example
+sbcl	--non-interactive \
+	--load source/starintel-gserver.asd \
+	--eval '(ql:quickload :starintel-gserver)' \
+	--load 'hackmode.lisp' \
+	--eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'starintel-gserver::main :executable t :compression t)"
+This is SBCL 2.4.3, an implementation of ANSI Common Lisp.
+More information about SBCL is available at <http://www.sbcl.org/>.
+
+SBCL is free software, provided as is, with absolutely no warranty.
+It is mostly in the public domain; some portions are provided under
+BSD-style licenses.  See the CREDITS and COPYING files in the
+distribution for more information.
+To load "literate-lisp":
+  Load 1 ASDF system:
+    literate-lisp
+; Loading "literate-lisp"
+..
+To load "starintel-gserver":
+  Load 1 ASDF system:
+    starintel-gserver
+; Loading "starintel-gserver"
+..................
+#+end_example
+
 * Footnotes
 
 [fn:1] https://gist.github.com/dnaeon/3a3f86dea1096db5a9231d1f56a565e2

@@ -1,0 +1,14 @@
+#+title: Readme
+
+* Starintel gserver
+Starintel gserver is the new API server for interacting with the starintel system.
+
+it is still under development.
+
+- Features:
+  - rabbitmq
+  - actor model
+  - hackable
+
+
+The [[file:./source.org][source code]]  is written in a literate code style and "tangled" (means writing to source files). This makes it readble and digestable to people other then me I hope.
