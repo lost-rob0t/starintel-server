@@ -1,4 +1,6 @@
 #+title: Source
+#+STARTUP: show2levels
+
 * Ideas
 The main idea of this project is to have a single, closed source api interface that will be the SINGLE source for starintel data
 
@@ -62,17 +64,13 @@ Here is the system def for it.
   :version      "0.1.0"
   :description  "hackable/moddable starintel acess api."
   :author       "nsaspy@airmail.cc"
-  :serial       t
   :license      "GPL v3"
   :components   ((:file "package")
                  (:file "gserver-settings")
-                 )
+                 (:file "actors")
+                 (:file "rabbit" :depends-on ("actors")))
 
-
-                 ;; (:file "rabbit")
-                 ;; (:file "actors")
-
-  :depends-on   (#:alexandria #:cl-rabbit #:sento #:starintel #:babel))
+  :depends-on   (#:alexandria #:cl-rabbit #:sento #:starintel #:babel #:cl-couch #:cl-json :cl-ulid #:anypool #:cl-cpus))
 
  #+end_src
 *** Namespace setup
