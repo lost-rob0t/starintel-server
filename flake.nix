@@ -1,3 +1,4 @@
+# [[file:source.org::*Nix][Nix:1]]
 {
   description = "Starintel API server that routes the data through msg queues.";
 
@@ -25,3 +26,4 @@
         };
     };
 }
+# Nix:1 ends here

@@ -1,14 +1,19 @@
+;; [[file:../source.org::*Actors][Actors:1]]
 (in-package :sento-user)
 (defparameter *sys* nil "the main actor system")
 (defun start-actor-system ()
   (setf *sys* (make-actor-system))
 )
+;; Actors:1 ends here
 
+;; [[file:../source.org::*Eventing][Eventing:1]]
 (defclass message-event ()
   ((topic :initarg :topic :initform (error "Topic for event stream is required.") :reader message-topic)
    (data :initarg :data :type string :initform "" :reader message-data))
   (:documentation "A basic class that holds message event topic and data"))
+;; Eventing:1 ends here
 
+;; [[file:../source.org::*Eventing][Eventing:2]]
 (defgeneric topic-match-p (msg topic)
   (:documentation "generic interface that matches if a msg matches the subbed topic."))
 
@@ -29,7 +34,9 @@
 
          if (topic-match-p ,msg topic)
            do (progn ,@body)))
+;; Eventing:2 ends here
 
+;; [[file:../source.org::*Couchdb][Couchdb:1]]
 (defparameter *couchdb-pool*
   (anypool:make-pool :name "couchdb-connections"
                      :connector (lambda ()
@@ -40,7 +47,9 @@
                      :disconnector (lambda (obj)
                                      (setf (cl-couch:couchdb-headers obj) nil))
                      :max-open-count 20))
+;; Couchdb:1 ends here
 
+;; [[file:../source.org::*Couchdb][Couchdb:2]]
 (defvar *my-thread* nil)
 
 (defun start--pool-monitoring ()
@@ -59,10 +68,13 @@
   (when *my-thread*
     (bt:destroy-thread *my-thread*)
     (setf *my-thread* nil)))
+;; Couchdb:2 ends here
 
+;; [[file:../source.org::*couchdb-insert actors][couchdb-insert actors:1]]
+(defparameter *couchdb-inserts* nil)
 (defun start-couchdb-inserts ()
-  (defparameter *couchdb-insert* (ac:actor-of *sys*
-                                              :name "*couchdb-insert*"
+  (setf *couchdb-inserts* (ac:actor-of *sys*
+                                              :name "*couchdb-inserts*"
                                               :receive (lambda (msg)
                                                          (let ((destination-db (uiop:getenv "COUCHDB_DATABASE"))
                                                                (pool *couchdb-pool*))
@@ -72,7 +84,13 @@
                                                               (lambda ()
                                                                 (anypool:with-connection (client pool)
                                                                   (cl-couch:create-document client destination-db (cdr msg) :batch "normal"))))))))))
+;; couchdb-insert actors:1 ends here
 
+;; [[file:../source.org::*OK couchdb-get actor][OK couchdb-get actor:1]]
+
+;; OK couchdb-get actor:1 ends here
+
+;; [[file:../source.org::*finish bulk insert actor][finish bulk insert actor:1]]
 ;; (defparameter *couchdb-bulk-insert* (ac:actor-of *sys*
 ;;                                                  :name "*couchdb-bulk-insert*"
 ;;                                                  :receive (lambda (msg)
@@ -80,7 +98,15 @@
 ;;                                                                   (pool *couchdb-pool*))
 ;;                                                               (anypool:with-connection (client pool)
 ;;                                                                 (cl-couch:bulk-create-documents client destination-db msg :batch "normal"))))))
+;; finish bulk insert actor:1 ends here
 
+;; [[file:../source.org::*Document Handler][Document Handler:1]]
+(defun start-document-handler-actor ()
+  (defparameter *document-handler* (ac:actor-of *sys*)))
+;; Document Handler:1 ends here
+
+;; [[file:../source.org::*actor entry point][actor entry point:1]]
 (defun start-actors ()
   (start-actor-system)
   (start-couchdb-inserts))
+;; actor entry point:1 ends here

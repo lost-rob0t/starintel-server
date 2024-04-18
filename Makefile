@@ -1,3 +1,4 @@
+# [[file:source.org::*Makefile][Makefile:1]]
 ##
 # Starintel Gserver
 #
@@ -21,3 +22,4 @@ install:
 
 clean:
 	rm -f ./star-server
+# Makefile:1 ends here

@@ -1,6 +1,12 @@
+# [[file:source.org::update.flake][update.flake]]
 nix flake update
 direnv reload .
+# update.flake ends here
 
+# [[file:source.org::docker.kill.rabbitmq][docker.kill.rabbitmq]]
 docker kill rabbitmq_org_dev
+# docker.kill.rabbitmq ends here
 
+# [[file:source.org::docker.ps][docker.ps]]
 docker ps
+# docker.ps ends here

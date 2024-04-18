@@ -10,8 +10,11 @@ Using common vars/hooks whatever to establish a config that can be updated as i 
 
 
 * Packaging
+
+Given the org-mode file
+
 ** Makefile
-#+begin_src makefile :tangle Makefile
+#+begin_src makefile :tangle Makefile :comments link
 ##
 # Starintel Gserver
 #
@@ -38,10 +41,9 @@ clean:
 
 #+end_src
 
-
 ** Nix
 
-#+begin_src nix :tangle flake.nix
+#+begin_src nix :tangle flake.nix :comments link
 {
   description = "Starintel API server that routes the data through msg queues.";
 
@@ -73,7 +75,7 @@ clean:
 #+end_src
 
 Here is
-#+begin_src sh :tangle .envrc
+#+begin_src sh
 use flake
 # When we run make in prod it will gen defaults
 # Debug is just for testing
@@ -95,20 +97,23 @@ export COUCHDB_DATABASE="starintel"
 ** Lisp stuff
 *** ASDF
 Here is the system def for it.
-#+begin_src lisp :tangle source/starintel-gserver.asd
+#+begin_src lisp :tangle source/starintel-gserver.asd :comments link
 
 (asdf:defsystem :starintel-gserver
   :version      "0.1.0"
   :description  "hackable/moddable starintel acess api."
   :author       "nsaspy@airmail.cc"
   :license      "GPL v3"
-  :components   ((:file "gserver-settings")
-                 (:file "package" :depends-on ("gserver-settings"))
+  :components   (
+                 (:file "package")
+                 (:file "gserver-settings" :depends-on ("package"))
                  (:file "actors" :depends-on ("gserver-settings"))
                  (:file "rabbit" :depends-on ("actors" "gserver-settings"))
-                 (:file "main" :depends-on ("actors" "rabbit" "package" "gserver-settings")))
+                 (:file "frontends/http-api" :depends-on ("gserver-settings"))
+                 (:file "main" :depends-on ("actors" "rabbit" "package" "gserver-settings" "frontends/http-api")))
 
-  :depends-on   (#:alexandria #:cl-rabbit #:sento #:starintel #:babel #:cl-couch #:cl-json :cl-ulid #:anypool #:cl-cpus))
+  :depends-on   (#:starintel #:cl-couch  #:alexandria #:cl-rabbit #:sento #:babel #:cl-json :cl-ulid #:anypool #:cl-cpus
+                    #:clack #:ningle #:hunchentoot))
 
  #+end_src
 *** Namespace setup
@@ -121,43 +126,57 @@ And a database namespace would be:
 - star.database.<database-type-or-name>
 
 
-#+begin_src lisp :tangle ./source/gserver-settings.lisp :results none
-(uiop:define-package   :starintel-settings
-  (:nicknames :star.settings)
-  (:use :cl)
-  (:documentation "settings for the starinte-gserver package")
-  (:export
-   #:*rabbit-address*
-   #:*rabbit-port*
-   #:*rabbit-user*
-   #:*rabbit-password*))
-
+#+begin_src lisp :tangle ./source/frontends/package.lisp :results none :comments link
+(uiop:define-package   :star.frontend.http-api
+  (:nicknames :frontend.http-api)
+  (:use       :cl)
+  (:documentation "doc"))
 #+end_src
 
 gserver namespace, general top level.
 
-#+begin_src lisp :tangle ./source/package.lisp
+#+begin_src lisp :tangle ./source/package.lisp :comments link
 (uiop:define-package   :starintel-gserver
   (:nicknames :star)
-  (:use       :cl :cl-rabbit :star.settings)
+  (:use       :cl)
   (:export
-   #:init-db))
+   #:init-db
+   #:*rabbit-password*
+   #:*rabbit-user*
+   #:*rabbit-port*
+   #:*rabbit-address*
+   #:*http-scheme*
+   #:*http-key-file*
+   #:*http-cert-file*
+   #:*http-api-base-path*
+   #:*http-api-port*
+   #:*http-api-address*))
 #+end_src
 
 #+RESULTS:
 : #<PACKAGE "STARINTEL-GSERVER">
 
-#+begin_src lisp :tangle ./source/package.lisp :results none
+#+begin_src lisp :tangle ./source/package.lisp :results none :comments link
 (uiop:define-package   :starintel-gserver.rabbit
   (:nicknames :star.rabbit)
-  (:use       :cl :star.settings)
-  (:documentation "Rabitmq namespace"))
-
+  (:use       :cl)
+  (:documentation "Rabitmq namespace")
+  (:export
+   #:start-rabbit-document-thread
+   #:with-rabbit-send
+   #:with-rabbit-recv
+   #:emit-document))
 #+end_src
 
+#+begin_src lisp :tangle ./source/package.lisp :results none :comments link
+(uiop:define-package   :starintel-gserver-http-api
+  (:nicknames :star.frontends.http-api)
+  (:use       :cl)
+  (:documentation "doc"))
+#+end_src
 ** TODO Kali/parrot
 #+Name: Install docker
-#+begin_src shell :async :results output replace :tangle parrot_kali.sh
+#+begin_src shell :async :results output replace :tangle parrot_kali.sh :comments link
 install_docker() {
     sudo apt update
     sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
@@ -176,21 +195,27 @@ install_docker
 #+end_src
 
 * Settings
+#+begin_src lisp :tangle ./source/gserver-settings.lisp :results none :comments link
 
+#+end_src
 ** Frontends
 *** Http Settings
 This section contains only settings related to http frontend
 
 **** Listen Address
 
-#+begin_src lisp :tangle ./source/frontends/settings.lisp
-(defparameter *address* "0.0.0.0")
-(defparameter *port* 5000)
+#+begin_src lisp :tangle ./source/gserver-settings.lisp :comments link
+(in-package :star)
+(defparameter *http-api-address* "0.0.0.0" "the listen address")
+(defparameter *http-api-port* 5000 "the port the api server listen on")
+(defparameter *http-api-base-path* "/api" "the base url to use for the api endpoint")
+(defparameter *http-cert-file* nil "path to the http api cert providing https")
+(defparameter *http-key-file* nil "path to the http cert providing https")
+(defparameter *http-scheme* 'http "use https or not.")
 #+end_src
 ** Rabbit mq settings
 *** Authentication
-#+begin_src lisp :tangle ./source/gserver-settings.lisp
-(in-package :star.settings)
+#+begin_src lisp :tangle ./source/gserver-settings.lisp :comments link
 (defparameter *rabbit-address* "127.0.0.1" "The address rabbitmq is running on.")
 (defparameter *rabbit-port* 5672 "The port that rabbitmq is listening on.")
 (defparameter *rabbit-user* "guest" "the username for rabbimq")
@@ -202,11 +227,11 @@ This section contains only settings related to http frontend
 
 
 * Actors
-#+property: header-args : tangle: source/actors.lisp  :tangle yes
 
+** Actor system setup
 The sen to package expects us to be in the sento user package.
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (in-package :sento-user)
 (defparameter *sys* nil "the main actor system")
 (defun start-actor-system ()
@@ -220,7 +245,7 @@ Sento supports events but I can only use a symbol or a simple string. it support
 
 This allows actors to filter out messages by topic.
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defclass message-event ()
   ((topic :initarg :topic :initform (error "Topic for event stream is required.") :reader message-topic)
    (data :initarg :data :type string :initform "" :reader message-data))
@@ -229,7 +254,7 @@ This allows actors to filter out messages by topic.
 
 The interface for matching topics is ~topic-match-p~.
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defgeneric topic-match-p (msg topic)
   (:documentation "generic interface that matches if a msg matches the subbed topic."))
 
@@ -263,11 +288,11 @@ Here is a simple example of an actor that works with person objects.
 
 #+end_src
 ** Couchdb
-
+*** Client Pooling
 Couchdb is the main database I have used for many projects, I am using [[https://github.com/lost-rob0t/cl-couch][cl-couch]] for the database client. It doesnt use async so I need to setup a resource pools, for that I use anypool.
 
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defparameter *couchdb-pool*
   (anypool:make-pool :name "couchdb-connections"
                      :connector (lambda ()
@@ -283,7 +308,7 @@ Couchdb is the main database I have used for many projects, I am using [[https:/
 start--pool-monitoring is used for checking the total active count from the couchdb client pool.
 it is only used internally for debugging.
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defvar *my-thread* nil)
 
 (defun start--pool-monitoring ()
@@ -308,10 +333,11 @@ it is only used internally for debugging.
 *** couchdb-insert actors
 This actor will insert documents into couchdb.
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+(defparameter *couchdb-inserts* nil)
 (defun start-couchdb-inserts ()
-  (defparameter *couchdb-insert* (ac:actor-of *sys*
-                                              :name "*couchdb-insert*"
+  (setf *couchdb-inserts* (ac:actor-of *sys*
+                                              :name "*couchdb-inserts*"
                                               :receive (lambda (msg)
                                                          (let ((destination-db (uiop:getenv "COUCHDB_DATABASE"))
                                                                (pool *couchdb-pool*))
@@ -322,10 +348,14 @@ This actor will insert documents into couchdb.
                                                                 (anypool:with-connection (client pool)
                                                                   (cl-couch:create-document client destination-db (cdr msg) :batch "normal"))))))))))
 #+end_src
+*** OK couchdb-get actor
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+
+#+end_src
 
 *** TODO finish bulk insert actor
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 ;; (defparameter *couchdb-bulk-insert* (ac:actor-of *sys*
 ;;                                                  :name "*couchdb-bulk-insert*"
 ;;                                                  :receive (lambda (msg)
@@ -340,11 +370,18 @@ This actor will insert documents into couchdb.
 
 
 #+end_src
-** TODO Create Target schedualing actor
+** IDEA Document Handler
+#+begin_src lisp
+(defun start-document-handler-actor ()
+  (defparameter *document-handler* (ac:actor-of *sys*)))
+
+
+#+end_src
+** TODO Create Target scheduling actor
 It will be an actor that kicks off recurring jobs, will require spec change to include "recurring" field.
 ** actor entry point
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defun start-actors ()
   (start-actor-system)
   (start-couchdb-inserts))
@@ -353,6 +390,8 @@ It will be an actor that kicks off recurring jobs, will require spec change to i
 In order to compile the actor system must be stop
 
 * RabbitMQ
+
+** Macro Wrappers
 The [[https://github.com/lokedhs/cl-rabbit][cl-rabbit]] lib is a bit lower level then I want to work with so I will create a basic macros to make the interface nicer
 
 The newer sento benchmarks are showing its VERY preforment now, so we will actually just create a agent, then use the sento actor system.
@@ -360,7 +399,7 @@ The newer sento benchmarks are showing its VERY preforment now, so we will actua
 #+begin_src lisp :tangle ./source/rabbit.lisp :results none
 (in-package :star.rabbit)
 
-(defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port *rabbit-port*) (host *rabbit-address*) (username *rabbit-user*) (password *rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
+(defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
   `(cl-rabbit:with-connection (conn)
      (let ((socket (cl-rabbit:tcp-socket-new conn)))
        (cl-rabbit:socket-open socket ,host ,port)
@@ -371,10 +410,13 @@ The newer sento benchmarks are showing its VERY preforment now, so we will actua
 
          (cl-rabbit:queue-declare conn 1 :queue ,queue-name :durable ,durable :auto-delete ,auto-delete :exclusive ,exclusive)
          (cl-rabbit:queue-bind conn 1 :queue ,queue-name :exchange ,exchange-name :routing-key ,routing-key)
-         (cl-rabbit:basic-consume conn 1 ,queue-name)
-         ,@body))))
 
-(defmacro with-rabbit-send ((queue-name exchange-name exchange-type routing-key &key (port *rabbit-port*) (host *rabbit-address*) (username *rabbit-user*) (password *rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
+         (cl-rabbit:basic-consume conn 1 ,queue-name)
+         (loop
+           for msg = (cl-rabbit:envelope/message (cl-rabbit:consume-message conn))
+           do ,@body)))))
+
+(defmacro with-rabbit-send ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
   `(cl-rabbit:with-connection (conn)
      (let ((socket (cl-rabbit:tcp-socket-new conn)))
        (cl-rabbit:socket-open socket ,host ,port)
@@ -384,8 +426,25 @@ The newer sento benchmarks are showing its VERY preforment now, so we will actua
 
          ,@body))))
 
+(defun emit-document (queue-name exchange routing-key body &key (properties nil)
+                                                             (immediate nil)
+                                                             (mandatory nil)
+                                                             (port star:*rabbit-port*)
+                                                             (host star:*rabbit-address*)
+                                                             (username star:*rabbit-user*)
+                                                             (password star:*rabbit-password*)
+                                                             (vhost "/"))
+  (cl-rabbit:with-connection (conn)
+    (let ((socket (cl-rabbit:tcp-socket-new conn)))
+      (cl-rabbit:socket-open socket host port)
+      (when (and username password)
+        (cl-rabbit:login-sasl-plain conn vhost username password))
+      (cl-rabbit:with-channel (conn 1)
 
+        (cl-rabbit:queue-bind conn 1 :queue queue-name :exchange exchange :routing-key routing-key)
+        (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange exchange :mandatory mandatory :immediate immediate :properties properties :body body)))))
 #+end_src
+** Handle New Document consumers
 
 Take a rabbimq message and parse it.
 
@@ -394,26 +453,34 @@ Take a rabbimq message and parse it.
   "take a rabbitmq message and return the boddy as a string"
   (babel:octets-to-string (cl-rabbit:message/body msg) :encoding encoding))
 
-;TODO
+                                        ;TODO
 (defun message->object (msg)
   "Tale a rabbbitmq message and return a object. The object that will be returned depends on the message property 'dtype`.")
+
+(defun handle-new-document (msg)
+  "Handles any new incoming documents and sends it to the appropriate actors."
+  (let* ((props (cl-rabbit:message/properties msg))
+         (headers (assoc :HEADERS props :test #'equal))
+         (dtype (when headers (cdr (assoc "dtype" (cdr headers) :test #'equal))))
+         (body (message->string msg)))
+    (cons dtype body)))
 #+end_src
 
 Start the rabbit new document monitoring thread.
 
 #+begin_src lisp :tangle ./source/rabbit.lisp :results none
 (defun start-rabbit-document-thread ()
-  (bt:make-thread
-   (lambda ()
-     (with-rabbit-recv ("new-documents" "documents" "topic" "document.new.*")
-       (loop
-         for msg = (cl-rabbit:consume-message conn)
-         for data = (handle-new-document msg)
-         do (sento-user::ask *couchdb-insert* data)
-         do (sento-user::publish *sys* (new-event :topic (str:title-case (car data) ) :data (cdr data))))))
+  (loop for i from 0 to 4
+                        do (bt:make-thread
+                            (lambda ()
+                              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.*")
+                                (let (
+                                      (data (handle-new-document msg)))
+                                  (sento-user::ask sento-user::*couchdb-inserts* data))))
+                                                  ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
 
-   :name "*new-documents*"))
 
+                            :name "*new-documents*")))
 #+end_src
 ** quick test functions
 
@@ -432,10 +499,9 @@ These functions are for quick debugging of the rabbitmq.
       (cl-rabbit:with-channel (conn 1)
         (cl-rabbit:basic-publish conn 1
                                  :exchange "documents"
-                                 :routing-key "new.document.Person"
-                                 :body (make-doc)
+                                 :routing-key "documents.new.Person"
+                                 :body (test-make-doc)
                                  :properties '((:headers . (("dtype"  . "Person")))))))))
-
 #+end_src
 
 * Databases
@@ -454,42 +520,16 @@ These functions are for quick debugging of the rabbitmq.
 
 #+end_src
 * Frontends
-Frontends  are basicly API services that allow external stuff to tineract with this system.
+Frontends  are basicly APi services that allow external stuff to tineract with this system.
 ** asdf
 
-#+begin_src lisp :tangle ./source/frontends/starintel-gserver-frontend.asd
-(asdf:defsystem :starintel-gserver-frontend
-  :version      "0.1.0"
-  :description  "Front end API system(s) for the starintel data system"
-  :author       "nsaspy@airmail.cc"
-  :serial       t
-  :license      "GNU GPL, version 3"
-  :components   ((:file "settings")
-                 (:file "http"))
-  :depends-on   (#:ningle #:clack #:lack :cl-couch))
+** http-api
 
-#+end_src
-
-#+begin_src lisp :tangle ./source/frontends/http.lisp
-(uiop:define-package   :star.frontend.http
-  (:nicknames :frontend.http)
-  (:use       :cl)
-  (:documentation "doc"))
-
-#+end_src
-
-** http
-#+property: header-args : tangle: source/frontends/.lisp  :tangle yes
-
-
-
-*** Database
-**** TODO Move this to actors
+*** TODO Auth Database
 
 This is how i create the client
-#+begin_src lisp :tangle ./source/frontends/http.lisp
-
-(in-package :star.frontend.http)
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
+(in-package :star.frontends.http-api)
 (defun init-database (username password &optional (host "127.0.0.1") (port 5984))
   "Add the couchdb object to the context, should only be called once!"
   (let ((client (cl-couch:new-couchdb host port)))
@@ -497,64 +537,86 @@ This is how i create the client
     client))
 
 (defun init-state (couchdb)
-    "Create the needed databases, map-reduce views. ")
+  "Create the needed databases, map-reduce views. ")
 #+end_src
 
 #+RESULTS:
 : INIT-DATABASE
 
 I based my couchdb middleware on a gist.[fn:1]
-#+begin_src lisp :tangle ./source/frontends/http.lisp
-(in-package :star.frontend.http)
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
+(in-package :star.frontends.http-api)
 
-(defclass app (ningle:app)
-  ()
-  (:documentation "Custom application based on NINGLE:APP"))
+;; (defclass app (ningle:app)
+;;   ()
+;;   (:documentation "Custom application based on NINGLE:APP"))
 
-(defparameter *couchdb*
-  "*REQUEST-ENV* will be dynamically bound to the environment context
-of HTTP requests")
-
-
+;; (defparameter *couchdb*
+;;   "*REQUEST-ENV* will be dynamically bound to the environment context
+;; of HTTP requests")
 
 
+                                        ;(defun setup-couchdb)
 
-(defun couchdb-middleware (app)
-  "A custom middleware which wraps a NINGLE:APP and injects additional
-metadata into the environment for HTTP handlers/controllers as part of
-each HTTP request"
-  (lambda (env)
-    (setf (getf env :couchdb-middleware/client) (init-database "admin" "password"))
-    (funcall app env)))
 
-(defmethod lack.component:call ((app app) env)
-  ;; Dynamically bind *REQUEST-ENV* for each request, so that ningle
-  ;; routes can access the environment.
-  (let ((*couchdb* env))
-    (call-next-method)))
-
-(defvar *app* (make-instance 'app))
+(defvar *app* (make-instance 'ningle:app))
 #+end_src
 
 #+RESULTS:
 : *APP*
-*** design map api
-*** Submit documents
+*** TODO design map api
+*** OKAY Submit documents
+This route take input documents and inserts them into the rabbitmq =new-documents= queue.
 
-Importance:
-#+begin_src lisp :tangle ./source/frontends/http.lisp
-(setf (ningle:route *app* "/submit/:operation/:dtype/:id")
-      #'(lambda (args)
-          (format nil "~a" args)))
+
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
+(setf (ningle:route *app* "/new/document/:dtype" :method :post)
+      #'(lambda (params)
+
+          (let ((dtype  (cdr (assoc :dtype params :test #'string=)))
+                (doc (car (car (lack.request:request-body-parameters (ningle:context :request))))))
+
+            (star.rabbit:emit-document  "new-documents" "documents"  (format nil "documents.new.~a" dtype) doc  :properties (list (list :headers `("dtype" . ,dtype))))
+             (format nil "documents.new.~a" dtype))))
+
+
+
+
 #+end_src
 
 #+RESULTS:
-: #<FUNCTION (LAMBDA (ARGS)) {100871863B}>
+: #<FUNCTION (LAMBDA (PARAMS)) {1001E4405B}>
 
+
+#+begin_src http :comments none
+POST http://0.0.0.0:5000/new/document/person
+
+{"_id":"01HVPX96E8B1FWQCSRFE07Z07R","dataset":"","dtype":"","sources":null,"version":"0.7.1","dateUpdated":1713387117,"dateAdded":1713387117,"fname":"Klaus","mname":"","lname":"Shwabb","bio":"","dob":"","race":"","region":"","misc":null,"etype":"","eid":""}
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Thu, 18 Apr 2024 01:50:21 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: documents.new.person
+*** TODO Get Documents
+
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :results none :comments link
+(setf (ningle:route *app* "/document/:id" :method :get)
+      #'(lambda (params)
+
+          (let ((document-id  (cdr (assoc :id params :test #'string=))))
+
+            document-id)))
+#+end_src
 *** Start webapp
-#+begin_src lisp :tangle ./source/frontends/http.lisp
-(couchdb-middleware *app*)
-(defparameter *server* (clack:clackup *app* :address *listen-address* :port *port*))
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
+                                        ;(couchdb-middleware *app*)
+(defun start-http-api ()
+  (clack:clackup *app* :address star:*http-api-address* :port star:*http-api-port*))
 #+end_src
 
 #+RESULTS:
@@ -565,9 +627,15 @@ Importance:
 
 
 * Main Entry
-#+begin_src lisp :tangle ./source/main.lisp :results none
+#+begin_src lisp :tangle ./source/main.lisp :results none :comments link
 (in-package :starintel-gserver)
-(defun main ())
+(defun main ()
+  (sento-user::start-actors)
+  (star.rabbit:start-rabbit-document-thread)
+  (star.frontends.http-api::start-http-api)
+  (loop))
+
+
 #+end_src
 
 * Tasks
@@ -587,11 +655,11 @@ direnv reload .
 *** Run a rabbitmq instance
 #+Name: docker.run.rabbitmq
 #+begin_src shell :async :results output replace :tangle start.sh
-docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS=password --name rabbitmq_org_dev  rabbitmq:3.13.1-management
+docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS=password   rabbitmq:3.13.1-management
 #+end_src
 
 #+RESULTS: docker.run.rabbitmq
-: 4f99c21797bbdc4e0f9b8154ad10d5d54789b95dae4ee7b916c8d3d962e0f9e8
+: 136e9a2898d2fd0d89d9d86ab88e67edeeb8167f2e979b154105256bd2a3726b
 
 #+RESULTS: Start Rabbitmq
 
@@ -601,6 +669,9 @@ docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS
 docker kill rabbitmq_org_dev
 #+end_src
 
+#+RESULTS: docker.kill.rabbitmq
+: rabbitmq_org_dev
+
 
 *** List Docker PS
 #+Name: docker.ps
@@ -609,36 +680,12 @@ docker ps
 #+end_src
 ** Build
 #+Name: build.server
-#+begin_src shell :async :results output replace :tangle build.sh
-#!/usr/bin/env sh
+#+begin_src sh :async :results output replace :tangle build.sh
 make build
 #+end_src
 
 #+RESULTS: build.server
-#+begin_example
-sbcl	--non-interactive \
-	--load source/starintel-gserver.asd \
-	--eval '(ql:quickload :starintel-gserver)' \
-	--load 'hackmode.lisp' \
-	--eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'starintel-gserver::main :executable t :compression t)"
-This is SBCL 2.4.3, an implementation of ANSI Common Lisp.
-More information about SBCL is available at <http://www.sbcl.org/>.
-
-SBCL is free software, provided as is, with absolutely no warranty.
-It is mostly in the public domain; some portions are provided under
-BSD-style licenses.  See the CREDITS and COPYING files in the
-distribution for more information.
-To load "literate-lisp":
-  Load 1 ASDF system:
-    literate-lisp
-; Loading "literate-lisp"
-..
-To load "starintel-gserver":
-  Load 1 ASDF system:
-    starintel-gserver
-; Loading "starintel-gserver"
-..................
-#+end_example
+: b3bc5811a0bf8b118f78669449185d14
 
 * Footnotes
 

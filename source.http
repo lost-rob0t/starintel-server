@@ -1,0 +1,3 @@
+POST http://0.0.0.0:5000/new/document/person
+
+{"_id":"01HVPX96E8B1FWQCSRFE07Z07R","dataset":"","dtype":"","sources":null,"version":"0.7.1","dateUpdated":1713387117,"dateAdded":1713387117,"fname":"Klaus","mname":"","lname":"Shwabb","bio":"","dob":"","race":"","region":"","misc":null,"etype":"","eid":""}
