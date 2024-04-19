@@ -4,8 +4,10 @@
 * Ideas
 The main idea of this project is to have a single, closed source api interface that will be the SINGLE source for starintel data
 
-** allow it to be extended
-Using common vars/hooks whatever to establish a config that can be updated as i age this system out when EOL.
+** TODO allow it to be extended [0/3]
+*** TODO Simple data transform system
+*** TODO Simple map-reduce over rabbitmq
+*** IDEA Move the config vars into a container?
 
 
 
