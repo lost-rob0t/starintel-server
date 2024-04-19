@@ -1,3 +1,11 @@
+# [[file:source.org::open.rabbitmq][open.rabbitmq]]
+xdg-open http://127.0.0.1:15672/#/
+# open.rabbitmq ends here
+
+# [[file:source.org::open couchdb][open couchdb]]
+xdg-open http://127.0.0.1:5984/_utils
+# open couchdb ends here
+
 # [[file:source.org::update.flake][update.flake]]
 nix flake update
 direnv reload .

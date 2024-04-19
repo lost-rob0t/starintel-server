@@ -1,4 +1,3 @@
-;; [[file:../source.org::*RabbitMQ][RabbitMQ:1]]
 (in-package :star.rabbit)
 
 (defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
@@ -45,9 +44,7 @@
 
         (cl-rabbit:queue-bind conn 1 :queue queue-name :exchange exchange :routing-key routing-key)
         (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange exchange :mandatory mandatory :immediate immediate :properties properties :body body)))))
-;; RabbitMQ:1 ends here
 
-;; [[file:../source.org::*RabbitMQ][RabbitMQ:2]]
 (defun message->string (msg &key (encoding :utf-8))
   "take a rabbitmq message and return the boddy as a string"
   (babel:octets-to-string (cl-rabbit:message/body msg) :encoding encoding))
@@ -63,27 +60,23 @@
          (dtype (when headers (cdr (assoc "dtype" (cdr headers) :test #'equal))))
          (body (message->string msg)))
     (cons dtype body)))
-;; RabbitMQ:2 ends here
 
-;; [[file:../source.org::*RabbitMQ][RabbitMQ:3]]
-(defun start-rabbit-document-thread ()
+(defun start-rabbit-document-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
   (loop for i from 0 to 4
-                        do (bt:make-thread
-                            (lambda ()
-                              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.*")
-                                (let (
-                                      (data (handle-new-document msg)))
-                                  (sento-user::ask sento-user::*couchdb-inserts* data))))
-                                                  ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
+        do (bt:make-thread
+            (lambda ()
+              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.*")
+                (let (
+                      (data (handle-new-document msg)))
+                  (sento-user::ask sento-user::*couchdb-inserts* data))))
+            ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
 
 
-                            :name "*new-documents*")))
-;; RabbitMQ:3 ends here
+            :name "*new-documents*")))
 
-;; [[file:../source.org::*quick test functions][quick test functions:1]]
 (defun test-make-doc ()
 
-  (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance  'starintel:person :id (ulid:ulid) :lname "doe" :fname "john") "starintel") str)))
+  (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance  'starintel:person :id (uuid:make-v4-uuid) :lname "doe" :fname "john") "starintel") str)))
 
 (defun test-send ()
   (cl-rabbit:with-connection (conn)
@@ -96,4 +89,3 @@
                                  :routing-key "documents.new.Person"
                                  :body (test-make-doc)
                                  :properties '((:headers . (("dtype"  . "Person")))))))))
-;; quick test functions:1 ends here

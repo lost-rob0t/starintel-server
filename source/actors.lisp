@@ -1,10 +1,10 @@
-;; [[file:../source.org::*Actors][Actors:1]]
+;; [[file:../source.org::*Actor system setup][Actor system setup:1]]
 (in-package :sento-user)
 (defparameter *sys* nil "the main actor system")
 (defun start-actor-system ()
   (setf *sys* (make-actor-system))
 )
-;; Actors:1 ends here
+;; Actor system setup:1 ends here
 
 ;; [[file:../source.org::*Eventing][Eventing:1]]
 (defclass message-event ()
@@ -36,7 +36,7 @@
            do (progn ,@body)))
 ;; Eventing:2 ends here
 
-;; [[file:../source.org::*Couchdb][Couchdb:1]]
+;; [[file:../source.org::*Client Pooling][Client Pooling:1]]
 (defparameter *couchdb-pool*
   (anypool:make-pool :name "couchdb-connections"
                      :connector (lambda ()
@@ -47,9 +47,9 @@
                      :disconnector (lambda (obj)
                                      (setf (cl-couch:couchdb-headers obj) nil))
                      :max-open-count 20))
-;; Couchdb:1 ends here
+;; Client Pooling:1 ends here
 
-;; [[file:../source.org::*Couchdb][Couchdb:2]]
+;; [[file:../source.org::*Client Pooling][Client Pooling:2]]
 (defvar *my-thread* nil)
 
 (defun start--pool-monitoring ()
@@ -68,7 +68,7 @@
   (when *my-thread*
     (bt:destroy-thread *my-thread*)
     (setf *my-thread* nil)))
-;; Couchdb:2 ends here
+;; Client Pooling:2 ends here
 
 ;; [[file:../source.org::*couchdb-insert actors][couchdb-insert actors:1]]
 (defparameter *couchdb-inserts* nil)
@@ -86,9 +86,24 @@
                                                                   (cl-couch:create-document client destination-db (cdr msg) :batch "normal"))))))))))
 ;; couchdb-insert actors:1 ends here
 
-;; [[file:../source.org::*OK couchdb-get actor][OK couchdb-get actor:1]]
+;; [[file:../source.org::*couchdb-get actor][couchdb-get actor:1]]
+(defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
 
-;; OK couchdb-get actor:1 ends here
+(defun start-couchdb-gets ()
+  (setf *couchdb-gets* (ac:actor-of *sys* :name "*couchdb-gets*"
+                                          :receive (lambda (msg)
+                                                     (let ((pool *couchdb-pool*)
+                                                           (db (uiop:getenv "COUCHDB_DATABASE")))
+                                                       (with-context (*sys*)
+                                                         (anypool:with-connection (client pool)
+                                                           (task-async (lambda ()
+                                                                         (handler-case
+                                                                             (cl-couch:get-document client db (car msg))
+                                                                           (dex:http-request-not-found (e) nil)
+                                                                           (dex:http-request-unauthorized (e) nil)))
+                                                                       :on-complete-fun (lambda (doc)
+                                                                                          (reply doc (cdr msg)))))))))))
+;; couchdb-get actor:1 ends here
 
 ;; [[file:../source.org::*finish bulk insert actor][finish bulk insert actor:1]]
 ;; (defparameter *couchdb-bulk-insert* (ac:actor-of *sys*
@@ -99,11 +114,6 @@
 ;;                                                               (anypool:with-connection (client pool)
 ;;                                                                 (cl-couch:bulk-create-documents client destination-db msg :batch "normal"))))))
 ;; finish bulk insert actor:1 ends here
-
-;; [[file:../source.org::*Document Handler][Document Handler:1]]
-(defun start-document-handler-actor ()
-  (defparameter *document-handler* (ac:actor-of *sys*)))
-;; Document Handler:1 ends here
 
 ;; [[file:../source.org::*actor entry point][actor entry point:1]]
 (defun start-actors ()

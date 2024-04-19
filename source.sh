@@ -11,3 +11,7 @@ export COUCHDB_USER="admin"
 export COUCHDB_PASSWORD="password"
 export COUCHDB_DATABASE="starintel"
 # Nix:2 ends here
+
+# [[file:source.org::build.server][build.server]]
+make build
+# build.server ends here

@@ -38,7 +38,6 @@ install:
 
 clean:
 	rm -f ./star-server
-
 #+end_src
 
 ** Nix
@@ -98,12 +97,15 @@ export COUCHDB_DATABASE="starintel"
 *** ASDF
 Here is the system def for it.
 #+begin_src lisp :tangle source/starintel-gserver.asd :comments link
-
 (asdf:defsystem :starintel-gserver
   :version      "0.1.0"
   :description  "hackable/moddable starintel acess api."
   :author       "nsaspy@airmail.cc"
   :license      "GPL v3"
+  :serial t
+  :build-operation program-op
+  :build-pathname "foobar-command" ;; shell name
+  :entry-point "foobar::start-foobar" ;; thunk
   :components   (
                  (:file "package")
                  (:file "gserver-settings" :depends-on ("package"))
@@ -112,9 +114,8 @@ Here is the system def for it.
                  (:file "frontends/http-api" :depends-on ("gserver-settings"))
                  (:file "main" :depends-on ("actors" "rabbit" "package" "gserver-settings" "frontends/http-api")))
 
-  :depends-on   (#:starintel #:cl-couch  #:alexandria #:cl-rabbit #:sento #:babel #:cl-json :cl-ulid #:anypool #:cl-cpus
-                    #:clack #:ningle #:hunchentoot))
-
+  :depends-on   (#:starintel #:cl-couch #:serapeum  #:alexandria #:cl-rabbit #:sento #:babel #:cl-json :uuid #:anypool
+                             #:clack #:ningle #:hunchentoot #:clingon #:slynk))
  #+end_src
 *** Namespace setup
 I prefer to have my namespace done in a somewhat hierarchical style.
@@ -174,6 +175,48 @@ gserver namespace, general top level.
   (:use       :cl)
   (:documentation "doc"))
 #+end_src
+** Docker
+#+begin_src Dockerfile :tangle ./Dockerfile :comments none
+FROM fukamachi/sbcl:latest as build
+# Install required packages
+RUN --mount=type=cache,target=/var/cache/apt --mount=type=cache,target=/var/lib/apt set -x; \
+    apt-get update && \
+    apt-get install -y \
+    make \
+    libffi-dev \
+    pkg-config \
+    librabbitmq-dev \
+    build-essential
+
+# Create a user and set up working directory
+RUN ros setup
+
+# Copy dependencies
+COPY . /root/
+
+# Set up symbolic links using ln
+RUN ln -s /root/deps/ /root/common-lisp
+WORKDIR /root/
+RUN make build
+RUN make install
+FROM build as star-router
+ENV BUILD_MODE="DEV" \
+    COUCHDB_HOST="127.0.0.1" \
+    COUCHDB_PORT=5984 \
+    COUCHDB_SCHEME="http" \
+    COUCHDB_USER="admin" \
+    COUCHDB_PASSWORD="password" \
+    COUCHDB_DATABASE="starintel" \
+    HTTP_API_LISTEN_ADDRESS="localhost" \
+    RABBITMQ_HOST="rabbitmq" \
+    RABBITMQ_PORT=5672
+# Expose port 5000
+EXPOSE 5000
+
+# Entrypoint to start the server
+ENTRYPOINT ./star-server
+CMD [./star-server]
+#+end_src
 ** TODO Kali/parrot
 #+Name: Install docker
 #+begin_src shell :async :results output replace :tangle parrot_kali.sh :comments link
@@ -196,7 +239,11 @@ install_docker
 
 * Settings
 #+begin_src lisp :tangle ./source/gserver-settings.lisp :results none :comments link
-
+(in-package :star)
+(defparameter *couchdb-host* "127.0.0.1" "The Couchdb host to use.")
+(defparameter *couchdb-port* 5984 "The Couchdb port to use.")
+(defparameter *couchdb-default-database* "starintel" "the default database name to use.")
+(defparameter *couchdb-target-database* "starintel-targets" "the database to be used for target data.")
 #+end_src
 ** Frontends
 *** Http Settings
@@ -205,9 +252,8 @@ This section contains only settings related to http frontend
 **** Listen Address
 
 #+begin_src lisp :tangle ./source/gserver-settings.lisp :comments link
-(in-package :star)
-(defparameter *http-api-address* "0.0.0.0" "the listen address")
-(defparameter *http-api-port* 5000 "the port the api server listen on")
+(defparameter *http-api-address* (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") "localhost") "the listen address")
+(defparameter *http-api-port* 5000  "the port the api server listen on")
 (defparameter *http-api-base-path* "/api" "the base url to use for the api endpoint")
 (defparameter *http-cert-file* nil "path to the http api cert providing https")
 (defparameter *http-key-file* nil "path to the http cert providing https")
@@ -216,10 +262,13 @@ This section contains only settings related to http frontend
 ** Rabbit mq settings
 *** Authentication
 #+begin_src lisp :tangle ./source/gserver-settings.lisp :comments link
-(defparameter *rabbit-address* "127.0.0.1" "The address rabbitmq is running on.")
+(defparameter *rabbit-address* (or (uiop:getenv "RABBITMQ_ADDRESS") "localhost") "The address rabbitmq is running on.")
 (defparameter *rabbit-port* 5672 "The port that rabbitmq is listening on.")
 (defparameter *rabbit-user* "guest" "the username for rabbimq")
 (defparameter *rabbit-password* "guest" "the password for the rabbitmq user.")
+
+(eval-when (:execute)
+  )
 #+end_src
 
 #+RESULTS:
@@ -348,8 +397,26 @@ This actor will insert documents into couchdb.
                                                                 (anypool:with-connection (client pool)
                                                                   (cl-couch:create-document client destination-db (cdr msg) :batch "normal"))))))))))
 #+end_src
-*** OK couchdb-get actor
+*** couchdb-get actor
+This actor is to be used by other actors wishing to interact with the couchdb database.
+The message to be sent MUST be ~(cons sender data)~.
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+(defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
+
+(defun start-couchdb-gets ()
+  (setf *couchdb-gets* (ac:actor-of *sys* :name "*couchdb-gets*"
+                                          :receive (lambda (msg)
+                                                     (let ((pool *couchdb-pool*)
+                                                           (db (uiop:getenv "COUCHDB_DATABASE")))
+                                                       (with-context (*sys*)
+                                                         (anypool:with-connection (client pool)
+                                                           (task-async (lambda ()
+                                                                         (handler-case
+                                                                             (cl-couch:get-document client db (car msg))
+                                                                           (dex:http-request-not-found (e) nil)
+                                                                           (dex:http-request-unauthorized (e) nil)))
+                                                                       :on-complete-fun (lambda (doc)
+                                                                                          (reply doc (cdr msg)))))))))))
 
 #+end_src
 
@@ -394,7 +461,7 @@ In order to compile the actor system must be stop
 ** Macro Wrappers
 The [[https://github.com/lokedhs/cl-rabbit][cl-rabbit]] lib is a bit lower level then I want to work with so I will create a basic macros to make the interface nicer
 
-The newer sento benchmarks are showing its VERY preforment now, so we will actually just create a agent, then use the sento actor system.
+The newer sento benchmarks are showing its VERY performent now, so we will actually just create a agent, then use the sento actor system.
 
 #+begin_src lisp :tangle ./source/rabbit.lisp :results none
 (in-package :star.rabbit)
@@ -469,18 +536,18 @@ Take a rabbimq message and parse it.
 Start the rabbit new document monitoring thread.
 
 #+begin_src lisp :tangle ./source/rabbit.lisp :results none
-(defun start-rabbit-document-thread ()
+(defun start-rabbit-document-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
   (loop for i from 0 to 4
-                        do (bt:make-thread
-                            (lambda ()
-                              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.*")
-                                (let (
-                                      (data (handle-new-document msg)))
-                                  (sento-user::ask sento-user::*couchdb-inserts* data))))
-                                                  ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
+        do (bt:make-thread
+            (lambda ()
+              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.*")
+                (let (
+                      (data (handle-new-document msg)))
+                  (sento-user::ask sento-user::*couchdb-inserts* data))))
+            ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
 
 
-                            :name "*new-documents*")))
+            :name "*new-documents*")))
 #+end_src
 ** quick test functions
 
@@ -489,7 +556,7 @@ These functions are for quick debugging of the rabbitmq.
 #+begin_src lisp :tangle ./source/rabbit.lisp :results none
 (defun test-make-doc ()
 
-  (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance  'starintel:person :id (ulid:ulid) :lname "doe" :fname "john") "starintel") str)))
+  (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance  'starintel:person :id (uuid:make-v4-uuid) :lname "doe" :fname "john") "starintel") str)))
 
 (defun test-send ()
   (cl-rabbit:with-connection (conn)
@@ -520,50 +587,25 @@ These functions are for quick debugging of the rabbitmq.
 
 #+end_src
 * Frontends
-Frontends  are basicly APi services that allow external stuff to tineract with this system.
+Frontends  are basicly APi services that allow external stuff to interact with this system.
 ** asdf
 
 ** http-api
+*** Couchdb client pool
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :results none :comments link
+(defparameter *couchdb-pool*
+  (anypool:make-pool :name "couchdb-connections"
+                     :connector (lambda ()
+                                  (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
+                                    (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+                                    client))
 
-*** TODO Auth Database
-
-This is how i create the client
-#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
-(in-package :star.frontends.http-api)
-(defun init-database (username password &optional (host "127.0.0.1") (port 5984))
-  "Add the couchdb object to the context, should only be called once!"
-  (let ((client (cl-couch:new-couchdb host port)))
-    (cl-couch:password-auth client username password)
-    client))
-
-(defun init-state (couchdb)
-  "Create the needed databases, map-reduce views. ")
+                     :disconnector (lambda (obj)
+                                     (setf (cl-couch:couchdb-headers obj) nil))
+                     :max-open-count 20))
 #+end_src
+*** STRT Authentication
 
-#+RESULTS:
-: INIT-DATABASE
-
-I based my couchdb middleware on a gist.[fn:1]
-#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
-(in-package :star.frontends.http-api)
-
-;; (defclass app (ningle:app)
-;;   ()
-;;   (:documentation "Custom application based on NINGLE:APP"))
-
-;; (defparameter *couchdb*
-;;   "*REQUEST-ENV* will be dynamically bound to the environment context
-;; of HTTP requests")
-
-
-                                        ;(defun setup-couchdb)
-
-
-(defvar *app* (make-instance 'ningle:app))
-#+end_src
-
-#+RESULTS:
-: *APP*
 *** TODO design map api
 *** OKAY Submit documents
 This route take input documents and inserts them into the rabbitmq =new-documents= queue.
@@ -610,8 +652,24 @@ POST http://0.0.0.0:5000/new/document/person
 
           (let ((document-id  (cdr (assoc :id params :test #'string=))))
 
-            document-id)))
+            (anypool:with-connection (client *couchdb-pool*)
+              (cl-couch:get-document client "starintel" document-id)))))
 #+end_src
+
+**** example usage
+#+begin_src http
+GET 127.0.0.1:5000/document/01HVQ6STFR8TA2G6QC5M9EQJQ4
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Fri, 19 Apr 2024 02:11:28 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: {"_id":"01HVQ6STFR8TA2G6QC5M9EQJQ4","_rev":"1-f2c89cf0ec0edd4bce904a91e524da9e","dataset":"starintel","dtype":"person","sources":null,"version":"0.7.1","dateUpdated":1713397099,"dateAdded":1713397099,"fname":"john","mname":"","lname":"doe","bio":"","dob":"","race":"","region":"","misc":null,"etype":"","eid":""}
+
 *** Start webapp
 #+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
                                         ;(couchdb-middleware *app*)
@@ -627,15 +685,60 @@ POST http://0.0.0.0:5000/new/document/person
 
 
 * Main Entry
-#+begin_src lisp :tangle ./source/main.lisp :results none :comments link
+** Cli arg parsing
+i opt to use clingon for cli arg parsing.[fn:2]
+#+begin_src lisp :tangle ./source/main.lisp :results none :coments link
 (in-package :starintel-gserver)
+(defun server/options ()
+  (list
+   (clingon:make-option
+    :string
+    :description "Path to init file"
+    :short-name #\i
+    :long-name "init"
+    :initial-value "./init.lisp"
+    :env-vars '("STAR_SERVER_INIT_FILE")
+    :key :init-value)
+   (clingon:make-option
+    :boolean
+    :description "Enable Remote debugging"
+    :short-name #\d
+    :long-name "debugger"
+    :key :debugger)))
+
+
+#+end_src
+** Server command handler
+#+begin_src lisp :tangle ./source/main.lisp :results none :comments link
+
+(defun server/handler (cmd)
+  (let ((debugger (clingon:getopt cmd :debugger))
+        (init-file (clingon:getopt cmd :init-value)))
+    (when debugger
+      (slynk:create-server :port 50006 :dont-close t))
+    (load init-file :if-does-not-exist :create)
+    (sento-user::start-actors)
+
+
+    (sento-user::start-actors)
+    (star.frontends.http-api::start-http-api)
+    (star.rabbit:start-rabbit-document-thread :host *rabbit-address* :port *rabbit-port*)))
+
+(defun server/command ()
+  "A command to greet someone"
+  (clingon:make-command
+   :name "start"
+   :description "start the server"
+   :version "0.1.0"
+   :authors '("nsaspy <nsaspy@airmail.cc>")
+   :license "GPL v3"
+   :options (server/options)
+   :handler #'server/handler))
+
+
 (defun main ()
-  (sento-user::start-actors)
-  (star.rabbit:start-rabbit-document-thread)
-  (star.frontends.http-api::start-http-api)
-  (loop))
-
-
+  (clingon:run (server/command))
+  (loop do (sleep 3)))
 #+end_src
 
 * Tasks
@@ -693,7 +796,7 @@ docker ps
 #+end_src
 ** Build
 #+Name: build.server
-#+begin_src sh :async :results output replace :tangle build.sh
+#+begin_src sh :async :results output replace
 make build
 #+end_src
 
@@ -701,5 +804,6 @@ make build
 : b3bc5811a0bf8b118f78669449185d14
 
 * Footnotes
+[fn:2] https://github.com/dnaeon/clingon
 
 [fn:1] https://gist.github.com/dnaeon/3a3f86dea1096db5a9231d1f56a565e2

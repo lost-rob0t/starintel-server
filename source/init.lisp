@@ -1,4 +1,3 @@
-;; [[file:../source.org::*Couchdb][Couchdb:1]]
 (in-package :starintel-gserver)
 
 
@@ -9,4 +8,3 @@
     (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
     (handler-case (cl-couch:get-database client database)
       (dexador:http-request-not-found () (cl-couch:create-database client database)))))
-;; Couchdb:1 ends here

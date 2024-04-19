@@ -1,32 +1,15 @@
-;; [[file:../../source.org::*Auth Database][Auth Database:1]]
-(in-package :star.frontends.http-api)
-(defun init-database (username password &optional (host "127.0.0.1") (port 5984))
-  "Add the couchdb object to the context, should only be called once!"
-  (let ((client (cl-couch:new-couchdb host port)))
-    (cl-couch:password-auth client username password)
-    client))
+;; [[file:../../source.org::*Couchdb client pool][Couchdb client pool:1]]
+(defparameter *couchdb-pool*
+  (anypool:make-pool :name "couchdb-connections"
+                     :connector (lambda ()
+                                  (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
+                                    (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+                                    client))
 
-(defun init-state (couchdb)
-  "Create the needed databases, map-reduce views. ")
-;; Auth Database:1 ends here
-
-;; [[file:../../source.org::*Auth Database][Auth Database:2]]
-(in-package :star.frontends.http-api)
-
-;; (defclass app (ningle:app)
-;;   ()
-;;   (:documentation "Custom application based on NINGLE:APP"))
-
-;; (defparameter *couchdb*
-;;   "*REQUEST-ENV* will be dynamically bound to the environment context
-;; of HTTP requests")
-
-
-                                        ;(defun setup-couchdb)
-
-
-(defvar *app* (make-instance 'ningle:app))
-;; Auth Database:2 ends here
+                     :disconnector (lambda (obj)
+                                     (setf (cl-couch:couchdb-headers obj) nil))
+                     :max-open-count 20))
+;; Couchdb client pool:1 ends here
 
 ;; [[file:../../source.org::*Submit documents][Submit documents:1]]
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
@@ -39,8 +22,18 @@
              (format nil "documents.new.~a" dtype))))
 ;; Submit documents:1 ends here
 
+;; [[file:../../source.org::*Get Documents][Get Documents:1]]
+(setf (ningle:route *app* "/document/:id" :method :get)
+      #'(lambda (params)
+
+          (let ((document-id  (cdr (assoc :id params :test #'string=))))
+
+            (anypool:with-connection (client *couchdb-pool*)
+              (cl-couch:get-document client "starintel" document-id)))))
+;; Get Documents:1 ends here
+
 ;; [[file:../../source.org::*Start webapp][Start webapp:1]]
-                                        ;(couchdb-middleware *app*)
+;(couchdb-middleware *app*)
 (defun start-http-api ()
   (clack:clackup *app* :address star:*http-api-address* :port star:*http-api-port*))
 ;; Start webapp:1 ends here
