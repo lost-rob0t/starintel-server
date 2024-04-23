@@ -13,7 +13,13 @@
    #:*http-cert-file*
    #:*http-api-base-path*
    #:*http-api-port*
-   #:*http-api-address*))
+   #:*http-api-address*
+   #:*couchdb-default-database*
+   #:*couchdb-host*
+   #:*couchdb-port*
+   #:*couchdb-user*
+   #:*couchdb-password*
+   #:*couchdb-scheme*))
 ;; Namespace setup:2 ends here
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:3]]

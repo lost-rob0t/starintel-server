@@ -1,0 +1,1 @@
+{"_id":"_design/data","views":{"count_by_dtype":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype !== \"Relation\") {\n    emit(doc.dtype, 1);\n  }\n}","reduce":"_count"},"dataset_size":{"reduce":"_count","map":"function (doc) {\n  emit(doc.dataset, 1);\n  \n}"},"total":{"reduce":"_sum","map":"function (doc) {\n  emit(null, 1);\n}"}},"language":"javascript"}

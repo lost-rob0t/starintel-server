@@ -4,6 +4,9 @@
 (defparameter *couchdb-port* 5984 "The Couchdb port to use.")
 (defparameter *couchdb-default-database* "starintel" "the default database name to use.")
 (defparameter *couchdb-target-database* "starintel-targets" "the database to be used for target data.")
+(defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
+(defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
+(defparameter *couchdb-password* (or (uiop:getenv "COUCHDB_PASSWORD") "password") "couchdb user password")
 ;; Settings:1 ends here
 
 ;; [[file:../source.org::*Listen Address][Listen Address:1]]

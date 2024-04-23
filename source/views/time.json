@@ -1,0 +1,1 @@
+{"_id":"_design/time","language":"javascript","views":{"dateAdded":{"map":"function (doc) {\n  emit(doc.date_added, doc._id);\n}","reduce":"_count"},"timeline":{"map":"function (doc) {\n  emit(doc._id, doc.date_added);\n}"}}}

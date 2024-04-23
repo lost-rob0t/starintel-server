@@ -65,9 +65,10 @@ clean:
             openssl
             rabbitmq-c
             libffi
+            sqlite
           ];
           shellHook = ''
-            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi])}
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi pkgs.sqlite])}
           '';
         };
     };
@@ -111,6 +112,7 @@ Here is the system def for it.
   :components   (
                  (:file "package")
                  (:file "gserver-settings" :depends-on ("package"))
+                 (:file "init" :depends-on ("gserver-settings"))
                  (:file "actors" :depends-on ("gserver-settings"))
                  (:file "rabbit" :depends-on ("actors" "gserver-settings"))
                  (:file "frontends/http-api" :depends-on ("gserver-settings"))
@@ -153,7 +155,13 @@ gserver namespace, general top level.
    #:*http-cert-file*
    #:*http-api-base-path*
    #:*http-api-port*
-   #:*http-api-address*))
+   #:*http-api-address*
+   #:*couchdb-default-database*
+   #:*couchdb-host*
+   #:*couchdb-port*
+   #:*couchdb-user*
+   #:*couchdb-password*
+   #:*couchdb-scheme*))
 #+end_src
 
 #+RESULTS:
@@ -242,10 +250,13 @@ install_docker
 * Settings
 #+begin_src lisp :tangle ./source/gserver-settings.lisp :results none :comments link
 (in-package :star)
-(defparameter *couchdb-host* "127.0.0.1" "The Couchdb host to use.")
+(defparameter *couchdb-host* (or (uiop:getenv "COUCHDB_HOST") "127.0.0.1") "The Couchdb host to use.")
 (defparameter *couchdb-port* 5984 "The Couchdb port to use.")
 (defparameter *couchdb-default-database* "starintel" "the default database name to use.")
 (defparameter *couchdb-target-database* "starintel-targets" "the database to be used for target data.")
+(defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
+(defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
+(defparameter *couchdb-password* (or (uiop:getenv "COUCHDB_PASSWORD") "password") "couchdb user password")
 #+end_src
 ** Frontends
 *** Http Settings
@@ -338,8 +349,16 @@ Here is a simple example of an actor that works with person objects.
                                 (format nil "~a" (starintel:doc-id msg)))))
 
 #+end_src
-** Couchdb
-*** Client Pooling
+** API
+Actors need to interact with external services like couchdb.
+
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+(defun make-api-msg (sender data)
+    (cons data sender))
+#+end_src
+
+*** Couchdb
+**** Client Pooling
 Couchdb is the main database I have used for many projects, I am using [[https://github.com/lost-rob0t/cl-couch][cl-couch]] for the database client. It doesnt use async so I need to setup a resource pools, for that I use anypool.
 
 
@@ -381,7 +400,7 @@ it is only used internally for debugging.
 
 #+end_src
 
-*** couchdb-insert actors
+**** couchdb-insert actors
 This actor will insert documents into couchdb.
 
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
@@ -399,7 +418,7 @@ This actor will insert documents into couchdb.
                                                                 (anypool:with-connection (client pool)
                                                                   (cl-couch:create-document client destination-db (cdr msg) :batch "normal"))))))))))
 #+end_src
-*** couchdb-get actor
+**** couchdb-get actor
 This actor is to be used by other actors wishing to interact with the couchdb database.
 The message to be sent MUST be ~(cons sender data)~.
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
@@ -422,7 +441,7 @@ The message to be sent MUST be ~(cons sender data)~.
 
 #+end_src
 
-*** TODO finish bulk insert actor
+**** TODO finish bulk insert actor
 
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 ;; (defparameter *couchdb-bulk-insert* (ac:actor-of *sys*
@@ -446,13 +465,37 @@ The message to be sent MUST be ~(cons sender data)~.
 
 
 #+end_src
-** TODO Create Target scheduling actor
+** STRT Create Target scheduling actor
 It will be an actor that kicks off recurring jobs, will require spec change to include "recurring" field.
+
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+(defparameter *target-timer* nil)
+(defun start-target-timer ()
+   (setf *target-timer* (wt:make-wheel-timer)))
+#+end_src
+
+*** Target Actor
+
+#+begin_src lisp :tangle ./source/actors.lisp :results  none :comment link
+(defparameter *target-actor* nil)
+
+;; (defun start-target-actor (system)
+;;   (setf *target-actor* (ac:actor-of system
+;;                                     :name "*target-actor*"
+;;                                     :receive (lambda (msg)
+;;                                                (with-context (system)
+;;                                                  (let ((resp (task-async (lambda ()
+;;                                                                            (let ((resp (cl-couch:get-view))))))))))))))
+#+end_src
+
+
+
 ** actor entry point
 
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defun start-actors ()
   (start-actor-system)
+  (start-target-timer)
   (start-couchdb-inserts))
 #+end_src
 
@@ -572,20 +615,79 @@ These functions are for quick debugging of the rabbitmq.
                                  :body (test-make-doc)
                                  :properties '((:headers . (("dtype"  . "Person")))))))))
 #+end_src
+** Map Reduce
+*** Ideas
+Last updated: <2024-04-18 Thu>
+**** Basic Data transform
+Map reduce will allow for a simple, realtime data enrichment system.
 
+An example use would be creating and comparing fingerprints for documents.
+***** transformer context
+#+begin_src lisp :tangle ./source/transform.lisp :results none :comments link
+((defclass transformer ()
+   ((socket :initarg :socket :accessor transformer-socket :allocation :instance)
+    (channel))
+   (:documentation "doc")))
+#+end_src
 * Databases
 ** Couchdb
+*** Views
+**** Data View
+Analytics views county documents by their type.
+
+#+begin_src json :tangle ./source/views/data.json
+{"_id":"_design/data","views":{"count_by_dtype":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype !== \"Relation\") {\n    emit(doc.dtype, 1);\n  }\n}","reduce":"_count"},"dataset_size":{"reduce":"_count","map":"function (doc) {\n  emit(doc.dataset, 1);\n  \n}"},"total":{"reduce":"_sum","map":"function (doc) {\n  emit(null, 1);\n}"}},"language":"javascript"}
+#+end_src
+
+**** Relations View
+Very basic graph index, simply way of getting neighbors
+
+#+begin_src json :tangle ./source/views/relations.json
+{"_id":"_design/relations","views":{"outgoing-count":{"reduce":"_count","map":"function (doc) {\n  if (doc.dtype === \"Relation\") {\n    emit(doc.source, 1);\n  }\n}"},"incoming-count":{"reduce":"_count","map":"function (doc) {\n  if (doc.dtype === \"Relation\") {\n    emit(doc.target, 1);\n  }\n}"},"edges":{"map":"function (doc) {\n  if(doc.dtype===\"Relation\"){\n  emit(doc.target, {\"_id\": doc._id, \"note\": doc.note});\n}}","reduce":"function(keys, values, rereduce) {\n  var results = [];\n  if (!rereduce) {\n    values.forEach(function(value) {\n      if (results.indexOf(value) === -1) {\n        results.push(value);\n      }\n    });\n  } else {\n    values.forEach(function(arr) {\n      arr.forEach(function(value) {\n        if (results.indexOf(value) === -1) {\n          results.push(value);\n        }\n      });\n    });\n  }\n  return results;\n}"},"neighbors":{"reduce":"function(keys, values, rereduce) {\n  var results = [];\n  if (!rereduce) {\n    values.forEach(function(value) {\n      if (results.indexOf(value) === -1) {\n        results.push(value);\n      }\n    });\n  } else {\n    values.forEach(function(arr) {\n      arr.forEach(function(value) {\n        if (results.indexOf(value) === -1) {\n          results.push(value);\n        }\n      });\n    });\n  }\n  return results;\n}","map":"function (doc) {\n  if(doc.dtype===\"Relation\"){\n  emit(doc.source, doc.target);  \n}}"},"edge-note":{"map":"function (doc) {\n  if(doc.dtype == \"Relation\"){\n  emit(doc.note, null);\n}}","reduce":"_count"}},"language":"javascript"}
+
+#+end_src
+
+**** Search View
+Full Text search index
+
+#+begin_src json :tangle ./source/views/search.json
+{"_id":"_design/search","views":{},"language":"javascript","indexes":{"fts":{"analyzer":{"name":"perfield","default":"standard","fields":{}},"index":"function(doc) { \n  index('dataset', doc.dataset, {\"store\": \"yes\", \"field\": \"dataset\"});\n  index('date_added', doc.date_added, {\"store\": \"yes\", \"field\": \"date_added\"});\n  index('date_updated', doc.date_updated, {\"store\": \"yes\", \"field\": \"date_updated\"});\n  index('dtype', doc.dtype, {\"store\": \"yes\", \"field\": \"dtype\"});\n  if (doc.dtype == \"Entity\") {\n        var total = doc.etype + \" \" + doc.eid;\n        index('etype', doc.etype, {\"store\": \"yes\", \"field\": \"etype\"});\n        index('eid', doc.eid, {\"store\": \"yes\", \"field\": \"eid\"});\n        if (doc.dataset) {\n            index('dataset', doc.dataset, {\"store\": \"yes\", \"field\": \"dataset\"});\n        }\n        if (doc.date_added) {\n            index('date_added', doc.date_added, {\"store\": \"yes\", \"field\": \"date_added\"});\n        }\n        if (doc.date_updated) {\n            index('date_updated', doc.date_updated, {\"store\": \"yes\", \"field\": \"date_updated\"});\n        }\n    }\n    if (doc.dtype == \"Org\") {\n        var total = doc.reg + \" \" + doc.country + \" \" + doc.name + \" \" + doc.website + \" \" + doc.bio;\n        index('reg', doc.reg, {\"store\": \"yes\", \"field\": \"reg\"});\n        index('country', doc.country, {\"store\": \"yes\", \"field\": \"country\"});\n        index('name', doc.name, {\"store\": \"yes\", \"field\": \"name\"});\n        index('website', doc.website, {\"store\": \"yes\", \"field\": \"website\"});\n        index('bio', doc.bio, {\"store\": \"yes\", \"field\": \"bio\"});\n    }\n    if (doc.dtype == \"Person\") {\n        var total = doc.fname + \" \" + doc.mname + \" \" + doc.lname + \" \" + doc.bio + \" \" + doc.dob + \" \" + doc.gender + \" \" + doc.race + \" \" + doc.region + \" \" + JSON.stringify(doc.misc);\n        index('fname', doc.fname, {\"store\": \"yes\", \"field\": \"fname\"});\n        index('mname', doc.mname, {\"store\": \"yes\", \"field\": \"mname\"});\n        index('lname', doc.lname, {\"store\": \"yes\", \"field\": \"lname\"});\n        index('bio', doc.bio, {\"store\": \"yes\", \"field\": \"bio\"});\n        index('dob', doc.dob, {\"store\": \"yes\", \"field\": \"dob\"});\n        index('gender', doc.gender, {\"store\": \"yes\", \"field\": \"gender\"});\n        index('race', doc.race, {\"store\": \"yes\", \"field\": \"race\"});\n        index('region', doc.region, {\"store\": \"yes\", \"field\": \"region\"});\n        if (doc.misc) {\n            index('misc', JSON.stringify(doc.misc), {\"store\": \"yes\", \"field\": \"misc\"});\n        }\n    }\n        if (doc.dtype == \"Message\") {\n        var total = doc.message + \" \" + doc.platform + \" \" + doc.user + \" \" + doc.message_id + \" \" + doc.reply_to + \" \" + doc.group + \" \" + doc.channel + \" \" + JSON.stringify(doc.mentions);\n        index('message', doc.message, {\"store\": \"yes\", \"field\": \"message\"});\n        index('platform', doc.platform, {\"store\": \"yes\", \"field\": \"platform\"});\n        index('user', doc.user, {\"store\": \"yes\", \"field\": \"user\"});\n        index('message_id', doc.message_id, {\"store\": \"yes\", \"field\": \"message_id\"});\n        index('reply_to', doc.reply_to, {\"store\": \"yes\", \"field\": \"reply_to\"});\n        index('group', doc.group, {\"store\": \"yes\", \"field\": \"group\"});\n        index('channel', doc.channel, {\"store\": \"yes\", \"field\": \"channel\"});\n        if (doc.mentions) {\n            index('mentions', JSON.stringify(doc.mentions), {\"store\": \"yes\", \"field\": \"mentions\"});\n        }\n    }\n    if (doc.dtype == \"SocialMPost\") {\n        var total = doc.content + \" \" + doc.user + \" \" + JSON.stringify(doc.replies) + \" \" + JSON.stringify(doc.media) + \" \" + doc.replyCount + \" \" + doc.repostCount + \" \" + doc.url + \" \" + JSON.stringify(doc.links) + \" \" + JSON.stringify(doc.tags) + \" \" + doc.title + \" \" + doc.group + \" \" + doc.replyTo;\n        index('content', doc.content, {\"store\": \"yes\", \"field\": \"content\"});\n        index('user', doc.user, {\"store\": \"yes\", \"field\": \"user\"});\n        if (doc.replies) {\n            index('replies', JSON.stringify(doc.replies), {\"store\": \"yes\", \"field\": \"replies\"});\n        }\n        if (doc.media) {\n            index('media', JSON.stringify(doc.media), {\"store\": \"yes\", \"field\": \"media\"});\n        }\n        index('replyCount', doc.replyCount, {\"store\": \"yes\", \"field\": \"replyCount\"});\n        index('repostCount', doc.repostCount, {\"store\": \"yes\", \"field\": \"repostCount\"});\n        index('url', doc.url, {\"store\": \"yes\", \"field\": \"url\"});\n        if (doc.links) {\n            index('links', JSON.stringify(doc.links), {\"store\": \"yes\", \"field\": \"links\"});\n        }\n        if (doc.tags) {\n            index('tags', JSON.stringify(doc.tags), {\"store\": \"yes\", \"field\": \"tags\"});\n        }\n        index('title', doc.title, {\"store\": \"yes\", \"field\": \"title\"});\n        index('group', doc.group, {\"store\": \"yes\", \"field\": \"group\"});\n        index('replyTo', doc.replyTo, {\"store\": \"yes\", \"field\": \"replyTo\"});\n    }\n    if (doc.dtype == \"Breach\") {\n        var total = doc.total + \" \" + doc.description + \" \" + doc.url;\n        index('total', doc.total, {\"store\": \"yes\", \"field\": \"total\"});\n        index('description', doc.description, {\"store\": \"yes\", \"field\": \"description\"});\n        index('url', doc.url, {\"store\": \"yes\", \"field\": \"url\"});\n    }\n    if (doc.dtype == \"Email\") {\n        var total = doc.user + \" \" + doc.domain + \" \" + doc.password;\n        index('user', doc.user, {\"store\": \"yes\", \"field\": \"user\"});\n        index('domain', doc.domain, {\"store\": \"yes\", \"field\": \"domain\"});\n        index('password', doc.password, {\"store\": \"yes\", \"field\": \"password\"});\n    }\n    if (doc.dtype == \"EmailMessage\") {\n        var total = doc.body + \" \" + doc.subject + \" \" + doc.to + \" \" + doc.fromF + \" \" + doc.headers + \" \" + JSON.stringify(doc.cc) + \" \" + JSON.stringify(doc.bcc);\n        index('body', doc.body, {\"store\": \"yes\", \"field\": \"body\"});\n        index('subject', doc.subject, {\"store\": \"yes\", \"field\": \"subject\"});\n        index('to', doc.to, {\"store\": \"yes\", \"field\": \"to\"});\n        index('fromF', doc.fromF, {\"store\": \"yes\", \"field\": \"fromF\"});\n        if (doc.cc) {\n            index('cc', JSON.stringify(doc.cc), {\"store\": \"yes\", \"field\": \"cc\"});\n        }\n        if (doc.bcc) {\n            index('bcc', JSON.stringify(doc.bcc), {\"store\": \"yes\", \"field\": \"bcc\"});\n        }\n    }\n    if (doc.dtype == \"User\") {\n        var total = doc.url + \" \" + doc.name + \" \" + doc.platform + \" \" + JSON.stringify(doc.misc) + \" \" + doc.bio;\n        index('url', doc.url, {\"store\": \"yes\", \"field\": \"url\"});\n        index('name', doc.name, {\"store\": \"yes\", \"field\": \"name\"});\n        index('platform', doc.platform, {\"store\": \"yes\", \"field\": \"platform\"});\n        if (doc.misc) {\n            index('misc', JSON.stringify(doc.misc), {\"store\": \"yes\", \"field\": \"misc\"});\n        }\n        index('bio', doc.bio, {\"store\": \"yes\", \"field\": \"bio\"});\n    }\n      if (doc.dtype == \"Phone\") {\n        var total = doc.number + \" \" + doc.carrier + \" \" + doc.status + \" \" + doc.phone_type;\n        index('number', doc.number, {\"store\": \"yes\", \"field\": \"number\"});\n        index('carrier', doc.carrier, {\"store\": \"yes\", \"field\": \"carrier\"});\n        index('phone_type', doc.phone_type, {\"store\": \"yes\", \"field\": \"phone_type\"});\n    }\n    \n    if (doc.dtype == \"Web\") {\n        var total = doc.source;\n        index('source', doc.source, {\"store\": \"yes\", \"field\": \"source\"});\n    }\n    if (doc.dtype == \"Domain\") {\n        var total = doc.recordType + \" \" + doc.record + \" \" + doc.ip;\n        index('recordType', doc.recordType, {\"store\": \"yes\", \"field\": \"recordType\"});\n        index('record', doc.record, {\"store\": \"yes\", \"field\": \"record\"});\n        index('ip', doc.ip, {\"store\": \"yes\", \"field\": \"ip\"});\n    }\n    if (doc.dtype == \"Network\") {\n        var total = doc.org + \" \" + doc.asn.number + \" \" + doc.asn.subnet;\n        index('org', doc.org, {\"store\": \"yes\", \"field\": \"org\"});\n        index('asnNumber', doc.asn.number, {\"store\": \"yes\", \"field\": \"asnNumber\"});\n        index('subnet', doc.asn.subnet, {\"store\": \"yes\", \"field\": \"subnet\"});\n    }\n    if (doc.dtype == \"Host\") {\n        var total = doc.hostname + \" \" + doc.ip + \" \" + JSON.stringify(doc.ports) + \" \" + doc.os;\n        index('hostname', doc.hostname, {\"store\": \"yes\", \"field\": \"hostname\"});\n        index('ip', doc.ip, {\"store\": \"yes\", \"field\": \"ip\"});\n        if (doc.ports) {\n            index('ports', JSON.stringify(doc.ports), {\"store\": \"yes\", \"field\": \"ports\"});\n        }\n        index('os', doc.os, {\"store\": \"yes\", \"field\": \"os\"});\n    }\n    if (doc.dtype == \"Url\") {\n        var total = doc.url + \" \" + doc.content;\n        index('url', doc.url, {\"store\": \"yes\", \"field\": \"url\"});\n        index('content', doc.content, {\"store\": \"yes\", \"field\": \"content\"});\n    }\n\n    \n    \n}"}}}
+#+end_src
+**** Time View
+
+Get documents based on time.
+
+#+begin_src json :tangle ./source/views/time.json
+{"_id":"_design/time","language":"javascript","views":{"dateAdded":{"map":"function (doc) {\n  emit(doc.date_added, doc._id);\n}","reduce":"_count"},"timeline":{"map":"function (doc) {\n  emit(doc._id, doc.date_added);\n}"}}}
+#+end_src
+
+**** Targets View
+
+Get documents based on time.
+
+#+begin_src json :tangle ./source/views/targets.json
+{"_id": "_design/targets", "views": { "actor-targets": {"map": "function (doc) {\n  emit(doc.actor, doc.target);\n}"},"actor-target-count": {"reduce": "_count","map": "function (doc) {\n  emit(doc.actor, 1);\n}"},"target-count": {"reduce": "_sum","map": "function (doc) {\n  emit(doc.target, 1);\n}"}},"language": "javascript"}
+#+end_src
+
+*** Init database for first time
 #+begin_src lisp :tangle ./source/init.lisp :results none
 (in-package :starintel-gserver)
 
+(defun init-views (client database)
+  (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
+    (loop for file in files
+          for jdata = (with-open-file (str file)
+                        (format nil "~a~%" (read-line str)))
+          do (cl-couch:create-document client database jdata))))
 
 (defun init-db ()
   "Create the database, and all map-reduce views with it."
-  (let* ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") (parse-integer (or (uiop:getenv "COUCHDB_PORT") 5984)) :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME"))))
-         (database (or (uiop:getenv "COUCHDB_DATABASE") "starintel")))
-    (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+  (let* ((client (cl-couch:new-couchdb *couchdb-host* *couchdb-port* :scheme (string-downcase "http")))
+         (database *couchdb-default-database*))
+    (cl-couch:password-auth client *couchdb-user* *couchdb-password*)
     (handler-case (cl-couch:get-database client database)
-      (dexador:http-request-not-found () (cl-couch:create-database client database)))))
+      (dexador:http-request-not-found () (cl-couch:create-database client database)))
+    (ignore-errors (init-views client database))))
 
 #+end_src
 * Frontends
@@ -593,8 +695,15 @@ Frontends  are basicly APi services that allow external stuff to interact with t
 ** asdf
 
 ** http-api
+
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :result none :comments both
+(in-package :star.frontends.http-api)
+(defvar *app* (make-instance 'ningle:app))
+#+end_src
+
 *** Couchdb client pool
 #+begin_src lisp :tangle ./source/frontends/http-api.lisp :results none :comments link
+(in-package :star.frontends.http-api)
 (defparameter *couchdb-pool*
   (anypool:make-pool :name "couchdb-connections"
                      :connector (lambda ()

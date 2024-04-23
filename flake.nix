@@ -19,9 +19,10 @@
             openssl
             rabbitmq-c
             libffi
+            sqlite
           ];
           shellHook = ''
-            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi])}
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi pkgs.sqlite])}
           '';
         };
     };

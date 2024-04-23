@@ -11,6 +11,7 @@
   :components   (
                  (:file "package")
                  (:file "gserver-settings" :depends-on ("package"))
+                 (:file "init" :depends-on ("gserver-settings"))
                  (:file "actors" :depends-on ("gserver-settings"))
                  (:file "rabbit" :depends-on ("actors" "gserver-settings"))
                  (:file "frontends/http-api" :depends-on ("gserver-settings"))

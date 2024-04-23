@@ -1,0 +1,1 @@
+{"_id": "_design/targets", "views": { "actor-targets": {"map": "function (doc) {\n  emit(doc.actor, doc.target);\n}"},"actor-target-count": {"reduce": "_count","map": "function (doc) {\n  emit(doc.actor, 1);\n}"},"target-count": {"reduce": "_sum","map": "function (doc) {\n  emit(doc.target, 1);\n}"}},"language": "javascript"}
