@@ -4,11 +4,13 @@
 * Ideas
 The main idea of this project is to have a single, closed source api interface that will be the SINGLE source for starintel data
 
-** TODO allow it to be extended [0/3]
+** TODO allow it to be extended [0/4]
 *** TODO Simple data transform system
 *** TODO Simple map-reduce over rabbitmq
 *** IDEA Move the config vars into a container?
 
+
+** IDEA Transformer map reduce rabbit queue.
 
 
 * Packaging
@@ -121,6 +123,37 @@ Here is the system def for it.
   :depends-on   (#:starintel #:cl-couch #:serapeum  #:alexandria #:cl-rabbit #:sento #:babel #:cl-json :uuid #:anypool
                              #:clack #:ningle #:hunchentoot #:clingon #:slynk))
  #+end_src
+
+ Client system for cli document tool.
+
+ #+begin_src lisp :tangle ./source/star-cli.asd :results none :commentd link
+(asdf:defsystem :star-cli
+  :version      "0.1.0"
+  :description  "Api client for gserver and basic doc tool"
+  :author       " <unseen@flake>"
+  :serial       t
+  :license      "GNU GPL, version 3"
+  :components   ((:file "cli"))
+  :depends-on   (#:starintel #:cl-json #:uuid))
+
+ #+end_src
+
+ Api  Client system
+
+ #+begin_src lisp :tangle ./source/starintel-gserver-client.asd :results none :commentd link
+(asdf:defsystem :starintel-gserver-client
+  :version      "0.1.0"
+  :description  "Api client for gserver."
+  :author       " <unseen@flake>"
+  :serial       t
+  :license      "GNU GPL, version 3"
+  :components   ((:file "api-client"))
+  :depends-on   (#:starintel #:cl-json #:uuid #:dexador #:cl-csv #:cl-csv-data-table #:data-table))
+
+ #+end_src
+
+
+
 *** Namespace setup
 I prefer to have my namespace done in a somewhat hierarchical style.
 
@@ -134,7 +167,7 @@ And a database namespace would be:
 #+begin_src lisp :tangle ./source/frontends/package.lisp :results none :comments link
 (uiop:define-package   :star.frontend.http-api
   (:nicknames :frontend.http-api)
-  (:use       :cl)
+  (:use       :cl :ningle)
   (:documentation "doc"))
 #+end_src
 
@@ -169,7 +202,7 @@ gserver namespace, general top level.
 
 #+begin_src lisp :tangle ./source/package.lisp :results none :comments link
 (uiop:define-package   :starintel-gserver.rabbit
-  (:nicknames :star.rabbit)
+  (:nicknames :star.consumers)
   (:use       :cl)
   (:documentation "Rabitmq namespace")
   (:export
@@ -182,6 +215,20 @@ gserver namespace, general top level.
 #+begin_src lisp :tangle ./source/package.lisp :results none :comments link
 (uiop:define-package   :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
+  (:use       :cl)
+  (:documentation "doc"))
+#+end_src
+
+#+begin_src lisp :tangle ./source/cli.lisp :results none :comments link
+(uiop:define-package   :star-cli
+  (:nicknames :star.cli)
+  (:use       :starintel)
+  (:documentation "doc"))
+
+#+end_src
+#+begin_src lisp :tangle ./source/api-client.lisp :results none :comments link
+(uiop:define-package   :starintel-gserver-client
+  (:nicknames :star.api.client)
   (:use       :cl)
   (:documentation "doc"))
 #+end_src
@@ -252,7 +299,7 @@ install_docker
 (in-package :star)
 (defparameter *couchdb-host* (or (uiop:getenv "COUCHDB_HOST") "127.0.0.1") "The Couchdb host to use.")
 (defparameter *couchdb-port* 5984 "The Couchdb port to use.")
-(defparameter *couchdb-default-database* "starintel" "the default database name to use.")
+(defparameter *couchdb-default-database* (or (uiop:getenv "COUCHDB_DATABASE") "starintel") "the default database name to use.")
 (defparameter *couchdb-target-database* "starintel-targets" "the database to be used for target data.")
 (defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
 (defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
@@ -297,8 +344,14 @@ The sen to package expects us to be in the sento user package.
 (in-package :sento-user)
 (defparameter *sys* nil "the main actor system")
 (defun start-actor-system ()
-  (setf *sys* (make-actor-system))
-)
+  (setf *sys* (make-actor-system '(:dispatchers
+                                   (:pinned (:workers 4 :strategy :random))
+                                   :timeout-timer
+                                   (:resolution 500 :max-size 1000)
+                                   :eventstream
+                                   (:dispatcher-id :shared)
+                                   :scheduler
+                                   (:enabled :true :resolution 100 :max-size 500)))))
  #+end_src
 
 ** Eventing
@@ -354,20 +407,79 @@ Actors need to interact with external services like couchdb.
 
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defun make-api-msg (sender data)
-    (cons data sender))
+  (cons data sender))
+#+end_src
+
+*** Targets
+
+This agent will story the symbol name of the agent and the actor for which they are registered.
+
+#+begin_src lisp :tangle ./source/actors.lisp :results  none :comments link
+(defparameter *actor-index-agent* nil)
+
+(defun start-actor-index (system)
+  (setf *actor-index-agent* (make-agent #'serapeum:dict system)))
+
+(defun register-actor (actor-name actor-symbol)
+  (setf (agent-get *actor-index-agent* #'identity) (serapeum:dict* (agent-get *actor-index-agent*) actor-name actor-symbol)))
+
+(defun get-dest-actor (actor)
+  (serapeum:@  (agent-get *actor-index-agent* #'identity) actor))
+
+(defun route-target (target actor)
+  (let ((dest (get-dest-actor actor)))
+    (format t "got ~a" actor)
+    (when dest
+      (tell dest target))))
 #+end_src
 
 *** Couchdb
+**** Couchdb client agent
+#+begin_src lisp :tangle ./source/actors.lisp :results none :comments :link
+(in-package :sento-user)
+
+(defparameter *couchdb-agent* nil)
+(defun make-couchdb-agent (context client
+                           &key (error-fun nil) (dispatcher-id :shared))
+  (make-agent (lambda ()
+                client)
+                context dispatcher-id))
+
+
+(defun couchdb-agent-client (agent)
+  (agt:agent-get agent #'identity))
+
+
+(defun couchdb-agent-insert (agent database document)
+  (cl-couch:create-document (couchdb-agent-client agent) database document))
+
+(defun couchdb-agent-update (agent database document revision)
+  (cl-couch:create-document (couchdb-agent-client agent) (jsown:to-json
+                                                        (jsown:extend-js (jsown:parse document)
+                                                          ("_rev" revision)))))
+
+(defun couchdb-agent-delete (agent database document-id)
+  (cl-couch:delete-document (couchdb-agent-client agent) database document-id))
+
+(defun couchdb-agent-get-view (agent database ddoc view query-json)
+  (cl-couch:get-view (couchdb-agent-client agent) database ddoc view query-json))
+
+
+(defun start-couchdb-agent (system)
+    (let ((client (couch:new-couchdb star:*couchdb-host* star:*couchdb-port*)))
+      (couch:password-auth client star:*couchdb-user* star:*couchdb-password*)
+      (setf *couchdb-agent* (make-couchdb-agent system client))))
+#+end_src
 **** Client Pooling
 Couchdb is the main database I have used for many projects, I am using [[https://github.com/lost-rob0t/cl-couch][cl-couch]] for the database client. It doesnt use async so I need to setup a resource pools, for that I use anypool.
 
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+#+begin_src lisp  :results none :comments link
 (defparameter *couchdb-pool*
   (anypool:make-pool :name "couchdb-connections"
                      :connector (lambda ()
-                                  (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
-                                    (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+                                  (let ((client (cl-couch:new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
+                                    (cl-couch:password-auth client star:*couchdb-user* star:*couchdb-password*)
                                     client))
 
                      :disconnector (lambda (obj)
@@ -378,7 +490,7 @@ Couchdb is the main database I have used for many projects, I am using [[https:/
 start--pool-monitoring is used for checking the total active count from the couchdb client pool.
 it is only used internally for debugging.
 
-#+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
+#+begin_src lisp  :results none :comments link
 (defvar *my-thread* nil)
 
 (defun start--pool-monitoring ()
@@ -397,26 +509,23 @@ it is only used internally for debugging.
   (when *my-thread*
     (bt:destroy-thread *my-thread*)
     (setf *my-thread* nil)))
-
 #+end_src
 
-**** couchdb-insert actors
+**** couchdb-insert actor
 This actor will insert documents into couchdb.
 
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defparameter *couchdb-inserts* nil)
-(defun start-couchdb-inserts ()
-  (setf *couchdb-inserts* (ac:actor-of *sys*
-                                              :name "*couchdb-inserts*"
-                                              :receive (lambda (msg)
-                                                         (let ((destination-db (uiop:getenv "COUCHDB_DATABASE"))
-                                                               (pool *couchdb-pool*))
+(defun start-couchdb-inserts (system)
+  (setf *couchdb-inserts* (actor-of system
+                                    :name "*couchdb-inserts*"
+                                    :receive (lambda (msg)
+                                               (let ((destination-db star:*couchdb-default-database*))
+                                                 (format t "inserting: ~a" msg)
+                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val (cdr msg) "_id")))
+                                                   (print (couchdb-agent-insert *couchdb-agent* destination-db (jsown:to-json* (cdr msg)))))
+                                                 (force-output))))))
 
-                                                           (with-context (*sys* :pinned)
-                                                             (task-start
-                                                              (lambda ()
-                                                                (anypool:with-connection (client pool)
-                                                                  (cl-couch:create-document client destination-db (cdr msg) :batch "normal"))))))))))
 #+end_src
 **** couchdb-get actor
 This actor is to be used by other actors wishing to interact with the couchdb database.
@@ -424,21 +533,20 @@ The message to be sent MUST be ~(cons sender data)~.
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
 
-(defun start-couchdb-gets ()
-  (setf *couchdb-gets* (ac:actor-of *sys* :name "*couchdb-gets*"
-                                          :receive (lambda (msg)
-                                                     (let ((pool *couchdb-pool*)
-                                                           (db (uiop:getenv "COUCHDB_DATABASE")))
-                                                       (with-context (*sys*)
-                                                         (anypool:with-connection (client pool)
-                                                           (task-async (lambda ()
-                                                                         (handler-case
-                                                                             (cl-couch:get-document client db (car msg))
-                                                                           (dex:http-request-not-found (e) nil)
-                                                                           (dex:http-request-unauthorized (e) nil)))
-                                                                       :on-complete-fun (lambda (doc)
-                                                                                          (reply doc (cdr msg)))))))))))
-
+(defun start-couchdb-gets (system)
+  (setf *couchdb-gets* (ac:actor-of system :name "*couchdb-gets*"
+                                           :receive (lambda (msg)
+                                                      (let ((pool *couchdb-pool*)
+                                                            (db (uiop:getenv "COUCHDB_DATABASE")))
+                                                        (with-context (*sys*)
+                                                          (anypool:with-connection (client pool)
+                                                            (task-async (lambda ()
+                                                                          (handler-case
+                                                                              (cl-couch:get-document client db (car msg))
+                                                                            (dex:http-request-not-found (e) nil)
+                                                                            (dex:http-request-unauthorized (e) nil)))
+                                                                        :on-complete-fun (lambda (doc)
+                                                                                           (reply doc (cdr msg)))))))))))
 #+end_src
 
 **** TODO finish bulk insert actor
@@ -451,41 +559,78 @@ The message to be sent MUST be ~(cons sender data)~.
 ;;                                                                   (pool *couchdb-pool*))
 ;;                                                               (anypool:with-connection (client pool)
 ;;                                                                 (cl-couch:bulk-create-documents client destination-db msg :batch "normal"))))))
-
-
-
 #+end_src
 
 
-#+end_src
 ** IDEA Document Handler
 #+begin_src lisp
 (defun start-document-handler-actor ()
   (defparameter *document-handler* (ac:actor-of *sys*)))
+#+end_src
+** Target Actor
 
+#+begin_src lisp :tangle ./source/actors.lisp :results  none :comment link
+(defparameter *targets* nil)
+(defparameter *target-filter* ())
+(defun get-targets (client database)
+  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
+                                                                                                                                                ("include_docs" "true"))))) "rows")))
+    (when (> 0 (length jdata))
+      (loop for row in jdata
+            for doc = (jsown:val row "doc")
+            for actor = (jsown:val doc "actor")
+            collect (cons actor doc)))))
+
+(defun sumbit-target (target &optional (first-time t))
+  "Create a message for the *targets* actor."
+  (tell *targets*  (if first-time
+                       (cons t target)
+                       (cons nil target))))
+
+(defun first-time-p (msg)
+  (car msg))
+
+(defun target-transient-p (target)
+  (when (jsown:val-safe target "transient")
+    t))
+
+(defun start-target-loader ()
+  (let (targets (get-targets (anypool:with-connection (client *couchdb-pool*)
+                               (get-targets client star:*couchdb-default-database*))))
+    (loop for target in targets
+          do (submit-target target t))))
+
+
+(defun start-target-actor (system)
+  (setf *targets* (actor-of system
+                            :name "*targets*"
+                            :receive (lambda (msg)
+                                       (let* ((target (cdr msg))
+                                              (actor (jsown:val target "actor"))
+                                              (delay (jsown:val-safe target "delay")))
+                                         (print target)
+                                         (when (not (get-dest-actor actor))
+                                           (progn (print "not in system")
+                                                  (star.rabbit:emit-document  "documents" (format nil "actors.~a.new-target" actor)
+                                                                             (jsown:to-json target)
+                                                                             :host star:*rabbit-address*
+                                                                             :port star:*rabbit-port*
+                                                                             :username star:*rabbit-user* :password star:*rabbit-password*)))
+
+                                         (when (and (get-dest-actor actor) (jsown:val target "recurring") (first-time-p msg))
+                                           (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
+                                                                                             (submit-target target nil))
+                                                                  (jsown:val target "target")))
+                                         (if (and (get-dest-actor actor) (not (first-time-p msg)))
+                                             (route-target target actor)))))))
 
 #+end_src
-** STRT Create Target scheduling actor
-It will be an actor that kicks off recurring jobs, will require spec change to include "recurring" field.
+
 
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defparameter *target-timer* nil)
 (defun start-target-timer ()
-   (setf *target-timer* (wt:make-wheel-timer)))
-#+end_src
-
-*** Target Actor
-
-#+begin_src lisp :tangle ./source/actors.lisp :results  none :comment link
-(defparameter *target-actor* nil)
-
-;; (defun start-target-actor (system)
-;;   (setf *target-actor* (ac:actor-of system
-;;                                     :name "*target-actor*"
-;;                                     :receive (lambda (msg)
-;;                                                (with-context (system)
-;;                                                  (let ((resp (task-async (lambda ()
-;;                                                                            (let ((resp (cl-couch:get-view))))))))))))))
+  (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000)))
 #+end_src
 
 
@@ -495,8 +640,12 @@ It will be an actor that kicks off recurring jobs, will require spec change to i
 #+begin_src lisp :tangle ./source/actors.lisp :results none :comments link
 (defun start-actors ()
   (start-actor-system)
+  (start-couchdb-agent *sys*)
+  (start-actor-index *sys*)
+  (start-couchdb-gets *sys*)
+  (start-couchdb-inserts *sys*)
   (start-target-timer)
-  (start-couchdb-inserts))
+  (start-target-actor *sys*))
 #+end_src
 
 In order to compile the actor system must be stop
@@ -504,12 +653,13 @@ In order to compile the actor system must be stop
 * RabbitMQ
 
 ** Macro Wrappers
-The [[https://github.com/lokedhs/cl-rabbit][cl-rabbit]] lib is a bit lower level then I want to work with so I will create a basic macros to make the interface nicer
+The [[https://github.com/lokedhs/cl-rabbit][cl-rabbit]] lib is a bit lower level then I want to work with so I will create a basic macros to make the interface nicer.
 
-The newer sento benchmarks are showing its VERY performent now, so we will actually just create a agent, then use the sento actor system.
+I am not sure if injecting the msg var is a good idea.
+I really would *prefer* if this is considered "fine".
 
 #+begin_src lisp :tangle ./source/rabbit.lisp :results none
-(in-package :star.rabbit)
+(in-package :star.consumers)
 
 (defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
   `(cl-rabbit:with-connection (conn)
@@ -525,20 +675,14 @@ The newer sento benchmarks are showing its VERY performent now, so we will actua
 
          (cl-rabbit:basic-consume conn 1 ,queue-name)
          (loop
-           for msg = (cl-rabbit:envelope/message (cl-rabbit:consume-message conn))
-           do ,@body)))))
+           for result = (cl-rabbit:consume-message conn)
+           for msg = (cl-rabbit:envelope/message result)
+           do (handler-case (progn
+                              ,@body
+                              (cl-rabbit:basic-ack conn 1 (cl-rabbit:envelope/delivery-tag result)))
+                (error (e) (cl-rabbit:basic-nack conn 1 (cl-rabbit:envelope/delivery-tag result) :requeue t))))))))
 
-(defmacro with-rabbit-send ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
-  `(cl-rabbit:with-connection (conn)
-     (let ((socket (cl-rabbit:tcp-socket-new conn)))
-       (cl-rabbit:socket-open socket ,host ,port)
-       (when (and ,username ,password)
-         (cl-rabbit:login-sasl-plain conn ,vhost ,username ,password))
-       (cl-rabbit:with-channel (conn 1)
-
-         ,@body))))
-
-(defun emit-document (queue-name exchange routing-key body &key (properties nil)
+(defun emit-document (exchange routing-key body &key (properties nil)
                                                              (immediate nil)
                                                              (mandatory nil)
                                                              (port star:*rabbit-port*)
@@ -552,8 +696,6 @@ The newer sento benchmarks are showing its VERY performent now, so we will actua
       (when (and username password)
         (cl-rabbit:login-sasl-plain conn vhost username password))
       (cl-rabbit:with-channel (conn 1)
-
-        (cl-rabbit:queue-bind conn 1 :queue queue-name :exchange exchange :routing-key routing-key)
         (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange exchange :mandatory mandatory :immediate immediate :properties properties :body body)))))
 #+end_src
 ** Handle New Document consumers
@@ -572,27 +714,56 @@ Take a rabbimq message and parse it.
 (defun handle-new-document (msg)
   "Handles any new incoming documents and sends it to the appropriate actors."
   (let* ((props (cl-rabbit:message/properties msg))
-         (headers (assoc :HEADERS props :test #'equal))
-         (dtype (when headers (cdr (assoc "dtype" (cdr headers) :test #'equal))))
-         (body (message->string msg)))
-    (cons dtype body)))
+         (dtype (assoc :type props :test #'equal))
+         (body (jsown:parse (message->string msg))))
+    (cons (cdr dtype) body)))
 #+end_src
 
 Start the rabbit new document monitoring thread.
 
-#+begin_src lisp :tangle ./source/rabbit.lisp :results none
+#+begin_src lisp :tangle ./source/rabbit.lisp :results none :comments link
 (defun start-rabbit-document-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
   (loop for i from 0 to 4
         do (bt:make-thread
             (lambda ()
-              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.*")
+              (with-rabbit-recv ("injest" "documents" "topic" "documents.new.#" :auto-delete nil :exclusive nil)
                 (let (
                       (data (handle-new-document msg)))
-                  (sento-user::ask sento-user::*couchdb-inserts* data))))
+                     (format t "document-thread: ~{~a, ~}~%" data)
+                     (force-output)
+                     (when (null (jsown:val-safe (cdr data) "transient"))
+                       (ignore-errors (sento-user::tell sento-user::*couchdb-inserts* data))))))
             ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
 
 
-            :name "*new-documents*")))
+             :name "*new-documents*")))
+
+#+end_src
+** Handle New Target consumers
+
+return the target
+
+#+begin_src lisp :tangle ./source/rabbit.lisp :results  none :comments link
+(defun handle-new-target (msg)
+  "Handles any new incoming documents and sends it to the appropriate actors."
+  (let* ((props (cl-rabbit:message/properties msg))
+         (body (message->string msg)))
+    body))
+    #+end_src
+
+#+begin_src lisp :tangle ./source/rabbit.lisp :results none
+(defun start-rabbit-targets-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
+  (loop for i from 0 to 1
+        do (bt:make-thread
+            (lambda ()
+              (with-rabbit-recv ("injest-targets" "documents" "topic" "documents.new.target.*" :auto-delete nil :exclusive nil)
+                (let ((data (jsown:parse (handle-new-target msg))))
+                  (sento-user::tell sento-user::*targets* (cons 1 data)))
+                  (force-output))
+
+
+
+             :name "*new-targets-consumer*"))))
 #+end_src
 ** quick test functions
 
@@ -686,8 +857,9 @@ Get documents based on time.
          (database *couchdb-default-database*))
     (cl-couch:password-auth client *couchdb-user* *couchdb-password*)
     (handler-case (cl-couch:get-database client database)
-      (dexador:http-request-not-found () (cl-couch:create-database client database)))
-    (ignore-errors (init-views client database))))
+      (dexador:http-request-not-found () (progn
+                                           (cl-couch:create-database client database)
+                                           (init-views client database))))))
 
 #+end_src
 * Frontends
@@ -699,6 +871,42 @@ Frontends  are basicly APi services that allow external stuff to interact with t
 #+begin_src lisp :tangle ./source/frontends/http-api.lisp :result none :comments both
 (in-package :star.frontends.http-api)
 (defvar *app* (make-instance 'ningle:app))
+
+
+#+end_src
+
+*** Api Client
+This object will be used to store the base url path and authentication.
+#+begin_src lisp :tangle ./source/api-client.lisp :results none :comments link
+(in-package :star.api.client)
+(defclass star-client ()
+  ((base-url :initform "http://127.0.0.1:5000" :initarg :base-url :accessor base-url)
+   (headers :initform '(("Accept" . "application/json")
+                        ("Content-Type" . "application/json")) :initarg :headers :accessor star-client-headers))
+  (:documentation "The Starintel gserver api client"))
+
+(defun make-url (client api-url &key (query nil))
+  (if query
+      (quri:merge-uris (quri:make-uri :path api-url :query (quri:url-encode-params query)) (base-url client))
+      (quri:merge-uris (quri:make-uri :path api-url) (base-url client))))
+
+
+(defmacro api-request (client path &key
+                                     (stream nil)
+                                     (query nil)
+                                     (content nil)
+                                     (method :get)
+                                     (force-binary nil)
+                                     (keep-alive t))
+
+
+  `(let ((resp
+           (dexador:request (make-url ,client ,path :query ,query)
+                            :method ,method :headers (star-client-headers ,client) :content ,content :want-stream ,stream :keep-alive ,keep-alive :force-binary ,force-binary)))
+
+
+
+     resp))
 #+end_src
 
 *** Couchdb client pool
@@ -715,46 +923,173 @@ Frontends  are basicly APi services that allow external stuff to interact with t
                                      (setf (cl-couch:couchdb-headers obj) nil))
                      :max-open-count 20))
 #+end_src
-*** STRT Authentication
-
-*** TODO design map api
-*** OKAY Submit documents
-This route take input documents and inserts them into the rabbitmq =new-documents= queue.
-
-
-#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
-(setf (ningle:route *app* "/new/document/:dtype" :method :post)
+*** TODO Authentication
+*** TODO Targets [0/2]
+**** Get Targets for actor
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :results none :comments link
+(setf (ningle:route *app* "/targets/:actor" :method :get)
       #'(lambda (params)
-
-          (let ((dtype  (cdr (assoc :dtype params :test #'string=)))
-                (doc (car (car (lack.request:request-body-parameters (ningle:context :request))))))
-
-            (star.rabbit:emit-document  "new-documents" "documents"  (format nil "documents.new.~a" dtype) doc  :properties (list (list :headers `("dtype" . ,dtype))))
-             (format nil "documents.new.~a" dtype))))
-
-
-
+          (let ((targets (loop for row in (anypool:with-connection (client *couchdb-pool*)
+                                            (jsown:val (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json
+                                                                                                                                                         (jsown:new-js
+                                                                                                                                                           ("include_docs" "true")
+                                                                                                                                                           ("keys" (list (cdr (assoc :actor params :test #'string=)))))))) "rows"))
+                               collect (jsown:val row "doc"))))
+            (jsown:to-json targets))))
 
 #+end_src
 
-#+RESULTS:
-: #<FUNCTION (LAMBDA (PARAMS)) {1001E4405B}>
-
-
-#+begin_src http :comments none
-POST http://0.0.0.0:5000/new/document/person
-
-{"_id":"01HVPX96E8B1FWQCSRFE07Z07R","dataset":"","dtype":"","sources":null,"version":"0.7.1","dateUpdated":1713387117,"dateAdded":1713387117,"fname":"Klaus","mname":"","lname":"Shwabb","bio":"","dob":"","race":"","region":"","misc":null,"etype":"","eid":""}
+***** example usage
+#+begin_src http
+GET 127.0.0.1:5000/targets/fediwatch-users
 #+end_src
 
 #+RESULTS:
 : HTTP/1.1 200 OK
-: Date: Thu, 18 Apr 2024 01:50:21 GMT
+: Date: Mon, 29 Apr 2024 02:39:55 GMT
 : Server: Hunchentoot 1.3.0
 : Transfer-Encoding: chunked
 : Content-Type: text/html; charset=utf-8
 :
-: documents.new.person
+: [{"_id":"foo","_rev":"1-91936a7aa9ea16e64a8c0b584bc6c98a","version":"0.7.2","actor":"fediwatch-users","dataset":"fedi","target":"https://mastodon.social/@dylanabbott","delay":1,"recurring":true}]
+
+
+***** api-client get-targets
+#+begin_src lisp :tangle ./source/api-client.lisp :results none :comments link
+(defmethod get-targets ((client star-client) actor-name)
+  "Get all targets for ACTOR-NAME."
+  (api-request client (format nil "/targets/~a" actor-name)))
+#+end_src
+
+**** TODO Create Target
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :results none :comments link
+(setf (ningle:route *app* "/new/target/:actor" :method :post)
+      #'(lambda (params)
+
+          (let* ((actor  (cdr (assoc :actor params :test #'string=)))
+                 (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
+                 (routing-key (format nil "documents.new.target.~a" actor)))
+            (star.rabbit:emit-document "documents" routing-key body :properties (list (cons :type "target")))
+            body)))
+
+#+end_src
+
+
+#+RESULTS:
+
+#+begin_src http
+POST http://127.0.0.1:5000/new/target/fediwatch-timeline
+
+{"_id":"test-agents1","version":"0.7.2","actor":"fediwatch","dataset":"fedi","target":"https://mastodon.social/@dylanabbott","delay":1,"recurring":true}
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Thu, 09 May 2024 20:03:22 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: {"_id":"test-agents1","version":"0.7.2","actor":"fediwatch","dataset":"fedi","target":"https://mastodon.social/@dylanabbott","delay":1,"recurring":true}
+
+***** Api client new-target
+
+#+begin_src lisp :tangle ./source/api-client.lisp :results none :comments link
+(defmethod new-target ((client star-client) target-doc actor &optional (transient nil))
+  "Insert new target."
+  (if transient
+      (api-request client (format nil "/new/target/~a" actor) :method :post
+                                                              :content (jsown:to-json (jsown:extend-js (jsown:remkey  (jsown:parse target-doc) "options")
+                                                                                        ("transient" t))))
+      (api-request client (format nil "/new/target/~a" actor) :method :post
+                                                              :content (jsown:to-json (jsown:remkey (jsown:parse  target-doc) "options")))))
+#+end_src
+
+****** api client import from csv
+#+begin_src lisp :tangle ./source/api-client.lisp :results none
+(defun read-targets-csv (targets-file)
+  (let ((targets (data-table:select-columns  (cl-csv:get-data-table-from-csv targets-file) (list "dataset" "target" "actor" "recurring" "delay" "options"))))
+    (loop for row in (data-table:rows targets)
+          collect (cons (nth 2 row) (with-output-to-string (str)
+                                       (cl-json:encode-json
+                                        (spec:new-target (nth 0 row)
+                                                         (nth 1 row)
+                                                         (nth 2 row)
+                                                         :options (nth 5 row)
+                                                         :recurring (cond ((string= (string-downcase (nth 3 row)) "true") t)
+                                                                          ((string= (string-downcase (nth 3 row)) "t") t)
+                                                                          ((string= (nth 3 row) "1") t)
+                                                                          ((string= (nth 3 row) "0") nil)
+                                                                          ((string= (string-downcase (nth 3 row)) "nil") nil)
+                                                                          ((string= (string-downcase (nth 3 row)) "false") nil))
+                                                         :delay (nth 4 row)) str))))))
+
+(defmethod import-targets-from-csv ((client star-client) file)
+  (loop for target in (read-targets-csv file)
+        do (new-target client (cdr target) (car target))))
+#+end_src
+
+
+*** TODO design map api
+*** Submit documents
+This route take input documents and inserts them into the rabbitmq =new-documents= queue.
+
+
+#+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
+;; (setf (ningle:route *app* "/new/document/:dtype" :method :post)
+;;       #'(lambda (params)
+
+;;           (let ((dtype  (cdr (assoc :dtype params :test #'string=)))
+;;                 (body (lack.request:request-content (ningle:context :request))))
+
+;;             (star.rabbit:emit-document  "new-documents" "documents"  (format nil "documents.new.~a" dtype) body :properties (list (list :headers `("dtype" . ,dtype))))
+;;             (format nil "documents.new.~a" dtype))))
+
+
+(setf (ningle:route *app* "/new/document/:dtype" :method :post)
+      #'(lambda (params)
+
+          (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
+                 (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
+                 (routing-key (format nil "documents.new.~a" dtype)))
+             (cl-rabbit:with-connection (conn)
+              (let ((socket (cl-rabbit:tcp-socket-new conn)))
+                (cl-rabbit:socket-open socket star:*rabbit-address* star:*rabbit-port*)
+                (cl-rabbit:login-sasl-plain conn "/" star:*rabbit-user* star:*rabbit-password*)
+                (cl-rabbit:with-channel (conn 1)
+                  (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange "documents"  :properties (list (cons :type dtype )) :body body))))
+            (print "got new document")
+            (force-output)
+            body)))
+
+
+
+#+end_src
+
+#+RESULTS:
+: #<FUNCTION (LAMBDA (PARAMS)) {1001E3305B}>
+
+**** example usage
+#+begin_src http :comments none
+POST http://0.0.0.0:5000/new/document/person
+
+{"_id": "6y4q","dataset":"","dtype":"person", "version":"0.7.1","dateUpdated":1713387117,"dateAdded":1713387117,"fname":"Klaus","mname":"","lname":"Shwabb","bio":"","dob":"","race":"","region":"", "etype":"","eid":""}
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Thu, 09 May 2024 16:40:45 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: {"_id": "6y4q","dataset":"","dtype":"person", "version":"0.7.1","dateUpdated":1713387117,"dateAdded":1713387117,"fname":"Klaus","mname":"","lname":"Shwabb","bio":"","dob":"","race":"","region":"", "etype":"","eid":""}
+**** api client submit-document
+#+begin_src lisp :tangle ./source/api-client.lisp :results none :comments link
+(defmethod submit-document ((client star-client) document document-type)
+  "Create a new document"
+  (api-request client (format nil "/new/document/~a" document-type) :method :post :content document))
+#+end_src
 *** TODO Get Documents
 
 #+begin_src lisp :tangle ./source/frontends/http-api.lisp :results none :comments link
@@ -764,22 +1099,21 @@ POST http://0.0.0.0:5000/new/document/person
           (let ((document-id  (cdr (assoc :id params :test #'string=))))
 
             (anypool:with-connection (client *couchdb-pool*)
-              (cl-couch:get-document client "starintel" document-id)))))
+              (cl-couch:get-document client star:*couchdb-default-database* document-id)))))
 #+end_src
 
 **** example usage
 #+begin_src http
-GET 127.0.0.1:5000/document/01HVQ6STFR8TA2G6QC5M9EQJQ4
+GET 127.0.0.1:5000/document/test-agents1
 #+end_src
 
 #+RESULTS:
-: HTTP/1.1 200 OK
-: Date: Fri, 19 Apr 2024 02:11:28 GMT
-: Server: Hunchentoot 1.3.0
-: Transfer-Encoding: chunked
-: Content-Type: text/html; charset=utf-8
-:
-: {"_id":"01HVQ6STFR8TA2G6QC5M9EQJQ4","_rev":"1-f2c89cf0ec0edd4bce904a91e524da9e","dataset":"starintel","dtype":"person","sources":null,"version":"0.7.1","dateUpdated":1713397099,"dateAdded":1713397099,"fname":"john","mname":"","lname":"doe","bio":"","dob":"","race":"","region":"","misc":null,"etype":"","eid":""}
+**** api-client get-document
+#+begin_src lisp :tangle ./source/api-client.lisp :results none :comments link
+(defmethod get-document ((client star-client) document-id)
+  "Get the document by id."
+  (api-request client (format nil "/documents/~a" document-id)))
+#+end_src
 
 *** Start webapp
 #+begin_src lisp :tangle ./source/frontends/http-api.lisp :comments link
@@ -792,7 +1126,7 @@ GET 127.0.0.1:5000/document/01HVQ6STFR8TA2G6QC5M9EQJQ4
 : #S(CLACK.HANDLER::HANDLER
 :    :SERVER :HUNCHENTOOT
 :    :SWANK-PORT NIL
-:    :ACCEPTOR #<BORDEAUX-THREADS-2:THREAD "clack-handler-hunchentoot" {10051142F3}>)
+:    :ACCEPTOR #<BORDEAUX-THREADS-2:THREAD "clack-handler-hunchentoot" {10051132F3}>)
 
 
 * Main Entry
@@ -822,34 +1156,44 @@ i opt to use clingon for cli arg parsing.[fn:2]
 ** Server command handler
 #+begin_src lisp :tangle ./source/main.lisp :results none :comments link
 
-(defun server/handler (cmd)
-  (let ((debugger (clingon:getopt cmd :debugger))
-        (init-file (clingon:getopt cmd :init-value)))
-    (when debugger
-      (slynk:create-server :port 50006 :dont-close t))
-    (load init-file :if-does-not-exist :create)
-    (sento-user::start-actors)
+
+;; (defun server/handler (cmd))
+  ;; (let ((debugger (clingon:getopt cmd :debugger))
+  ;;       (init-file (clingon:getopt cmd :init-value)))
+  ;;   (when debugger
+  ;;     (slynk:create-server :port 50006 :dont-close t))
+  ;;   (load init-file :if-does-not-exist :create)
+  ;;   (sento-user::start-actors)
+  ;;   (star.rabbit::start-rabbit-document-thread :host *rabbit-address* :port *rabbit-port*)
+  ;;   (star.rabbit::start-rabbit-targets-thread :host *rabbit-address* :port *rabbit-port*)
+  ;;   (init-db)
+  ;;   (star.frontends.http-api::start-http-api)
+  ;;   (sento-user::start-target-loader))
 
 
-    (sento-user::start-actors)
-    (star.frontends.http-api::start-http-api)
-    (star.rabbit:start-rabbit-document-thread :host *rabbit-address* :port *rabbit-port*)))
-
-(defun server/command ()
-  "A command to greet someone"
-  (clingon:make-command
-   :name "start"
-   :description "start the server"
-   :version "0.1.0"
-   :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
-   :options (server/options)
-   :handler #'server/handler))
+;; (defun server/command ()
+;;   "A command to greet someone"
+;;   (clingon:make-command
+;;    :name "start"
+;;    :description "start the server"
+;;    :version "0.1.0"
+;;    :authors '("nsaspy <nsaspy@airmail.cc>")
+;;    :license "GPL v3"
+;;    :options (server/options)
+;;    :handler #'server/handler))
 
 
 (defun main ()
-  (clingon:run (server/command))
-  (loop do (sleep 3)))
+  (let ((init-file "init.lisp"))
+    (init-db)
+    (sento-user::start-actors)
+    (star.rabbit::start-rabbit-document-thread :host *rabbit-address* :port *rabbit-port*)
+    (star.rabbit::start-rabbit-targets-thread :host *rabbit-address* :port *rabbit-port*)
+    (load init-file :if-does-not-exist :create)
+    (star.frontends.http-api::start-http-api)
+    (sleep 5))
+    ;(bt:make-thread #'sento-user::start-target-loader :name "*target-loader*"))
+  (loop do (sleep 1)))
 #+end_src
 
 * Tasks
@@ -863,7 +1207,7 @@ xdg-open http://127.0.0.1:15672/#/
 
 #+Name: open couchdb
 #+begin_src shell :async :results none
-xdg-open http://127.0.0.1:5984/_utils
+xdg-open http://127.0.0.1:5983/_utils
 #+end_src
 
 
@@ -886,7 +1230,7 @@ docker run -d -p 5672:5672 -p 15672:15672 -e RABBITMQ_USER=user -e RABBITMQ_PASS
 #+end_src
 
 #+RESULTS: docker.run.rabbitmq
-: 136e9a2898d2fd0d89d9d86ab88e67edeeb8167f2e979b154105256bd2a3726b
+: 136e9a2898d2fd0d89d9d86ab88e67edeeb8167f2e979b153105256bd2a3726b
 
 #+RESULTS: Start Rabbitmq
 
@@ -912,7 +1256,7 @@ make build
 #+end_src
 
 #+RESULTS: build.server
-: b3bc5811a0bf8b118f78669449185d14
+: b3bc5811a0bf8b118f78669339185d13
 
 * Footnotes
 [fn:2] https://github.com/dnaeon/clingon

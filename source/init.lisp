@@ -13,5 +13,6 @@
          (database *couchdb-default-database*))
     (cl-couch:password-auth client *couchdb-user* *couchdb-password*)
     (handler-case (cl-couch:get-database client database)
-      (dexador:http-request-not-found () (cl-couch:create-database client database)))
-    (ignore-errors (init-views client database))))
+      (dexador:http-request-not-found () (progn
+                                           (cl-couch:create-database client database)
+                                           (init-views client database))))))
