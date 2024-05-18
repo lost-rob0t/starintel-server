@@ -9,11 +9,13 @@
   :build-pathname "star-server" ;; shell name
   :entry-point "star::main" ;; thunk
   :components   (
+                 (:file "consumers/package")
+                 (:file "consumers/consumers" :depends-on ("consumers/package"))
                  (:file "package")
                  (:file "gserver-settings" :depends-on ("package"))
                  (:file "init" :depends-on ("gserver-settings"))
                  (:file "actors" :depends-on ("gserver-settings"))
-                 (:file "rabbit" :depends-on ("actors" "gserver-settings"))
+                 (:file "rabbit" :depends-on ("actors" "gserver-settings" "consumers/consumers"))
                  (:file "frontends/http-api" :depends-on ("gserver-settings"))
                  (:file "main" :depends-on ("actors" "rabbit" "package" "gserver-settings" "frontends/http-api")))
 

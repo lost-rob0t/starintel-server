@@ -4,3 +4,4 @@
 ./star-server
 .qlot/*
 ./star-server
+.direnv/*

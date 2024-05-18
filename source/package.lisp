@@ -23,9 +23,8 @@
 ;; Namespace setup:2 ends here
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
-(uiop:define-package   :starintel-gserver.consumers
-  (:nicknames :star.consumers)
-  (:use       :cl #:LPARALLEL #:LPARALLEL.QUEUE)
+(uiop:define-package   :star.rabbit
+  (:use       :cl :star.consumers)
   (:documentation "Rabitmq namespace")
   (:export
    #:start-rabbit-document-thread
@@ -37,22 +36,6 @@
    #:+injest-key+
    #:+update-key+
    #:+targets-key+
-   #:consumer
-   #:consumer-name
-   #:consumer-filter
-   #:consumer-fn
-   #:consumer-take
-   #:consumer-queue
-   #:consumer-channel
-   #:consumer-max-size
-   #:consumer-state
-   #:consumer-stream
-   #:consumer-update-state
-   #:consumer-cleanup
-   #:consumer-update
-   #:consumer-read
-   #:consume
-   #:start-consumer
    #:rabbit-queue-stream
    #:open-stream
    #:close-stream

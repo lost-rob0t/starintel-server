@@ -173,6 +173,7 @@
           do (submit-target target t))))
 
 
+
 (defun start-target-actor (system)
   (setf *targets* (actor-of system
                             :name "*targets*"
@@ -183,11 +184,11 @@
                                          (print target)
                                          (if (not (get-dest-actor actor))
                                              (progn (print "not in system")
-                                                    (star.consumers:emit-document  "documents" (format nil "actors.~a.new-target" actor)
-                                                                                   (jsown:to-json target)
-                                                                                   :host star:*rabbit-address*
-                                                                                   :port star:*rabbit-port*
-                                                                                   :username star:*rabbit-user* :password star:*rabbit-password*)))
+                                                    (star.rabbit:emit-document  "documents" (format nil "actors.~a.new-target" actor)
+                                                                                (jsown:to-json target)
+                                                                                :host star:*rabbit-address*
+                                                                                :port star:*rabbit-port*
+                                                                                :username star:*rabbit-user* :password star:*rabbit-password*)))
 
                                          (if (and (get-dest-actor actor) (jsown:val target "recurring") (first-time-p msg))
                                              (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()

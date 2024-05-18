@@ -50,8 +50,8 @@
     (load init-file :if-does-not-exist :create)
     (init-db)
     (sento-user::start-actors)
-    (star.consumers::start-document-consumer 12 :host *rabbit-address* :port *rabbit-port*)
-    (star.consumers::start-rabbit-targets-thread :host *rabbit-address* :port *rabbit-port*))
+    (star.rabbit::start-documents-consumer 12 :host *rabbit-address* :port *rabbit-port*)
+    (star.rabbit::start-targets-consumer 2 :host *rabbit-address* :port *rabbit-port*))
   ;; (star.frontends.http-api::start-http-api)
 
   (loop for thread in (bt:all-threads)
