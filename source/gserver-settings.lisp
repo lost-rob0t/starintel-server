@@ -3,7 +3,7 @@
 (defparameter *couchdb-host* (or (uiop:getenv "COUCHDB_HOST") "127.0.0.1") "The Couchdb host to use.")
 (defparameter *couchdb-port* 5984 "The Couchdb port to use.")
 (defparameter *couchdb-default-database* (or (uiop:getenv "COUCHDB_DATABASE") "starintel") "the default database name to use.")
-(defparameter *couchdb-target-database* "starintel-targets" "the database to be used for target data.")
+(defparameter *couchdb-auth-database* "starintel-gserver-auth")
 (defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
 (defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
 (defparameter *couchdb-password* (or (uiop:getenv "COUCHDB_PASSWORD") "password") "couchdb user password")
