@@ -208,7 +208,7 @@
 (defun start-targets-consumer (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
   (loop for i from 1 to n
         for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest-targets" :exchange-name "documents" :routing-key +targets-key+)
-        for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "document-consumer" i) :stream stream :fn #'handle-target :test-fn #'insertp)
+        for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "target-consumer" i) :stream stream :fn #'handle-target :test-fn #'insertp)
         do (open-stream stream)
         do (start-consumer consumer)))
 
