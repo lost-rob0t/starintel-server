@@ -12,6 +12,7 @@
                  (:file "consumers/package")
                  (:file "consumers/consumers" :depends-on ("consumers/package"))
                  (:file "package")
+                 (:file "couchdb")
                  (:file "gserver-settings" :depends-on ("package"))
                  (:file "init" :depends-on ("gserver-settings"))
                  (:file "actors" :depends-on ("gserver-settings"))
