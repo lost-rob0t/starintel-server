@@ -1,33 +1,55 @@
 ;; http-api
-
-
-;; [[file:../../source.org::*http-api][http-api:1]]
 (in-package :star.frontends.http-api)
-(defvar *app* (make-instance 'ningle:app))
-;; http-api:1 ends here
 
-;; [[file:../../source.org::*Couchdb client pool][Couchdb client pool:1]]
-(in-package :star.frontends.http-api)
-(defparameter *couchdb-pool*
-  (anypool:make-pool :name "couchdb-connections"
-                     :connector (lambda ()
-                                  (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
-                                    (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
-                                    client))
+(defparameter *app* (make-instance 'ningle:app))
 
-                     :disconnector (lambda (obj)
-                                     (setf (cl-couch:couchdb-headers obj) nil))
-                     :max-open-count 20))
+(defparameter *rabbitmq-conn* nil)
+(defparameter *rabbit-lock* (bt:make-lock "rabbitmq-conn"))
+
+
+(defparameter *couchdb-pool* (anypool:make-pool :name "couchdb-connections"
+                                                :connector (lambda ()
+                                                             (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
+                                                               (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+                                                               client))
+
+                                                :disconnector (lambda (obj)
+                                                                (setf (cl-couch:couchdb-headers obj) nil))
+                                                :max-open-count 20))
+
+(defun connect-rabbitmq ()
+  (setf *rabbitmq-conn* (cl-rabbit:new-connection))
+  (let ((socket (cl-rabbit:tcp-socket-new *rabbitmq-conn*)))
+    (cl-rabbit:socket-open socket star:*rabbit-address* star:*rabbit-port*)
+    (cl-rabbit:login-sasl-plain *rabbitmq-conn* "/" star:*rabbit-user* star:*rabbit-password*)
+    (cl-rabbit:channel-open *rabbitmq-conn* 1)))
+
+
+(defun disconnect-rabbitmq ()
+  (when *rabbitmq-conn*
+    (cl-rabbit:destroy-connection *rabbitmq-conn*)
+    (setf *rabbitmq-conn* nil)))
+
+;; Incase i need it?
+(defmacro with-rabbitmq ((connection) &body body)
+  `(let ((conn ,connection))
+     (bt:with-lock-held (*rabbit-lock*)
+       ,@body)))
+
+
+
+
+
+
+
+
 ;; Couchdb client pool:1 ends here
 
 ;; [[file:../../source.org::*Get Targets for actor][Get Targets for actor:1]]
 (setf (ningle:route *app* "/targets/:actor" :method :get)
       #'(lambda (params)
           (let ((targets (loop for row in (anypool:with-connection (client *couchdb-pool*)
-                                            (jsown:val (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json
-                                                                                                                                                         (jsown:new-js
-                                                                                                                                                           ("include_docs" "true")
-                                                                                                                                                           ("keys" (list (cdr (assoc :actor params :test #'string=)))))))) "rows"))
+                                            (jsown:val (query-view client *couchdb-default-database* "targets" "actor-targets" :include-docs t :key (cdr (assoc :actor params :test #'string=))) "rows"))
                                collect (jsown:val row "doc"))))
             (jsown:to-json targets))))
 ;; Get Targets for actor:1 ends here
@@ -35,28 +57,12 @@
 ;; [[file:../../source.org::*Create Target][Create Target:1]]
 (setf (ningle:route *app* "/new/target/:actor" :method :post)
       #'(lambda (params)
-
-          (let* ((actor  (cdr (assoc :actor params :test #'string=)))
-                 (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
+          (let* ((actor (cdr (assoc :actor params :test #'string=)))
+                 (body (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
                  (routing-key (format nil "documents.new.target.~a" actor)))
-            (cl-rabbit:with-connection (conn)
-              (let ((socket (cl-rabbit:tcp-socket-new conn)))
-                (cl-rabbit:socket-open socket star:*rabbit-address* star:*rabbit-port*)
-                (cl-rabbit:login-sasl-plain conn "/" star:*rabbit-user* star:*rabbit-password*)
-                (cl-rabbit:with-channel (conn 1)
-                  (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange "documents"  :properties (list (cons :type "target" )) :body body))))
+            (with-rabbitmq (*rabbitmq-conn*)
+              (cl-rabbit:basic-publish *rabbitmq-conn* 1 :routing-key routing-key :exchange "documents" :properties (list (cons :type "target")) :body body))
             body)))
-;; Create Target:1 ends here
-
-;; [[file:../../source.org::*Submit documents][Submit documents:1]]
-;; (setf (ningle:route *app* "/new/document/:dtype" :method :post)
-;;       #'(lambda (params)
-
-;;           (let ((dtype  (cdr (assoc :dtype params :test #'string=)))
-;;                 (body (lack.request:request-content (ningle:context :request))))
-
-;;             (star.consumers:emit-document  "new-documents" "documents"  (format nil "documents.new.~a" dtype) body :properties (list (list :headers `("dtype" . ,dtype))))
-;;             (format nil "documents.new.~a" dtype))))
 
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
@@ -65,27 +71,166 @@
           (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
                  (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
                  (routing-key (format nil "documents.new.~a" dtype)))
-            (cl-rabbit:with-connection (conn)
-              (let ((socket (cl-rabbit:tcp-socket-new conn)))
-                (cl-rabbit:socket-open socket star:*rabbit-address* star:*rabbit-port*)
-                (cl-rabbit:login-sasl-plain conn "/" star:*rabbit-user* star:*rabbit-password*)
-                (cl-rabbit:with-channel (conn 1)
-                  (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange "documents"  :properties (list (cons :type dtype )) :body body))))
+            (with-rabbitmq (*rabbitmq-conn*)
+              (cl-rabbit:basic-publish *rabbitmq-conn* 1 :routing-key routing-key :exchange "documents" :properties (list (cons :type dtype)) :body body))
+
             body)))
 ;; Submit documents:1 ends here
 
 ;; [[file:../../source.org::*Get Documents][Get Documents:1]]
 (setf (ningle:route *app* "/document/:id" :method :get)
       #'(lambda (params)
-
           (let ((document-id  (cdr (assoc :id params :test #'string=))))
-
             (anypool:with-connection (client *couchdb-pool*)
               (cl-couch:get-document client star:*couchdb-default-database* document-id)))))
 ;; Get Documents:1 ends here
 
+
+;;;  search
+(setf (ningle:route *app* "/search" :method :get)
+      #'(lambda (params)
+          (let* ((db star:*couchdb-default-database*)
+                 (ddoc "search")
+                 (search-name "fts")
+                 (q (cdr (assoc "q" params :test #'string=)))
+                 (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "25")))
+                 (bookmark (cdr (assoc "bookmark" params :test #'string=)))
+                 (sort (cdr (assoc "sort" params :test #'string=)))
+                 (include-docs (equal (cdr (assoc "include_docs" params :test #'string=)) "true"))
+                 (query (jsown:new-js
+                          ("q" q)
+                          ("limit" limit)
+                          ("include_docs" include-docs))))
+            (when sort
+              (setf (jsown:val query "sort") sort))
+            (when bookmark
+              (setf (jsown:val query "bookmark") bookmark))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (cl-couch:fts-search* client (jsown:to-json query) db ddoc search-name))))))
+
+
+
+;; Views api
+(setf (ningle:route *app* "/documents/messages/by-user" :method :get)
+      #'(lambda (params)
+          (let ((user (cdr (assoc "user" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (messages-by-user client star:*couchdb-default-database*
+                                 :limit limit
+                                 :start-key (when start-key (jsown:parse start-key))
+                                 :end-key (when end-key (jsown:parse end-key))
+                                 :key user
+                                 :descending descending
+                                 :skip skip))))))
+
+(setf (ningle:route *app* "/documents/messages/by-channel" :method :get)
+      #'(lambda (params)
+          (let ((channel (cdr (assoc "channel" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0")))
+                (reduce (equal (cdr (assoc "reduce" params :test #'string=)) "true")))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (by-channel client star:*couchdb-default-database*
+                           :limit limit
+                           :start-key (when start-key (jsown:parse start-key))
+                           :end-key (when end-key (jsown:parse end-key))
+                           :key channel
+                           :descending descending
+                           :skip skip
+                           :reduce reduce))))))
+
+
+(setf (ningle:route *app* "/documents/messages/by-platform" :method :get)
+      #'(lambda (params)
+          (let ((platform (cdr (assoc "platform" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (messages-by-platform client star:*couchdb-default-database*
+                                     :limit limit
+                                     :start-key (when start-key (jsown:parse start-key))
+                                     :end-key (when end-key (jsown:parse end-key))
+                                     :key platform
+                                     :descending descending
+                                     :skip skip))))))
+
+(setf (ningle:route *app* "/documents/messages/by-group" :method :get)
+      #'(lambda (params)
+          (let ((group (cdr (assoc "group" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (messages-by-group client star:*couchdb-default-database*
+                                  :limit limit
+                                  :start-key (when start-key (jsown:parse start-key))
+                                  :end-key (when end-key (jsown:parse end-key))
+                                  :key group
+                                  :descending descending
+                                  :skip skip))))))
+
+(setf (ningle:route *app* "/documents/socialmpost/by-user" :method :get)
+      #'(lambda (params)
+          (let ((user (cdr (assoc "user" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (social-posts-by-user client star:*couchdb-default-database*
+                                     :limit limit
+                                     :start-key (when start-key (jsown:parse start-key))
+                                     :end-key (when end-key (jsown:parse end-key))
+                                     :key user
+                                     :descending descending
+                                     :skip skip))))))
+
+(setf (ningle:route *app* "/dataset-size" :method :get)
+      #'(lambda (params)
+          (let ((dataset (cdr (assoc "dataset" params :test #'string=))))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (dataset-size client star:*couchdb-default-database*
+                             :key dataset
+                             :reduce t))))))
+
 ;; [[file:../../source.org::*Start webapp][Start webapp:1]]
-                                        ;(couchdb-middleware *app*)
+(defparameter *server* (lack:builder
+                        :accesslog
+                        *app*))
+
 (defun start-http-api ()
-  (clack:clackup *app* :address star:*http-api-address* :port star:*http-api-port*))
+  (handler-case
+      (progn
+        (connect-rabbitmq)
+        (clack:clackup *server*
+                       :server :hunchentoot
+                       :address star:*http-api-address*
+                       :port star:*http-api-port*))))
+;; (error (e)
+;;   (progn
+;;     (cl-rabbit:channel-close *rabbitmq-conn* 1)
+;;     (disconnect-rabbitmq)))
+
+
 ;; Start webapp:1 ends here
