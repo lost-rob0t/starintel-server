@@ -30,8 +30,8 @@
 
 ;; TODO use query view
 (defun get-targets* (client database &rest actors)
-  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                 ("keys" actors) ("include_docs" "true"))))) "rows")))
+  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "by_actor" (jsown:to-json (jsown:new-js
+                                                                                                                                            ("keys" actors) ("include_docs" "true"))))) "rows")))
     (when (> 0 (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
