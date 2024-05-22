@@ -20,6 +20,41 @@
    #:*couchdb-user*
    #:*couchdb-password*
    #:*couchdb-scheme*))
+
+
+(uiop:define-package   :star.databases.couchdb
+  (:use       :cl-couch :cl :star #:lparallel)
+  (:export :init-db
+   :init-views
+           :get-targets*
+   :get-view-docs
+           :query-view
+   :map-view-results
+           :get-neighbors
+   :search-fts
+           :sort-docs-by-date
+   :messages-by-user
+           :messages-by-platform
+   :messages-by-group
+           :social-posts-by-user
+   :social-posts-by-group
+           :by-channel
+   :export-by-dataset*
+           :count-by-dtype
+   :dataset-size
+           :total-documents-since
+   :orgs-by-country
+           :orgs-by-name
+   :persons-by-name
+           :persons-by-region
+   :relations-edges
+           :relations-incoming-count
+   :relations-outgoing-count
+           :targets-actor-counts
+   :targets-by-actor
+           :targets-target-count
+   :users-by-platform)
+  (:documentation "doc"))
 ;; Namespace setup:2 ends here
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
