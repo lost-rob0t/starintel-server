@@ -1,0 +1,246 @@
+#+title: Http docs
+
+* Http Api Docs
+** Search
+
+*** Search Documents
+
+Example usage
+
+#+begin_src http
+GET http://127.0.0.1:5000/search?q=content:"hello"&limit=10&include_docs=true
+Accept: application/json
+#+end_src
+
+earches for documents matching the specified query.
+
+Parameters:
+- q: (required) The search query string
+- limit: (optional) Maximum number of results to return (default 25)
+- bookmark: (optional) A bookmark from a previous search to start from for pagination
+- sort: (optional) Field(s) to sort the results by
+- include_docs: (optional) If "true", includes the full document content in the results
+
+Returns:
+A JSON array of matching documents, with the following fields:
+- id: The document ID
+- order: An array with the sort value (if specified) and relevance score
+- fields: An object with the stored field values (if include_docs is not "true")
+- doc: The full document (if include_docs is "true")
+
+The response also includes:
+- total_rows: The total number of matching documents
+- bookmark: A bookmark that can be used for pagination of subsequent requests
+** Targets
+*** Get Targets for Actor
+
+Example usage
+
+#+begin_src http
+GET http://127.0.0.1:5000/targets/01731aa61e40224a127259541c8d71da
+Accept: application/json
+#+end_src
+
+Retrieves the targets for the specified actor.
+
+** Documents
+
+*** Create Target
+
+Example usage
+
+#+begin_src http
+POST http://127.0.0.1:5000/new/target/01731aa61e40224a127259541c8d71da
+Content-Type: application/json
+
+{
+  "_id": "example_target_id",
+  "dataset": "example_dataset",
+  "dtype": "target",
+  "sources": [],
+  "version": "0.7.2",
+  "date_updated": 1621234567,
+  "date_added": 1621234567,
+  "actor": "01731aa61e40224a127259541c8d71da",
+  "target": "example_target",
+  "delay": 0,
+  "recurring": false,
+  "options": []
+}
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Mon, 20 May 2024 09:58:43 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: {  "_id": "example_target_id",  "dataset": "example_dataset",  "dtype": "target",  "sources": [],  "version": "0.7.2",  "date_updated": 1621234567,  "date_added": 1621234567,  "actor": "01731aa61e40224a127259541c8d71da",  "target": "example_target",  "delay": 0,  "recurring": false,  "options": []}
+
+Creates a new target document for the specified actor.
+
+*** /new/document/<dtype>
+
+Example usage
+
+#+begin_src http
+POST http://127.0.0.1:5000/new/document/person
+Content-Type: application/json
+
+
+{
+  "_id": "example_person_id",
+  "dataset": "example_dataset",
+  "dtype": "person",
+  "sources": ["manual"],
+  "version": "0.7.2",
+  "date_updated": 1621234567,
+  "date_added": 1621234567,
+  "fname": "John",
+  "mname": "Doe",
+  "lname": "Smith",
+  "bio": "Example bio",
+  "dob": "1990-01-01",
+  "race": "Example race",
+  "region": "Example region",
+  "misc": [""],
+  "etype": "person",
+  "eid": "example_eid"
+}
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Mon, 20 May 2024 10:11:37 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: {  "_id": "example_person_id",  "dataset": "example_dataset",  "dtype": "person",  "sources": ["manual"],  "version": "0.7.2",  "date_updated": 1621234567,  "date_added": 1621234567,  "fname": "John",  "mname": "Doe",  "lname": "Smith",  "bio": "Example bio",  "dob": "1990-01-01",  "race": "Example race",  "region": "Example region",  "misc": [""],  "etype": "person",  "eid": "example_eid"}
+
+Creates a new document speficied by dtype
+
+Note: it is emitted onto the message queue from processing
+
+*** /document
+Example usage
+
+#+begin_src http
+GET http://127.0.0.1:5000/document/example_document_id
+Accept: application/json
+#+end_src
+
+Retrieves the document with the specified ID.
+
+*** Messages
+**** /documents/messages-by-user
+Retrieve messages by user.
+Example usage:
+#+begin_src http
+GET http://127.0.0.1:5000/documents/messages/by-user?user=john_doe&limit=10&descending=true
+#+end_src
+
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Wed, 22 May 2024 00:31:04 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: []
+
+
+Returns messages for the specified user, sorted by the dateAdded field in descending order.
+Parameters:
++ user (required): The user to retrieve messages for.
++ limit (optional, default 50): The maximum number of messages to return.
++ start_key (optional): The starting key for the range of messages to return.
++ end_key (optional): The ending key for the range of messages to return.
++ descending (optional, default false): Whether to return messages in descending order.
++ skip (optional, default 0): The number of messages to skip.
+
+The start_key and end_key parameters should be valid JSON strings representing the key range.
+The response is a JSON array of message documents.
+Note: Refer to the Starintel specification for example message objects.
+**** /documents/messages/by-platform
+Retrieve messages by platform.
+#+begin_src http
+GET http://127.0.0.1:5000/documents/messages/by-platform?platform=discord&limit=10&descending=true
+#+end_src
+#+RESULTS:
+: HTTP/1.1 200 OK
+: Date: Wed, 22 May 2024 00:34:38 GMT
+: Server: Hunchentoot 1.3.0
+: Transfer-Encoding: chunked
+: Content-Type: text/html; charset=utf-8
+:
+: [{"_id":"fce27626f2e2ed302b06fea3662e825f","_rev":"1-6992719df874825ab365e43d887391d4","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906816,"dateAdded":1715906816180,"content":"they aren't configured to use the fonts","platform":"discord","user":"__gerg","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Nix/NixOS (unofficial)","channel":"general","mentions":[]},{"_id":"fe7e1194359777b7e8b1dbd8b9477d04","_rev":"1-e82025832a08752c9523ffb6ffec0bf7","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906770,"dateAdded":1715906770880,"content":"I'm aware","platform":"discord","user":"amyipdev","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Nix/NixOS (unofficial)","channel":"Unable to get persistence to actually keep files, cannot use system as a result","mentions":[]},{"_id":"fe209ae93b7a332d98de3c348125b972","_rev":"1-8c017c1b61d9598996e5dd7d68076978","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906654,"dateAdded":1715906654285,"content":"sleep is a scam","platform":"discord","user":"sudzsalmon","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Daydream Society","channel":"general","mentions":[]},{"_id":"fc497f99907ac33142f62e2b77037f8f","_rev":"1-628005d952267d533920e0b8f7c2cddc","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906622,"dateAdded":1715906622575,"content":"Where would she have been upset? A vbulletin forum?","platform":"discord","user":"evilmofo","isReply":[],"media":[],"messageId":"","replyTo":"","group":"DEFCON","channel":"linecon","mentions":[]},{"_id":"ff7c388068fa855cc9b6a60f1b86fde7","_rev":"1-6487f93c484d147ed9692b9ae89c40f8","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906603,"dateAdded":1715906603427,"content":"sinope \u00BB one of the things I like about his channel is his earnest and respectful attitude towards the subject matter","platform":"discord","user":"/v/craft chat","isReply":[],"media":[],"messageId":"","replyTo":"","group":"s.s. /v/ minecraft","channel":"gaem-chat","mentions":[]},{"_id":"ff397ff6b42338692fba48edebc5bb82","_rev":"1-e09925814e5c5ddeb93b2c34e4ed525c","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906398,"dateAdded":1715906398133,"content":"LAYS\n\nFentanyl flavored","platform":"discord","user":"canislycora","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Bluelight.org","channel":"\uD83D\uDDEF\u2502the-lounge","mentions":[]},{"_id":"ff0e7a39d43a844d106bf88eb11722e4","_rev":"1-e9364ec4a3c6b0f73d60ce600b3446d8","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906393,"dateAdded":1715906393579,"content":"my next question I guess is, is the extension list automatically updated or manually maintained?","platform":"discord","user":"ashtefere","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Nix/NixOS (unofficial)","channel":"general","mentions":[]},{"_id":"fdea3948045b94c0ec4db2798d30e111","_rev":"1-706d7e642854330a4f8b3d7646d93182","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906326,"dateAdded":1715906326159,"content":"**Designated Bottomfragger** (76561198137734744) > lightbringer was wild","platform":"discord","user":"Bob's All Gamemodes","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Bob's BattleBit Community","channel":"all-gamemodes-chat","mentions":[]},{"_id":"fc5802e3366cd7b6a5e318cae204b545","_rev":"1-7202ff9567315331ee6b194e14868a58","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906199,"dateAdded":1715906199246,"content":"i choose to believe the singer from Tool personally chewed me out through pirated Napster files","platform":"discord","user":"specksgalore","isReply":[],"media":[],"messageId":"","replyTo":"","group":"DEFCON","channel":"linecon","mentions":[]},{"_id":"fe0b44fcc54f1ae41ca7a0821aeee620","_rev":"1-ebb09652814a75830f290db94f555737","dataset":"starintel","dtype":"message","sources":["discordwatch"],"version":"0.7.2","dateUpdated":1715906148,"dateAdded":1715906148747,"content":"the only place that I know how to affect sound that you're playing with sunvox, is in the sunvox project.","platform":"discord","user":"polylokh_39446","isReply":[],"media":[],"messageId":"","replyTo":"","group":"Nim","channel":"gamedev","mentions":[]}]
+Returns messages for the specified platform, sorted by the dateAdded field in descending order.
+Parameters:
+
++ platform (required): The platform to retrieve messages for.
++ limit (optional, default 50): The maximum number of messages to return.
++ start_key (optional): The starting key for the range of messages to return.
++ end_key (optional): The ending key for the range of messages to return.
++ descending (optional, default false): Whether to return messages in descending order.
++ skip (optional, default 0): The number of messages to skip.
+
+The start_key and end_key parameters should be valid JSON strings representing the key range.
+The response is a JSON array of message documents.
+Note: Refer to the Starintel specification for example message objects.
+**** /documents/messages/by-group
+Example usage
+
+#+begin_src http
+GET http://127.0.0.1:5000/documents/messages/by-group?group=<group-name>&limit=<limit>&start_key=<start-key>&end_key=<end-key>&descending=<true|false>&skip=<skip>
+#+end_src
+
+
+Parameters:
+- group (required): The group name to filter messages by.
+- limit (optional, default: 50): The maximum number of messages to return.
+- start_key (optional): The starting key for the range of messages to return.
+- end_key (optional): The ending key for the range of messages to return.
+- descending (optional, default: false): Whether to return messages in descending order.
+- skip (optional, default: 0): The number of messages to skip from the beginning.
+
+Response:
+The response is a JSON array containing the matching message documents, sorted by the specified criteria. Each message document follows the starintel message spec format. Refer to the starintel-spec documentation for detailed information about the message document structure
+*** SocialMPosts
+**** /documents/socialmpost/by-user
+Example usage
+
+#+begin_src http
+GET http://127.0.0.1:5000/documents/socialmpost/by-user?user=<username>&limit=<limit>&start_key=<start-key>&end_key=<end-key>&descending=<true|false>&skip=<skip>
+#+end_src
+
+
+Parameters:
+- user (required): The username to filter social posts by.
+- limit (optional, default: 50): The maximum number of social posts to return.
+- start_key (optional): The starting key for the range of social posts to return.
+- end_key (optional): The ending key for the range of social posts to return.
+- descending (optional, default: false): Whether to return social posts in descending order.
+- skip (optional, default: 0): The number of social posts to skip from the beginning.
+
+Response:
+The response is a JSON array containing the matching socialmpost documents, sorted by the specified criteria. Each social post document follows the starintel social post spec format. Refer to the starintel-spec documentation for detailed information about the social post document structure.
+*** Neighbors
+**** Get Neighbors
+
+Example usage
+
+#+begin_src http
+POST http://127.0.0.1:5000/relations/neighbors
+Content-Type: application/json
+
+{
+  "docs": ["doc_id1", "doc_id2", "doc_id3"],
+  "n": 2
+}
+#+end_src
+
+#+RESULTS:
+
+Retrieves the neighbors of the specified documents up to the given level.ttp Api Docs
