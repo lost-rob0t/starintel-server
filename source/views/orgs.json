@@ -1,0 +1,1 @@
+{"_id":"_design/orgs","language":"javascript","views":{"by_name":{"map":"function(doc) { if (doc.dtype === 'org') { emit(doc.name, doc); } }"},"by_country":{"map":"function(doc) { if (doc.dtype === 'org') { emit(doc.country, doc); } }"}}}

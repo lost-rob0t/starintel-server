@@ -1,0 +1,1 @@
+{"_id":"_design/persons","language":"javascript","views":{"by_name":{"map":"function(doc) { if (doc.dtype === 'person') { emit([doc.lname, doc.fname], doc); } }"},"by_region":{"map":"function(doc) { if (doc.dtype === 'person') { emit(doc.region, doc); } }"}}}
