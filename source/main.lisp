@@ -45,14 +45,13 @@
 
 (defun main ()
   (let ((init-file "init.lisp"))
-    (sento-user::start-actor-system)
-    (setf lparallel:*kernel* (lparallel:make-kernel 12))
+    (setf lparallel:*kernel* (lparallel:make-kernel (serapeum:count-cpus)))
     (load init-file :if-does-not-exist :create)
-    (init-db)
-    (sento-user::start-actors)
-    (star.rabbit::start-documents-consumer 12 :host *rabbit-address* :port *rabbit-port*)
-    (star.rabbit::start-targets-consumer 2 :host *rabbit-address* :port *rabbit-port*))
-  ;; (star.frontends.http-api::start-http-api)
+    (star.databases.couchdb:init-db)
+    (star.actors:start-actors)
+    (star.rabbit::start-documents-consumer 1 :host *rabbit-address* :port *rabbit-port*)
+    (star.rabbit::start-targets-consumer 2 :host *rabbit-address* :port *rabbit-port*)
+    (star.frontends.http-api::start-http-api))
 
   (loop for thread in (bt:all-threads)
 

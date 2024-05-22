@@ -3,7 +3,6 @@
   (:nicknames :star)
   (:use       :cl)
   (:export
-   #:init-db
    #:*rabbit-password*
    #:*rabbit-user*
    #:*rabbit-port*
@@ -59,7 +58,7 @@
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
 (uiop:define-package   :star.rabbit
-  (:use       :cl :star.consumers)
+  (:use       :cl :star.consumers :sento.actor)
   (:documentation "Rabitmq namespace")
   (:export
    #:start-rabbit-document-thread
@@ -81,9 +80,22 @@
    #:test-send))
 ;; Namespace setup:3 ends here
 
+(uiop:define-package   :star.actors
+  (:use       :cl :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+  (:documentation "doc")
+  (:export
+   #:register-actor
+   #:*targets*
+   #:*target-filter*
+   #:*couchdb-gets*
+   #:*couchdb-inserts*
+   #:*sys*
+   #:start-actors))
+
+
 ;; [[file:../source.org::*Namespace setup][Namespace setup:4]]
 (uiop:define-package   :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
-  (:use       :cl)
+  (:use       :cl :ningle :anypool :star.databases.couchdb :star)
   (:documentation "doc"))
 ;; Namespace setup:4 ends here

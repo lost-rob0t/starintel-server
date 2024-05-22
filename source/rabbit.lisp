@@ -132,7 +132,6 @@
     (cl-rabbit:basic-consume connection 1 (rabbit-stream-queue-name stream))
     (setf (rabbit-stream-open-p stream) t)))
 
-()
 
 
 (defmethod close-stream ((stream rabbit-queue-stream))
@@ -191,7 +190,7 @@
   (let ((connection (rabbit-stream-connection (consumer-stream self)))
         (body (jsown:parse (car message)))
         (msg-key (cdr message)))
-    (sento-user::tell sento-user::*targets* (cons 1 body))
+    (tell star.actors:*targets* (cons 1 body))
     (cl-rabbit:basic-ack connection 1 msg-key)))
 
 ;; Handle New Target consumers:1 ends here

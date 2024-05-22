@@ -24,6 +24,8 @@
 (defparameter *rabbit-user* "guest" "the username for rabbimq")
 (defparameter *rabbit-password* "guest" "the password for the rabbitmq user.")
 
-(eval-when (:execute)
-  )
+(eval-when (:execute))
+
 ;; Authentication:1 ends here
+;; TODO add hooks
+(defparameter *actors-start-hook* nil)

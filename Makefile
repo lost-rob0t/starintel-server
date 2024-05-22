@@ -16,7 +16,7 @@ build:
 	$(LISP)	--non-interactive \
 		--load source/starintel-gserver.asd \
 		--eval '(ql:quickload :starintel-gserver)' \
-		--eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'starintel-gserver::main :executable t :compression t)"
+		--eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t :compression t)"
 install:
 	cp star-server /usr/local/bin
 
