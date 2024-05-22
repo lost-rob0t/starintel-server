@@ -1,5 +1,5 @@
 ;; [[file:../source.org::*Actor system setup][Actor system setup:1]]
-(in-package :sento-user)
+(in-package :star.actors)
 (defparameter *sys* nil "the main actor system")
 (defun start-actor-system ()
   (setf *sys* (make-actor-system '(:dispatchers
@@ -66,7 +66,6 @@
       (tell dest target))))
 ;; Targets:1 ends here
 
-(in-package :sento-user)
 
 (defparameter *couchdb-agent* nil)
 (defun make-couchdb-agent (context client

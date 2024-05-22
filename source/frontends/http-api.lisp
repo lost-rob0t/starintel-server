@@ -49,7 +49,7 @@
 (setf (ningle:route *app* "/targets/:actor" :method :get)
       #'(lambda (params)
           (let ((targets (loop for row in (anypool:with-connection (client *couchdb-pool*)
-                                            (jsown:val (query-view client *couchdb-default-database* "targets" "actor-targets" :include-docs t :key (cdr (assoc :actor params :test #'string=))) "rows"))
+                                            (jsown:val (anypool:with-connection (client *couchdb-pool*) (query-view client *couchdb-default-database* "targets" "by_actor" :include-docs t :key (cdr (assoc :actor params :test #'string=)))) "rows"))
                                collect (jsown:val row "doc"))))
             (jsown:to-json targets))))
 ;; Get Targets for actor:1 ends here

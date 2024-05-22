@@ -12,6 +12,40 @@
 
 
 
+(defun as-json (object &key (format-fn #'str:camel-case))
+  (let ((json-obj (jsown:empty-object)))
+    (loop for slot in (mapcar #'closer-mop:slot-definition-name
+                              (closer-mop:class-slots (class-of object)))
+          for value = (slot-value object slot)
+          do (setf (jsown:val json-obj (funcall format-fn (string slot)))
+                   (typecase value
+                     (string value)
+                     (integer value)
+                     (list (jsown:to-json value))
+                     (t (to-json value)))))
+    json-obj))
+
+
+
+
+(defun from-json (json-obj class-name)
+  (let* ((object (make-instance class-name))
+         (class (class-of object)))
+    (loop for slot in (sb-mop:class-slots class)
+          for slot-name = (sb-mop:slot-definition-name slot)
+          for slot-type = (sb-mop:slot-definition-type slot)
+          for key = (string-downcase (string slot-name))
+          for value = (jsown:val-safe json-obj key)
+          when value
+            do (setf (slot-value object slot-name)
+                     (cond
+                       ((eq slot-type 'list) value)
+                       ((eq slot-type 'string) value)
+                       ((eq slot-type 'integer) value)
+                       (t (from-json value (eval slot-type))))))
+    object))
+
+
 
 (defun init-views (client database)
   (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
@@ -23,10 +57,11 @@
 (defun init-db ()
   "Create the database, and all map-reduce views with it."
   (let ((database *couchdb-default-database*))
-    (handler-case (cl-couch:get-database client database)
-      (dexador:http-request-not-found (e) (progn
-                                            (cl-couch:create-database client database)
-                                            (init-views client database))))))
+    (anypool:with-connection (client *couchdb-pool*)
+      (handler-case (cl-couch:get-database client database)
+        (dexador:http-request-not-found (e) (progn
+                                              (cl-couch:create-database client database)
+                                              (init-views client database)))))))
 
 ;; TODO use query view
 (defun get-targets* (client database &rest actors)
