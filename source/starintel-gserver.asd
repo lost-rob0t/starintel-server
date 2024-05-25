@@ -9,6 +9,8 @@
   :build-pathname "star-server" ;; shell name
   :entry-point "star::main" ;; thunk
   :components   (
+                 (:file "producers/package")
+                 (:file "producers/producers")
                  (:file "consumers/package")
                  (:file "consumers/consumers")
                  (:file "package")

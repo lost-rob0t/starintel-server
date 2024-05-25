@@ -18,7 +18,11 @@
    #:*couchdb-port*
    #:*couchdb-user*
    #:*couchdb-password*
-   #:*couchdb-scheme*))
+   #:*couchdb-scheme*
+   #:main
+   #:reload
+   #:start-debugger
+   #:*slynk-port*))
 
 
 (uiop:define-package   :star.databases.couchdb

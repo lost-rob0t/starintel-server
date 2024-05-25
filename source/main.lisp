@@ -42,8 +42,18 @@
 ;;    :options (server/options)
 ;;    :handler #'server/handler))
 
+(defun reload ()
+  (ql:quickload :starintel-gserver))
+
+(defun start-debugger ()
+  (ql:quickload '("slynk" "bordeaux-threads"))
+  (format t "Creating slynk server on port: ~a" star:*slynk-port*)
+  (slynk:create-server :port star:*slynk-port*))
+
+
 
 (defun main ()
+
   (let ((init-file "init.lisp"))
     (setf lparallel:*kernel* (lparallel:make-kernel (serapeum:count-cpus)))
     (load init-file :if-does-not-exist :create)
