@@ -19,3 +19,6 @@
 [submodule "deps/cms-ulid"]
 	path = deps/cms-ulid
 	url = https://gitlab.com/colinstrickland/cms-ulid.git
+[submodule "deps/nhooks"]
+	path = deps/nhooks
+	url = https://github.com/atlas-engineer/nhooks.git
