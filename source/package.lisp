@@ -81,7 +81,22 @@
    #:rabbit-consumer
    #:transient-p
    #:test-make-doc
-   #:test-send))
+   #:test-send
+   #:consumer-read
+   #:rabbit-stream-exchange
+   #:rabbit-exchange-type
+   #:rabbit-exchange-durable-p
+   #:rabbit-stream-routing-key
+   #:rabbit-stream-user
+   #:rabbit-stream-password
+   #:rabbit-stream-vhost
+   #:rabbit-stream-port
+   #:rabbit-stream-host
+   #:rabbit-stream-queue-durable-p
+   #:rabbit-stream-queue-name
+   #:rabbit-stream-connection
+   #:rabbit-stream-channel
+   #:rabbit-stream-open-p))
 ;; Namespace setup:3 ends here
 
 (uiop:define-package   :star.actors
