@@ -212,6 +212,7 @@
              (anypool:with-connection (client *couchdb-pool*)
                (dataset-size client star:*couchdb-default-database*
                              :key dataset
+                             :include-docs nil
                              :reduce t))))))
 
 (defparameter *server* (lack:builder
