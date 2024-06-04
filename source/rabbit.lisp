@@ -153,7 +153,7 @@
   (:documentation "Custome consumer class for rabbitmq"))
 
 (defmethod consumer-read ((consumer rabbit-consumer))
-  (with-consumer-lock (consumer)
+  (star.consumers:with-consumer-lock (consumer)
     (let ((msg (stream-read (consumer-stream consumer))))
       (cons (babel:octets-to-string (cl-rabbit:message/body (cl-rabbit:envelope/message msg)) :encoding :utf-8)
             (cl-rabbit:envelope/delivery-tag msg)))))
