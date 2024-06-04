@@ -125,7 +125,7 @@
     (when (or username password)
       (cl-rabbit:login-sasl-plain connection (rabbit-stream-vhost stream) username password))
     (cl-rabbit:channel-open connection 1)
-    ;; (cl-rabbit:basic-qos connection 1 :prefetch-count 1)
+    (cl-rabbit:basic-qos connection 1 :prefetch-count 200)
     (cl-rabbit:exchange-declare connection 1 (rabbit-stream-exchange stream) (rabbit-exchange-type stream) :durable (rabbit-exchange-durable-p stream))
     (cl-rabbit:queue-declare connection 1 :queue (rabbit-stream-queue-name stream) :durable (rabbit-stream-queue-durable-p stream))
     (cl-rabbit:queue-bind connection 1 :queue (rabbit-stream-queue-name stream) :exchange (rabbit-stream-exchange stream) :routing-key (rabbit-stream-routing-key stream))
