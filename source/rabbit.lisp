@@ -196,6 +196,7 @@
 
 
 (defun start-documents-consumer (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
+  (log:info (format nil "Creating ~a injest threads." n))
   (loop for i from 1 to n
         for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest" :exchange-name "documents" :routing-key +injest-key+)
         for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "document-consumer" i) :stream stream :fn #'handle-document :test-fn #'insertp)
@@ -203,6 +204,7 @@
         do (start-consumer consumer)))
 
 (defun start-targets-consumer (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
+  (log:info (format nil "Creating ~a target injest threads." n))
   (loop for i from 1 to n
         for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest-targets" :exchange-name "documents" :routing-key +targets-key+)
         for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "target-consumer" i) :stream stream :fn #'handle-target :test-fn #'insertp)

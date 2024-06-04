@@ -60,6 +60,7 @@
     (anypool:with-connection (client *couchdb-pool*)
       (handler-case (cl-couch:get-database client database)
         (dexador:http-request-not-found (e) (progn
+                                              (log:info "Creating database: ~a" database)
                                               (cl-couch:create-database client database)
                                               (init-views client database)))))))
 
