@@ -166,13 +166,11 @@
         (connection (rabbit-stream-connection (consumer-stream self)))
         (document (car message))
         (msg-key (cdr message)))
-    (progn
-      (couch:password-auth client "admin" "password")
-      (handler-case (couch:create-document client "starintel-gserver" document)
-        (dex:http-request-conflict (e) nil))
-
-      (cl-rabbit:basic-ack connection 1 msg-key))))
-
+    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+      (handler-case (progn (couch:create-document client "starintel-gserver" document)
+                           (tell star.actors:*pattern-actor* (jsown:parse document)))
+        (dex:http-request-conflict (e) nil)))
+    (cl-rabbit:basic-ack connection 1 msg-key)))
 
 
 (defun transient-p (message)
