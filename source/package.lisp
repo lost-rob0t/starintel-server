@@ -112,7 +112,6 @@
   (:export
    #:register-actor
    #:*targets*
-   #:*target-filter*
    #:*couchdb-gets*
    #:*couchdb-inserts*
    #:*sys*

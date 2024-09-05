@@ -66,9 +66,6 @@
 (defparameter *url-extractor* nil "")
 
 
-
-
-
 (defun start-url-extractor ()
   (setf *url-extractor* (actor-of *sys*
                                   :name "url-extractor"

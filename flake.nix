@@ -1,4 +1,3 @@
-# [[file:source.org::*Nix][Nix:1]]
 {
   description = "Starintel API server that routes the data through msg queues.";
 
@@ -20,6 +19,7 @@
             rabbitmq-c
             libffi
             sqlite
+            pre-commit
           ];
           shellHook = ''
             export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath([pkgs.lmdb.out])}:${pkgs.lib.makeLibraryPath([pkgs.openssl pkgs.rabbitmq-c pkgs.libffi pkgs.sqlite])}
@@ -27,4 +27,3 @@
         };
     };
 }
-# Nix:1 ends here
