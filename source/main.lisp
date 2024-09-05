@@ -55,13 +55,20 @@
 (defun main ()
 
   (let ((init-file "init.lisp"))
+    (log:info (format nil "Creating ~a worker threads" (serapeum:count-cpus)))
     (setf lparallel:*kernel* (lparallel:make-kernel (serapeum:count-cpus)))
     (load init-file :if-does-not-exist :create)
     (star.databases.couchdb:init-db)
-    (star.actors:start-actors)
-    (star.rabbit::start-documents-consumer 1 :host *rabbit-address* :port *rabbit-port*)
-    (star.rabbit::start-targets-consumer 2 :host *rabbit-address* :port *rabbit-port*)
+    (star.actors:start-actors :rabbit-host *rabbit-address*
+                              :rabbit-vhost "/"
+                              :rabbit-port *rabbit-port*
+                              :rabbit-user *rabbit-user*
+                              :rabbit-password *rabbit-password*)
+    (star.rabbit::start-document-consumers *injest-workers* :host *rabbit-address* :port *rabbit-port* :password *rabbit-password* :username *rabbit-password*)
+    (star.rabbit::start-target-consumers *injest-workers* :host *rabbit-address* :port *rabbit-port* :password *rabbit-password* :username *rabbit-password*)
     (star.frontends.http-api::start-http-api))
+  ;; (star.actors.extractors:start-url-consumer :host *rabbit-address* :port *rabbit-port* :username *rabbit-user* :password *rabbit-password* :n 1)
+
 
   (loop for thread in (bt:all-threads)
 

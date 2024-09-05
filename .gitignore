@@ -5,3 +5,5 @@
 .qlot/*
 ./star-server
 .direnv/*
+/gserver.log
+/star-server

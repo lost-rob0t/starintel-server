@@ -22,7 +22,10 @@
    #:main
    #:reload
    #:start-debugger
-   #:*slynk-port*))
+   #:*slynk-port*
+   #:*actors-start-hook*
+   #:*document-patterns*
+   #:*injest-workers*))
 
 
 (uiop:define-package   :star.databases.couchdb
@@ -56,13 +59,17 @@
            :targets-actor-counts
    :targets-by-actor
            :targets-target-count
-   :users-by-platform)
+   :users-by-platform
+           :as-json
+   :format-key
+           :from-json
+   :*couchdb-pool*)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
 (uiop:define-package   :star.rabbit
-  (:use       :cl :star.consumers :sento.actor)
+  (:use       :cl :star.consumers  :sento.actor)
   (:documentation "Rabitmq namespace")
   (:export
    #:start-rabbit-document-thread
@@ -100,7 +107,7 @@
 ;; Namespace setup:3 ends here
 
 (uiop:define-package   :star.actors
-  (:use       :cl :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
   (:documentation "doc")
   (:export
    #:register-actor
@@ -109,7 +116,16 @@
    #:*couchdb-gets*
    #:*couchdb-inserts*
    #:*sys*
-   #:start-actors))
+   #:start-actors
+   #:define-actor
+   #:with-json
+   #:emit
+   #:*producer-agent*
+   #:*url-extractor*
+   #:*pattern-agent*
+   #:*pattern-actor*
+   #:*wmn-relations-p*
+   #:publish))
 
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:4]]

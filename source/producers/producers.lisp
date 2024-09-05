@@ -22,7 +22,7 @@
   (:documentation "Close any streams and de-init the producer"))
 
 (defmacro with-producer-lock ((producer) &body body)
-  `(bt:with-lock-held ((producer-lock producer))
+  `(bt:with-lock-held ((producer-lock ,producer))
      ,@body))
 
 (defmethod destroy ((producer producer))
@@ -45,7 +45,7 @@
     (setf (producer-open-p producer) t)))
 
 
-(defmethod producer-publish ((producer producer) &key body routing-key (properties nil))
+(defmethod publish ((producer producer) &key body routing-key (properties nil))
   (with-producer-lock (producer)
     (cl-rabbit:basic-publish (producer-conn producer) 1 :exchange (producer-exchange producer) :body body :properties properties :routing-key routing-key)))
 

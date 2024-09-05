@@ -9,9 +9,7 @@
    (fn :initarg :fn :accessor consumer-fn :initform (lambda (self message)
                                                       (print message)) :type function)
    (take :initarg :take :accessor consumer-take :type integer :initform 1)
-   (queue :initarg :state :accessor consumer-queue :type lparallel.queue:queue :initform (lparallel.queue:make-queue :fixed-capacity 100000))
    (worker-channel :initarg :consumer-channel :accessor consumer-channel :type lparallel:channel :initform (make-channel))
-   (max-queue-size :initarg :max-size :accessor consumer-max-size :type integer)
    (state :initarg :state :accessor consumer-state)
    (consumer-stream :initarg :stream :reader consumer-stream)
    (lock :initform (bt:make-lock) :accessor consumer-lock))
@@ -27,7 +25,7 @@
   (:documentation "Close any streams and de-init the consumer"))
 
 (defmacro with-consumer-lock ((consumer) &body body)
-  `(bt:with-lock-held ((consumer-lock consumer))
+  `(bt:with-lock-held ((consumer-lock ,consumer))
      ,@body))
 
 (defmethod consumer-update ((consumer consumer) new-state)

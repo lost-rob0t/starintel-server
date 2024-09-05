@@ -30,18 +30,6 @@
     (cl-rabbit:destroy-connection *rabbitmq-conn*)
     (setf *rabbitmq-conn* nil)))
 
-;; Incase i need it?
-(defmacro with-rabbitmq ((connection) &body body)
-  `(let ((conn ,connection))
-     (bt:with-lock-held (*rabbit-lock*)
-       ,@body)))
-
-
-
-
-
-
-
 
 (setf (ningle:route *app* "/targets/:actor" :method :get)
       #'(lambda (params)
@@ -89,9 +77,9 @@
                  (bookmark (cdr (assoc "bookmark" params :test #'string=)))
                  (sort (cdr (assoc "sort" params :test #'string=)))
                  (query (jsown:new-js
-                         ("q" q)
-                         ("limit" limit)
-                         ("include_docs" t))))
+                          ("q" q)
+                          ("limit" limit)
+                          ("include_docs" t))))
             (when sort
               (setf (jsown:val query "sort") sort))
             (when bookmark
@@ -101,11 +89,11 @@
                  (anypool:with-connection (client *couchdb-pool*)
                    (cl-couch:fts-search* client (jsown:to-json query) db ddoc search-name))
                (dex:http-request-bad-request (e) (jsown:new-js
-                                                  ("error" t)
-                                                  ("msg" "Invalid Query was sent")))
+                                                   ("error" t)
+                                                   ("msg" "Invalid Query was sent")))
                (usocket:timeout-error (e) (jsown:new-js
-                                           ("error" t)
-                                           ("msg" "couchdb query timed out"))))))))
+                                            ("error" t)
+                                            ("msg" "couchdb query timed out"))))))))
 
 
 
@@ -215,20 +203,34 @@
                              :include-docs nil
                              :reduce t))))))
 
+(setf (ningle:route *app* "/dataset-size" :method :get)
+      #'(lambda (params)
+          (let ((limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (reduce (cdr (assoc "reduce" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (dataset-size client star:*couchdb-default-database*
+                             :limit limit
+                             :start-key (when start-key (jsown:parse start-key))
+                             :end-key (when end-key (jsown:parse end-key))
+                             :descending descending
+                             :reduce reduce
+                             :include-docs (if reduce nil t)
+                             :skip skip))))))
+
+
+
 (defparameter *server* (lack:builder
                         :accesslog
                         *app*))
 
 (defun start-http-api ()
-  (handler-case
-      (progn
-        (connect-rabbitmq)
-        (clack:clackup *server*
-                       :server :hunchentoot
-                       :address star:*http-api-address*
-                       :port star:*http-api-port*))))
-;; (error (e)
-;;   (progn
-
-;;     (cl-rabbit:channel-close *rabbitmq-conn* 1)
-;;     (disconnect-rabbitmq)))
+  (connect-rabbitmq)
+  (clack:clackup *server*
+                 :server :hunchentoot
+                 :address star:*http-api-address*
+                 :port star:*http-api-port*))

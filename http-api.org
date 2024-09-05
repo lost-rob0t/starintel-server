@@ -1,0 +1,18 @@
+#+title: Http Api
+
+* Http Api Docs
+
+** {{api-section}}
+
+*** {{endpoint-name}}
+Example usage
+#+begin_src http
+{{http-verb}} http://127.0.0.1:500/{{path}}
+Content-Type: Application/json
+Accept: Application/json
+{{headers}}
+
+{{body}}
+#+end_src
+
+{{documentation}}

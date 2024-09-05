@@ -10,9 +10,13 @@
                                                                 (setf (cl-couch:couchdb-headers obj) nil))
                                                 :max-open-count 2))
 
+(defun format-key (key)
+  (if (str:starts-with? "_" key)
+      (string-downcase key)
+      (str:camel-case key)))
 
 
-(defun as-json (object &key (format-fn #'str:camel-case))
+(defun as-json (object &key (format-fn #'format-key))
   (let ((json-obj (jsown:empty-object)))
     (loop for slot in (mapcar #'closer-mop:slot-definition-name
                               (closer-mop:class-slots (class-of object)))

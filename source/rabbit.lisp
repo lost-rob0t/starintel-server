@@ -1,6 +1,6 @@
 (in-package :star.rabbit)
 
-(defvar +injest-queue+ "documents-injest")
+(defvar +injest-queue+ "injest")
 (defvar +updates-queue+ "documents-updates")
 (defvar +injest-key+ "documents.new.#")
 (defvar +update-key+ "documents.update.#")
@@ -162,14 +162,16 @@
 
 
 (defun handle-document (self message)
-  (let ((client (couch:new-couchdb star:*couchdb-host* 5984))
+  (let (
         (connection (rabbit-stream-connection (consumer-stream self)))
         (document (car message))
         (msg-key (cdr message)))
     (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-      (handler-case (progn (couch:create-document client "starintel-gserver" document)
-                           (tell star.actors:*pattern-actor* (jsown:parse document)))
+      (handler-case (progn (couch:create-document client star:*couchdb-default-database* document))
+
+
         (dex:http-request-conflict (e) nil)))
+
     (cl-rabbit:basic-ack connection 1 msg-key)))
 
 
@@ -193,9 +195,8 @@
 
 ;; Handle New Target consumers:1 ends here
 
-
-
-(defun start-documents-consumer (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
+;; old buggy code
+(defun start-document-consumers (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
   (log:info (format nil "Creating ~a injest threads." n))
   (loop for i from 1 to n
         for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest" :exchange-name "documents" :routing-key +injest-key+)
@@ -203,7 +204,7 @@
         do (open-stream stream)
         do (start-consumer consumer)))
 
-(defun start-targets-consumer (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
+(defun start-target-consumers (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
   (log:info (format nil "Creating ~a target injest threads." n))
   (loop for i from 1 to n
         for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest-targets" :exchange-name "documents" :routing-key +targets-key+)
@@ -217,28 +218,28 @@
 
 
 
-;; (defun start-rabbit-targets-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
-;;   (loop for i from 0 to 3
-;;         do (bt:make-thread
-;;             (lambda ()
-;;               (with-rabbit-recv ("injest-targets" "documents" "topic" "documents.new.target.*" :auto-delete nil :exclusive nil))
+;; ;; (defun start-rabbit-targets-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
+;; ;;   (loop for i from 0 to 3
+;; ;;         do (bt:make-thread
+;; ;;             (lambda ()
+;; ;;               (with-rabbit-recv ("injest-targets" "documents" "topic" "documents.new.target.*" :auto-delete nil :exclusive nil))
 
 
-;;               :name "*new-targets-consumer*"))))
+;; ;;               :name "*new-targets-consumer*"))))
 
-(defun test-make-doc ( &optional (type 'spec:person))
+;; (defun test-make-doc ( &optional (type 'spec:person))
 
-  (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance type :id (uuid:print-bytes nil (uuid:make-v4-uuid)) :lname "doe" :fname "john") "starintel") str)))
+;;   (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance type :id (uuid:print-bytes nil (uuid:make-v4-uuid)) :lname "doe" :fname "john") "starintel") str)))
 
-(defun test-send (n &optional (type 'spec:person))
-  (cl-rabbit:with-connection (conn)
-    (let ((socket (cl-rabbit:tcp-socket-new conn)))
-      (cl-rabbit:socket-open socket "localhost" 5672)
-      (cl-rabbit:login-sasl-plain conn "/" "guest" "guest")
-      (cl-rabbit:with-channel (conn 1)
-        (loop for i from 0 to n
-              do (cl-rabbit:basic-publish conn 1
-                                          :exchange "documents"
-                                          :routing-key "documents.new.person"
-                                          :body (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance type :id (uuid:print-bytes nil (uuid:make-v4-uuid)) :lname  (format nil "~a-~a" "doe" i) :fname "john") "starintel") str))
-                                          :properties '((:type . "person"))))))))
+;; (defun test-send (n &optional (type 'spec:person))
+;;   (cl-rabbit:with-connection (conn)
+;;     (let ((socket (cl-rabbit:tcp-socket-new conn)))
+;;       (cl-rabbit:socket-open socket "localhost" 5672)
+;;       (cl-rabbit:login-sasl-plain conn "/" "guest" "guest")
+;;       (cl-rabbit:with-channel (conn 1)
+;;         (loop for i from 0 to n
+;;               do (cl-rabbit:basic-publish conn 1
+;;                                           :exchange "documents"
+;;                                           :routing-key "documents.new.person"
+;;                                           :body (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance type :id (uuid:print-bytes nil (uuid:make-v4-uuid)) :lname  (format nil "~a-~a" "doe" i) :fname "john") "starintel") str))
+;;                                           :properties '((:type . "person"))))))))

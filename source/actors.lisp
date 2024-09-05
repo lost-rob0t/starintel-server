@@ -3,33 +3,6 @@
 (defparameter *sys* nil "the main actor system")
 
 
-(defclass pattern ()
-  ((name :initarg :name :initform (error "Pattern requires a name") :accessor pattern-name)
-   (transient :initarg :transient :initform nil :accessor transientp :documentation "Messages created by this pattern will be considered transient, and will not be saved to a database, use this if your pattern creates lots of targets that are not needed again later.")
-   (match-fn :initarg :match-fn :accessor match-fn :initform #'identity)
-   (subs :initarg :subscriptions :accessor subcriptions :type list :documentation "List of actor names to tell them about the message, it just runs (tell name <document>)"))
-
-  (:documentation "Document pattern matcher, based on a match-fn you supply. When the handler returns non nill, the subs actors are then sent a message with the message being the document"))
-
-
-
-(defgeneric notify-subs (self message)
-  (:documentation "Notify subscribers about matched documents."))
-
-
-(defmethod notify-subs ((pattern pattern) message)
-  (when (funcall (match-fn pattern) message)
-    (loop for actor in (subcriptions pattern)
-          do (log:error actor)
-          do (act:tell actor message))))
-
-(defmacro define-pattern ((name subs) &body body)
-  `(make-instance 'pattern :name ,name  :subscriptions ,subs
-                           :match-fn ,@body))
-
-(defun add-pattern (pattern)
-  (push pattern star:*document-patterns*))
-
 
 
 (defun start-actor-system ()
@@ -124,20 +97,9 @@
                                                                             (dex:http-request-unauthorized (e) nil)))
                                                                         :on-complete-fun (lambda (doc)
                                                                                            (reply doc))))))))))
-;; couchdb-get actor:1 ends here
-
-;; [[file:../source.org::*finish bulk insert actor][finish bulk insert actor:1]]
-;; (defparameter *couchdb-bulk-insert* (ac:actor-of *sys*
-;;                                                  :name "*couchdb-bulk-insert*"
-;;                                                  :receive (lambda (msg)
-;;                                                             (let ((destination-db (uiop:getenv "COUCHDB_DATABASE"))
-;;                                                                   (pool *couchdb-pool*))
-;;                                                               (anypool:with-connection (client pool)
-;;                                                                 (cl-couch:bulk-create-documents client destination-db msg :batch "normal"))))))
-;; finish bulk insert actor:1 ends here
-
 (defparameter *targets* nil)
 (defparameter *target-filter* ())
+
 (defun get-targets (client database)
   (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
                                                                                                                                                  ("include_docs" "true"))))) "rows")))
@@ -214,7 +176,7 @@
 
 
 ;; [[file:../source.org::*actor entry point][actor entry point:1]]
-(defmacro define-actor (var context &body body)
+(defmacro define-actor ((var context) &body body)
   (let ((start-fn (gensym "START-FN-")))
 
     `(let ((,start-fn (lambda ()
@@ -226,88 +188,15 @@
 
 (defun make-producer-agent (producer context)
   (make-agent (lambda ()
+                (star.producers:producer-connect producer)
                 producer) context))
 
 (defparameter *producer-lock* "")
 (defparameter *producer-agent* nil)
 
 
-(defun publish (agent &key body (properties nil))
-  (star.producers:publish (agent-get agent #'identity) :body body :properties properties))
-
-
-
-
-(defparameter *pattern-agent* nil "Agent Responsible for holding patterns")
-(defparameter *pattern-actor* nil "Actor responsible for routing matched messages to actors.")
-
-(defun make-pattern-agent (context)
-  (make-agent (lambda ()
-                star:*document-patterns*)
-              context))
-
-(defun get-patterns (pattern-agent &key (fn #'identity))
-  (agent-get pattern-agent fn))
-
-
-
-(defun add-pattern* (pattern-agent pattern)
-  (let ((old (agent-get pattern-agent #'identity)))
-    (agent-update pattern-agent (lambda ()
-                                  (push pattern old)))))
-
-
-
-(defun start-pattern-agent (context)
-  (setf *pattern-agent* (make-pattern-agent context)))
-
-
-(defun start-pattern-actor (context)
-  (setf *pattern-actor* (actor-of context :name "patterns"
-                                          :receive (lambda (msg)
-                                                     (let ((patterns (get-patterns *pattern-agent*)))
-                                                       (dolist (pattern patterns)
-                                                         (notify-subs pattern msg)))))))
-
-
-(defparameter *url-regex* (ppcre:create-scanner "https?:\\/\\/(www\\.)?\[-a-zA-Z0-9@:%.\_\\+~#=\]{1,256}\\.\[a-zA-Z0-9()\]{1,6}\\b(\[-a-zA-Z0-9()@:%\_\\+.~#?&//=\]\*)"))
-
-(defparameter *url-extractor-fields* '("content" "bio"))
-
-(defparameter *url-extractor* nil "")
-
-(defun get-urls (str)
-  (loop for url in (ppcre:all-matches-as-strings *url-regex* str)
-        do (progn (print url) (force-output))
-        collect url))
-
-
-
-
-(defun start-url-extractor (context)
-  (setf *url-extractor* (actor-of context
-                                  :name "url-extractor"
-                                  :receive
-                                  (lambda (msg)
-                                    (print msg)
-                                    (force-output)
-                                    (let* ((dataset (jsown:val msg "dataset"))
-                                           (docs
-                                             (alexandria:flatten (loop for field in *url-extractor-fields*
-                                                                       for content = (jsown:val-safe msg field)
-                                                                       for results = (get-urls content)
-                                                                       collect (loop for url in results
-                                                                                     for doc = (spec:new-url dataset :url url :content "")
-                                                                                     for rel = (spec:new-relation dataset (jsown:val msg "_id") (spec:doc-id doc) "extracted")
-                                                                                     collect (list (as-json rel) (as-json doc)))))))
-                                      (loop for doc in docs
-                                            do (publish *producer-agent* :body (jsown:to-json doc) :properties (list (cons :type (jsown:val doc "dtype"))))
-                                            do (print doc)
-                                            do (force-output))
-                                      (log:e docs)
-                                      (force-output))))))
-
-
+(defun publish (agent &key body (properties nil) routing-key)
+  (log:info (star.producers:publish (agent-get agent #'identity) :body (jsown:to-json body) :properties properties :routing-key routing-key)))
 
 
 
@@ -318,21 +207,21 @@
   (start-actor-system)
   (setf *producer-agent* (make-producer-agent (star.producers:make-producer :name "actor-producer"
                                                                             :exchange-name "documents"
+                                                                            :host rabbit-host
+                                                                            :port rabbit-port
                                                                             :user rabbit-user
                                                                             :password rabbit-password
                                                                             :vhost rabbit-vhost) *sys*))
 
-  (start-url-extractor *sys*)
-  (add-pattern (define-pattern ("url-extractor" (list *url-extractor*))
-                 (lambda (msg)
-                   (string= (jsown:val msg "dtype") "message"))))
+  ;; FIXME
+  (let ((*gc-timer* (wt:make-wheel-timer)))
+    (wt:schedule-recurring *gc-timer* 1 3600 (lambda ()
+                                               (sb-ext:gc :full t))))
   (start-couchdb-agent *sys*)
   (start-actor-index *sys*)
   (start-couchdb-gets *sys*)
   (start-couchdb-inserts *sys*)
   (start-target-timer)
   (start-target-actor *sys*)
-  (start-pattern-agent *sys*)
-  (start-pattern-actor *sys*)
   (nhooks:run-hook star:*actors-start-hook*))
 ;; actor entry point:1 ends here

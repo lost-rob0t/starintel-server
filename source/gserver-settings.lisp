@@ -23,9 +23,12 @@
 (defparameter *rabbit-port* 5672 "The port that rabbitmq is listening on.")
 (defparameter *rabbit-user* "guest" "the username for rabbimq")
 (defparameter *rabbit-password* "guest" "the password for the rabbitmq user.")
+(defparameter *slynk-port* 4009)
 
-(eval-when (:execute))
+;;; actors
+(defparameter *actors-start-hook* (make-instance 'nhooks:hook-void) "Actor startup hook.")
 
-;; Authentication:1 ends here
-;; TODO add hooks
-(defparameter *actors-start-hook* nil)
+
+;;; Patterns
+(defparameter *document-patterns* () "A List of document patterns created by defpattern")
+(defparameter *injest-workers* (serapeum:count-cpus))

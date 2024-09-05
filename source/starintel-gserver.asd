@@ -9,15 +9,16 @@
   :build-pathname "star-server" ;; shell name
   :entry-point "star::main" ;; thunk
   :components   (
-                 (:file "producers/package")
-                 (:file "producers/producers")
                  (:file "consumers/package")
                  (:file "consumers/consumers")
                  (:file "package")
-                 (:file "couchdb")
                  (:file "gserver-settings")
+                 (:file "producers/package")
+                 (:file "producers/producers")
+                 (:file "couchdb")
                  (:file "init")
                  (:file "actors")
+                 (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
                  (:file "frontends/http-api")
                  (:file "main"))
@@ -39,7 +40,10 @@
                  #:clingon
                  ;; Move to config
                  #:slynk
+                 #:nhooks
                  #:lparallel
                  #:cl-stream
+                 #:cl-ppcre
                  #:bordeaux-threads))
+                 
 ;; ASDF:1 ends here

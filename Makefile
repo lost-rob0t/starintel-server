@@ -12,6 +12,13 @@ all: test
 run:
 	$(LISP) --load run.lisp
 
+reload:
+	$(LISP)	--non-interactive \
+		--load source/starintel-gserver.asd \
+		--eval '(ql:quickload :starintel-gserver)' \
+		--eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t)"
+
+
 build:
 	$(LISP)	--non-interactive \
 		--load source/starintel-gserver.asd \

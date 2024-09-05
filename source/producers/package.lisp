@@ -1,5 +1,5 @@
 (uiop:define-package   :star.producers
-  (:use       :cl #:LPARALLEL)
+  (:use       :cl)
   (:documentation "doc")
   (:export
    #:producer
@@ -11,5 +11,18 @@
    #:producer-update-state
    #:producer-cleanup
    #:with-producer-lock
-   #:producer-publish
-   #:make-producer))
+   #:make-producer
+   #:producer-name
+   #:producer-exchange
+   #:producer-exchange-type
+   #:exchange-durable-p
+   #:producer-conn
+   #:producer-user
+   #:producer-password
+   #:producer-vhost
+   #:producer-port
+   #:producer-host
+   #:producer-open-p
+   #:destroy
+   #:producer-connect
+   #:publish))
