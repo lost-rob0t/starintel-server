@@ -1,0 +1,34 @@
+<html
+  ><head
+    ><title
+      >Function COUCHDB-AGENT-INSERT</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Function: COUCHDB-AGENT-INSERT</h1
+        ><div class="contents"
+          ><h2
+  >Documentation</h2
+><blockquote
+  >Preform a insert operation into couchdb.</blockquote
+><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defun couchdb-agent-insert (agent database document)
+  &quot;Preform a insert operation into couchdb.&quot;
+  (cl-couch:create-document (couchdb-agent-client agent) database document))</code
+            ></pre
+          ><a href="../Starintel_0020Gserver.html#function_005FSTAR.ACTORS_003A_003ACOUCHDB-AGENT-INSERT"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>

@@ -1,0 +1,35 @@
+<html
+  ><head
+    ><title
+      >Macro DEFINE-ACTOR</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Macro: DEFINE-ACTOR</h1
+        ><div class="contents"
+          ><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defmacro define-actor ((var context) &amp;body body)
+  (let ((start-fn (gensym &quot;START-FN-&quot;)))
+
+    `(let ((,start-fn (lambda ()
+                        (setf ,var (actor-of ,context
+                                             :name (symbol-name ,var)
+                                             :receive ,@body)))))
+       (nhooks:add-hook star:*actors-start-hook* ,start-fn :append t))))</code
+            ></pre
+          ><a href="../Starintel_0020Gserver.html#macro_005FSTAR.ACTORS_003A_003ADEFINE-ACTOR"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>

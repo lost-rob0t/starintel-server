@@ -1,0 +1,88 @@
+<html
+  ><head
+    ><title
+      >Documentation for Starintel Server</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="style.css" rel="stylesheet"
+    /><link title="Print" href="print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><h1 class="title"
+        >Documentation for Starintel Server</h1
+      ><div class="contents"
+        ><h2
+  ><a name="About_0020StarIntel_0020Gserver"
+  >About StarIntel Gserver</a
+>&nbsp;</h2
+><div class="nav-links"
+  ><a class="nav-link" href="Warning.html"
+  >prev</a
+> | <span class="dead-nav-link"
+  >up</span
+> | <a href="About_0020StarIntel_0020Gserver.html#What_0020in_0020the_0020box"
+  >next</a
+> | <a href="index.html"
+    >toc</a
+  ></div
+><p> Starintel-gserver is a processing framework for starintel documents.
+ it was created after a need that a mess of random scripts, bots and a database wasnt enough.
+ I needed something to allow multiple bots to communicate, store, query and handle new targets.
+ As of &lt;2024-09-04 Wed&gt; This is the second iteration of the starintel service.
+ This version improves on starRouter with actors instead of what i called actors, are really just consumers in
+ star-gserver. Gserver started in a org-mode notebook while i scketched things out.
+
+
+
+
+
+
+<h3
+  ><a name="What_0020in_0020the_0020box"
+  >What in the box</a
+>&nbsp;</h3
+><div class="nav-links"
+  ><a class="nav-link" href="About_0020StarIntel_0020Gserver.html"
+  >prev</a
+> | <a class="nav-link" href="About_0020StarIntel_0020Gserver.html"
+  >up</a
+> | <a href="About_0020StarIntel_0020Gserver.html#Todo"
+  >next</a
+> | <a href="index.html"
+    >toc</a
+  ></div
+><p> Actors, provided by cl-gserver, not written by me. i named it gserver becuase this was the &quot;gserver&quot; version of starRouter, which no longer used ZMQ.
+ Recurring Targets (NO GUARENTEE!)
+ Database actor
+ Extensibility provided by simple init file and hooks.
+ simple http api
+ rabbitmq consumers (akin to starRouter actors)
+ producers
+
+</p>
+<h3
+  ><a name="Todo"
+  >Todo</a
+>&nbsp;</h3
+><div class="nav-links"
+  ><a class="nav-link" href="About_0020StarIntel_0020Gserver.html#What_0020in_0020the_0020box"
+  >prev</a
+> | <a class="nav-link" href="About_0020StarIntel_0020Gserver.html"
+  >up</a
+> | <span class="nav-link"
+  >next</span
+> | <a href="index.html"
+    >toc</a
+  ></div
+><p>
+ + [ ] Durable target scheduling
+
+ + [ ] ZMQ api for bulk use
+
+ + [ ] A simpler to use &quot;plugin&quot; system
+
+</div
+      ></div
+    ></body
+  ></html
+>

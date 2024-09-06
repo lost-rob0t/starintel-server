@@ -1,0 +1,29 @@
+<html
+  ><head
+    ><title
+      >Function PUBLISH</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Function: PUBLISH</h1
+        ><div class="contents"
+          ><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defun publish (agent &amp;key body (properties nil) routing-key)
+  (log:info (star.producers:publish (agent-get agent #'identity) :body (jsown:to-json body) :properties properties :routing-key routing-key)))</code
+            ></pre
+          ><a href="../Producer_0020Agent.html#function_005FSTAR.ACTORS_003A_003APUBLISH"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>

@@ -1,0 +1,35 @@
+<html
+  ><head
+    ><title
+      >Function GET-TARGETS</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Function: GET-TARGETS</h1
+        ><div class="contents"
+          ><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defun get-targets (client database)
+  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* &quot;targets&quot; &quot;actor-targets&quot; (jsown:to-json (jsown:new-js
+                                                                                                                                                 (&quot;include_docs&quot; &quot;true&quot;))))) &quot;rows&quot;)))
+    (when (&gt; 0 (length jdata))
+      (loop for row in jdata
+            for doc = (jsown:val row &quot;doc&quot;)
+            for actor = (jsown:val doc &quot;actor&quot;)
+            collect (cons actor doc)))))</code
+            ></pre
+          ><a href="../Starintel_0020Gserver.html#function_005FSTAR.ACTORS_003A_003AGET-TARGETS"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>

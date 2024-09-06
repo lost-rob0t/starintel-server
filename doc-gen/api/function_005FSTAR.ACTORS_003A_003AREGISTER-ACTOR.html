@@ -1,0 +1,29 @@
+<html
+  ><head
+    ><title
+      >Function REGISTER-ACTOR</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Function: REGISTER-ACTOR</h1
+        ><div class="contents"
+          ><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defun register-actor (actor-name actor-symbol)
+  (setf (agent-get *actor-index-agent* #'identity) (serapeum:dict* (agent-get *actor-index-agent*) actor-name actor-symbol)))</code
+            ></pre
+          ><a href="../Starintel_0020Gserver.html#function_005FSTAR.ACTORS_003A_003AREGISTER-ACTOR"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>

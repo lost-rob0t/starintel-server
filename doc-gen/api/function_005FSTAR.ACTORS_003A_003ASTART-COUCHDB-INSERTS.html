@@ -1,0 +1,34 @@
+<html
+  ><head
+    ><title
+      >Function START-COUCHDB-INSERTS</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Function: START-COUCHDB-INSERTS</h1
+        ><div class="contents"
+          ><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defun start-couchdb-inserts (system)
+  (setf *couchdb-inserts* (actor-of system
+                                    :name &quot;*couchdb-inserts*&quot;
+                                    :receive (lambda (doc)
+                                               (let ((destination-db star:*couchdb-default-database*))
+                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc &quot;_id&quot;)))
+                                                   (reply (couchdb-agent-insert *couchdb-agent* destination-db (jsown:to-json* doc)))))))))</code
+            ></pre
+          ><a href="../Starintel_0020Gserver.html#function_005FSTAR.ACTORS_003A_003ASTART-COUCHDB-INSERTS"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>

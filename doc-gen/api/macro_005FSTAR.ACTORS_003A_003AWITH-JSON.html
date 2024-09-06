@@ -1,0 +1,35 @@
+<html
+  ><head
+    ><title
+      >Macro WITH-JSON</title
+    ><meta content="text/html; charset=utf-8" http-equiv="Content-Type"
+    /><link href="../style.css" rel="stylesheet"
+    /><link title="Print" href="../print.css" rel="alternate stylesheet"
+    /></head
+  ><body
+    ><div class="qbook"
+      ><div class="computational-element"
+        ><h1
+          >Macro: WITH-JSON</h1
+        ><div class="contents"
+          ><h2
+            >Source</h2
+          ><pre
+            ><code class="code"
+              >(defmacro with-json (jobject &amp;body body)
+  `(macrolet ((val (key) `(jsown:val-safe ,jobject ,key))
+              (dataset () `(jsown:val ,jobject &quot;datast&quot;))
+              (date-added () `(jsown:val ,jobject &quot;dateAdded&quot;))
+              (date-updated () `(jsown:val ,jobject &quot;dateUpdated&quot;))
+              (dtype () `(jsown:val ,jobject &quot;dtype&quot;))
+              (parse-doc () `(star.databases.couchdb:from-json ,jobject (intern (jsown:val ,jobject &quot;dtype&quot;) :spec))))
+     ,@body))</code
+            ></pre
+          ><a href="../Starintel_0020Gserver.html#macro_005FSTAR.ACTORS_003A_003AWITH-JSON"
+            >Source Context</a
+          ></div
+        ></div
+      ></div
+    ></body
+  ></html
+>
