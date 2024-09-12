@@ -73,7 +73,6 @@
   (:use       :cl :star.consumers  :sento.actor)
   (:documentation "Rabitmq namespace")
   (:export
-   #:start-rabbit-document-thread
    #:with-rabbit-send
    #:with-rabbit-recv
    #:emit-document
@@ -82,29 +81,10 @@
    #:+injest-key+
    #:+update-key+
    #:+targets-key+
-   #:rabbit-queue-stream
-   #:open-stream
-   #:close-stream
-   #:stream-read
-   #:rabbit-consumer
    #:transient-p
    #:test-make-doc
    #:test-send
-   #:consumer-read
-   #:rabbit-stream-exchange
-   #:rabbit-exchange-type
-   #:rabbit-exchange-durable-p
-   #:rabbit-stream-routing-key
-   #:rabbit-stream-user
-   #:rabbit-stream-password
-   #:rabbit-stream-vhost
-   #:rabbit-stream-port
-   #:rabbit-stream-host
-   #:rabbit-stream-queue-durable-p
-   #:rabbit-stream-queue-name
-   #:rabbit-stream-connection
-   #:rabbit-stream-channel
-   #:rabbit-stream-open-p))
+   #:start-consumers))
 ;; Namespace setup:3 ends here
 
 (uiop:define-package   :star.actors

@@ -10,10 +10,10 @@
   :components   (
                  (:file "consumers/package")
                  (:file "consumers/consumers")
-                 (:file "package")
-                 (:file "gserver-settings")
                  (:file "producers/package")
                  (:file "producers/producers")
+                 (:file "package")
+                 (:file "gserver-settings")
                  (:file "databases/couchdb")
                  (:file "init")
                  (:file "actors")
