@@ -125,7 +125,19 @@
    #:*pattern-agent*
    #:*pattern-actor*
    #:*wmn-relations-p*
-   #:publish))
+   #:publish
+   #:handle-event-message
+   #:start-event-consumer
+   #:log-actor-event
+   #:*event-consumer*
+   #:*actor-event-receiver*
+   #:make-actor-event
+   #:actor-event
+   #:event-timestamp
+   #:event-actor-name
+   #:event-type
+   #:event-details
+   #:event-source-document))
 
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:4]]

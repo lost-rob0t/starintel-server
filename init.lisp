@@ -6,7 +6,7 @@
 (setq *couchdb-default-database* "starintel-gserver-devel")
 (start-debugger)
 
-(log:config :daily "gserver.log"
+(log:config :daily "logs/gserver.log"
             :file2
             :sane)
 (ql:quickload :hackmode-phish)

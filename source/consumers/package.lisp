@@ -20,4 +20,24 @@
    #:consumer-read
    #:consume
    #:start-consumer
-   #:make-consumer))
+   #:make-consumer
+   #:rabbit-queue-stream
+   #:rabbit-stream-exchange
+   #:rabbit-exchange-type
+   #:rabbit-exchange-durable-p
+   #:rabbit-stream-routing-key
+   #:rabbit-stream-user
+   #:rabbit-stream-password
+   #:rabbit-stream-vhost
+   #:rabbit-stream-port
+   #:rabbit-stream-host
+   #:rabbit-stream-queue-durable-p
+   #:rabbit-stream-queue-name
+   #:rabbit-stream-connection
+   #:rabbit-stream-channel
+   #:rabbit-stream-open-p
+   #:open-stream
+   #:close-stream
+   #:stream-read
+   #:rabbit-consumer
+   #:create-rabbit-consumer))

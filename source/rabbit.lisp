@@ -58,108 +58,11 @@
          (body (jsown:parse (message->string msg))))
     (cons (cdr dtype) body)))
 
-;; [[file:../source.org::*Handle New Document consumers][Handle New Document consumers:2]]
 
 (defun insert (client database document)
   (format nil "~a~%" (couch:create-document client database (jsown:to-json* document))))
 ;; (dex:http-request-conflict (e) (log:warn e))
 ;; (dex:http-request-unauthorized (e) (log:error e))
-
-
-
-;; (defun start-rabbit-document-workers (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
-;;   (loop for i from 0 below n
-;;         do (bt:make-thread
-;;             (lambda ()
-;;               (let ((client (couch:new-couchdb star:*couchdb-host* star:*couchdb-port*))
-;;                     (db star:*couchdb-default-database*))
-;;                 (couch:password-auth client star:*couchdb-user* star:*couchdb-password*)
-;;                 (handler-bind ((error #'(lambda (condition)
-;;                                           (print condition))))
-;;                   (with-rabbit-recv ("injest" "documents" "topic" "documents.new.#" :auto-delete nil :exclusive nil)
-;;                     (let ((data (handle-new-document msg)))
-;;                       (print (car data))
-;;                       (handler-case (print (insert db (cdr data)))
-;;                         (error (e) (print e)))
-;;                       (force-output))))))
-
-;;             ;; (sento-user::publish sento-user::*sys* (sento-user::new-event :topic (string-downcase (car data)) :data (cdr data)))
-
-;;             :name "*new-documents*")))
-
-
-
-
-
-
-
-
-(defclass rabbit-queue-stream (cl-stream:sequence-input-stream)
-  (
-   (exchange :initform "amq.topic" :initarg :exchange-name :accessor rabbit-stream-exchange)
-   (exchange-type :initform "topic" :initarg :exchange-type :accessor rabbit-exchange-type)
-   (exchange-durable :initform t :initarg :exchange-durable :accessor rabbit-exchange-durable-p)
-   (routing-key :initform "" :initarg :routing-key :accessor rabbit-stream-routing-key)
-   (user :initform "" :initarg :user :accessor rabbit-stream-user)
-   (password :initform "" :initarg :password :accessor rabbit-stream-password)
-   (vhost :initform "/" :initarg :vhost :accessor rabbit-stream-vhost)
-   (port :initform star:*rabbit-port* :initarg :vhost :accessor rabbit-stream-port)
-   (host :initform star:*rabbit-address* :initarg :host :accessor rabbit-stream-host)
-   (queue-durable-p :initform t :initarg :queue-durable :accessor rabbit-stream-queue-durable-p)
-   (queue-name :initarg :queue-name :accessor rabbit-stream-queue-name)
-   (conn :initform nil :initarg :rabbit-connection :accessor rabbit-stream-connection)
-   (chan :initform nil :initarg :rabbit-channel :accessor rabbit-stream-channel)
-   (open :initform nil :accessor rabbit-stream-open-p))
-  (:documentation "doc"))
-
-
-(defmethod open-stream ((stream rabbit-queue-stream))
-  (let* ((connection (cl-rabbit:new-connection))
-         (sock (cl-rabbit:tcp-socket-new connection))
-         (username (rabbit-stream-user stream))
-         (password (rabbit-stream-password stream)))
-
-
-    (setf (rabbit-stream-connection stream) connection)
-    (cl-rabbit:socket-open sock (rabbit-stream-host stream) (rabbit-stream-port stream))
-    (when (or username password)
-      (cl-rabbit:login-sasl-plain connection (rabbit-stream-vhost stream) username password))
-    (cl-rabbit:channel-open connection 1)
-    (cl-rabbit:basic-qos connection 1 :prefetch-count 200)
-    (cl-rabbit:exchange-declare connection 1 (rabbit-stream-exchange stream) (rabbit-exchange-type stream) :durable (rabbit-exchange-durable-p stream))
-    (cl-rabbit:queue-declare connection 1 :queue (rabbit-stream-queue-name stream) :durable (rabbit-stream-queue-durable-p stream))
-    (cl-rabbit:queue-bind connection 1 :queue (rabbit-stream-queue-name stream) :exchange (rabbit-stream-exchange stream) :routing-key (rabbit-stream-routing-key stream))
-    (cl-rabbit:basic-consume connection 1 (rabbit-stream-queue-name stream))
-    (setf (rabbit-stream-open-p stream) t)))
-
-
-
-(defmethod close-stream ((stream rabbit-queue-stream))
-  (cl-rabbit:channel-close (rabbit-stream-connection stream) 1)
-  (cl-rabbit:destroy-connection (rabbit-stream-connection stream))
-  (setf (rabbit-stream-open-p stream) nil))
-
-
-(defmethod stream-read ((stream rabbit-queue-stream))
-  (let ((conn (rabbit-stream-connection stream)))
-
-    (cl-rabbit:consume-message conn)))
-
-
-
-
-(defclass rabbit-consumer (star.consumers:consumer)
-  ()
-  (:documentation "Custome consumer class for rabbitmq"))
-
-(defmethod consumer-read ((consumer rabbit-consumer))
-  (star.consumers:with-consumer-lock (consumer)
-    (let ((msg (stream-read (consumer-stream consumer))))
-      (cons (babel:octets-to-string (cl-rabbit:message/body (cl-rabbit:envelope/message msg)) :encoding :utf-8)
-            (cl-rabbit:envelope/delivery-tag msg)))))
-
-
-
 
 (defun handle-document (self message)
   (let (
@@ -193,53 +96,28 @@
     (tell star.actors:*targets* (cons 1 body))
     (cl-rabbit:basic-ack connection 1 msg-key)))
 
-;; Handle New Target consumers:1 ends here
+(defun start-consumers ()
+  (log:info "Starting Consumers.")
+  (let ((document-consumers (create-rabbit-consumer :name "documents"
+                                                    :n star:*injest-workers*
+                                                    :queue-name "injest"
+                                                    :exchange "documents"
+                                                    :routing-key +injest-key+
+                                                    :username star:*rabbit-user*
+                                                    :password star:*rabbit-password*
+                                                    :host star:*rabbit-address*
+                                                    :port star:*rabbit-port*
+                                                    :handler-fn #'handle-document
+                                                    :test-fn #'insertp))
 
-;; old buggy code
-(defun start-document-consumers (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
-  (log:info (format nil "Creating ~a injest threads." n))
-  (loop for i from 1 to n
-        for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest" :exchange-name "documents" :routing-key +injest-key+)
-        for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "document-consumer" i) :stream stream :fn #'handle-document :test-fn #'insertp)
-        do (open-stream stream)
-        do (start-consumer consumer)))
-
-(defun start-target-consumers (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
-  (log:info (format nil "Creating ~a target injest threads." n))
-  (loop for i from 1 to n
-        for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest-targets" :exchange-name "documents" :routing-key +targets-key+)
-        for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "target-consumer" i) :stream stream :fn #'handle-target :test-fn #'insertp)
-        do (open-stream stream)
-        do (start-consumer consumer)))
-
-
-
-
-
-
-
-;; ;; (defun start-rabbit-targets-thread (&key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
-;; ;;   (loop for i from 0 to 3
-;; ;;         do (bt:make-thread
-;; ;;             (lambda ()
-;; ;;               (with-rabbit-recv ("injest-targets" "documents" "topic" "documents.new.target.*" :auto-delete nil :exclusive nil))
-
-
-;; ;;               :name "*new-targets-consumer*"))))
-
-;; (defun test-make-doc ( &optional (type 'spec:person))
-
-;;   (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance type :id (uuid:print-bytes nil (uuid:make-v4-uuid)) :lname "doe" :fname "john") "starintel") str)))
-
-;; (defun test-send (n &optional (type 'spec:person))
-;;   (cl-rabbit:with-connection (conn)
-;;     (let ((socket (cl-rabbit:tcp-socket-new conn)))
-;;       (cl-rabbit:socket-open socket "localhost" 5672)
-;;       (cl-rabbit:login-sasl-plain conn "/" "guest" "guest")
-;;       (cl-rabbit:with-channel (conn 1)
-;;         (loop for i from 0 to n
-;;               do (cl-rabbit:basic-publish conn 1
-;;                                           :exchange "documents"
-;;                                           :routing-key "documents.new.person"
-;;                                           :body (with-output-to-string (str) (cl-json:encode-json (starintel:set-meta (make-instance type :id (uuid:print-bytes nil (uuid:make-v4-uuid)) :lname  (format nil "~a-~a" "doe" i) :fname "john") "starintel") str))
-;;                                           :properties '((:type . "person"))))))))
+        (target-consumers (create-rabbit-consumer :name "documents"
+                                                  :n star:*injest-workers*
+                                                  :queue-name "injest-targets"
+                                                  :exchange "documents"
+                                                  :routing-key +targets-key+
+                                                  :username star:*rabbit-user*
+                                                  :password star:*rabbit-password*
+                                                  :host star:*rabbit-address*
+                                                  :port star:*rabbit-port*
+                                                  :handler-fn #'handle-target
+                                                  :test-fn #'insertp)))))

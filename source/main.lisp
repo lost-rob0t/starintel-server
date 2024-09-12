@@ -66,8 +66,8 @@
                               :rabbit-password *rabbit-password*)
     (star.rabbit::start-document-consumers *injest-workers* :host *rabbit-address* :port *rabbit-port* :password *rabbit-password* :username *rabbit-password*)
     (star.rabbit::start-target-consumers *injest-workers* :host *rabbit-address* :port *rabbit-port* :password *rabbit-password* :username *rabbit-password*)
-    (star.frontends.http-api::start-http-api))
-  ;; (star.actors.extractors:start-url-consumer :host *rabbit-address* :port *rabbit-port* :username *rabbit-user* :password *rabbit-password* :n 1)
+    (star.frontends.http-api::start-http-api)
+    (star.actors:start-event-consumer 2))
 
 
   (loop for thread in (bt:all-threads)

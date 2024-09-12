@@ -33,14 +33,29 @@
 
 
 
-(defun start-event-log-consumers (n &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*))
-  (log:info (format nil "Creating ~a event threads." n))
-  (loop for i from 1 to n
-        for stream = (make-instance 'rabbit-queue-stream :host host :port port :user username :password password :queue-name "injest-events" :exchange-name "events" :routing-key "events.#")
-        for consumer = (make-instance 'rabbit-consumer :name (format nil "~a-~a" "event-consumer" i) :stream stream :fn #'handle-event :test-fn #'insertp)
-        do (open-stream stream)
-        do (start-consumer consumer)))
 
-(defun log-actor-event (actor-name event-type details)
+(defun handle-event-message (message)
+  "Handler function for processing event messages."
+  (let* ((jdoc (jsown:parse message)))
+    (tell *actor-event-receiver* (star.databases.couchdb:from-json jdoc 'actor-event))))
+
+
+(defun start-event-consumer (n)
+  "Initialize and set up the event consumer."
+  (let ((consumer (star.consumers:create-rabbit-consumer
+                   :name "event-consumers"
+                   :n n
+                   :host star:*rabbit-address*
+                   :port star:*rabbit-port*
+                   :username star:*rabbit-user*
+                   :password star:*rabbit-password*
+                   :queue-name "events"
+                   :exchange-name "events"
+                   :routing-key "event.#"
+                   :test-fn #'star.rabbit::insertp
+                   :handler-fn #'handle-event-message)))
+    (star.consumers:start-consumer consumer)))
+
+(defun log-actor-event (actor-name &key event-type details source-id)
   (log:debug "Told *actor-event-reciver*")
-  (tell *actor-event-log* (make-actor-event actor-name event-type details)))
+  (tell *actor-event-log* (make-actor-event actor-name event-type details source-id)))
