@@ -25,7 +25,8 @@
    #:*slynk-port*
    #:*actors-start-hook*
    #:*document-patterns*
-   #:*injest-workers*))
+   #:*injest-workers*
+   #:*couchdb-event-log-database*))
 
 
 (uiop:define-package   :star.databases.couchdb

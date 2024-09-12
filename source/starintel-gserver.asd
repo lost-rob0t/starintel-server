@@ -17,6 +17,7 @@
                  (:file "databases/couchdb")
                  (:file "init")
                  (:file "actors")
+                 (:file "actor-systems/event-actor")
                  (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
                  (:file "frontends/http-api")

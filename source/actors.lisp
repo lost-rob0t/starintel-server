@@ -89,14 +89,16 @@
 (defun start-couchdb-inserts (system)
   (setf *couchdb-inserts* (actor-of system
                                     :name "*couchdb-inserts*"
-                                    :receive (lambda (doc)
-                                               (let ((destination-db star:*couchdb-default-database*))
+                                    :receive (lambda (msg)
+                                               (let ((destination-db (getf msg :database star:*couchdb-default-database*))
+                                                     (doc (getf msg :document)))
                                                  (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc "_id")))
                                                    (reply (couchdb-agent-insert *couchdb-agent* destination-db (jsown:to-json* doc)))))))))
 
 
 (defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
 ;;;; Start the couchdb GET actor.
+;; FIXME
 (defun start-couchdb-gets (system)
   (setf *couchdb-gets* (ac:actor-of system :name "*couchdb-gets*"
                                            :receive (lambda (doc-id &optional (rev nil))
@@ -198,14 +200,16 @@
 
 
 ;;;; Define a actor and its start function
-(defmacro define-actor ((var context) &body body)
-  (let ((start-fn (gensym "START-FN-")))
-
-    `(let ((,start-fn (lambda ()
-                        (setf ,var (actor-of ,context
-                                             :name (symbol-name ,var)
-                                             :receive ,@body)))))
-       (nhooks:add-hook star:*actors-start-hook* ,start-fn :append t))))
+(defmacro define-actor ((name system) &body body)
+  (let ((start-fn-name (intern (format nil "START-~A" (str:replace-all "*" "" (symbol-name name))))))
+    `(progn
+       (defvar ,name nil)
+       (defun ,start-fn-name ()
+         (setf ,name
+               (actor-of ,system
+                         :name ,(symbol-name name)
+                         :receive ,@body)))
+       (serapeum:add-hook starintel-gserver:*actors-start-hook* #',start-fn-name :append t))))
 
 ;;;; * Producer Agent
 ;;;; The producer agent

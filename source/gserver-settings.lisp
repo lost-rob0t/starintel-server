@@ -35,3 +35,6 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 ;;;; Patterns are
 (defparameter *document-patterns* () "A List of document patterns created by defpattern")
 (defparameter *injest-workers* (serapeum:count-cpus))
+
+;;;; *** actor event log
+(defparameter *couchdb-event-log-database* "starintel-event-source" "The name of the database to be used for event logs.")
