@@ -101,7 +101,7 @@
   (let ((document-consumers (create-rabbit-consumer :name "documents"
                                                     :n star:*injest-workers*
                                                     :queue-name "injest"
-                                                    :exchange "documents"
+                                                    :exchange-name "documents"
                                                     :routing-key +injest-key+
                                                     :username star:*rabbit-user*
                                                     :password star:*rabbit-password*
@@ -113,11 +113,13 @@
         (target-consumers (create-rabbit-consumer :name "documents"
                                                   :n star:*injest-workers*
                                                   :queue-name "injest-targets"
-                                                  :exchange "documents"
+                                                  :exchange-name "documents"
                                                   :routing-key +targets-key+
                                                   :username star:*rabbit-user*
                                                   :password star:*rabbit-password*
                                                   :host star:*rabbit-address*
                                                   :port star:*rabbit-port*
                                                   :handler-fn #'handle-target
-                                                  :test-fn #'insertp)))))
+                                                  :test-fn #'insertp)))
+    (start-consumer document-consumers)
+    (start-consumer target-consumers)))

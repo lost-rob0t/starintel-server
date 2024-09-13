@@ -92,7 +92,7 @@
                                     :receive (lambda (msg)
                                                (let ((destination-db (getf msg :database star:*couchdb-default-database*))
                                                      (doc (getf msg :document)))
-                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc "_id")))
+                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc _id")))
                                                    (reply (couchdb-agent-insert *couchdb-agent* destination-db (jsown:to-json* doc)))))))))
 
 
@@ -117,7 +117,7 @@
 ;;;; The target actor is responsible for routing TARGET documents to actors. Actors can reside over rabbitmq or in same proccess with lisp
 ;; TODO Target services over ZMQ
 (defparameter *targets* nil "The Target actor.
-    It is responsble for routing TARGET documents to actors. Actors can reside over rabbitmq or in same-process with lisp.")
+It is responsble for routing TARGET documents to actors. Actors can reside over rabbitmq or in same-process with lisp.")
 
 ;;;; *** Target Operations
 ;;;; Fetch targets from database

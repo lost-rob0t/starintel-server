@@ -40,11 +40,6 @@
                 (write-char (char-downcase char) s))
                (t (write-char (char-downcase char) s))))))
 
-(defun format-key (key)
-  (if (str:starts-with? "_" key)
-      (string-downcase key)
-      (camel-case-to-lisp-case key)))
-
 (defun from-json (json-obj class-name &key (format-fn #'format-key))
   (let* ((object (make-instance class-name))
          (class (class-of object)))
