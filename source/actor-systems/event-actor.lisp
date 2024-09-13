@@ -5,7 +5,8 @@
 
 
 (defclass actor-event ()
-  ((timestamp :initarg :timestamp :accessor event-timestamp :initform (spec:unix-now))
+  ((_id :initarg :id :accessor event-id :initform (cms-ulid:ulid))
+   (timestamp  :initarg :timestamp :accessor event-timestamp :initform (spec:unix-now))
    (actor-name :initarg :actor-name :accessor event-actor-name)
    (event-type :initarg :event-type :accessor event-type)
    (details :initarg :details :accessor event-details)
@@ -25,9 +26,8 @@
 
 (define-actor (*actor-event-receiver* *sys*)
   (lambda (event)
-    (let ((event-json (jsown:extend-js (star.databases.couchdb:as-json event)
-                        ("_id" (cms-ulid:ulid)))))
-      (tell *couchdb-inserts* (list :database star:*couchdb-event-log-database* :document event-json)))))
+    (let ((event-json (jsown:to-json (as-json event))))
+      (tell *couchdb-inserts* (list :id (event-id event) :database star:*couchdb-event-log-database* :document event-json)))))
 
 
 

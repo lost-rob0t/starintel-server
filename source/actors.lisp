@@ -57,25 +57,35 @@
 ;;;; Preform a insert operation into couchdb.
 (defun couchdb-agent-insert (agent database document)
   "Preform a insert operation into couchdb."
-  (cl-couch:create-document (couchdb-agent-client agent) database document))
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (format t "~a~%" (jsown:to-json document))
+    (force-output t)
+    (cl-couch:create-document client database document)))
 
 ;;;; Preform a update operation on couchdb. You must provide the revision tag.
 ;;;; Couchdb uses the _rev tag. you can learn more about docment revisions here
 ;;;; https://dba.stackexchange.com/a/299078
 (defun couchdb-agent-update (agent database document revision)
-  (cl-couch:create-document (couchdb-agent-client agent) (jsown:to-json
-                                                          (jsown:extend-js (jsown:parse document)
-                                                            ("_rev" revision)))))
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (cl-couch:create-document client database (jsown:to-json
+                                               (jsown:extend-js (jsown:parse document)
+                                                 ("_rev" revision))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
-  (cl-couch:delete-document (couchdb-agent-client agent) database document-id))
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (cl-couch:delete-document client database document-id)))
 
 ;;;;Couchdb views are key-value btrees that are generated from map-reduce results over a couchdb database
 ;;;;this allows for fast lookup and creating analytic querys
 ;;;;Read more about views here: https://docs.couchdb.org/en/stable/ddocs/views/intro.html
 ;;;;Query a couchdb view.
 (defun couchdb-agent-get-view (agent database ddoc view query-json)
-  (cl-couch:get-view (couchdb-agent-client agent) database ddoc view query-json))
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (cl-couch:get-view client database ddoc view query-json)))
+
+(defun couchdb-document-exists-p (agent database id)
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (cl-couch:document-exists-p client database id)))
 
 ;;;; Start the couchdb agent.
 (defun start-couchdb-agent (system)
@@ -90,11 +100,12 @@
   (setf *couchdb-inserts* (actor-of system
                                     :name "*couchdb-inserts*"
                                     :receive (lambda (msg)
-                                               (let ((destination-db (getf msg :database star:*couchdb-default-database*))
-                                                     (doc (getf msg :document)))
-                                                 (log:info destination-db)
-                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc "_id")))
-                                                   (reply (couchdb-agent-insert *couchdb-agent* destination-db (jsown:to-json* doc)))))))))
+                                               (let ((database (getf msg :database star:*couchdb-default-database*))
+                                                     (doc (getf msg :document))
+                                                     (id (getf msg :id)))
+
+                                                 (when (not (couchdb-document-exists-p *couchdb-agent* database id))
+                                                   (reply (couchdb-agent-insert *couchdb-agent* database doc))))))))
 
 
 (defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
