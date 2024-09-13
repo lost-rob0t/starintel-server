@@ -1,6 +1,5 @@
 (in-package :star.consumers)
 
-
 (defclass consumer ()
   ((name :initarg :name :accessor consumer-name :initform "")
    (predicate :initarg :test-fn :initform (lambda (self message)
@@ -109,21 +108,36 @@
   (:documentation "Custom consumer class for RabbitMQ"))
 
 (defmethod consumer-read ((consumer rabbit-consumer))
-  (with-consumer-lock (consumer)
-    (let ((msg (stream-read (consumer-stream consumer))))
-      (cons (babel:octets-to-string (cl-rabbit:message/body (cl-rabbit:envelope/message msg)) :encoding :utf-8)
-            (cl-rabbit:envelope/delivery-tag msg)))))
+  (let ((msg (stream-read (consumer-stream consumer))))
+    (cons (babel:octets-to-string (cl-rabbit:message/body (cl-rabbit:envelope/message msg)) :encoding :utf-8)
+          (cl-rabbit:envelope/delivery-tag msg))))
 
 
 (defmethod start-consumer ((consumer rabbit-consumer))
-  (loop for i from 1 to (consumer-worker-count consumer)
-        do (bt:make-thread (lambda ()
-                             (open-stream (consumer-stream consumer))
-                             (loop
-                               for data = (consumer-read consumer)
-                               do (consume consumer data)
-                               do (receive-result (consumer-channel consumer))))
-                           :name (consumer-name consumer))))
+  (let ((create-thread-consumer
+          (lambda (thread-number)
+            (let* ((thread-consumer (create-rabbit-consumer
+                                     :name (format nil "~A-~D" (consumer-name consumer) thread-number)
+                                     :n 1
+                                     :queue-name (rabbit-stream-queue-name (consumer-stream consumer))
+                                     :exchange-name (rabbit-stream-exchange (consumer-stream consumer))
+                                     :routing-key (rabbit-stream-routing-key (consumer-stream consumer))
+                                     :host (rabbit-stream-host (consumer-stream consumer))
+                                     :port (rabbit-stream-port (consumer-stream consumer))
+                                     :username (rabbit-stream-user (consumer-stream consumer))
+                                     :password (rabbit-stream-password (consumer-stream consumer))
+                                     :test-fn (consumer-filter consumer)
+                                     :handler-fn (consumer-fn consumer))))
+              (open-stream (consumer-stream thread-consumer))
+              (assert (rabbit-stream-open-p (consumer-stream thread-consumer)) nil "Rabbitmq stream wasnt opened!!!!")
+              (lambda ()
+                (loop
+                  for data = (consumer-read thread-consumer)
+                  do (consume thread-consumer data)
+                  do (receive-result (consumer-channel thread-consumer))))))))
+    (loop for i from 1 to (consumer-worker-count consumer)
+          do (bt:make-thread (funcall create-thread-consumer i)
+                             :name (format nil "~A-~D" (consumer-name consumer) i)))))
 
 (defun create-rabbit-consumer (&key
                                  (name (error "Consumer name is required"))
@@ -139,7 +153,6 @@
                                  (handler-fn (error "Handler function is required")))
   "Create a RabbitMQ consumer with the given configuration.
 This function returns a rabbit-consumer instance.
-
 Arguments:
 - NAME: String, the name of the consumer.
 - N: Integer, the number of consumer threads to start (default: 1).
