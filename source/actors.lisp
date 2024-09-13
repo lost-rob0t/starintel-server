@@ -92,7 +92,8 @@
                                     :receive (lambda (msg)
                                                (let ((destination-db (getf msg :database star:*couchdb-default-database*))
                                                      (doc (getf msg :document)))
-                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc _id")))
+                                                 (log:info destination-db)
+                                                 (when (not (cl-couch:document-exists-p (couchdb-agent-client *couchdb-agent*) destination-db (jsown:val doc "id")))
                                                    (reply (couchdb-agent-insert *couchdb-agent* destination-db (jsown:to-json* doc)))))))))
 
 
