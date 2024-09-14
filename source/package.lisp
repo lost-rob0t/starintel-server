@@ -117,7 +117,8 @@
    #:event-actor-name
    #:event-type
    #:event-details
-   #:event-source-document))
+   #:event-source-document
+   #:event-id))
 
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:4]]
