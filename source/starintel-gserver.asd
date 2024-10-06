@@ -44,6 +44,7 @@
                  #:lparallel
                  #:cl-stream
                  #:cl-ppcre
+                 #:cms-ulid
                  #:bordeaux-threads))
 ;;;; * Starintel Gserver
 ;;;;@include "gserver-settings.lisp"

@@ -26,7 +26,8 @@
    #:*actors-start-hook*
    #:*document-patterns*
    #:*injest-workers*
-   #:*couchdb-event-log-database*))
+   #:*couchdb-event-log-database*
+   #:*couchdb-views*))
 
 
 (uiop:define-package   :star.databases.couchdb
@@ -64,7 +65,11 @@
            :as-json
    :format-key
            :from-json
-   :*couchdb-pool*)
+   :*couchdb-pool*
+           :groups
+   :lazy
+           :t
+   :nil)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
 

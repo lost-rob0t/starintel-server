@@ -10,6 +10,12 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 (defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
 (defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
 (defparameter *couchdb-password* (or (uiop:getenv "COUCHDB_PASSWORD") "password") "couchdb user password")
+;;;; By Default the views in starintel-gserver/views will be installed, but you can append your own to this setting to have it created at startup.
+(defparameter *couchdb-views* (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
+                                (loop for file in files
+                                      collect (with-open-file (str file)
+                                                (read-line str))))
+  "List of views to install into couchdb.")
 
 ;;;; *** HTTP API
 (defparameter *http-api-address* (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") "localhost") "the listen address")
@@ -29,12 +35,9 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 ;;;; *** Actors
 ;;;; Hooks are implemented Via nhooks you can read documentation here for how to add hooks. https://github.com/atlas-engineer/nhooks
 (defparameter *actors-start-hook* (make-instance 'nhooks:hook-void) "Actor startup hook.")
-
-
 ;;;; *** Patterns
 ;;;; Patterns are
 (defparameter *document-patterns* () "A List of document patterns created by defpattern")
-(defparameter *injest-workers* (serapeum:count-cpus))
-
+(defparameter *injest-workers* 4 "Number of workers for handling documents, set to 4 by default.")
 ;;;; *** actor event log
 (defparameter *couchdb-event-log-database* "starintel-event-source" "The name of the database to be used for event logs.")
