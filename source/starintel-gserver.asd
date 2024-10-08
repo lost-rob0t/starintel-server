@@ -10,13 +10,14 @@
   :components   (
                  (:file "consumers/package")
                  (:file "consumers/consumers")
-                 (:file "package")
-                 (:file "gserver-settings")
                  (:file "producers/package")
                  (:file "producers/producers")
+                 (:file "package")
+                 (:file "gserver-settings")
                  (:file "databases/couchdb")
                  (:file "init")
                  (:file "actors")
+                 (:file "actor-systems/event-actor")
                  (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
                  (:file "frontends/http-api")
@@ -43,6 +44,7 @@
                  #:lparallel
                  #:cl-stream
                  #:cl-ppcre
+                 #:cms-ulid
                  #:bordeaux-threads))
 ;;;; * Starintel Gserver
 ;;;;@include "gserver-settings.lisp"

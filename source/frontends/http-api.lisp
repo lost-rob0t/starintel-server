@@ -30,13 +30,25 @@
     (cl-rabbit:destroy-connection *rabbitmq-conn*)
     (setf *rabbitmq-conn* nil)))
 
+(defparameter *default-headers* (list
+                                 :content-type "application/json"
+                                 :access-control-allow-origin "*"))
+
+(defmacro set-default-headers ()
+
+  `(setf (lack.response:response-headers *response*)
+         (append (lack.response:response-headers *response*)
+                 *default-headers*)))
 
 (setf (ningle:route *app* "/targets/:actor" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((targets (loop for row in (anypool:with-connection (client *couchdb-pool*)
                                             (jsown:val (anypool:with-connection (client *couchdb-pool*) (query-view client *couchdb-default-database* "targets" "by_actor" :include-docs t :key (cdr (assoc :actor params :test #'string=)))) "rows"))
                                collect (jsown:val row "doc"))))
+            (log:debug targets)
             (jsown:to-json targets))))
+
 
 (setf (ningle:route *app* "/new/target/:actor" :method :post)
       #'(lambda (params)
@@ -50,7 +62,7 @@
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
       #'(lambda (params)
-
+          (set-default-headers)
           (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
                  (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
                  (routing-key (format nil "documents.new.~a" dtype)))
@@ -61,6 +73,7 @@
 
 (setf (ningle:route *app* "/document/:id" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((document-id  (cdr (assoc :id params :test #'string=))))
             (anypool:with-connection (client *couchdb-pool*)
               (cl-couch:get-document client star:*couchdb-default-database* document-id)))))
@@ -69,6 +82,7 @@
 ;;;  search
 (setf (ningle:route *app* "/search" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let* ((db star:*couchdb-default-database*)
                  (ddoc "search")
                  (search-name "fts")
@@ -100,6 +114,7 @@
 ;; Views api
 (setf (ningle:route *app* "/documents/messages/by-user" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((user (cdr (assoc "user" params :test #'string=)))
                 (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
                 (start-key (cdr (assoc "start_key" params :test #'string=)))
@@ -116,8 +131,36 @@
                                  :descending descending
                                  :skip skip))))))
 
-(setf (ningle:route *app* "/documents/messages/:group/:channel" :method :get)
+(setf (ningle:route *app* "/documents/messages/by-channel" :method :get)
       #'(lambda (params)
+          (set-default-headers)
+          (let ((channel (cdr (assoc "channel" params :test #'string=)))
+                (group (cdr (assoc "group"  params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0")))
+                (reduce (equal (cdr (assoc "reduce" params :test #'string=)) "true")))
+            (jsown:to-json
+             (anypool:with-connection (client *couchdb-pool*)
+               (by-channel client star:*couchdb-default-database*
+                           :limit limit
+                           :start-key (when start-key (jsown:parse start-key))
+                           :end-key (when end-key (jsown:parse end-key))
+                           :key (list group channel)
+                           :descending descending
+                           :skip skip
+                           :update nil
+                           :include-docs (if reduce nil t)
+                           :group (if reduce t nil)
+                           :reduce reduce))))))
+
+
+
+(setf (ningle:route *app* "/documents/messages/by-groups" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
           (let ((channel (cdr (assoc :channel params :test #'string=)))
                 (group (cdr (assoc :group params :test #'string=)))
                 (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
@@ -138,9 +181,9 @@
                            :include-docs (if reduce nil t)
                            :reduce reduce))))))
 
-
 (setf (ningle:route *app* "/documents/messages/by-platform" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((platform (cdr (assoc "platform" params :test #'string=)))
                 (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
                 (start-key (cdr (assoc "start_key" params :test #'string=)))
@@ -157,26 +200,26 @@
                                      :descending descending
                                      :skip skip))))))
 
-(setf (ningle:route *app* "/documents/messages/by-group" :method :get)
+(setf (ningle:route *app* "/documents/messages/groups" :method :get)
       #'(lambda (params)
-          (let ((group (cdr (assoc "group" params :test #'string=)))
-                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+          (set-default-headers)
+          (let (
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "100")))
                 (start-key (cdr (assoc "start_key" params :test #'string=)))
                 (end-key (cdr (assoc "end_key" params :test #'string=)))
                 (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
             (jsown:to-json
              (anypool:with-connection (client *couchdb-pool*)
-               (messages-by-group client star:*couchdb-default-database*
-                                  :limit limit
-                                  :start-key (when start-key (jsown:parse start-key))
-                                  :end-key (when end-key (jsown:parse end-key))
-                                  :key group
-                                  :descending descending
-                                  :skip skip))))))
+               (groups client star:*couchdb-default-database*
+                       :limit limit
+                       :update "lazy"
+                       :descending descending
+                       :skip skip))))))
 
 (setf (ningle:route *app* "/documents/socialmpost/by-user" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((user (cdr (assoc "user" params :test #'string=)))
                 (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
                 (start-key (cdr (assoc "start_key" params :test #'string=)))
@@ -195,6 +238,7 @@
 
 (setf (ningle:route *app* "/dataset-size" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((dataset (cdr (assoc "dataset" params :test #'string=))))
             (jsown:to-json
              (anypool:with-connection (client *couchdb-pool*)
@@ -205,6 +249,7 @@
 
 (setf (ningle:route *app* "/dataset-size" :method :get)
       #'(lambda (params)
+          (set-default-headers)
           (let ((limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
                 (start-key (cdr (assoc "start_key" params :test #'string=)))
                 (end-key (cdr (assoc "end_key" params :test #'string=)))

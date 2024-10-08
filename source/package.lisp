@@ -25,7 +25,9 @@
    #:*slynk-port*
    #:*actors-start-hook*
    #:*document-patterns*
-   #:*injest-workers*))
+   #:*injest-workers*
+   #:*couchdb-event-log-database*
+   #:*couchdb-views*))
 
 
 (uiop:define-package   :star.databases.couchdb
@@ -63,7 +65,11 @@
            :as-json
    :format-key
            :from-json
-   :*couchdb-pool*)
+   :*couchdb-pool*
+           :groups
+   :lazy
+           :t
+   :nil)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
 
@@ -72,7 +78,6 @@
   (:use       :cl :star.consumers  :sento.actor)
   (:documentation "Rabitmq namespace")
   (:export
-   #:start-rabbit-document-thread
    #:with-rabbit-send
    #:with-rabbit-recv
    #:emit-document
@@ -81,29 +86,10 @@
    #:+injest-key+
    #:+update-key+
    #:+targets-key+
-   #:rabbit-queue-stream
-   #:open-stream
-   #:close-stream
-   #:stream-read
-   #:rabbit-consumer
    #:transient-p
    #:test-make-doc
    #:test-send
-   #:consumer-read
-   #:rabbit-stream-exchange
-   #:rabbit-exchange-type
-   #:rabbit-exchange-durable-p
-   #:rabbit-stream-routing-key
-   #:rabbit-stream-user
-   #:rabbit-stream-password
-   #:rabbit-stream-vhost
-   #:rabbit-stream-port
-   #:rabbit-stream-host
-   #:rabbit-stream-queue-durable-p
-   #:rabbit-stream-queue-name
-   #:rabbit-stream-connection
-   #:rabbit-stream-channel
-   #:rabbit-stream-open-p))
+   #:start-consumers))
 ;; Namespace setup:3 ends here
 
 (uiop:define-package   :star.actors
@@ -124,7 +110,20 @@
    #:*pattern-agent*
    #:*pattern-actor*
    #:*wmn-relations-p*
-   #:publish))
+   #:publish
+   #:handle-event-message
+   #:start-event-consumer
+   #:log-actor-event
+   #:*event-consumer*
+   #:*actor-event-receiver*
+   #:make-actor-event
+   #:actor-event
+   #:event-timestamp
+   #:event-actor-name
+   #:event-type
+   #:event-details
+   #:event-source-document
+   #:event-id))
 
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:4]]

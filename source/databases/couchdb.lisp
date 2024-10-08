@@ -1,9 +1,12 @@
 (in-package :star.databases.couchdb)
 
+
+(defparameter +lazy+ "lazy")
+
 (defparameter *couchdb-pool* (anypool:make-pool :name "couchdb-connections"
                                                 :connector (lambda ()
-                                                             (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
-                                                               (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+                                                             (let ((client (cl-couch:new-couchdb (or star:*couchdb-host* (uiop:getenv "COUCHDB_HOST")) (or star:*couchdb-port* 5984) :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
+                                                               (cl-couch:password-auth client (or star:*couchdb-password* (uiop:getenv "COUCHDB_USER")) (or star:*couchdb-password* (uiop:getenv "COUCHDB_PASSWORD")))
                                                                client))
 
                                                 :disconnector (lambda (obj)
@@ -29,16 +32,24 @@
                      (t (to-json value)))))
     json-obj))
 
+(defun camel-case-to-lisp-case (string)
+  (with-output-to-string (s)
+    (loop for char across string
+          for i from 0
+          do (cond
+               ((and (not (zerop i))
+                     (upper-case-p char))
+                (write-char #\- s)
+                (write-char (char-downcase char) s))
+               (t (write-char (char-downcase char) s))))))
 
-
-
-(defun from-json (json-obj class-name)
+(defun from-json (json-obj class-name &key (format-fn #'format-key))
   (let* ((object (make-instance class-name))
          (class (class-of object)))
     (loop for slot in (sb-mop:class-slots class)
           for slot-name = (sb-mop:slot-definition-name slot)
           for slot-type = (sb-mop:slot-definition-type slot)
-          for key = (string-downcase (string slot-name))
+          for key = (funcall format-fn (string slot-name))
           for value = (jsown:val-safe json-obj key)
           when value
             do (setf (slot-value object slot-name)
@@ -51,12 +62,13 @@
 
 
 
+
+
+
+
 (defun init-views (client database)
-  (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
-    (loop for file in files
-          for jdata = (with-open-file (str file)
-                        (format nil "~a~%" (read-line str)))
-          do (cl-couch:create-document client database jdata))))
+  (mapcar (lambda (jdata)
+            (cl-couch:create-document client database jdata)) star:*couchdb-views*))
 
 (defun init-db ()
   "Create the database, and all map-reduce views with it."
@@ -89,6 +101,7 @@
 ;;; Would return a function like below but also has the sort-fn from the other functions calling this
 ;;;
 
+
 (defun query-view (client database ddoc view-name &key (limit 50)
                                                     (start-key nil)
                                                     (end-key nil)
@@ -101,11 +114,16 @@
                                                     (update t)
                                                     (skip 0)
                                                     (reduce nil))
+
+
   (let ((query-obj (jsown:new-js
                      ("limit" limit)
                      ("descending" (if descending :true :false))
                      ("include_docs" (if include-docs :true :false))
-                     ("update" (if update :true :false))
+                     ("update" (case update
+                                 ("lazy" "lazy")
+                                 (nil :false)
+                                 (t :true)))
                      ("skip" skip)
                      ("reduce" (if reduce :true :false)))))
     (cond
@@ -782,3 +800,25 @@
     (if include-docs
         (funcall sort-fn (get-view-docs rows))
         rows)))
+
+(defun groups (client database &key (limit 50)
+                                 (start-key nil)
+                                 (end-key nil)
+                                 (keys nil)
+                                 (key nil)
+                                 (update "lazy")
+                                 (descending nil)
+                                 (skip 0))
+  "Query the by_platform view in the users design document."
+  (let* ((view-result (query-view client database "messages" "groups"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :update update
+                                  :group t
+                                  :reduce t
+                                  :skip skip)))
+    (jsown:val view-result "rows")))

@@ -5,6 +5,6 @@
 (setq *couchdb-default-database* "starintel")
 (start-debugger)
 
-(log:config :daily "gserver.log"
+(log:config :daily "logs/gserver.log"
             :file2
             :sane)

@@ -11,7 +11,16 @@
    #:read-targets-csv
    #:import-targets-from-csv
    #:submit-document
-   #:get-document))
+   #:get-document
+   #:fts
+   #:messages-by-user
+   #:messages-by-channel
+   #:messages-by-platform
+   #:messages-by-group
+   #:social-posts-by-user
+   #:dataset-size
+   #:do-view
+   #:groups))
 
 (in-package :star.api.client)
 (defclass star-client ()
@@ -83,7 +92,7 @@
 
 (defmethod get-document ((client star-client) document-id)
   "Get the document by id."
-  (api-request client (format nil "/documents/~a" document-id)))
+  (api-request client (format nil "/document/~a" document-id)))
 
 (defmethod fts ((client star-client) &key q (limit 25) (bookmark nil) (sort nil))
   "Search documents using the full-text search (FTS) endpoint."
@@ -116,12 +125,14 @@
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "skip" (prin1-to-string skip))
-                     (cons "reduce" (if reduce "true" "false")))))
+                     (cons "reduce" (if reduce "true" "false"))
+                     (cons "channel" channel)
+                     (cons "group" (if reduce "true" "false")))))
     (when start-key
       (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
     (when end-key
       (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
-    (api-request client (format nil "/documents/messages/~a/~a" group channel) :query query)))
+    (api-request client "/documents/messages/by-channel"  :query query)))
 
 (defmethod messages-by-platform ((client star-client) &key platform (limit 50) start-key end-key (descending nil) (skip 0))
   "Retrieve messages by platform using the 'messages_by_platform' view."
@@ -143,11 +154,8 @@
                      (cons "include-docs" (if include-docs "true" "false"))
                      (cons "reduce" (if reduce "true" "false"))
                      (cons "skip" (prin1-to-string skip)))))
-    (when reduce
-      (push (cons "reduce" reduce) query))
 
-    (when (and include-docs (not reduce))
-      (push (cons "include_docs" include-docs) query))
+
     (when start-key
       (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
     (when end-key
@@ -171,37 +179,6 @@
   "Retrieve the size of a dataset using the 'dataset_size' view."
   (let ((query (list (cons "dataset" dataset))))
     (api-request client "/dataset-size" :query query)))
-
-<<<<<<< Updated upstream
-||||||| Stash base
-
-
-(defmethod groups ((client star-client) &key  (limit 50)
-                                          start-key end-key
-                                          (include-docs nil)
-                                          (update :lazy)
-                                          (descending nil) (skip 0))
-  "Retrieve messages by group using the 'messages_by_group' view."
-  (let ((query (list (cons "limit" (prin1-to-string limit))
-                     (cons "descending" (if descending "true" "false"))
-                     (cons "skip" (prin1-to-string skip)))))
-
-
-    (case update
-      (:lazy (push (cons "update" "lazy") query))
-      (:false (push (cons "update" "false") query))
-      (t (push (cons "update" "true") query)))
-
-    (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
-    (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
-    (when reduce
-      (push (cons "group" "true") query)
-      (push (cons "reduce" "true") query))
-    (api-request client "/documents/messages/groups" :query query)))
-
-=======
 
 
 (defmethod groups ((client star-client) &key  (limit 50)
@@ -228,17 +205,17 @@
 
     (api-request client "/documents/messages/groups" :query query)))
 
->>>>>>> Stashed changes
-(defun do-view (client view-fn &key (batch-size 500) (reduce nil) (include-docs nil))
-  "Iterate over all keys in a view and apply the provided function to each batch of results."
-  (let ((start-key nil)
-        (end-key nil)
-        (results '())
-        (batch (funcall view-fn client
-                        :limit batch-size
-                        :include-docs (when (and (not reduce) include-docs) t)
-                        :reduce reduce)))
-    (let* ()
 
-
-      batch)))
+;; (defun do-view (client view-fn &key (batch-size 500) (reduce nil) (include-docs nil))
+;;   "Iterate over all keys in a view and apply the provided function to each batch of results."
+;;   (let ((start-key nil)
+;;         (end-key nil)
+;;         (results '())
+;;         (batch (funcall view-fn client
+;;                         :limit batch-size
+;;                         :include-docs (when (and (not reduce) include-docs) t)
+;;                         :reduce reduce)))
+;;     (let* ()
+;;
+;;
+;;       batch)))
