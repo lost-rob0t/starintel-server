@@ -77,3 +77,4 @@
                        for json = (as-json doc)
                        for routing-key = (format nil "documents.new.~a" (spec:doc-type doc))
                        do (publish *producer-agent* :body json :properties (cons :type (spec:doc-type doc)) :routing-key routing-key))))))))
+

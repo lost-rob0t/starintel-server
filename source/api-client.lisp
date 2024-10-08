@@ -172,6 +172,63 @@
   (let ((query (list (cons "dataset" dataset))))
     (api-request client "/dataset-size" :query query)))
 
+<<<<<<< Updated upstream
+||||||| Stash base
+
+
+(defmethod groups ((client star-client) &key  (limit 50)
+                                          start-key end-key
+                                          (include-docs nil)
+                                          (update :lazy)
+                                          (descending nil) (skip 0))
+  "Retrieve messages by group using the 'messages_by_group' view."
+  (let ((query (list (cons "limit" (prin1-to-string limit))
+                     (cons "descending" (if descending "true" "false"))
+                     (cons "skip" (prin1-to-string skip)))))
+
+
+    (case update
+      (:lazy (push (cons "update" "lazy") query))
+      (:false (push (cons "update" "false") query))
+      (t (push (cons "update" "true") query)))
+
+    (when start-key
+      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+    (when end-key
+      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+    (when reduce
+      (push (cons "group" "true") query)
+      (push (cons "reduce" "true") query))
+    (api-request client "/documents/messages/groups" :query query)))
+
+=======
+
+
+(defmethod groups ((client star-client) &key  (limit 50)
+                                          (start-key nil) (end-key nil)
+                                          (update :lazy)
+                                          (descending nil) (skip 0))
+  "Retrieve messages by group using the 'messages_by_group' view.
+   The result of this api is [{\"key\": \"group-name\", \"value\": [\"chanel-list\"]}]"
+  (let ((query (list (cons "limit" (prin1-to-string limit))
+                     (cons "descending" (if descending "true" "false"))
+                     (cons "skip" (prin1-to-string skip)))))
+
+
+    (case update
+      (:lazy (push (cons "update" "lazy") query))
+      (:false (push (cons "update" "false") query))
+      (t (push (cons "update" "true") query)))
+
+    (when start-key
+      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+    (when end-key
+      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+
+
+    (api-request client "/documents/messages/groups" :query query)))
+
+>>>>>>> Stashed changes
 (defun do-view (client view-fn &key (batch-size 500) (reduce nil) (include-docs nil))
   "Iterate over all keys in a view and apply the provided function to each batch of results."
   (let ((start-key nil)

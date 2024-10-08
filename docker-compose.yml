@@ -2,10 +2,13 @@ version: '3.8'
 
 services:
   couchdb:
-    image: couchdb:latest
+    container_name: "couchdb"
+    hostname: couchdb
+    image: ibmcom/couchdb3
     volumes:
       - couchdb_data:/opt/couchdb/data
     environment:
+      #NOTE CHANGE ME
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: password
     ports:
@@ -14,22 +17,27 @@ services:
       - star
 
   rabbitmq:
-    image: rabbitmq:latest
+    image: rabbitmq:management
+    hostname: rabbitmq
+    container_name: "rabbitmq"
     environment:
+      #NOTE CHANGEME
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     ports:
       - "5672:5672"
+      - "15672:15672"
     networks:
       - star
-
   star-server:
+    container_name: "star-server"
+    restart: always
     image: star-server:latest
+    hostname: star-server
+    volumes:
+      - ./init.lisp:/root/init.lisp
     environment:
       BUILD_MODE: DEV
-      COUCHDB_HOST: couchdb
-      RABBITMQ_HOST: rabbitmq
-      HTTP_API_LISTEN_ADDRESS: star-server
     ports:
       - "5000:5000"
     networks:
@@ -38,9 +46,11 @@ services:
       - couchdb
       - rabbitmq
 
+
+
 volumes:
   couchdb_data:
 
-
 networks:
   star:
+    name: star

@@ -27,6 +27,9 @@ build:
 install:
 	cp star-server /usr/local/bin
 
+docker:
+	docker build . -t "star-server"
 clean:
-	rm -f ./star-server
+	rm -v ./star-server
+
 # Makefile:1 ends here
