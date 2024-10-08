@@ -17,15 +17,6 @@ WORKDIR /root/
 RUN make build
 RUN make install
 FROM build as star-server
-ENV COUCHDB_HOST="couchdb" \
-    COUCHDB_PORT=5984 \
-    COUCHDB_SCHEME="http" \
-    COUCHDB_USER="admin" \
-    COUCHDB_PASSWORD="password" \
-    COUCHDB_DATABASE="starintel" \
-    HTTP_API_LISTEN_ADDRESS="localhost" \
-    RABBITMQ_HOST="rabbitmq" \
-    RABBITMQ_PORT=5672
 EXPOSE 5000
 
 ENTRYPOINT ./star-server
