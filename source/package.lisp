@@ -130,5 +130,7 @@
 (uiop:define-package   :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
   (:use       :cl :ningle :anypool :star.databases.couchdb :star)
-  (:documentation "doc"))
+  (:documentation "simple http api.")
+  (:export
+   #:*default-headers*))
 ;; Namespace setup:4 ends here
