@@ -1,4 +1,6 @@
 (in-package :star)
+;;;  Version info
+(defparameter *star-server-version* "0.0.1")
 ;;;; ** Gserver Settings
 ;;;; *** Couchdb
 (defparameter *couchdb-host* (or (uiop:getenv "COUCHDB_HOST") "127.0.0.1") "The Couchdb host to use.
