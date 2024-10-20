@@ -22,8 +22,8 @@
     (when debugger
       (slynk:create-server :port 50006 :dont-close t))
     (load init-file :if-does-not-exist :create)
-    (log:info (format nil "Creating ~a worker threads" (serapeum:count-cpus)))
-    (setf lparallel:*kernel* (lparallel:make-kernel (serapeum:count-cpus)))
+    (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
+    (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
     (load init-file :if-does-not-exist :create)
     (star.databases.couchdb:init-db)
     (star.actors:start-actors :rabbit-host *rabbit-address*
@@ -35,9 +35,7 @@
     (star.rabbit:start-consumers)
     (star.actors:start-event-consumer 2))
 
-
   (loop for thread in (bt:all-threads)
-
         if (not (equal thread (bt:current-thread)))
           do (bt:join-thread thread)))
 
@@ -70,4 +68,3 @@
     (clingon:run app)))
 
 
-;; Server command handler:1 ends here
