@@ -72,13 +72,14 @@
 
 (defun init-db ()
   "Create the database, and all map-reduce views with it."
-  (let ((database *couchdb-default-database*))
-    (anypool:with-connection (client *couchdb-pool*)
-      (handler-case (cl-couch:get-database client database)
-        (dexador:http-request-not-found (e) (progn
-                                              (log:info "Creating database: ~a" database)
-                                              (cl-couch:create-database client database)
-                                              (init-views client database)))))))
+  (let ((database *couchdb-default-database*)
+        (client (new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
+    (password-auth client star:*couchdb-user* star:*couchdb-password*)
+    (handler-case (get-database client database)
+      (dexador:http-request-not-found (e) (progn
+                                            (log:info "Creating database: ~a" database)
+                                            (cl-couch:create-database client database)
+                                            (init-views client database))))))
 
 ;; TODO use query view
 (defun get-targets* (client database &rest actors)

@@ -11,22 +11,15 @@
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
     :key :init-value)
-   (clingon:make-option
-    :boolean
-    :description "Enable Remote debugging"
-    :short-name #\d
-    :long-name "debugger"
-    :key :debugger)))
+   ))
 
 (defun server/handler (cmd)
   (let ((debugger (clingon:getopt cmd :debugger))
         (init-file (clingon:getopt cmd :init-value)))
-    (when debugger
-      (slynk:create-server :port 50006 :dont-close t))
+
     (load init-file :if-does-not-exist :create)
     (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
     (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
-    (load init-file :if-does-not-exist :create)
     (star.databases.couchdb:init-db)
     (star.actors:start-actors :rabbit-host *rabbit-address*
                               :rabbit-vhost "/"
