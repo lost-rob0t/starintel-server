@@ -1,4 +1,6 @@
 (in-package :starintel-gserver)
+
+
 (defun server/options ()
   (list
    (clingon:make-option
@@ -42,19 +44,33 @@
 
 
 (defun server/command ()
-  "A command to greet someone"
+  "Start server"
   (clingon:make-command
    :name "start"
    :description "start the server"
-   :version "0.1.0"
    :authors '("nsaspy <nsaspy@airmail.cc>")
    :license "GPL v3"
    :options (server/options)
    :handler #'server/handler)
   )
 
-(defun reload ()
-  (ql:quickload :starintel-gserver))
+(defun main/commands ()
+  (list
+   (server/command)))
+
+(defun main/handler (cmd)
+  "Print usage/exit"
+  (clingon:print-usage-and-exit cmd t))
+
+
+(defun main/command ()
+  (clingon:make-command :name "star-server"
+                        :version *star-server-version*
+                        :description "Starintel unified API and document consuming service."
+                        :authors '("nsaspy <nsaspy@airmail.cc>")
+                        :license "GPL v3"
+                        :handler #'main/handler
+                        :sub-commands (main/commands)))
 
 (defun start-debugger ()
   (ql:quickload '("slynk" "bordeaux-threads"))
@@ -64,7 +80,7 @@
 
 
 (defun main ()
-  (let ((app (server/command)))
+  (let ((app (main/command)))
     (clingon:run app)))
 
 

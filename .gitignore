@@ -7,3 +7,4 @@
 .direnv/*
 /gserver.log
 /star-server
+./tokens.org
