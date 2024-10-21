@@ -243,4 +243,4 @@ Content-Type: application/json
 
 #+RESULTS:
 
-Retrieves the neighbors of the specified documents up to the given level.ttp Api Docs
+Retrieves the neighbors of the specified documents up to the given level.

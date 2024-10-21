@@ -3,7 +3,7 @@
 * Starintel gserver
 Starintel gserver is the new API server for interacting with the starintel system.
 
-it is still under development.
+
 
 - Features:
   - rabbitmq
@@ -11,4 +11,22 @@ it is still under development.
   - hackable
 
 
+** *WARNINGS*
+*** Project status
+This repo is a mess!
+This project is experimental, DO NOT EXPOSE TO THE WEB.
+
+*** Consumers and actors
+
+In a future version the consumer that inserts will revert back to cl-gserver actor when I figure a good proto and learn more about sento.
+
+Something along the lines of
+
+#+begin_src lisp
+(tell *couchdb* (:db "starintel" :id "0HJY....." :document (as-json (spec:create-user :dataset "github" :name "lost-rob0t"))))
+#+end_src
+
+I will have to do more research to better utlize the sento system.
+
+** Documentation
 For http documentation: [[file:./docs/http-api-docs.org][Api Documentation]]
