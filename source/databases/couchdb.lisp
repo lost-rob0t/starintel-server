@@ -3,15 +3,7 @@
 
 (defparameter +lazy+ "lazy")
 
-(defparameter *couchdb-pool* (anypool:make-pool :name "couchdb-connections"
-                                                :connector (lambda ()
-                                                             (let ((client (cl-couch:new-couchdb (or star:*couchdb-host* (uiop:getenv "COUCHDB_HOST")) (or star:*couchdb-port* 5984) :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
-                                                               (cl-couch:password-auth client (or star:*couchdb-password* (uiop:getenv "COUCHDB_USER")) (or star:*couchdb-password* (uiop:getenv "COUCHDB_PASSWORD")))
-                                                               client))
 
-                                                :disconnector (lambda (obj)
-                                                                (setf (cl-couch:couchdb-headers obj) nil))
-                                                :max-open-count 2))
 
 (defun format-key (key)
   (if (str:starts-with? "_" key)
