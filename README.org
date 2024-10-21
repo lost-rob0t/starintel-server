@@ -1,7 +1,7 @@
 #+title: Readme
 
-* Starintel gserver
-Starintel gserver is the new API server for interacting with the starintel system.
+* Star Server
+Starintel server is the new API server for interacting with the starintel system.
 
 
 
@@ -29,4 +29,88 @@ Something along the lines of
 I will have to do more research to better utlize the sento system.
 
 ** Documentation
+*** HTTP
 For http documentation: [[file:./docs/http-api-docs.org][Api Documentation]]
+*** Setting up dev env
+star-server uses nixpkgs to managment the dev shell, which is like a venv for this project.
+
+it is not required
+
+First install the [[https://nixos.org/download/][Nix package manager]] and [[https://direnv.net/][Direnv]].
+
+Also Ensure you have [[https://www.quicklisp.org/beta/][Quicklisp]] installed also.
+
+#+Name: Setup dev env
+#+begin_src sh :async :results output replace
+git clone  --recurse-submodules https://github.com/lost-rob0t/starintel-gserver.git star-server && cd star-server;
+direnv allow .
+#+end_src
+
+Now nix should be pulling down everything and you will be placed inside a new shell with everything needed in $PATH.
+*** Compiling From Source without nix
+
+Ensure you have [[https://www.quicklisp.org/beta/][Quicklisp]].
+
+#+Name: Compile from source
+#+begin_src shell :async :results output replace
+git clone  --recurse-submodules https://github.com/lost-rob0t/starintel-gserver.git star-server && cd star-server;
+make build
+make install
+#+end_src
+*** Usage
+
+#+Name: Usage
+#+begin_src sh :async :results output replace
+./star-server
+#+end_src
+
+#+RESULTS: Usage
+#+begin_example
+NAME:
+  star-server - Starintel unified API and document consuming service.
+
+USAGE:
+  star-server [global-options] [<command>] [command-options] [arguments ...]
+
+OPTIONS:
+      --help     display usage information and exit
+      --version  display version and exit
+
+COMMANDS:
+  start  start the server
+
+AUTHORS:
+  nsaspy <nsaspy@airmail.cc>
+
+LICENSE:
+  GPL v3
+
+#+end_example
+
+
+#+Name: start
+#+begin_src shell :async :results output replace
+./star-server start --help
+#+end_src
+
+#+RESULTS: start
+#+begin_example
+NAME:
+  star-server start - start the server
+
+USAGE:
+  star-server [global-options] start [options] [arguments ...]
+
+OPTIONS:
+      --help              display usage information and exit
+      --version           display version and exit
+  -d, --debugger <VALUE>  Enable Remote debugging
+  -i, --init <VALUE>      Path to init file [default: ./init.lisp] [env: $STAR_SERVER_INIT_FILE]
+
+AUTHORS:
+  nsaspy <nsaspy@airmail.cc>
+
+LICENSE:
+  GPL v3
+
+#+end_example
