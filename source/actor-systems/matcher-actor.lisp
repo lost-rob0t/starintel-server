@@ -18,7 +18,8 @@
    #:*pattern-actor*
    #:*url-extractor*
    #:*url-extractor-fields*
-   #:*url-regex*))
+   #:*url-regex*
+   #:start-url-extractor))
 
 
 
