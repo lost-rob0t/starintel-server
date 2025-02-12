@@ -1,0 +1,88 @@
+("quicklisp" .
+ (:class qlot/source/dist:source-dist
+  :initargs (:distribution "https://beta.quicklisp.org/dist/quicklisp.txt" :%version :latest)
+  :version "2024-10-12"))
+("serapeum" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("alexandria" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("babel" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("cl-json" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2022-07-07"))
+("uuid" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2020-07-15"))
+("anypool" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("clack" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("ningle" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("clingon" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("sly" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("lparallel" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2016-08-25"))
+("cl-stream" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2019-05-21"))
+("cl-ppcre" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("bordeaux-threads" .
+ (:class qlot/source/ql:source-ql
+  :initargs (:%version :latest)
+  :version "ql-2024-10-12"))
+("star-cl" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "lost-rob0t/star-cl" :ref nil :branch nil :tag nil)
+  :version "github-0c10783a640e6a63ce0a23069668fc3d47a3fe4a"))
+("cl-couch" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "lost-rob0t/cl-couch" :ref nil :branch nil :tag nil)
+  :version "github-e3c8e7d1548c7814e49528869c098e5e03ccbe80"))
+("cl-gserver" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "mdbergmann/cl-gserver" :ref nil :branch nil :tag nil)
+  :version "github-6a510c5b58469e72e6363bd3a6059d80b9a5c320"))
+("cl-rabbit" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "lokedhs/cl-rabbit" :ref nil :branch nil :tag nil)
+  :version "github-9603204715bb13f09243dc286c5ad4bd51b4fd7b"))
+("cl-ulid" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "jolby/cl-ulid" :ref nil :branch nil :tag nil)
+  :version "github-af00ce06a29e4d577393069c0b817f1393926054"))
+("nhooks" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "atlas-engineer/nhooks" :ref nil :branch nil :tag nil)
+  :version "github-3847bc749a6f6eb1103bc21f8ef3b4f6b301e822"))
+("cms-ulid" .
+ (:class qlot/source/git:source-git
+  :initargs (:remote-url "https://gitlab.com/colinstrickland/cms-ulid.git")
+  :version "git-fff84302dee5db42fb90aafd834af3ffbfd6c2bb"))

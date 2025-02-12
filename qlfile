@@ -1,0 +1,26 @@
+# Core dependencies from Quicklisp
+ql serapeum :latest
+ql alexandria :latest
+ql babel :latest
+ql cl-json :latest
+ql uuid :latest
+ql anypool :latest
+ql clack :latest
+ql ningle :latest 
+ql clingon :latest
+ql sly
+ql lparallel :latest
+ql cl-stream :latest
+ql cl-ppcre :latest
+ql bordeaux-threads :latest
+
+# GitHub repositories
+github lost-rob0t/star-cl
+github lost-rob0t/cl-couch
+github mdbergmann/cl-gserver
+github lokedhs/cl-rabbit
+github jolby/cl-ulid
+github atlas-engineer/nhooks
+
+# GitLab repository
+git cms-ulid https://gitlab.com/colinstrickland/cms-ulid.git
