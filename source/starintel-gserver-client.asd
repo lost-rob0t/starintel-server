@@ -1,3 +1,4 @@
+;; FIXME cl-json being removed?
 (asdf:defsystem :starintel-gserver-client
   :version      "0.1.0"
   :description  "Api client for gserver."
