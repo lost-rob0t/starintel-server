@@ -2,7 +2,6 @@
 ql serapeum :latest
 ql alexandria :latest
 ql babel :latest
-ql cl-json :latest
 ql uuid :latest
 ql anypool :latest
 ql clack :latest
