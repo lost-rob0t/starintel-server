@@ -2,7 +2,6 @@
 ql serapeum :latest
 ql alexandria :latest
 ql babel :latest
-ql cl-json :latest
 ql uuid :latest
 ql anypool :latest
 ql clack :latest
@@ -21,6 +20,6 @@ github mdbergmann/cl-gserver
 github lokedhs/cl-rabbit
 github jolby/cl-ulid
 github atlas-engineer/nhooks
-
+github sharplispers/cl-json
 # GitLab repository
 git cms-ulid https://gitlab.com/colinstrickland/cms-ulid.git
