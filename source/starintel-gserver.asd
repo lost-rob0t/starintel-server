@@ -30,15 +30,11 @@
                  #:cl-rabbit
                  #:sento
                  #:babel
-                 #:cl-json
-                 :uuid
-                 ;; Not using
+                 #:uuid
                  #:anypool
                  #:clack
                  #:ningle
-                 ;; Will use wookie
                  #:clingon
-                 ;; Move to config
                  #:slynk
                  #:nhooks
                  #:lparallel
