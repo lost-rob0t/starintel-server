@@ -28,7 +28,7 @@
    #:*injest-workers*
    #:*couchdb-event-log-database*
    #:*couchdb-views*
-   #:*star-server-version*))
+   #:+star-server-version+))
 
 
 (uiop:define-package   :star.databases.couchdb

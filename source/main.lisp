@@ -58,7 +58,7 @@
 
 (defun main/command ()
   (clingon:make-command :name "star-server"
-                        :version *star-server-version*
+                        :version +star-server-version+
                         :description "Starintel unified API and document consuming service."
                         :authors '("nsaspy <nsaspy@airmail.cc>")
                         :license "GPL v3"

@@ -11,6 +11,7 @@
 (defparameter +default-rabbit-user+ "guest")
 (defparameter +default-rabbit-password+ "guest")
 (defparameter +default-slynk-port+ 4009)
+(defparameter +star-server-version+ "0.0.1") 
 
 (defparameter *couchdb-host* +default-couchdb-host+
   "The Couchdb host to use. Uses ENV var COUCHDB_HOST if set.")
