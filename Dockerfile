@@ -27,6 +27,7 @@ FROM build as star-server
 
 VOLUME /config
 EXPOSE 5000
+EXPOSE 4009 # NOTE Debug port do not expose in production.
 RUN echo '#!/bin/sh\n\
 set -e\n\
 # Check if /config/init.lisp exists; if not, use /root/init.lisp\n\
