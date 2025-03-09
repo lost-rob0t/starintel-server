@@ -1,12 +1,14 @@
 version: '3.8'
-
+# This is an example production compose file
+# instead of using a named volume this bind mounds the state for couchdb and rabbitmq to a dir
+# TODO Nginx rev proxy
 services:
   couchdb:
     container_name: "couchdb"
     hostname: couchdb
     image: ibmcom/couchdb3
     volumes:
-      - couchdb:/opt/couchdb/data
+      - ./state/couchdb:/opt/couchdb/data
     environment:
       #NOTE CHANGE ME
       COUCHDB_USER: admin
@@ -28,7 +30,7 @@ services:
       - "5672:5672"
       - "15672:15672"
     volumes:
-      - rabbitmq:/var/lib/rabbitmq
+      - ./state/rabbitmq:/var/lib/rabbitmq
     networks:
       - star
   star-server:
@@ -39,8 +41,6 @@ services:
     volumes:
       # You can copy example_configs to ./config in order to configure star-server
       - ./config:/config
-    environment:
-      BUILD_MODE: DEV
     ports:
       # port 4009 is a debugging port and you MUST disable it during prod use
       - "5000:5000"

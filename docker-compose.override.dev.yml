@@ -1,14 +1,13 @@
 version: '3.8'
-
+# This is the compose to be used for hacking on gserver
+# No state is set just restart to get to a blank state
 services:
   couchdb:
     container_name: "couchdb"
     hostname: couchdb
+    volumes: !reset []
     image: ibmcom/couchdb3
-    volumes:
-      - couchdb:/opt/couchdb/data
     environment:
-      #NOTE CHANGE ME
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: password
     ports:
@@ -21,28 +20,26 @@ services:
     hostname: rabbitmq
     container_name: "rabbitmq"
     environment:
-      #NOTE CHANGEME
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    volumes: !reset []
     ports:
       - "5672:5672"
       - "15672:15672"
-    volumes:
-      - rabbitmq:/var/lib/rabbitmq
     networks:
       - star
+
   star-server:
     hostname: star-server
     container_name: "star-server"
     restart: always
     build: .
     volumes:
-      # You can copy example_configs to ./config in order to configure star-server
       - ./config:/config
     environment:
       BUILD_MODE: DEV
     ports:
-      # port 4009 is a debugging port and you MUST disable it during prod use
+      - "4009:4009"
       - "5000:5000"
     networks:
       - star
@@ -53,12 +50,7 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
 
-
-
 networks:
   star:
     name: star
   default:
-volumes:
-    couchdb:
-    rabbitmq:
