@@ -16,10 +16,14 @@
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
                  (:file "init")
+                 ;; FIXME Once eventstream is finished
+                 ;; (:file "actor-systems/event-actor")
+                 ;; (:file "actor-systems/matcher-actor")
+                 (:file "actor-systems/rabbit-service")
+                 (:file "actor-systems/couchdb-service")
                  (:file "actors")
-                 (:file "actor-systems/event-actor")
-                 (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
+                 (:file "frontends/middleware")
                  (:file "frontends/http-api")
                  (:file "main"))
 

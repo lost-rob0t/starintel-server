@@ -113,20 +113,14 @@
    #:*pattern-agent*
    #:*pattern-actor*
    #:*wmn-relations-p*
-   #:publish
-   #:handle-event-message
-   #:start-event-consumer
-   #:log-actor-event
-   #:*event-consumer*
-   #:*actor-event-receiver*
-   #:make-actor-event
-   #:actor-event
-   #:event-timestamp
-   #:event-actor-name
-   #:event-type
-   #:event-details
-   #:event-source-document
-   #:event-id))
+   #:*publish-service*
+   #:*couchdb-bulk-gets*
+   #:*couchdb-bulk-inserts*
+   #:*actor-index-agent*
+   #:start-actor-index
+   #:get-dest-actor
+   #:route-target
+   #:*couchdb-agent*))
 
 (defpackage #:lack/middleware/couchdb-pool
   (:use #:cl)
