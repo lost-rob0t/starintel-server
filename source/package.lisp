@@ -28,7 +28,8 @@
    #:*injest-workers*
    #:*couchdb-event-log-database*
    #:*couchdb-views*
-   #:+star-server-version+))
+   #:+star-server-version+
+   #:*actor-system-config*))
 
 
 (uiop:define-package   :star.databases.couchdb
@@ -90,11 +91,12 @@
    #:transient-p
    #:test-make-doc
    #:test-send
-   #:start-consumers))
+   #:start-consumers
+   #:+new-key+))
 ;; Namespace setup:3 ends here
 
-(uiop:define-package   :star.actors
-  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+(uiop:define-package :star.actors
+  (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
   (:documentation "doc")
   (:export
    #:register-actor
@@ -126,12 +128,22 @@
    #:event-source-document
    #:event-id))
 
+(defpackage #:lack/middleware/couchdb-pool
+  (:use #:cl)
+  (:nicknames #:lack.middleware.couchdb-pool)
+  (:import-from #:anypool
+                #:make-pool
+                #:too-many-open-connection)
+  (:export #:*lack-middleware-couchdb-pool*
+           #:with-couchdb))
 
 ;; [[file:../source.org::*Namespace setup][Namespace setup:4]]
 (uiop:define-package   :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
-  (:use       :cl :ningle :anypool :star.databases.couchdb :star)
+  (:import-from :lack/middleware/couchdb-pool :with-couchdb :*connection-pool*)
+  (:use       :cl :ningle :star.databases.couchdb :star)
   (:documentation "simple http api.")
   (:export
-   #:*default-headers*))
+   #:*default-headers*
+   #:start-http-api))
 ;; Namespace setup:4 ends here

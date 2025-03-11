@@ -18,17 +18,34 @@
         (init-file (clingon:getopt cmd :init-value)))
 
     (load init-file :if-does-not-exist :create)
-    (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
-    (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+    (log:info (format nil "Creating ~a worker threads" *injest-workers*))
+    (setf lparallel:*kernel* (lparallel:make-kernel *injest-workers*))
     (star.databases.couchdb:init-db)
     (star.actors:start-actors :rabbit-host *rabbit-address*
                               :rabbit-vhost "/"
                               :rabbit-port *rabbit-port*
                               :rabbit-user *rabbit-user*
                               :rabbit-password *rabbit-password*)
-    (star.frontends.http-api::start-http-api)
-    (star.rabbit:start-consumers)
-    (star.actors:start-event-consumer 2))
+    
+    (star.rabbit:start-consumers :injest-workers *injest-workers*
+                                 :rabbit-user *rabbit-user*
+                                 :rabbit-password *rabbit-password*
+                                 :rabbit-address *rabbit-address*
+                                 :rabbit-port *rabbit-port*
+                                 :couchdb-host *couchdb-host*
+                                 :couchdb-port *couchdb-port*
+                                 :couchdb-scheme *couchdb-scheme*
+                                 :couchdb-user *couchdb-user*
+                                 :couchdb-password *couchdb-password*)
+    (star.frontends.http-api:start-http-api :listen-address *http-api-address* 
+                                            :api-port *http-api-port*
+                                            :couchdb-user *couchdb-user*
+                                            :couchdb-password *couchdb-password*
+                                            :couchdb-host *couchdb-host*
+                                            :couchdb-port *couchdb-port*
+                                            :http-scheme *couchdb-scheme*))
+  ;; (star.actors:start-event-consumer 2)
+  
 
   (loop for thread in (bt:all-threads)
         if (not (equal thread (bt:current-thread)))
@@ -77,3 +94,33 @@
     (clingon:run app)))
 
 
+(defun devel-main (&key (init-file))
+  "Start the service but do not join threads so slynk doesnt lock!"
+  (load init-file :if-does-not-exist :create)
+  (load init-file :if-does-not-exist :create)
+  (log:info (format nil "Creating ~a worker threads" *injest-workers*))
+  (setf lparallel:*kernel* (lparallel:make-kernel *injest-workers*))
+  (star.databases.couchdb:init-db)
+  (star.actors:start-actors :rabbit-host *rabbit-address*
+                            :rabbit-vhost "/"
+                            :rabbit-port *rabbit-port*
+                            :rabbit-user *rabbit-user*
+                            :rabbit-password *rabbit-password*)
+  (star.rabbit:start-consumers :injest-workers *injest-workers*
+                               :rabbit-user *rabbit-user*
+                               :rabbit-password *rabbit-password*
+                               :rabbit-address *rabbit-address*
+                               :rabbit-port *rabbit-port*
+                               :couchdb-host *couchdb-host*
+                               :couchdb-port *couchdb-port*
+                               :couchdb-scheme *couchdb-scheme*
+                               :couchdb-user *couchdb-user*
+                               :couchdb-password *couchdb-password*)
+
+  (star.frontends.http-api:start-http-api :listen-address *http-api-address* 
+                                          :api-port *http-api-port*
+                                          :couchdb-user *couchdb-user*
+                                          :couchdb-password *couchdb-password*
+                                          :couchdb-host *couchdb-host*
+                                          :couchdb-port *couchdb-port*
+                                          :http-scheme *couchdb-scheme*))

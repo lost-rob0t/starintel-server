@@ -3,34 +3,6 @@
 
 (defparameter *app* (make-instance 'ningle:app))
 
-(defparameter *rabbitmq-conn* nil)
-(defparameter *rabbit-lock* (bt:make-lock "rabbitmq-conn"))
-
-(defun disconnect-rabbitmq ()
-  (when *rabbitmq-conn*
-    (cl-rabbit:destroy-connection *rabbitmq-conn*)
-    (setf *rabbitmq-conn* nil)))
-
-
-;; Somhere in here a plugin called http api could be made, except not a normal plugin its a service and would start this web server instead of embeding it
-
-(defparameter *couchdb-pool* (anypool:make-pool :name "couchdb-connections"
-                                                :connector (lambda ()
-                                                             (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
-                                                               (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
-                                                               client))
-
-                                                :disconnector (lambda (obj)
-                                                                (setf (cl-couch:couchdb-headers obj) nil))
-                                                :max-open-count 20))
-
-(defun connect-rabbitmq ()
-  (setf *rabbitmq-conn* (cl-rabbit:new-connection))
-  (let ((socket (cl-rabbit:tcp-socket-new *rabbitmq-conn*)))
-    (cl-rabbit:socket-open socket star:*rabbit-address* star:*rabbit-port*)
-    (cl-rabbit:login-sasl-plain *rabbitmq-conn* "/" star:*rabbit-user* star:*rabbit-password*)
-    (cl-rabbit:channel-open *rabbitmq-conn* 1)))
-
 
 
 (defparameter *default-headers* (list
@@ -55,73 +27,77 @@
     (jsown:to-json json)))
 
 
-(defmacro couchdb-handler ((client pool) &body body)
-  `(anypool:with-connection (,client ,pool)
-     (handler-case ,@body
-       (dex:http-request-not-found (e)
-         (status-msg "Not Found" 'error))
-       (dex:http-request-conflict (e)
-         (status-msg "Conflict" 'error))
-       (usocket:timeout-error (e)
-         (status-msg  "Time out Connecting to database" 'error))
-       (dex:http-request-gateway-timeout (e)
-         (status-msg "Timeout connecting to couchdb" 'error))
-       (dex:http-request-bad-request (e)
-         (status-msg "Bad Request" 'error :traceback (format nil "~a" e))))))
 
 
-
+;; TODO stats on error shoudnt be a string when error condiction is hit
 (setf (ningle:route *app* "/" :method :get)
       #'(lambda (params)
-          (couchdb-handler (client *couchdb-pool*)
+          (with-couchdb (client :couchdb-main)
             (let ((json (jsown:new-js
                           ("doc_spec_version" spec:+starintel-doc-version+)
                           ("default-dataset" star:*couchdb-default-database*)
-                          ("event_log" star:*couchdb-event-log-database*)
+                          ;; ("event_log" star:*couchdb-event-log-database*)
                           ("stats" (jsown:new-js
-                                     ("dataset-size" (dataset-size client star:*couchdb-default-database* :update :lazy :reduce t :include-docs nil)))))))
+                                     ("dataset-size" (or (dataset-size client star:*couchdb-default-database* :update :lazy :reduce t :include-docs nil) "Error fetching datasets.")))))))
               (set-default-headers)
               (jsown:to-json json)))))
 
-
+(setf (ningle:route *app* "/health" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (jsown:to-json
+           (jsown:new-js
+             ("status" "ok")
+             ("server-version" star:+star-server-version+)
+             ("spec-version" spec:+starintel-doc-version+)))))
 
 
 (setf (ningle:route *app* "/targets/:actor" :method :get)
       #'(lambda (params)
           (set-default-headers)
-          (couchdb-handler (client *couchdb-pool*)
+          (with-couchdb (client :couchdb-main)
             (let ((targets (loop for row in (jsown:val (query-view client *couchdb-default-database* "targets" "by_actor" :include-docs t :key (cdr (assoc :actor params :test #'string=))) "rows")
                                  collect (jsown:val row "doc"))))
               (log:debug targets)
               (jsown:to-json targets)))))
 
-
+;; REVIEW is this needed
+;; target document has the data lol
 (setf (ningle:route *app* "/new/target/:actor" :method :post)
+      ;; Please make sure  _rev tag is set correctly.
       #'(lambda (params)
-          (let* ((actor (cdr (assoc :actor params :test #'string=)))
-                 (body (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
-                 (routing-key (format nil "documents.new.target.~a" actor)))
-            (with-rabbitmq (*rabbitmq-conn*)
-              (cl-rabbit:basic-publish *rabbitmq-conn* 1 :routing-key routing-key :exchange "documents" :properties (list (cons :type "target")) :body body))
-            body)))
+          (with-couchdb (client :couchdb-main)
+            (let* ((actor (cdr (assoc :actor params :test #'string=)))
+                   (body (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
+                   ;; TODO since we are inserting into DB here, we should use the new routing key
+                   ;; documents.new includes _rev
+                   ;; documents.injest.target would be the injest location
+                   (routing-key (format nil "documents.new.target.~a" actor))
+                   (rev-tag (jsown:val-safe (jsown:parse (cl-couch:create-document client *couchdb-default-database* body)) "rev"))
+                   (document-with-rev (jsown:to-json (jsown:extend-js (jsown:parse body)
+                                                       ("_rev" rev-tag)))))
+
+              (act:! star.actors:*publish-service* (list :routing-key routing-key :exchange "documents" :properties (list (cons :type "target")) :body document-with-rev))
+              `(201 (:content-type "text/plain") (,document-with-rev))))))
 
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
       #'(lambda (params)
-          (set-default-headers)
-          (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
-                 (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
-                 (routing-key (format nil "documents.new.~a" dtype)))
-            (with-rabbitmq (*rabbitmq-conn*)
-              (cl-rabbit:basic-publish *rabbitmq-conn* 1 :routing-key routing-key :exchange "documents" :properties (list (cons :type dtype)) :body body))
-
-            body)))
+          (with-couchdb (client :couchdb-main)
+            (let* ((dtype (cdr (assoc :dtype params :test #'string=)))
+                   (body (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
+                   (routing-key (format nil "documents.new.~a" dtype))
+                   (rev-tag (jsown:val-safe (jsown:parse (cl-couch:create-document client *couchdb-default-database* body)) "rev"))
+                   (document-with-rev (jsown:to-json (jsown:extend-js (jsown:parse body)
+                                                       ("_rev" rev-tag)))))
+              (act:! star.actors:*publish-service* (list :routing-key routing-key :exchange "documents" :properties (list (cons :type dtype)) :body document-with-rev))
+              `(201 (:content-type "text/plain") (,document-with-rev))))))
 
 (setf (ningle:route *app* "/document/:id" :method :get)
       #'(lambda (params)
           (set-default-headers)
           (let ((document-id  (cdr (assoc :id params :test #'string=))))
-            (couchdb-handler (client *couchdb-pool*)
+            (with-couchdb (client :couchdb-main)
               (cl-couch:get-document client star:*couchdb-default-database* document-id)))))
 
 
@@ -129,7 +105,7 @@
 (setf (ningle:route *app* "/search" :method :get)
       #'(lambda (params)
           (set-default-headers)
-          (couchdb-handler (client *couchdb-pool*)
+          (with-couchdb (client :couchdb-main)
             (let* ((db star:*couchdb-default-database*)
                    (ddoc "search")
                    (search-name "fts")
@@ -161,7 +137,7 @@
                 (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (messages-by-user client star:*couchdb-default-database*
                                  :limit limit
                                  :start-key (when start-key (jsown:parse start-key))
@@ -182,7 +158,7 @@
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0")))
                 (reduce (equal (cdr (assoc "reduce" params :test #'string=)) "true")))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (by-channel client star:*couchdb-default-database*
                            :limit limit
                            :start-key (when start-key (jsown:parse start-key))
@@ -209,7 +185,7 @@
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0")))
                 (reduce (equal (cdr (assoc "reduce" params :test #'string=)) "true")))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (by-channel client star:*couchdb-default-database*
                            :limit limit
                            :start-key (when start-key (jsown:parse start-key))
@@ -230,7 +206,7 @@
                 (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (messages-by-platform client star:*couchdb-default-database*
                                      :limit limit
                                      :start-key (when start-key (jsown:parse start-key))
@@ -249,7 +225,7 @@
                 (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (groups client star:*couchdb-default-database*
                        :limit limit
                        :update "lazy"
@@ -266,7 +242,7 @@
                 (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (social-posts-by-user client star:*couchdb-default-database*
                                      :limit limit
                                      :start-key (when start-key (jsown:parse start-key))
@@ -280,7 +256,7 @@
           (set-default-headers)
           (let ((dataset (cdr (assoc "dataset" params :test #'string=))))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (dataset-size client star:*couchdb-default-database*
                              :key dataset
                              :include-docs nil
@@ -296,7 +272,7 @@
                 (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
                 (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
             (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
+             (with-couchdb (client :couchdb-main)
                (dataset-size client star:*couchdb-default-database*
                              :limit limit
                              :start-key (when start-key (jsown:parse start-key))
@@ -306,20 +282,36 @@
                              :include-docs (if reduce nil t)
                              :skip skip))))))
 
-
+;; TODO Eventing api 
 (setf (ningle:route *app* "/new/event/:id")
       #'(lambda (params)
           (set-default-headers)
           (let ((event)))))
 
 
-(defparameter *server* (lack:builder
-                        :accesslog
-                        *app*))
+;; TODO configuration object
+;; We shoudnt be passing these by hand
+(defun start-http-api (&key listen-address
+                         api-port
+                         couchdb-user
+                         couchdb-password
+                         couchdb-host
+                         couchdb-port
+                         http-scheme
+                         (server :hunchentoot))
+  (let ((*server* (lack:builder
+                   (:couchdb-pool :couchdb-main :connect-args `(:host ,couchdb-host
+                                                                :port ,couchdb-port
+                                                                :scheme ,http-scheme
+                                                                :user ,couchdb-user
+                                                                :password ,couchdb-password)
+                    :pool-args '(:max-open-count 20))
+                   :accesslog
+                   *app*))
+        (context star.actors:*sys*))
 
-(defun start-http-api ()
-  (connect-rabbitmq)
-  (clack:clackup *server*
-                 :server :hunchentoot
-                 :address star:*http-api-address*
-                 :port star:*http-api-port*))
+
+    (clack:clackup *server*
+                   :server server
+                   :address listen-address
+                   :port api-port)))

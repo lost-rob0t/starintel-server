@@ -1,18 +1,13 @@
 ;;;; ** Actor System
 
 (in-package :star.actors)
-(defparameter *sys* nil "the main actor system")
-
-(defun start-actor-system ()
-  "Start the actors."
-  (setf *sys* (make-actor-system `(:dispatchers
-                                   (:pinned (:workers ,star:*injest-workers* :strategy :random))
-                                   :timeout-timer
-                                   (:resolution 500 :max-size 1000)
-                                   :eventstream
-                                   (:dispatcher-id :shared)
-                                   :scheduler
-                                   (:enabled :true :resolution 100 :max-size 500)))))
+(defvar *sys* nil "the main actor system")
+(defvar *producer-agent* nil "Rabbitmq Producer")
+(defvar *publish-service* nil "Rabbitmq Publish actor")
+(defvar *couchdb-agent* nil "Rabbitmq Publish actor")
+(defvar *couchdb-gets* nil "Actor responsible for performing individual document GET operations in CouchDB")
+(defvar *couchdb-bulk-gets* nil "Actor responsible for performing bulk document GET operations in CouchDB")
+(defvar *couchdb-bulk-inserts* nil "Actor responsible for performing bulk document INSERT operations in CouchDB")
 
 
 ;;;; *** Target Routing
@@ -144,6 +139,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 ;;;; Sumbit the target for execution.
 ;;;; target actor will route the message to a registered lisp actor or submit to rabbitmq
+;;;; REVIEW Why should it care about first time?
 (defun sumbit-target (target &optional (first-time t))
   "Create a message for the *targets* actor."
   (tell *targets*  (if first-time
@@ -210,53 +206,46 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 
 
-
-;;;; Define a actor and its start function
-(defmacro define-actor ((name system) &body body)
-  (let ((start-fn-name (intern (format nil "START-~A" (str:replace-all "*" "" (symbol-name name))))))
-    `(progn
-       (defvar ,name nil)
-       (defun ,start-fn-name ()
-         (setf ,name
-               (actor-of ,system
-                         :name ,(symbol-name name)
-                         :receive ,@body)))
-       (serapeum:add-hook starintel-gserver:*actors-start-hook* #',start-fn-name :append t))))
-
-;;;; * Producer Agent
-;;;; The producer agent
-(defun make-producer-agent (producer context)
-  (make-agent (lambda ()
-                (star.producers:producer-connect producer)
-                producer) context))
-
-(defparameter *producer-lock* "")
-(defparameter *producer-agent* nil)
-
-
-(defun publish (agent &key body (properties nil) routing-key)
-  (log:info (star.producers:publish (agent-get agent #'identity) :body (jsown:to-json body) :properties properties :routing-key routing-key)))
-
-
-
-
-
-
-(defun start-actors (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port)
-  (start-actor-system)
-  (setf *producer-agent* (make-producer-agent (star.producers:make-producer :name "actor-producer"
-                                                                            :exchange-name "documents"
-                                                                            :host rabbit-host
-                                                                            :port rabbit-port
-                                                                            :user rabbit-user
-                                                                            :password rabbit-password
-                                                                            :vhost rabbit-vhost) *sys*))
-
-  ;; FIXME
+(defun start-actors (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port
+                       couchdb-user couchdb-password couchdb-host couchdb-port couchdb-scheme)
+  (log:info (setf *sys* (make-actor-system  (or star:*actor-system-config* `(:dispatchers (:shared (:workers 4 :strategy :random)
+                                                                                           :rabbitmq (:workers 8 :strategy :round-robin)
+                                                                                           :star-actors (:workers 4 :strategy :round-robin)
+                                                                                           :ingest (:workers ,star:*injest-workers* :strategy :round-robin))
+                                                                             :scheduler (:enabled :true :resolution 100 :max-size 500)
+                                                                             :eventstream (:dispatcher-id :shared)
+                                                                             :timeout-timer (:resolution 500 :max-size 1000))))))
+  ;; HACK Lets Not do this
   (let ((*gc-timer* (wt:make-wheel-timer)))
     (wt:schedule-recurring *gc-timer* 1 3600 (lambda ()
                                                (sb-ext:gc :full t))))
-  (start-couchdb-agent *sys*)
+
+  ;; Create RabbitMQ producer agent before service
+  (setf *producer-agent* (star.actors.rabbitmq:make-producer-agent *sys*
+                                                                   :name "default-producer"
+                                                                   :host rabbit-host
+                                                                   :port rabbit-port
+                                                                   :user rabbit-user
+                                                                   :password rabbit-password
+                                                                   :vhost rabbit-vhost))
+
+  ;; Connect the producer agent
+  ;; HACK this is kinda costly
+  (star.actors.rabbitmq:producer-agent-connect *producer-agent*)
+
+  ;; Create publish service using connected agent
+  (setf *publish-service* (star.actors.rabbitmq:make-publish-service *producer-agent* *publish-service* *sys* :workers 2))
+
+  ;; (setf *couchdb-agent* (star.actors.couchdb:make-couchdb-agent *sys*
+  ;;                                                               :password couchdb-password
+  ;;                                                               :user couchdb-user
+  ;;                                                               :port couchdb-port
+  ;;                                                               :host couchdb-host
+  ;;                                                               :scheme couchdb-scheme))
+  ;; (setf *couchdb-gets* (star.actors.couchdb:make-get-service *couchdb-agent* *sys* "couchdb-get"))
+  ;; (setf *couchdb-inserts* (star.actors.couchdb:make-insert-service *couchdb-agent* *sys* "couchdb-insert"))
+  ;; (setf *couchdb-bulk-gets* (star.actors.couchdb:make-bulk-get-service *couchdb-agent* *sys* "couchdb-bulk-gets"))
+  ;; (setf *couchdb-bulk-inserts* (star.actors.couchdb:make-bulk-insert-service *couchdb-agent* *sys* "couchdb-bulk-inserts"))
   (start-actor-index *sys*)
   (start-couchdb-gets *sys*)
   (start-couchdb-inserts *sys*)
