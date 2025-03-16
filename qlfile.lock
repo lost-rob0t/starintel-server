@@ -14,10 +14,6 @@
  (:class qlot/source/ql:source-ql
   :initargs (:%version :latest)
   :version "ql-2024-10-12"))
-("cl-json" .
- (:class qlot/source/ql:source-ql
-  :initargs (:%version :latest)
-  :version "ql-2022-07-07"))
 ("uuid" .
  (:class qlot/source/ql:source-ql
   :initargs (:%version :latest)
@@ -82,6 +78,10 @@
  (:class qlot/source/github:source-github
   :initargs (:repos "atlas-engineer/nhooks" :ref nil :branch nil :tag nil)
   :version "github-3847bc749a6f6eb1103bc21f8ef3b4f6b301e822"))
+("cl-json" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "sharplispers/cl-json" :ref nil :branch nil :tag nil)
+  :version "github-994dd38c94344383f39f95d75987f6dc47a0cca1"))
 ("cms-ulid" .
  (:class qlot/source/git:source-git
   :initargs (:remote-url "https://gitlab.com/colinstrickland/cms-ulid.git")
