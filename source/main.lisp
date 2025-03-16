@@ -1,7 +1,7 @@
 (in-package :starintel-gserver)
 
-
 (defun server/options ()
+  "Generate the command-line options for the server."
   (list
    (clingon:make-option
     :string
@@ -11,12 +11,13 @@
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
     :key :init-value)
+
    ))
+
 
 (defun server/handler (cmd)
   (let ((debugger (clingon:getopt cmd :debugger))
         (init-file (clingon:getopt cmd :init-value)))
-
     (load init-file :if-does-not-exist :create)
     (log:info (format nil "Creating ~a worker threads" *injest-workers*))
     (setf lparallel:*kernel* (lparallel:make-kernel *injest-workers*))
@@ -56,8 +57,8 @@
    :authors '("nsaspy <nsaspy@airmail.cc>")
    :license "GPL v3"
    :options (server/options)
-   :handler #'server/handler)
-  )
+   :handler #'server/handler))
+
 
 (defun main/commands ()
   (list

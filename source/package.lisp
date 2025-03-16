@@ -73,30 +73,9 @@
            :t
    :nil)
   (:documentation "doc"))
-;; Namespace setup:2 ends here
-
-;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
-(uiop:define-package   :star.rabbit
-  (:use       :cl :star.consumers  :sento.actor)
-  (:documentation "Rabitmq namespace")
-  (:export
-   #:with-rabbit-send
-   #:with-rabbit-recv
-   #:emit-document
-   #:+injest-queue+
-   #:+updates-queue+
-   #:+injest-key+
-   #:+update-key+
-   #:+targets-key+
-   #:transient-p
-   #:test-make-doc
-   #:test-send
-   #:start-consumers
-   #:+new-key+))
-;; Namespace setup:3 ends here
 
 (uiop:define-package :star.actors
-  (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+  (:use :cl :star.databases.couchdb :star.consumers :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
   (:documentation "doc")
   (:export
    #:register-actor
