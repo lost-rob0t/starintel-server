@@ -95,16 +95,12 @@ The actor service accepts messages with :body, :properties, and :routing-key arg
 and publishes them to RabbitMQ using the provided producer agent."
   (ac:actor-of system
                :receive (lambda (msg)
-                          (log:debug (list 
-                                      :body (getf msg :body)
-                                      :properties (getf msg :properties nil)
-                                      :routing-key (getf msg :routing-key)))
                           (agent-publish agent
                                          :body (getf msg :body)
                                          :properties (getf msg :properties)
                                          :routing-key (getf msg :routing-key)))
-               :name name
-               ))
+               :name name))
+
 
 (defun rabbit! (actor &rest args)
   "Send a message to a rabbitmq actor and do not expect a response. Expects &key style messages"
