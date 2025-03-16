@@ -4,8 +4,11 @@
 (defparameter +default-couchdb-port+ 5984)
 (defparameter +default-couchdb-default-database+ "starintel")
 (defparameter +default-couchdb-user+ "admin")
+(defparameter +default-couchdb-scheme+ "http")
 (defparameter +default-couchdb-password+ "password")
 (defparameter +default-http-api-address+ "localhost")
+(defparameter +default-http-api-port+ 5000)
+
 (defparameter +default-rabbit-address+ "localhost")
 (defparameter +default-rabbit-port+ 5672)
 (defparameter +default-rabbit-user+ "guest")
@@ -15,6 +18,8 @@
 
 (defparameter *couchdb-host* +default-couchdb-host+
   "The Couchdb host to use. Uses ENV var COUCHDB_HOST if set.")
+(defparameter *couchdb-scheme* +default-couchdb-scheme+
+  "Couchdb user name.")
 (defparameter *couchdb-port* +default-couchdb-port+
   "The Couchdb port to use. Defaults to 5984.")
 (defparameter *couchdb-default-database* +default-couchdb-default-database+
@@ -36,7 +41,7 @@
 ;; HTTP API configuration
 (defparameter *http-api-address* +default-http-api-address+
   "The address on which the HTTP API listens.")
-(defparameter *http-api-port* 5000  "Port for the HTTP API.")
+(defparameter *http-api-port* +default-http-api-port+  "Port for the HTTP API.")
 (defparameter *http-api-base-path* "/api" "Base URL for the API endpoint.")
 (defparameter *http-cert-file* nil "Path to the HTTPS cert file.")
 (defparameter *http-key-file* nil "Path to the HTTPS key file.")
@@ -61,3 +66,5 @@
 (defparameter *injest-workers* 4 "Number of workers for handling documents.")
 (defparameter *couchdb-event-log-database* "starintel-event-source"
   "The database name used for event logs.")
+;; Actor sstem config
+(defparameter *actor-system-config* nil "Config for sento")
