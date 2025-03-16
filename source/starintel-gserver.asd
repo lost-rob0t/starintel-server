@@ -22,7 +22,6 @@
                  (:file "actor-systems/rabbit-service")
                  (:file "actor-systems/couchdb-service")
                  (:file "actors")
-                 (:file "rabbit")
                  (:file "frontends/middleware")
                  (:file "frontends/http-api")
                  (:file "main"))
