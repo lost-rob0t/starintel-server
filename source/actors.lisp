@@ -84,28 +84,35 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 
 ;;;; Start the target routing actor.
-(defun start-target-actor (system)
+
+(defun start-target-actor (system eventstream)
   (setf *targets* (actor-of system
+                            :init (lambda (self)
+                                    (ev:subscribe eventstream self star.actors.couchdb:target-event))
                             :name "*targets*"
                             :receive (lambda (msg)
-                                       (let* ((target (cdr msg))
+                                       (let* ((target (star.actors.couchdb:event-data msg))
                                               (actor (jsown:val target "actor"))
                                               (delay (jsown:val-safe target "delay")))
-                                         (if (not (get-dest-actor actor))
-                                             ;; DEPRECATED Use the producer actor
-                                             (progn
-                                               (star.rabbit:emit-document  "documents" (format nil "actors.~a.new-target" actor)
-                                                                           (jsown:to-json target)
-                                                                           :host star:*rabbit-address*
-                                                                           :port star:*rabbit-port*
-                                                                           :username star:*rabbit-user* :password star:*rabbit-password*)))
-
-                                         (if (and (get-dest-actor actor) (jsown:val target "recurring") (first-time-p msg))
-                                             (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
-                                                                                               (submit-target target nil))
-                                                                    (jsown:val target "target")))
-                                         (if (and (get-dest-actor actor) (not (first-time-p msg)))
-                                             (route-target target actor)))))))
+                                         (cond
+                                           ((not (get-dest-actor actor))
+                                            (rabbit! star.actors.rabbitmq:*publish-service*
+                                                     :body (jsown:to-json target)
+                                                     :routing-key (format nil "actors.~a.new-target" actor)))
+                                           
+                                           ((and (get-dest-actor actor) 
+                                                 (jsown:val target "recurring")
+                                                 (first-time-p msg))
+                                            (wt:schedule-recurring *target-timer* 
+                                                                   0.0 
+                                                                   delay 
+                                                                   (lambda ()
+                                                                     (submit-target target nil))
+                                                                   (jsown:val target "target")))
+                                           
+                                           ((and (get-dest-actor actor)
+                                                 (not (first-time-p msg)))
+                                            (route-target target actor))))))))
 
 ;;;; Start the target timer
 ;;;; The target timer handles recurring targets.
