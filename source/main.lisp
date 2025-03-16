@@ -25,18 +25,13 @@
                               :rabbit-vhost "/"
                               :rabbit-port *rabbit-port*
                               :rabbit-user *rabbit-user*
-                              :rabbit-password *rabbit-password*)
+                              :rabbit-password *rabbit-password*
+                              :couchdb-host *couchdb-host*
+                              :couchdb-port *couchdb-port*
+                              :couchdb-scheme *couchdb-scheme*
+                              :couchdb-user *couchdb-user*
+                              :couchdb-password *couchdb-password*)
     
-    (star.rabbit:start-consumers :injest-workers *injest-workers*
-                                 :rabbit-user *rabbit-user*
-                                 :rabbit-password *rabbit-password*
-                                 :rabbit-address *rabbit-address*
-                                 :rabbit-port *rabbit-port*
-                                 :couchdb-host *couchdb-host*
-                                 :couchdb-port *couchdb-port*
-                                 :couchdb-scheme *couchdb-scheme*
-                                 :couchdb-user *couchdb-user*
-                                 :couchdb-password *couchdb-password*)
     (star.frontends.http-api:start-http-api :listen-address *http-api-address* 
                                             :api-port *http-api-port*
                                             :couchdb-user *couchdb-user*
@@ -105,18 +100,14 @@
                             :rabbit-vhost "/"
                             :rabbit-port *rabbit-port*
                             :rabbit-user *rabbit-user*
-                            :rabbit-password *rabbit-password*)
-  (star.rabbit:start-consumers :injest-workers *injest-workers*
-                               :rabbit-user *rabbit-user*
-                               :rabbit-password *rabbit-password*
-                               :rabbit-address *rabbit-address*
-                               :rabbit-port *rabbit-port*
-                               :couchdb-host *couchdb-host*
-                               :couchdb-port *couchdb-port*
-                               :couchdb-scheme *couchdb-scheme*
-                               :couchdb-user *couchdb-user*
-                               :couchdb-password *couchdb-password*)
-
+                            :rabbit-password *rabbit-password*
+                            :couchdb-host *couchdb-host*
+                            :couchdb-port *couchdb-port*
+                            :couchdb-scheme *couchdb-scheme*
+                            :couchdb-user *couchdb-user*
+                            :couchdb-password *couchdb-password*)
+  
+  
   (star.frontends.http-api:start-http-api :listen-address *http-api-address* 
                                           :api-port *http-api-port*
                                           :couchdb-user *couchdb-user*

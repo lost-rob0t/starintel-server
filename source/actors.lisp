@@ -2,12 +2,20 @@
 
 (in-package :star.actors)
 (defvar *sys* nil "the main actor system")
+(defvar *events* nil
+  "Actor event stream")
+
 (defvar *producer-agent* nil "Rabbitmq Producer")
 (defvar *publish-service* nil "Rabbitmq Publish actor")
-(defvar *couchdb-agent* nil "Rabbitmq Publish actor")
-(defvar *couchdb-gets* nil "Actor responsible for performing individual document GET operations in CouchDB")
-(defvar *couchdb-bulk-gets* nil "Actor responsible for performing bulk document GET operations in CouchDB")
-(defvar *couchdb-bulk-inserts* nil "Actor responsible for performing bulk document INSERT operations in CouchDB")
+(defvar *ingest-service* nil "Couchdb Document ingest actor. Apon insertion publishes a new document event.")
+(defvar *delete-service* nil "Couchdb Document delete actor. Subscribes to delete events and will delete the document speficed by id and rev.")
+(defvar +ingest-queue+ "document-ingest")
+(defvar +updates-queue+ "document-updates")
+(defvar +new-queue+ "new-document")
+(defvar +update-ingest-key+ "documents.update.#")
+(defvar +ingest-key+ "documents.injest.#")
+(defvar +new-key+ "documents.new.#")
+(defvar +targets-key+ "documents.new.target.*")
 
 
 ;;;; *** Target Routing
@@ -42,8 +50,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; *** Target Operations
 ;;;; Fetch targets from database
 (defun get-targets (client database)
-  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                 ("include_docs" "true"))))) "rows")))
+  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js)))))))
     (when (> 0 (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
@@ -107,7 +114,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
   (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000)))
 
 
-
+;; REVIEW What uses this?
 (defmacro with-json (jobject &body body)
   `(macrolet ((val (key) `(jsown:val-safe ,jobject ,key))
               (dataset () `(jsown:val ,jobject "datast"))
@@ -117,6 +124,67 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
               (parse-doc () `(star.databases.couchdb:from-json ,jobject (intern (jsown:val ,jobject "dtype") :spec))))
      ,@body))
 
+
+
+(defun insert (client database document)
+  (format nil "~a~%" (couch:create-document client database (jsown:to-json* document))))
+;; (dex:http-request-conflict (e) (log:warn e))
+;; (dex:http-request-unauthorized (e) (log:error e))
+
+
+
+(defun transient-p (message)
+  (jsown:val-safe (jsown:parse (car message)) "transient"))
+
+(defun insertp (message)
+  (null (transient-p message)))
+
+;; TODO Make Target Events
+(defun handle-target (self message)
+  
+  (log:debug "GOT TARGET: ~A" (car message))
+  "Handles any new incoming documents and sends it to the appropriate actors."
+  (let ((connection (rabbit-stream-connection (consumer-stream self)))
+        (body (jsown:parse (car message)))
+        (msg-key (cdr message)))
+    (tell star.actors:*targets* (cons 1 body))
+    (cl-rabbit:basic-ack connection 1 msg-key)))
+
+
+(defun start-consumers (&key injest-workers rabbit-user rabbit-password rabbit-address rabbit-port eventstream)
+  (log:info "Starting Consumers.")
+  (flet ((handle-document (self message)
+           (let (
+                 (connection (rabbit-stream-connection (consumer-stream self)))
+                 (document (jsown:parse  (car message)))
+                 (msg-key (cdr message)))
+             ;; maybe a more in depth actor that handles acking?
+             (ev:publish eventstream (star.actors.couchdb:make-ingest-event document))
+             (cl-rabbit:basic-ack connection 1 msg-key))))
+    (start-consumer
+     (create-rabbit-consumer :name "documents"
+                             :n injest-workers
+                             :queue-name +ingest-queue+
+                             :exchange-name "documents" 
+                             :routing-key +ingest-key+
+                             :username rabbit-user
+                             :password rabbit-password
+                             :host rabbit-address
+                             :port rabbit-port
+                             :handler-fn #'handle-document
+                             :test-fn #'insertp))
+    (start-consumer
+     (create-rabbit-consumer :name "documents"
+                             :n injest-workers
+                             :queue-name "injest-targets"
+                             :exchange-name "documents"
+                             :routing-key +targets-key+
+                             :username rabbit-user
+                             :password rabbit-password
+                             :host rabbit-address
+                             :port rabbit-port
+                             :handler-fn #'handle-target
+                             :test-fn #'insertp))))
 
 
 (defun start-actors (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port
@@ -133,6 +201,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
     (wt:schedule-recurring *gc-timer* 1 3600 (lambda ()
                                                (sb-ext:gc :full t))))
 
+  (log:info (setf *events* (ev:make-eventstream *sys*)))
   ;; Create RabbitMQ producer agent before service
   (setf *producer-agent* (star.actors.rabbitmq:make-producer-agent *sys*
                                                                    :name "default-producer"
@@ -149,20 +218,50 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
   ;; Create publish service using connected agent
   (setf *publish-service* (star.actors.rabbitmq:make-publish-service *producer-agent* *publish-service* *sys* :workers 2))
 
-  ;; (setf *couchdb-agent* (star.actors.couchdb:make-couchdb-agent *sys*
-  ;;                                                               :password couchdb-password
-  ;;                                                               :user couchdb-user
-  ;;                                                               :port couchdb-port
-  ;;                                                               :host couchdb-host
-  ;;                                                               :scheme couchdb-scheme))
-  ;; (setf *couchdb-gets* (star.actors.couchdb:make-get-service *couchdb-agent* *sys* "couchdb-get"))
-  ;; (setf *couchdb-inserts* (star.actors.couchdb:make-insert-service *couchdb-agent* *sys* "couchdb-insert"))
-  ;; (setf *couchdb-bulk-gets* (star.actors.couchdb:make-bulk-get-service *couchdb-agent* *sys* "couchdb-bulk-gets"))
-  ;; (setf *couchdb-bulk-inserts* (star.actors.couchdb:make-bulk-insert-service *couchdb-agent* *sys* "couchdb-bulk-inserts"))
+  (setf *couchdb-agent* (star.actors.couchdb:make-couchdb-agent *sys*
+                                                                :password couchdb-password
+                                                                :user couchdb-user
+                                                                :port couchdb-port
+                                                                :host couchdb-host
+                                                                :scheme couchdb-scheme))
+  (setf *ingest-service* (star.actors.couchdb:make-ingest-service :system *sys* :eventstream *events* :agent *couchdb-agent*))
+  (setf *delete-service* (star.actors.couchdb:make-delete-service :system *sys* :eventstream *events* :agent *couchdb-agent*))
   (start-actor-index *sys*)
-  (start-couchdb-gets *sys*)
-  (start-couchdb-inserts *sys*)
   (start-target-timer)
   (start-target-actor *sys*)
+
+  ;; Rewrite this so that it uses the correct arguments
+  (flet ((handle-document (self message)
+           (let ((connection (rabbit-stream-connection (consumer-stream self)))
+                 (document (jsown:parse (car message)))
+                 (msg-key (cdr message)))
+             (ev:publish eventstream (star.actors.couchdb:make-ingest-event document))
+             (cl-rabbit:basic-ack connection 1 msg-key))))
+    
+    (start-consumer
+     (create-rabbit-consumer :name "documents"
+                             :n star:*injest-workers* 
+                             :queue-name +ingest-queue+
+                             :exchange-name "documents"
+                             :routing-key +ingest-key+
+                             :username rabbit-user
+                             :password rabbit-password
+                             :host rabbit-host
+                             :port rabbit-port
+                             :handler-fn #'handle-document
+                             :test-fn #'insertp))
+    
+    (start-consumer
+     (create-rabbit-consumer :name "documents"
+                             :n star:*injest-workers*
+                             :queue-name "injest-targets" 
+                             :exchange-name "documents"
+                             :routing-key +targets-key+
+                             :username rabbit-user
+                             :password rabbit-password 
+                             :host rabbit-host
+                             :port rabbit-port
+                             :handler-fn #'handle-target
+                             :test-fn #'insertp)))
+  
   (nhooks:run-hook star:*actors-start-hook*))
-;; actor entry point:1 ends here
