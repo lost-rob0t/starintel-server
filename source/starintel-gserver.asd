@@ -33,6 +33,7 @@
                  #:uuid
                  #:anypool
                  #:clack
+                 #:clack-handler-hunchentoot
                  #:ningle
                  #:clingon
                  #:slynk

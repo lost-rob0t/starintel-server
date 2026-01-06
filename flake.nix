@@ -126,6 +126,7 @@
           sento babel uuid anypool clack ningle clingon
           slynk nhooks lparallel cl-stream cl-ppcre
           cms-ulid bordeaux-threads xmls lack lack-middleware-accesslog
+          clack-handler-hunchentoot
         ];
 
         systems = [ "starintel-gserver" ];
