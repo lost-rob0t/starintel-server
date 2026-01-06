@@ -59,7 +59,7 @@
         lispLibs = with pkgs.sbclPackages; [
           alexandria bordeaux-threads lparallel atomics str
           log4cl blackbird cl-speedy-queue binding-arrows timer-wheel
-          local-time-duration
+          local-time-duration clack-handler-hunchentoot
         ];
       };
 
@@ -126,10 +126,31 @@
           sento babel uuid anypool clack ningle clingon
           slynk nhooks lparallel cl-stream cl-ppcre
           cms-ulid bordeaux-threads xmls lack lack-middleware-accesslog
-          clack-handler-hunchentoot
         ];
 
         systems = [ "starintel-gserver" ];
+
+        # Keep test asd file so tests can be built
+        asdFilesToKeep = [ "starintel-gserver.asd" "starintel-gserver-tests.asd" ];
+
+        dontStrip = true;
+      };
+
+      # Build the test system
+      starintel-gserver-tests = sbcl'.buildASDFSystem {
+        pname = "starintel-gserver-tests";
+        version = "0.1.0";
+        src = ./.;
+
+        lispLibs = with sbcl'.pkgs; [
+          starintel-gserver
+          fiveam
+          bordeaux-threads
+          jsown
+          lack
+        ];
+
+        systems = [ "starintel-gserver-tests" ];
 
         dontStrip = true;
       };
@@ -137,6 +158,11 @@
       # Create wrapper with all dependencies
       sbcl-wrapped = sbcl'.withPackages (ps: with ps; [
         starintel-gserver
+      ]);
+
+      # Create wrapper for tests
+      sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [
+        starintel-gserver-tests
       ]);
 
     in {
@@ -150,8 +176,8 @@
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           buildPhase = ''
-            ${sbcl-wrapped}/bin/sbcl --non-interactive \
-              --eval "(load (sb-ext:posix-getenv \"ASDF\"))" \
+            ${sbcl-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+              --eval "(require :asdf)" \
               --eval "(asdf:load-system :starintel-gserver)" \
               --eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t :compression t)"
           '';
@@ -164,7 +190,97 @@
           '';
         };
 
+        # Smoke test script
+        star-smoke = pkgs.writeScriptBin "star-smoke" ''
+          #!/usr/bin/env bash
+          set -e
+
+          export HOME="$(mktemp -d)"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
+
+          echo "=========================================="
+          echo "  StarIntel Gserver Smoke Tests"
+          echo "=========================================="
+          echo ""
+
+          ${sbcl-test-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval "(require :asdf)" \
+            --eval "(asdf:load-system :starintel-gserver-tests)" \
+            --eval "(in-package :star-server-tests)" \
+            --eval "(handler-case
+                      (progn
+                        (run-all-gserver-tests)
+                        (format t \"~%~%✓ Smoke tests completed~%\")
+                        (uiop:quit 0))
+                      (error (e)
+                        (format t \"~%~%✗ Smoke tests failed: ~a~%\" e)
+                        (uiop:quit 1)))"
+        '';
+
         starintel-gserver = starintel-gserver;
+        starintel-gserver-tests = starintel-gserver-tests;
+      };
+
+      # Add test checks
+      checks.${system} = {
+        starintel-gserver-tests = pkgs.stdenv.mkDerivation {
+          name = "starintel-gserver-tests-check";
+          src = ./.;
+
+          nativeBuildInputs = [ sbcl-test-wrapped ];
+          buildInputs = runtimeLibs;
+
+          buildPhase = ''
+            export HOME=$TMPDIR
+            export XDG_CACHE_HOME="$HOME/.cache"
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
+
+            # Copy source to writable location
+            cp -r $src $TMPDIR/source
+            chmod -R u+w $TMPDIR/source
+            cd $TMPDIR/source
+
+            echo "=========================================="
+            echo "  Running StarIntel Gserver Tests"
+            echo "=========================================="
+            echo ""
+
+            ${sbcl-test-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+              --eval "(require :asdf)" \
+              --eval "(push (truename \".\") asdf:*central-registry*)" \
+              --eval "(asdf:load-system :starintel-gserver-tests)" \
+              --eval "(in-package :star-server-tests)" \
+              --eval "(handler-case
+                        (progn
+                          (run-all-gserver-tests)
+                          (uiop:quit 0))
+                        (error (e)
+                          (format t \"~%~%========================================~%\")
+                          (format t \"  Test Error~%\")
+                          (format t \"========================================~%\")
+                          (format t \"~%Error: ~a~%~%\" e)
+                          (uiop:quit 1)))" \
+              2>&1 | tee $TMPDIR/test-output.log
+
+            TEST_EXIT_CODE=''${PIPESTATUS[0]}
+
+            if [ $TEST_EXIT_CODE -eq 0 ]; then
+              echo ""
+              echo "✓ Test check passed"
+            else
+              echo ""
+              echo "✗ Test check failed with exit code $TEST_EXIT_CODE"
+              exit $TEST_EXIT_CODE
+            fi
+          '';
+
+          installPhase = ''
+            mkdir -p $out
+            cp $TMPDIR/test-output.log $out/test-results.log
+            echo "Test results saved to $out/test-results.log"
+          '';
+        };
       };
 
       devShells.${system}.default = pkgs.mkShell {
@@ -181,3 +297,4 @@
       };
     };
 }
+
