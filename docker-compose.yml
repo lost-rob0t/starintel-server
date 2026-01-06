@@ -35,7 +35,7 @@ services:
     image: star-server:latest
     hostname: star-server
     volumes:
-      - ./init.lisp:/root/init.lisp
+      - ./init.lisp:/config/init.lisp
     environment:
       BUILD_MODE: DEV
     ports:
@@ -45,6 +45,9 @@ services:
     depends_on:
       - couchdb
       - rabbitmq
+    extra_hosts:
+        - host.docker.internal:host-gateway
+
 
 
 
