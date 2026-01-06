@@ -155,6 +155,49 @@
         dontStrip = true;
       };
 
+      # Build the API client library
+      starintel-gserver-client = sbcl'.buildASDFSystem {
+        pname = "starintel-gserver-client";
+        version = "0.1.0";
+        src = ./.;
+
+        lispLibs = with sbcl'.pkgs; [
+          starintel
+          jsown
+          uuid
+          dexador
+          quri
+          cl-csv
+          data-table
+          cl-csv-data-table
+        ];
+
+        systems = [ "starintel-gserver-client" ];
+
+        dontStrip = true;
+      };
+
+      # Build the CLI client
+      star-cli = sbcl'.buildASDFSystem {
+        pname = "star-cli";
+        version = "0.1.0";
+        src = ./.;
+
+        nativeLibs = runtimeLibs;
+
+        lispLibs = with sbcl'.pkgs; [
+          starintel-gserver-client
+          clingon
+          dexador
+          jsown
+          quri
+        ];
+
+        systems = [ "star-cli" ];
+
+        dontStrip = true;
+      };
+
       # Create wrapper with all dependencies
       sbcl-wrapped = sbcl'.withPackages (ps: with ps; [
         starintel-gserver
@@ -163,6 +206,11 @@
       # Create wrapper for tests
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [
         starintel-gserver-tests
+      ]);
+
+      # Create wrapper for CLI
+      sbcl-cli-wrapped = sbcl'.withPackages (ps: with ps; [
+        star-cli
       ]);
 
     in {
@@ -218,8 +266,34 @@
                         (uiop:quit 1)))"
         '';
 
+        # CLI client binary
+        cli = pkgs.stdenv.mkDerivation {
+          pname = "star-cli";
+          version = "0.1.0";
+
+          dontUnpack = true;
+          dontStrip = true;
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+
+          buildPhase = ''
+            ${sbcl-cli-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+              --eval "(require :asdf)" \
+              --eval "(asdf:load-system :star-cli)" \
+              --eval "(sb-ext:save-lisp-and-die \"star-cli\" :toplevel 'star-cli:main :executable t :compression t)"
+          '';
+
+          installPhase = ''
+            mkdir -p $out/bin
+            cp star-cli $out/bin/
+            wrapProgram $out/bin/star-cli \
+              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}"
+          '';
+        };
+
         starintel-gserver = starintel-gserver;
         starintel-gserver-tests = starintel-gserver-tests;
+        starintel-gserver-client = starintel-gserver-client;
+        star-cli = star-cli;
       };
 
       # Add test checks

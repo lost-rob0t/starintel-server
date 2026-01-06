@@ -69,7 +69,7 @@
   (let ((targets (data-table:select-columns  (cl-csv:get-data-table-from-csv targets-file) (list "dataset" "target" "actor" "recurring" "delay" "options"))))
     (loop for row in (data-table:rows targets)
           collect (cons (nth 2 row) (with-output-to-string (str)
-                                      (cl-json:encode-json
+                                      (jsown:to-json
                                        (spec:new-target (nth 0 row)
                                                         (nth 1 row)
                                                         (nth 2 row)
@@ -115,9 +115,9 @@
     (when user
       (push (cons "user" user) query))
     (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+      (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+      (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-user" :query query)))
 
 (defmethod messages-by-channel ((client star-client) group channel &key (limit 50) start-key end-key (descending nil) (skip 0) (reduce nil))
@@ -129,9 +129,9 @@
                      (cons "channel" channel)
                      (cons "group" (if reduce "true" "false")))))
     (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+      (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+      (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-channel"  :query query)))
 
 (defmethod messages-by-platform ((client star-client) &key platform (limit 50) start-key end-key (descending nil) (skip 0))
@@ -142,9 +142,9 @@
     (when platform
       (push (cons "platform" platform) query))
     (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+      (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+      (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-platform" :query query)))
 
 (defmethod messages-by-group ((client star-client) &key  (limit 50) start-key end-key (include-docs nil) (reduce nil) (descending nil) (skip 0))
@@ -157,9 +157,9 @@
 
 
     (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+      (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+      (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-group" :query query)))
 
 (defmethod social-posts-by-user ((client star-client) &key user (limit 50) start-key end-key (descending nil) (skip 0))
@@ -170,9 +170,9 @@
     (when user
       (push (cons "user" user) query))
     (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+      (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+      (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/socialmpost/by-user" :query query)))
 
 (defmethod dataset-size ((client star-client) dataset)
@@ -198,9 +198,9 @@
       (t (push (cons "update" "true") query)))
 
     (when start-key
-      (push (cons "start_key" (cl-json:encode-json-to-string start-key)) query))
+      (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
-      (push (cons "end_key" (cl-json:encode-json-to-string end-key)) query))
+      (push (cons "end_key" (jsown:to-json end-key)) query))
 
 
     (api-request client "/documents/messages/groups" :query query)))
