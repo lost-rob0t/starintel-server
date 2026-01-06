@@ -66,7 +66,6 @@
                         :sub-commands (main/commands)))
 
 (defun start-debugger ()
-  (ql:quickload '("slynk" "bordeaux-threads"))
   (format t "Creating slynk server on port: ~a" star:*slynk-port*)
   (slynk:create-server :port star:*slynk-port*))
 
