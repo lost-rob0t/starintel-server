@@ -28,7 +28,6 @@
         in pkgs.runCommand "star-cl-src" {} ''
           mkdir -p $out
           cp -r ${repo}/src/* $out/
-          # Fix type conflicts - remove :type declarations that conflict with :initform values
         '';
         lispLibs = with pkgs.sbclPackages; [
           jsown ironclad local-time cms-ulid
@@ -159,7 +158,7 @@
       starintel-gserver-client = sbcl'.buildASDFSystem {
         pname = "starintel-gserver-client";
         version = "0.1.0";
-        src = ./.;
+        src = ./cli;
 
         lispLibs = with sbcl'.pkgs; [
           starintel
@@ -177,11 +176,11 @@
         dontStrip = true;
       };
 
-      # Build the CLI client
-      star-cli = sbcl'.buildASDFSystem {
+      # Build the CLI client (ASDF system only)
+      star-cli-lib = sbcl'.buildASDFSystem {
         pname = "star-cli";
         version = "0.1.0";
-        src = ./.;
+        src = ./cli;
 
         nativeLibs = runtimeLibs;
 
@@ -210,7 +209,7 @@
 
       # Create wrapper for CLI
       sbcl-cli-wrapped = sbcl'.withPackages (ps: with ps; [
-        star-cli
+        star-cli-lib
       ]);
 
     in {
@@ -267,7 +266,7 @@
         '';
 
         # CLI client binary
-        cli = pkgs.stdenv.mkDerivation {
+        star-cli = pkgs.stdenv.mkDerivation {
           pname = "star-cli";
           version = "0.1.0";
 
@@ -293,7 +292,7 @@
         starintel-gserver = starintel-gserver;
         starintel-gserver-tests = starintel-gserver-tests;
         starintel-gserver-client = starintel-gserver-client;
-        star-cli = star-cli;
+        star-cli-lib = star-cli-lib;
       };
 
       # Add test checks
