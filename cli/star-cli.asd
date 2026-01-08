@@ -7,7 +7,7 @@
   :build-operation program-op
   :build-pathname "star-cli"
   :entry-point "star-cli::main"
-  :components   ((:file "source/star-cli"))
+  :components   ((:file "star-cli"))
   :depends-on   (#:starintel-gserver-client
                  #:clingon
                  #:dexador
