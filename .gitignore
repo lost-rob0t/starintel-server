@@ -9,3 +9,12 @@
 /star-server
 ./tokens.org
 /ideas/*.org
+
+# Generated/runtime files
+logs/
+init.lisp
+.context/
+
+# Build artifacts
+result
+result-*
