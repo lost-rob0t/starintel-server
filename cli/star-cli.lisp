@@ -2,9 +2,34 @@
 
 (defpackage :star-cli
   (:use :cl :star.api.client)
+  (:import-from :starintel
+                #:encode 
+                #:new-host
+                #:new-url
+                #:new-domain)
   (:export #:main))
 
 (in-package :star-cli)
+
+;;; BBP Import functions
+(defun parse-bbp-file (filepath)
+  "Read a file and return a list of non-empty lines (removing comments and whitespace)."
+  (with-open-file (stream filepath :direction :input :if-does-not-exist nil)
+    (unless stream
+      (error "File not found: ~a" filepath))
+    (loop for line = (read-line stream nil nil)
+          while line
+          for trimmed = (string-trim '(#\Space #\Tab #\Return #\Newline) line)
+          unless (or (string= trimmed "")
+                     (and (> (length trimmed) 0)
+                          (char= (char trimmed 0) #\#)))
+            collect trimmed)))
+
+(defun parse-tags (tags-str)
+  "Parse comma-separated tags string into a list."
+  (when tags-str
+    (mapcar (lambda (s) (string-trim '(#\Space #\Tab #\Return #\Newline) s))
+            (uiop:split-string tags-str :separator ","))))
 
 ;;; ============================================================================
 ;;; Utilities
@@ -664,6 +689,115 @@
                   (query/messages-by-platform-command))))
 
 ;;; ============================================================================
+;;; BBP Commands
+;;; ============================================================================
+
+(defun bbp/import-options ()
+  "Options for importing BBP data."
+  (list
+   (clingon:make-option
+    :string
+    :description "Type of data to import (host, url, domain)"
+    :short-name #\t
+    :long-name "type"
+    :required t
+    :key :type)
+   (clingon:make-option
+    :string
+    :description "Path to file containing data (one entry per line)"
+    :short-name #\f
+    :long-name "file"
+    :required t
+    :key :file)
+   (clingon:make-option
+    :string
+    :description "Dataset name (e.g., bug bounty program name)"
+    :short-name #\d
+    :long-name "dataset"
+    :required t
+    :key :dataset)
+   (clingon:make-option
+    :boolean
+    :description "Suppress verbose output"
+    :short-name #\q
+    :long-name "quiet"
+    :initial-value nil
+    :key :quiet)))
+
+(defun make-host-document (hostname dataset)
+  "Create a host document using the spec package."
+  (shasht:write-json* (set-meta  (new-host dataset :hostname hostname) dataset)) :stream nil :pretty nil)
+
+(defun make-url-document (url dataset)
+  "Create a URL document using the spec package."
+  (shasht:write-json* (set-meta (new-url dataset :url url) dataset)) :stream nil :pretty nil)
+
+(defun make-domain-document (domain dataset)
+  "Create a domain document using the spec package."
+  (shasht:write-json* (set-meta  (new-domain dataset :record domain :record-type "A") dataset) :pretty nil :stream nil))
+
+(defun bbp/import-handler (cmd)
+  "Handler for importing BBP data."
+  (let* ((client (make-client cmd))
+         (type (string-downcase (clingon:getopt cmd :type)))
+         (file (clingon:getopt cmd :file))
+         (dataset (clingon:getopt cmd :dataset))
+         (verbose (not (clingon:getopt cmd :quiet)))
+         (entries (parse-bbp-file file))
+         (success-count 0)
+         (error-count 0))
+
+    (unless (member type '("host" "url" "domain") :test #'string=)
+      (print-error (format nil "Invalid type '~a'. Must be host, url, or domain" type))
+      (clingon:exit 1))
+
+    (dolist (entry entries)
+      (handler-case
+          (let ((doc (cond
+                       ((string= type "host")
+                        (make-host-document entry dataset))
+                       ((string= type "url")
+                        (make-url-document entry dataset))
+                       ((string= type "domain")
+                        (make-domain-document entry dataset)))))
+            (submit-document client doc type)
+            (incf success-count)
+            (when verbose
+              (format t "✓ Imported ~a: ~a~%" type entry)))
+        (error (e)
+          (incf error-count)
+          (when verbose
+            (format *error-output* "✗ Failed to import ~a ~a: ~a~%" type entry e)))))
+
+    (format t "~%Import complete: ~a succeeded, ~a failed~%" success-count error-count)
+    (if (> error-count 0)
+        (clingon:exit 1)
+        (clingon:exit 0))))
+
+(defun bbp/import-command ()
+  "Import BBP data command."
+  (clingon:make-command
+   :name "import"
+   :description "Import BBP data (hosts, URLs, domains) from file"
+   :options (bbp/import-options)
+   :handler #'bbp/import-handler))
+
+(defun bbp/handler (cmd)
+  "Handler for BBP command group."
+  (clingon:print-usage-and-exit cmd t))
+
+(defun bbp/command ()
+  "BBP command group."
+  (clingon:make-command
+   :name "bbp"
+   :description "Bug Bounty Program data management"
+   :authors '("nsaspy <nsaspy@airmail.cc>")
+   :license "GPL v3"
+   :handler #'bbp/handler
+   :sub-commands (list
+                  (bbp/import-command))))
+
+;;; ============================================================================
 ;;; Main Command
 ;;; ============================================================================
 
@@ -684,7 +818,8 @@
    :sub-commands (list
                   (document/command)
                   (target/command)
-                  (query/command))))
+                  (query/command)
+                  (bbp/command))))
 
 (defun main ()
   "Main entry point for the CLI application."

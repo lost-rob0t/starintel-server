@@ -25,9 +25,9 @@
 
 
 (define-actor (*actor-event-receiver* *sys*)
-  (lambda (event)
-    (let ((event-json (jsown:to-json (as-json event))))
-      (tell *couchdb-inserts* (list :id (event-id event) :database star:*couchdb-event-log-database* :document event-json)))))
+    (lambda (event)
+      (let ((event-json (jsown:to-json (as-json event))))
+        (tell *couchdb-inserts* (list :id (event-id event) :database star:*couchdb-event-log-database* :document event-json)))))
 
 
 
@@ -36,7 +36,7 @@
 (defun handle-event-message (message)
   "Handler function for processing event messages."
   (let* ((jdoc (jsown:parse message)))
-    (tell *actor-event-receiver* (star.databases.couchdb:from-json jdoc 'actor-event))))
+    (tell *actor-event-receiver* (spec:decode jdoc 'actor-event))))
 
 
 (defun start-event-consumer (n)
