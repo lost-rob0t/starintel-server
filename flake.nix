@@ -22,15 +22,15 @@
           repo = pkgs.fetchFromGitHub {
             owner = "lost-rob0t";
             repo = "star-cl";
-            rev = "e1478e42f65970f2f2292e4adafc1c21f3ed49ab";
-            sha256 = "sha256-CiPtshNQMyPqEkBV/v22eX5avtP9Z6dOpdJOCuySogE=";
+            rev = "6ce95fba0c82a70ed1341b3220fd650be164b9d2";
+            sha256 = "sha256-Tc0/sSALuOnINinF11fsirw7T9BT6tIO2K8J/M84EK8=";
           };
         in pkgs.runCommand "star-cl-src" {} ''
           mkdir -p $out
           cp -r ${repo}/src/* $out/
         '';
         lispLibs = with pkgs.sbclPackages; [
-          jsown ironclad local-time cms-ulid
+          jsown ironclad local-time cms-ulid str
 
         ];
       };
