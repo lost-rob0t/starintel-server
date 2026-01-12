@@ -17,7 +17,7 @@
   (let ((debugger (clingon:getopt cmd :debugger))
         (init-file (clingon:getopt cmd :init-value)))
 
-    (load init-file :if-does-not-exist :create)
+    (safe-load-init init-file)
     (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
     (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
     (star.databases.couchdb:init-db)
@@ -76,3 +76,19 @@
     (clingon:run app)))
 
 
+(defun repl/main (init-file)
+  "Load the server from the repl"
+  
+  (safe-load-init init-file)
+  (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
+  (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+  (star.databases.couchdb:init-db)
+  (star.actors:start-actors :rabbit-host *rabbit-address*
+                            :rabbit-vhost "/"
+                            :rabbit-port *rabbit-port*
+                            :rabbit-user *rabbit-user*
+                            :rabbit-password *rabbit-password*)
+  (star.frontends.http-api::start-http-api)
+  (star.rabbit:start-consumers)
+  (star.actors:start-event-consumer 2)
+  )

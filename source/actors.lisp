@@ -20,23 +20,34 @@
 
 (defun start-actor-index (system)
   "Start the actor index for target routing."
-  (setf *actor-index-agent* (make-agent #'serapeum:dict system)))
+  (log:info "Starting actor index for target routing")
+  (setf *actor-index-agent* (make-agent #'serapeum:dict system))
+  (log:info "Actor index started successfully"))
 
 ;;;; Register an actor for recieving target inputs
 ;;;; Actors must be registered with actor-index before they will get any target messages.
 (defun register-actor (actor-name actor-symbol)
-  (setf (agent-get *actor-index-agent* #'identity) (serapeum:dict* (agent-get *actor-index-agent*) actor-name actor-symbol)))
+  (log:info "Registering actor: ~a -> ~a" actor-name actor-symbol)
+  (setf (agent-get *actor-index-agent* #'identity) (serapeum:dict* (agent-get *actor-index-agent*) actor-name actor-symbol))
+  (log:debug "Actor registered successfully: ~a" actor-name))
 
 ;;;; Return the destination actor symbol by actor name string
 (defun get-dest-actor (actor)
-  (serapeum:@  (agent-get *actor-index-agent* #'identity) actor))
+  (let ((dest (serapeum:@  (agent-get *actor-index-agent* #'identity) actor)))
+    (log:debug "Looking up destination actor for: ~a -> ~a" actor dest)
+    dest))
 
 ;;;; Send the the target to the destination actor
 (defun route-target (target actor)
+  (log:info "Routing target to actor: ~a" actor)
   (let ((dest (get-dest-actor actor)))
-    (format t "got ~a" actor)
-    (when dest
-      (tell dest target))))
+    (log:debug "Destination actor lookup result: ~a" dest)
+    (if dest
+        (progn
+          (log:info "Sending target to destination actor: ~a" dest)
+          (tell dest target)
+          (log:debug "Target sent successfully to: ~a" dest))
+        (log:warn "No destination actor found for: ~a" actor))))
 
 ;;;; *** Couchdb Actors
 ;;;; These are sorta kinda maybe deprecated.
@@ -146,9 +157,15 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; target actor will route the message to a registered lisp actor or submit to rabbitmq
 (defun sumbit-target (target &optional (first-time t))
   "Create a message for the *targets* actor."
+  (log:info "Submitting target - first-time: ~a actor: ~a"
+            first-time (jsown:val-safe target "actor"))
+  (log:debug "Target details: recurring=~a delay=~a"
+             (jsown:val-safe target "recurring")
+             (jsown:val-safe target "delay"))
   (tell *targets*  (if first-time
                        (cons t target)
-                       (cons nil target))))
+                       (cons nil target)))
+  (log:debug "Target submitted to *targets* actor"))
 
 ;;;; return t if this is the first time we handled this target.
 (defun first-time-p (msg)
@@ -161,41 +178,61 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 ;;;;  Start the targets loader
 (defun start-target-loader ()
+  (log:info "Starting target loader")
   (let (targets (get-targets (anypool:with-connection (client *couchdb-pool*)
                                (get-targets client star:*couchdb-default-database*))))
+    (log:info "Loaded ~a targets from database" (length targets))
     (loop for target in targets
-          do (submit-target target t))))
+          do (submit-target target t))
+    (log:info "Target loader completed - all targets submitted")))
 
 
 ;;;; Start the target routing actor.
 (defun start-target-actor (system)
+  (log:info "Starting target actor")
   (setf *targets* (actor-of system
                             :name "*targets*"
                             :receive (lambda (msg)
+                                       (log:debug "*targets* actor received message")
                                        (let* ((target (cdr msg))
                                               (actor (jsown:val target "actor"))
-                                              (delay (jsown:val-safe target "delay")))
+                                              (delay (jsown:val-safe target "delay"))
+                                              (recurring (jsown:val-safe target "recurring"))
+                                              (target-id (jsown:val-safe target "target")))
+                                         (log:info "Processing target message - actor: ~a recurring: ~a first-time: ~a"
+                                                   actor recurring (first-time-p msg))
                                          (if (not (get-dest-actor actor))
                                              ;; DEPRECATED Use the producer actor
                                              (progn
-                                               (star.rabbit:emit-document  "documents" (format nil "actors.~a.new-target" actor)
-                                                                           (jsown:to-json target)
-                                                                           :host star:*rabbit-address*
-                                                                           :port star:*rabbit-port*
-                                                                           :username star:*rabbit-user* :password star:*rabbit-password*)))
+                                               (log:info "No local destination actor found for ~a, emitting to RabbitMQ" actor)
+                                               (let ((routing-key (format nil "actors.~a.new-target" actor)))
+                                                 (log:debug "Publishing to RabbitMQ - exchange: documents routing-key: ~a" routing-key)
+                                                 (star.rabbit:emit-document  "documents" routing-key
+                                                                             (jsown:to-json target)
+                                                                             :host star:*rabbit-address*
+                                                                             :port star:*rabbit-port*
+                                                                             :username star:*rabbit-user* :password star:*rabbit-password*)
+                                                 (log:info "Target published to RabbitMQ successfully"))))
 
-                                         (if (and (get-dest-actor actor) (jsown:val target "recurring") (first-time-p msg))
-                                             (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
-                                                                                               (submit-target target nil))
-                                                                    (jsown:val target "target")))
-                                         (if (and (get-dest-actor actor) (not (first-time-p msg)))
-                                             (route-target target actor)))))))
+                                         (when (and (get-dest-actor actor) recurring (first-time-p msg))
+                                           (log:info "Scheduling recurring target - actor: ~a delay: ~a target-id: ~a"
+                                                     actor delay target-id)
+                                           (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
+                                                                                             (submit-target target nil))
+                                                                  target-id)
+                                           (log:debug "Recurring target scheduled successfully"))
+                                         (when (and (get-dest-actor actor) (not (first-time-p msg)))
+                                           (log:debug "Routing non-first-time target to actor: ~a" actor)
+                                           (route-target target actor))))))
+  (log:info "Target actor started successfully"))
 
 ;;;; Start the target timer
 ;;;; The target timer handles recurring targets.
 (defparameter *target-timer* nil "simple wheel timer for targets")
 (defun start-target-timer ()
-  (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000)))
+  (log:info "Starting target timer - resolution: 10 max-size: 1000")
+  (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000))
+  (log:info "Target timer started successfully"))
 
 
 
