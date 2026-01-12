@@ -25,6 +25,7 @@
                                                 :max-open-count 20))
 
 (defun connect-rabbitmq ()
+  (log:info "conntecting to RabbitMQ ~a" )
   (setf *rabbitmq-conn* (cl-rabbit:new-connection))
   (let ((socket (cl-rabbit:tcp-socket-new *rabbitmq-conn*)))
     (cl-rabbit:socket-open socket star:*rabbit-address* star:*rabbit-port*)
@@ -105,10 +106,9 @@
           (let* ((actor (cdr (assoc :actor params :test #'string=)))
                  (body (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
                  (routing-key (format nil "documents.new.target.~a" actor)))
-            (with-rabbitmq (*rabbitmq-conn*)
-              (cl-rabbit:basic-publish *rabbitmq-conn* 1 :routing-key routing-key :exchange "documents" :properties (list (cons :type "target")) :body body))
+            
+            
             body)))
-
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
       #'(lambda (params)
@@ -116,8 +116,7 @@
           (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
                  (body (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
                  (routing-key (format nil "documents.new.~a" dtype)))
-            (with-rabbitmq (*rabbitmq-conn*)
-              (cl-rabbit:basic-publish *rabbitmq-conn* 1 :routing-key routing-key :exchange "documents" :properties (list (cons :type dtype)) :body body))
+            (star.actors:publish star.actors:*producer-agent* :body body :routing-key routing-key :properties (list (cons :type dtype)))
 
             body)))
 
