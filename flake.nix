@@ -22,8 +22,8 @@
           repo = pkgs.fetchFromGitHub {
             owner = "lost-rob0t";
             repo = "star-cl";
-            rev = "b169e549740144b1ce55a5b40d18af61c72bf55f";
-            sha256 = "sha256-fefc6eFhiAgZosovfWFgO6kybzi1jzVCZ1LoK7T+P20=";
+            rev = "e1478e42f65970f2f2292e4adafc1c21f3ed49ab";
+            sha256 = "sha256-CiPtshNQMyPqEkBV/v22eX5avtP9Z6dOpdJOCuySogE=";
           };
         in pkgs.runCommand "star-cl-src" {} ''
           mkdir -p $out
@@ -31,6 +31,7 @@
         '';
         lispLibs = with pkgs.sbclPackages; [
           jsown ironclad local-time cms-ulid
+
         ];
       };
 
@@ -169,6 +170,8 @@
           cl-csv
           data-table
           cl-csv-data-table
+          
+
         ];
 
         systems = [ "starintel-gserver-client" ];

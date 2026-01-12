@@ -16,6 +16,7 @@
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
                  (:file "init")
+                 (:file "init-loader")
                  (:file "actors")
                  (:file "actor-systems/event-actor")
                  (:file "actor-systems/matcher-actor")

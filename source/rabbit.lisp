@@ -85,9 +85,7 @@
   (null (transient-p message)))
 
 
-;; Handle New Document consumers:2 ends here
 
-;; [[file:../source.org::*Handle New Target consumers][Handle New Target consumers:1]]
 (defun handle-target (self message)
   "Handles any new incoming documents and sends it to the appropriate actors."
   (let ((connection (rabbit-stream-connection (consumer-stream self)))

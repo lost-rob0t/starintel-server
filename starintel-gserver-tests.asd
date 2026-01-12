@@ -14,6 +14,7 @@
                   :components ((:file "package")
                                (:file "consumers-test")
                                (:file "http-api-test")
+                               (:file "init-loader-test")
                                (:file "run-tests"))))
   :perform (test-op (o c)
                     (uiop:symbol-call :star-server-tests :run-all-gserver-tests)))

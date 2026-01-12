@@ -32,8 +32,10 @@
   (:export #:run-all-gserver-tests
            #:run-consumer-tests
            #:run-http-api-tests
+           #:run-init-loader-tests
            #:consumer-tests
-           #:http-api-tests)
+           #:http-api-tests
+           #:init-loader-tests)
   (:documentation "Test suite for starintel-gserver including consumer threads and HTTP API tests"))
 
 (in-package :star-server-tests)

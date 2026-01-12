@@ -28,7 +28,10 @@
    #:*injest-workers*
    #:*couchdb-event-log-database*
    #:*couchdb-views*
-   #:*star-server-version*))
+   #:*star-server-version*
+   #:ensure-init-file-exists
+   #:load-init-file
+   #:safe-load-init))
 
 
 (uiop:define-package   :star.databases.couchdb
@@ -70,7 +73,10 @@
            :groups
    :lazy
            :t
-   :nil)
+   :nil
+           :events-by-actor
+   :document-events
+           :target-events)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
 
