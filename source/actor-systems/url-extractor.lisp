@@ -5,6 +5,4 @@
 (in-package :star.actors.url-extractor)
 
 
-
-(eval-when (:load-toplevel)
-  )
+;;;; HACK IDEA
