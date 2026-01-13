@@ -315,6 +315,33 @@
         starintel-gserver-tests = starintel-gserver-tests;
         starintel-gserver-client = starintel-gserver-client;
         star-cli-lib = star-cli-lib;
+
+        # Docker image
+        docker-image = pkgs.dockerTools.buildImage {
+          name = "star-server";
+          tag = "latest";
+
+          copyToRoot = pkgs.buildEnv {
+            name = "image-root";
+            paths = [
+              self.packages.${system}.default
+              pkgs.coreutils
+              pkgs.bash
+            ];
+            pathsToLink = [ "/bin" ];
+          };
+
+          config = {
+            Cmd = [ "${self.packages.${system}.default}/bin/star-server" "start" "-i" "/config/init.lisp" ];
+            ExposedPorts = {
+              "5000/tcp" = {};
+            };
+            Volumes = {
+              "/config" = {};
+            };
+            WorkingDir = "/";
+          };
+        };
       };
 
       # Add test checks
