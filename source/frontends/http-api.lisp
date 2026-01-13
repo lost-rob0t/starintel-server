@@ -44,11 +44,41 @@
 (defparameter *default-headers* (list
                                  :content-type "application/json"))
 
+(defparameter *cors-headers* (list
+                              :access-control-allow-origin "*"
+                              :access-control-allow-methods "GET, POST, PUT, DELETE, OPTIONS"
+                              :access-control-allow-headers "Content-Type, Authorization, X-Requested-With"
+                              :access-control-max-age "86400"))
+
 (defun set-default-headers ()
   (setf (lack.response:response-headers *response*)
         (append (lack.response:response-headers *response*)
                 *default-headers*)))
 
+(defun set-cors-headers ()
+  (setf (lack.response:response-headers *response*)
+        (append (lack.response:response-headers *response*)
+                *cors-headers*)))
+
+(defun cors-middleware (app)
+  "Middleware that adds CORS headers to all responses and handles OPTIONS requests"
+  (lambda (env)
+    (let ((method (getf env :request-method)))
+      (if (eq method :options)
+          (progn
+            (log:debug "Handling OPTIONS preflight request for ~a" (getf env :path-info))
+            (list 200
+                  (append (list :content-type "text/plain")
+                          *cors-headers*)
+                  (list "")))
+          (let ((response (lack.component:call app env)))
+            (when response
+              (let ((status (first response))
+                    (headers (second response))
+                    (body (third response)))
+                (list status
+                      (append headers *cors-headers*)
+                      body))))))))
 
 (defun status-msg (msg status &key info traceback)
   (let ((json (jsown:new-js
