@@ -59,20 +59,34 @@
 
 
 (defun init-views (client database)
+  "Create or update all views from source/views/*.json files."
+  (log:info "Initializing CouchDB views for database: ~a" database)
   (mapcar (lambda (jdata)
-            (cl-couch:create-document client database jdata)) star:*couchdb-views*))
+            (let* ((doc (jsown:parse jdata))
+                   (doc-id (jsown:val doc "_id")))
+              (log:info "Processing view: ~a" doc-id)
+              (handler-case
+                  (let* ((existing-doc (cl-couch:get-document client database doc-id))
+                         (existing-rev (jsown:val (jsown:parse existing-doc) "_rev")))
+                    (log:info "View ~a exists, updating with rev: ~a" doc-id existing-rev)
+                    (jsown:extend-js doc ("_rev" existing-rev))
+                    (cl-couch:create-document client database (jsown:to-json doc)))
+                (dexador:http-request-not-found ()
+                  (log:info "View ~a does not exist, creating new" doc-id)
+                  (cl-couch:create-document client database jdata)))))
+          star:*couchdb-views*))
 
 (defun init-db ()
-  "Create the database, and all map-reduce views with it."
+  "Create the database if needed, and ensure all map-reduce views are up to date."
   (log:info "Connecting to Couchdb via ~a://~a:~a" star:*couchdb-scheme* star:*couchdb-host* star:*couchdb-port*)
   (let ((database *couchdb-default-database*)
         (client (new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
     (password-auth client star:*couchdb-user* star:*couchdb-password*)
     (handler-case (get-database client database)
-      (dexador:http-request-not-found (e) (progn
-                                            (log:info "Creating database: ~a" database)
-                                            (cl-couch:create-database client database)
-                                            (init-views client database))))))
+      (dexador:http-request-not-found (e)
+        (log:info "Database ~a does not exist, creating" database)
+        (cl-couch:create-database client database)))
+    (init-views client database)))
 
 ;; TODO use query view
 (defun get-targets* (client database &rest actors)
@@ -795,6 +809,93 @@
         (funcall sort-fn (get-view-docs rows))
         rows)))
 
+(defun users-by-name (client database &key (limit 50)
+                                           (start-key nil)
+                                           (end-key nil)
+                                           (keys nil)
+                                           (key nil)
+                                           (descending nil)
+                                           (include-docs t)
+                                           (update t)
+                                           (skip 0)
+                                           (reduce nil)
+                                           (sort-fn #'sort-docs-by-date))
+  "Query the by_name view in the users design document."
+  (let* ((view-result (query-view client database "users" "by_name"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun users-by-url (client database &key (limit 50)
+                                          (start-key nil)
+                                          (end-key nil)
+                                          (keys nil)
+                                          (key nil)
+                                          (descending nil)
+                                          (include-docs t)
+                                          (update t)
+                                          (skip 0)
+                                          (reduce nil)
+                                          (sort-fn #'sort-docs-by-date))
+  "Query the by_url view in the users design document."
+  (let* ((view-result (query-view client database "users" "by_url"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun users-by-platform-and-name (client database &key (limit 50)
+                                                        (start-key nil)
+                                                        (end-key nil)
+                                                        (keys nil)
+                                                        (key nil)
+                                                        (descending nil)
+                                                        (include-docs t)
+                                                        (update t)
+                                                        (skip 0)
+                                                        (reduce nil)
+                                                        (sort-fn #'sort-docs-by-date))
+  "Query the by_platform_and_name view in the users design document."
+  (let* ((view-result (query-view client database "users" "by_platform_and_name"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
 (defun groups (client database &key (limit 50)
                                  (start-key nil)
                                  (end-key nil)
@@ -816,3 +917,713 @@
                                   :reduce t
                                   :skip skip)))
     (jsown:val view-result "rows")))
+
+;;; Hosts
+
+(defun hosts-by-ip (client database &key (limit 50)
+                                         (start-key nil)
+                                         (end-key nil)
+                                         (keys nil)
+                                         (key nil)
+                                         (descending nil)
+                                         (include-docs t)
+                                         (update t)
+                                         (skip 0)
+                                         (reduce nil)
+                                         (sort-fn #'sort-docs-by-date))
+  "Query the by_ip view in the hosts design document."
+  (let* ((view-result (query-view client database "hosts" "by_ip"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun hosts-by-hostname (client database &key (limit 50)
+                                               (start-key nil)
+                                               (end-key nil)
+                                               (keys nil)
+                                               (key nil)
+                                               (descending nil)
+                                               (include-docs t)
+                                               (update t)
+                                               (skip 0)
+                                               (reduce nil)
+                                               (sort-fn #'sort-docs-by-date))
+  "Query the by_hostname view in the hosts design document."
+  (let* ((view-result (query-view client database "hosts" "by_hostname"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun hosts-by-port (client database &key (limit 50)
+                                           (start-key nil)
+                                           (end-key nil)
+                                           (keys nil)
+                                           (key nil)
+                                           (descending nil)
+                                           (include-docs t)
+                                           (update t)
+                                           (skip 0)
+                                           (reduce nil)
+                                           (sort-fn #'sort-docs-by-date))
+  "Query the by_port view in the hosts design document."
+  (let* ((view-result (query-view client database "hosts" "by_port"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun hosts-by-service (client database &key (limit 50)
+                                              (start-key nil)
+                                              (end-key nil)
+                                              (keys nil)
+                                              (key nil)
+                                              (descending nil)
+                                              (include-docs t)
+                                              (update t)
+                                              (skip 0)
+                                              (reduce nil)
+                                              (sort-fn #'sort-docs-by-date))
+  "Query the by_service view in the hosts design document."
+  (let* ((view-result (query-view client database "hosts" "by_service"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun hosts-by-os (client database &key (limit 50)
+                                         (start-key nil)
+                                         (end-key nil)
+                                         (keys nil)
+                                         (key nil)
+                                         (descending nil)
+                                         (include-docs t)
+                                         (update t)
+                                         (skip 0)
+                                         (reduce nil)
+                                         (sort-fn #'sort-docs-by-date))
+  "Query the by_os view in the hosts design document."
+  (let* ((view-result (query-view client database "hosts" "by_os"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+;;; Emails
+
+(defun emails-by-email (client database &key (limit 50)
+                                             (start-key nil)
+                                             (end-key nil)
+                                             (keys nil)
+                                             (key nil)
+                                             (descending nil)
+                                             (include-docs t)
+                                             (update t)
+                                             (skip 0)
+                                             (reduce nil)
+                                             (sort-fn #'sort-docs-by-date))
+  "Query the by_email view in the emails design document."
+  (let* ((view-result (query-view client database "emails" "by_email"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun emails-by-user (client database &key (limit 50)
+                                            (start-key nil)
+                                            (end-key nil)
+                                            (keys nil)
+                                            (key nil)
+                                            (descending nil)
+                                            (include-docs t)
+                                            (update t)
+                                            (skip 0)
+                                            (reduce nil)
+                                            (sort-fn #'sort-docs-by-date))
+  "Query the by_user view in the emails design document."
+  (let* ((view-result (query-view client database "emails" "by_user"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun emails-by-domain (client database &key (limit 50)
+                                              (start-key nil)
+                                              (end-key nil)
+                                              (keys nil)
+                                              (key nil)
+                                              (descending nil)
+                                              (include-docs t)
+                                              (update t)
+                                              (skip 0)
+                                              (reduce nil)
+                                              (sort-fn #'sort-docs-by-date))
+  "Query the by_domain view in the emails design document."
+  (let* ((view-result (query-view client database "emails" "by_domain"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun emails-with-password (client database &key (limit 50)
+                                                  (start-key nil)
+                                                  (end-key nil)
+                                                  (keys nil)
+                                                  (key nil)
+                                                  (descending nil)
+                                                  (include-docs t)
+                                                  (update t)
+                                                  (skip 0)
+                                                  (reduce nil)
+                                                  (sort-fn #'sort-docs-by-date))
+  "Query the with_password view in the emails design document."
+  (let* ((view-result (query-view client database "emails" "with_password"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+;;; Domains
+
+(defun domains-by-record (client database &key (limit 50)
+                                               (start-key nil)
+                                               (end-key nil)
+                                               (keys nil)
+                                               (key nil)
+                                               (descending nil)
+                                               (include-docs t)
+                                               (update t)
+                                               (skip 0)
+                                               (reduce nil)
+                                               (sort-fn #'sort-docs-by-date))
+  "Query the by_record view in the domains design document."
+  (let* ((view-result (query-view client database "domains" "by_record"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun domains-by-record-type (client database &key (limit 50)
+                                                    (start-key nil)
+                                                    (end-key nil)
+                                                    (keys nil)
+                                                    (key nil)
+                                                    (descending nil)
+                                                    (include-docs t)
+                                                    (update t)
+                                                    (skip 0)
+                                                    (reduce nil)
+                                                    (sort-fn #'sort-docs-by-date))
+  "Query the by_record_type view in the domains design document."
+  (let* ((view-result (query-view client database "domains" "by_record_type"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun domains-by-record-and-type (client database &key (limit 50)
+                                                        (start-key nil)
+                                                        (end-key nil)
+                                                        (keys nil)
+                                                        (key nil)
+                                                        (descending nil)
+                                                        (include-docs t)
+                                                        (update t)
+                                                        (skip 0)
+                                                        (reduce nil)
+                                                        (sort-fn #'sort-docs-by-date))
+  "Query the by_record_and_type view in the domains design document."
+  (let* ((view-result (query-view client database "domains" "by_record_and_type"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun domains-by-resolved-address (client database &key (limit 50)
+                                                         (start-key nil)
+                                                         (end-key nil)
+                                                         (keys nil)
+                                                         (key nil)
+                                                         (descending nil)
+                                                         (include-docs t)
+                                                         (update t)
+                                                         (skip 0)
+                                                         (reduce nil)
+                                                         (sort-fn #'sort-docs-by-date))
+  "Query the by_resolved_address view in the domains design document."
+  (let* ((view-result (query-view client database "domains" "by_resolved_address"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+;;; Networks
+
+(defun networks-by-asn (client database &key (limit 50)
+                                             (start-key nil)
+                                             (end-key nil)
+                                             (keys nil)
+                                             (key nil)
+                                             (descending nil)
+                                             (include-docs t)
+                                             (update t)
+                                             (skip 0)
+                                             (reduce nil)
+                                             (sort-fn #'sort-docs-by-date))
+  "Query the by_asn view in the networks design document."
+  (let* ((view-result (query-view client database "networks" "by_asn"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun networks-by-org (client database &key (limit 50)
+                                             (start-key nil)
+                                             (end-key nil)
+                                             (keys nil)
+                                             (key nil)
+                                             (descending nil)
+                                             (include-docs t)
+                                             (update t)
+                                             (skip 0)
+                                             (reduce nil)
+                                             (sort-fn #'sort-docs-by-date))
+  "Query the by_org view in the networks design document."
+  (let* ((view-result (query-view client database "networks" "by_org"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun networks-by-subnet (client database &key (limit 50)
+                                                (start-key nil)
+                                                (end-key nil)
+                                                (keys nil)
+                                                (key nil)
+                                                (descending nil)
+                                                (include-docs t)
+                                                (update t)
+                                                (skip 0)
+                                                (reduce nil)
+                                                (sort-fn #'sort-docs-by-date))
+  "Query the by_subnet view in the networks design document."
+  (let* ((view-result (query-view client database "networks" "by_subnet"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+;;; URLs
+
+(defun urls-by-url (client database &key (limit 50)
+                                         (start-key nil)
+                                         (end-key nil)
+                                         (keys nil)
+                                         (key nil)
+                                         (descending nil)
+                                         (include-docs t)
+                                         (update t)
+                                         (skip 0)
+                                         (reduce nil)
+                                         (sort-fn #'sort-docs-by-date))
+  "Query the by_url view in the urls design document."
+  (let* ((view-result (query-view client database "urls" "by_url"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun urls-by-path (client database &key (limit 50)
+                                          (start-key nil)
+                                          (end-key nil)
+                                          (keys nil)
+                                          (key nil)
+                                          (descending nil)
+                                          (include-docs t)
+                                          (update t)
+                                          (skip 0)
+                                          (reduce nil)
+                                          (sort-fn #'sort-docs-by-date))
+  "Query the by_path view in the urls design document."
+  (let* ((view-result (query-view client database "urls" "by_path"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun urls-by-domain (client database &key (limit 50)
+                                            (start-key nil)
+                                            (end-key nil)
+                                            (keys nil)
+                                            (key nil)
+                                            (descending nil)
+                                            (include-docs t)
+                                            (update t)
+                                            (skip 0)
+                                            (reduce nil)
+                                            (sort-fn #'sort-docs-by-date))
+  "Query the by_domain view in the urls design document."
+  (let* ((view-result (query-view client database "urls" "by_domain"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+;;; Breaches
+
+(defun breaches-by-url (client database &key (limit 50)
+                                             (start-key nil)
+                                             (end-key nil)
+                                             (keys nil)
+                                             (key nil)
+                                             (descending nil)
+                                             (include-docs t)
+                                             (update t)
+                                             (skip 0)
+                                             (reduce nil)
+                                             (sort-fn #'sort-docs-by-date))
+  "Query the by_url view in the breaches design document."
+  (let* ((view-result (query-view client database "breaches" "by_url"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun breaches-by-size (client database &key (limit 50)
+                                              (start-key nil)
+                                              (end-key nil)
+                                              (keys nil)
+                                              (key nil)
+                                              (descending nil)
+                                              (include-docs t)
+                                              (update t)
+                                              (skip 0)
+                                              (reduce nil)
+                                              (sort-fn #'sort-docs-by-date))
+  "Query the by_size view in the breaches design document."
+  (let* ((view-result (query-view client database "breaches" "by_size"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+;;; Email Messages
+
+(defun email-messages-by-from (client database &key (limit 50)
+                                                    (start-key nil)
+                                                    (end-key nil)
+                                                    (keys nil)
+                                                    (key nil)
+                                                    (descending nil)
+                                                    (include-docs t)
+                                                    (update t)
+                                                    (skip 0)
+                                                    (reduce nil)
+                                                    (sort-fn #'sort-docs-by-date))
+  "Query the by_from view in the email-messages design document."
+  (let* ((view-result (query-view client database "email-messages" "by_from"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun email-messages-by-to (client database &key (limit 50)
+                                                  (start-key nil)
+                                                  (end-key nil)
+                                                  (keys nil)
+                                                  (key nil)
+                                                  (descending nil)
+                                                  (include-docs t)
+                                                  (update t)
+                                                  (skip 0)
+                                                  (reduce nil)
+                                                  (sort-fn #'sort-docs-by-date))
+  "Query the by_to view in the email-messages design document."
+  (let* ((view-result (query-view client database "email-messages" "by_to"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))
+
+(defun email-messages-by-participant (client database &key (limit 50)
+                                                           (start-key nil)
+                                                           (end-key nil)
+                                                           (keys nil)
+                                                           (key nil)
+                                                           (descending nil)
+                                                           (include-docs t)
+                                                           (update t)
+                                                           (skip 0)
+                                                           (reduce nil)
+                                                           (sort-fn #'sort-docs-by-date))
+  "Query the by_participant view in the email-messages design document."
+  (let* ((view-result (query-view client database "email-messages" "by_participant"
+                                  :limit limit
+                                  :start-key start-key
+                                  :end-key end-key
+                                  :keys keys
+                                  :key key
+                                  :descending descending
+                                  :include-docs include-docs
+                                  :update update
+                                  :skip skip
+                                  :reduce reduce
+                                  :group (if reduce t nil)))
+         (rows (jsown:val view-result "rows")))
+    (if include-docs
+        (funcall sort-fn (get-view-docs rows))
+        rows)))

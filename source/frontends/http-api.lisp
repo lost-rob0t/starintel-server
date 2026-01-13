@@ -361,6 +361,316 @@
                              :skip skip))))))
 
 
+;;; Hosts endpoints
+
+(setf (ningle:route *app* "/documents/hosts/by-ip" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((ip (cdr (assoc "ip" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/hosts/by-ip - ip: ~a limit: ~a" ip limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (hosts-by-ip client star:*couchdb-default-database*
+                            :limit limit
+                            :start-key (when start-key (jsown:parse start-key))
+                            :end-key (when end-key (jsown:parse end-key))
+                            :key ip
+                            :descending descending
+                            :skip skip))))))
+
+(setf (ningle:route *app* "/documents/hosts/by-port" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((port (cdr (assoc "port" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/hosts/by-port - port: ~a limit: ~a" port limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (hosts-by-port client star:*couchdb-default-database*
+                              :limit limit
+                              :start-key (when start-key (jsown:parse start-key))
+                              :end-key (when end-key (jsown:parse end-key))
+                              :key (when port (parse-integer port))
+                              :descending descending
+                              :skip skip))))))
+
+(setf (ningle:route *app* "/documents/hosts/by-service" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((service (cdr (assoc "service" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/hosts/by-service - service: ~a limit: ~a" service limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (hosts-by-service client star:*couchdb-default-database*
+                                 :limit limit
+                                 :start-key (when start-key (jsown:parse start-key))
+                                 :end-key (when end-key (jsown:parse end-key))
+                                 :key service
+                                 :descending descending
+                                 :skip skip))))))
+
+;;; Emails endpoints
+
+(setf (ningle:route *app* "/documents/emails/by-email" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((email (cdr (assoc "email" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/emails/by-email - email: ~a limit: ~a" email limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (emails-by-email client star:*couchdb-default-database*
+                                :limit limit
+                                :start-key (when start-key (jsown:parse start-key))
+                                :end-key (when end-key (jsown:parse end-key))
+                                :key email
+                                :descending descending
+                                :skip skip))))))
+
+(setf (ningle:route *app* "/documents/emails/by-domain" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((domain (cdr (assoc "domain" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/emails/by-domain - domain: ~a limit: ~a" domain limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (emails-by-domain client star:*couchdb-default-database*
+                                 :limit limit
+                                 :start-key (when start-key (jsown:parse start-key))
+                                 :end-key (when end-key (jsown:parse end-key))
+                                 :key domain
+                                 :descending descending
+                                 :skip skip))))))
+
+(setf (ningle:route *app* "/documents/emails/with-password" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/emails/with-password - limit: ~a" limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (emails-with-password client star:*couchdb-default-database*
+                                     :limit limit
+                                     :start-key (when start-key (jsown:parse start-key))
+                                     :end-key (when end-key (jsown:parse end-key))
+                                     :descending descending
+                                     :skip skip))))))
+
+;;; Domains endpoints
+
+(setf (ningle:route *app* "/documents/domains/by-record" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((record (cdr (assoc "record" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/domains/by-record - record: ~a limit: ~a" record limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (domains-by-record client star:*couchdb-default-database*
+                                  :limit limit
+                                  :start-key (when start-key (jsown:parse start-key))
+                                  :end-key (when end-key (jsown:parse end-key))
+                                  :key record
+                                  :descending descending
+                                  :skip skip))))))
+
+(setf (ningle:route *app* "/documents/domains/by-resolved-address" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((ip (cdr (assoc "ip" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/domains/by-resolved-address - ip: ~a limit: ~a" ip limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (domains-by-resolved-address client star:*couchdb-default-database*
+                                            :limit limit
+                                            :start-key (when start-key (jsown:parse start-key))
+                                            :end-key (when end-key (jsown:parse end-key))
+                                            :key ip
+                                            :descending descending
+                                            :skip skip))))))
+
+;;; Users endpoints (additional)
+
+(setf (ningle:route *app* "/documents/users/by-name" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((name (cdr (assoc "name" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/users/by-name - name: ~a limit: ~a" name limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (users-by-name client star:*couchdb-default-database*
+                              :limit limit
+                              :start-key (when start-key (jsown:parse start-key))
+                              :end-key (when end-key (jsown:parse end-key))
+                              :key name
+                              :descending descending
+                              :skip skip))))))
+
+(setf (ningle:route *app* "/documents/users/by-platform" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((platform (cdr (assoc "platform" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/users/by-platform - platform: ~a limit: ~a" platform limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (users-by-platform client star:*couchdb-default-database*
+                                  :limit limit
+                                  :start-key (when start-key (jsown:parse start-key))
+                                  :end-key (when end-key (jsown:parse end-key))
+                                  :key platform
+                                  :descending descending
+                                  :skip skip))))))
+
+;;; Networks endpoints
+
+(setf (ningle:route *app* "/documents/networks/by-asn" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((asn (cdr (assoc "asn" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/networks/by-asn - asn: ~a limit: ~a" asn limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (networks-by-asn client star:*couchdb-default-database*
+                                :limit limit
+                                :start-key (when start-key (jsown:parse start-key))
+                                :end-key (when end-key (jsown:parse end-key))
+                                :key (when asn (parse-integer asn))
+                                :descending descending
+                                :skip skip))))))
+
+(setf (ningle:route *app* "/documents/networks/by-org" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((org (cdr (assoc "org" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/networks/by-org - org: ~a limit: ~a" org limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (networks-by-org client star:*couchdb-default-database*
+                                :limit limit
+                                :start-key (when start-key (jsown:parse start-key))
+                                :end-key (when end-key (jsown:parse end-key))
+                                :key org
+                                :descending descending
+                                :skip skip))))))
+
+;;; URLs endpoints
+
+(setf (ningle:route *app* "/documents/urls/by-url" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((url (cdr (assoc "url" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/urls/by-url - url: ~a limit: ~a" url limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (urls-by-url client star:*couchdb-default-database*
+                            :limit limit
+                            :start-key (when start-key (jsown:parse start-key))
+                            :end-key (when end-key (jsown:parse end-key))
+                            :key url
+                            :descending descending
+                            :skip skip))))))
+
+(setf (ningle:route *app* "/documents/urls/by-domain" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((domain (cdr (assoc "domain" params :test #'string=)))
+                (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/urls/by-domain - domain: ~a limit: ~a" domain limit)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (urls-by-domain client star:*couchdb-default-database*
+                               :limit limit
+                               :start-key (when start-key (jsown:parse start-key))
+                               :end-key (when end-key (jsown:parse end-key))
+                               :key domain
+                               :descending descending
+                               :skip skip))))))
+
+;;; Breaches endpoints
+
+(setf (ningle:route *app* "/documents/breaches/by-size" :method :get)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "50")))
+                (start-key (cdr (assoc "start_key" params :test #'string=)))
+                (end-key (cdr (assoc "end_key" params :test #'string=)))
+                (descending (equal (cdr (assoc "descending" params :test #'string=)) "true"))
+                (skip (parse-integer (or (cdr (assoc "skip" params :test #'string=)) "0"))))
+            (log:info "GET /documents/breaches/by-size - limit: ~a descending: ~a" limit descending)
+            (jsown:to-json
+             (couchdb-handler (client *couchdb-pool*)
+               (breaches-by-size client star:*couchdb-default-database*
+                                 :limit limit
+                                 :start-key (when start-key (jsown:parse start-key))
+                                 :end-key (when end-key (jsown:parse end-key))
+                                 :descending descending
+                                 :skip skip))))))
+
 (setf (ningle:route *app* "/new/event/:id")
       #'(lambda (params)
           (set-default-headers)
