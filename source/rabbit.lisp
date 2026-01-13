@@ -75,14 +75,7 @@
 (defun message->object (msg)
   "Tale a rabbbitmq message and return a object. The object that will be returned depends on the message property 'dtype`.")
 
-(defun handle-new-document (msg)
-  "Handles any new incoming documents and sends it to the appropriate actors."
-  (log:debug "Handling new document")
-  (let* ((props (cl-rabbit:message/properties msg))
-         (dtype (assoc :type props :test #'equal))
-         (body-string (message->string msg)))
-    (log:info "New document dtype: ~a" (cdr dtype))
-    (cons (cdr dtype) body-string)))
+
 
 
 (defun insert (client database document)
@@ -91,8 +84,8 @@
 ;; (dex:http-request-conflict (e) (log:warn e))
 ;; (dex:http-request-unauthorized (e) (log:error e))
 
-(defun handle-document (self message)
-  (log:debug "handle-document called with message-key: ~a" (cdr message))
+(defun handle-new-document (self message)
+  (log:debug "handle-new-document called with message-key: ~a" (cdr message))
   (let ((connection (rabbit-stream-connection (consumer-stream self)))
         (document-json (car message))
         (msg-key (cdr message)))
@@ -124,9 +117,9 @@
 
 
 
-(defun handle-target (self message)
+(defun handle-new-target (self message)
   "Handles any new incoming documents and sends it to the appropriate actors."
-  (log:debug "handle-target called with message-key: ~a" (cdr message))
+  (log:debug "handle-new-target called with message-key: ~a" (cdr message))
   (let ((connection (rabbit-stream-connection (consumer-stream self)))
         (body (jsown:parse (car message)))
         (msg-key (cdr message)))
@@ -150,7 +143,7 @@
                                                     :password star:*rabbit-password*
                                                     :host star:*rabbit-address*
                                                     :port star:*rabbit-port*
-                                                    :handler-fn #'handle-document
+                                                    :handler-fn #'handle-new-document
                                                     :test-fn #'insertp))
 
         (target-consumers (create-rabbit-consumer :name "documents"
@@ -162,7 +155,7 @@
                                                   :password star:*rabbit-password*
                                                   :host star:*rabbit-address*
                                                   :port star:*rabbit-port*
-                                                  :handler-fn #'handle-target
+                                                  :handler-fn #'handle-new-target
                                                   :test-fn #'insertp)))
     (log:info "Starting document consumers")
     (start-consumer document-consumers)
