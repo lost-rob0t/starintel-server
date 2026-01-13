@@ -9,13 +9,13 @@
 
 (defun make-temp-init-file (content)
   "Create a temporary init file for testing"
-  (let ((temp-file (uiop:tmpize-pathname "test-init-~A.lisp")))
+  (let ((temp-file (format nil "/tmp/test-init-~A.lisp" (get-universal-time))))
     (with-open-file (stream temp-file
                             :direction :output
                             :if-exists :supersede
                             :if-does-not-exist :create)
       (write-string content stream))
-    temp-file))
+    (pathname temp-file)))
 
 (defun make-temp-init-directory ()
   "Create a temporary directory for modular init files"
@@ -35,7 +35,7 @@
 
 (test ensure-init-file-exists-creates-from-example
       "Test that ensure-init-file-exists copies from example config"
-      (let ((temp-file (uiop:tmpize-pathname "test-init-~A.lisp")))
+      (let ((temp-file (pathname (format nil "/tmp/test-init-~A.lisp" (get-universal-time)))))
         (unwind-protect
              (progn
                (star:ensure-init-file-exists temp-file)
@@ -46,7 +46,7 @@
 
 (test ensure-init-file-exists-creates-minimal-if-no-example
       "Test that ensure-init-file-exists creates minimal config if example missing"
-      (let ((temp-file (uiop:tmpize-pathname "test-init-~A.lisp"))
+      (let ((temp-file (pathname (format nil "/tmp/test-init-~A.lisp" (get-universal-time))))
             ;; Temporarily shadow the system source directory to simulate missing example
             (original-dir (asdf:system-source-directory :starintel-gserver)))
         (unwind-protect
@@ -105,7 +105,7 @@
 
 (test safe-load-init-creates-missing-file
       "Test that safe-load-init creates file if it doesn't exist"
-      (let ((temp-file (uiop:tmpize-pathname "test-missing-~A.lisp")))
+      (let ((temp-file (pathname (format nil "/tmp/test-missing-~A.lisp" (get-universal-time)))))
         (unwind-protect
              (progn
                (is-false (probe-file temp-file))
