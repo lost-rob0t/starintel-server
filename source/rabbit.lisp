@@ -80,28 +80,27 @@
   (log:debug "Handling new document")
   (let* ((props (cl-rabbit:message/properties msg))
          (dtype (assoc :type props :test #'equal))
-         (body (jsown:parse (message->string msg))))
+         (body-string (message->string msg)))
     (log:info "New document dtype: ~a" (cdr dtype))
-    (cons (cdr dtype) body)))
+    (cons (cdr dtype) body-string)))
 
 
 (defun insert (client database document)
   (log:debug "Inserting document into database: ~a" database)
-  (format nil "~a~%" (couch:create-document client database (jsown:to-json* document))))
+  (format nil "~a~%" (couch:create-document client database document)))
 ;; (dex:http-request-conflict (e) (log:warn e))
 ;; (dex:http-request-unauthorized (e) (log:error e))
 
 (defun handle-document (self message)
   (log:debug "handle-document called with message-key: ~a" (cdr message))
-  (let (
-        (connection (rabbit-stream-connection (consumer-stream self)))
-        (document (car message))
+  (let ((connection (rabbit-stream-connection (consumer-stream self)))
+        (document-json (car message))
         (msg-key (cdr message)))
     (log:debug "Processing document with msg-key: ~a" msg-key)
     (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
       (handler-case (progn
                       (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
-                      (couch:create-document client star:*couchdb-default-database* document)
+                      (couch:create-document client star:*couchdb-default-database* document-json)
                       (log:info "Document created successfully"))
 
 
