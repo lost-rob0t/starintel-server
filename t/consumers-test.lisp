@@ -302,7 +302,6 @@ non-sequence internal state (sometimes T), then anything doing (length ...) dies
 
 (test test-rabbit-stream-state
   "Test RabbitMQ stream open/closed state"
-  (format "poper~%")
   (cdbg "TEST test-rabbit-stream-state")
   (let ((stream (make-mock-rabbit-stream)))
     (is (not (star.consumers:rabbit-stream-open-p stream)))))

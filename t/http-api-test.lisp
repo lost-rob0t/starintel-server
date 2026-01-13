@@ -188,16 +188,16 @@
 (defun run-http-api-tests ()
   "Run all HTTP API tests."
   (format t "~%Starting HTTP API tests...~%")
-  (handler-case
-      (progn
-        (start-test-server)
-        (sleep 1)
-        (run! 'http-api-tests))
-    (error (e)
-      (format t "~%Error running HTTP tests: ~a~%" e)
-      (dbg "TOP-LEVEL ERROR: ~a" e))
-    (:no-error (result)
-      result)
-    (:finally
-      (stop-test-server)
-      (format t "~%HTTP API tests completed~%"))))
+  (unwind-protect
+       (handler-case
+           (progn
+             (start-test-server)
+             (sleep 1)
+             (run! 'http-api-tests))
+         (error (e)
+           (format t "~%Error running HTTP tests: ~a~%" e)
+           (dbg "TOP-LEVEL ERROR: ~a" e)
+           nil))
+    ;; Cleanup always runs
+    (stop-test-server)
+    (format t "~%HTTP API tests completed~%")))

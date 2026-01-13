@@ -11,50 +11,37 @@
   ;; Run init-loader tests
   (format t "~%[1/3] Running Init Loader Tests...~%")
   (format t "----------------------------------------~%")
-  (let ((init-results (run! 'init-loader-tests)))
+  (let ((init-passed (run! 'init-loader-tests)))
     (format t "~%Init Loader Tests: ~a~%"
-            (if (fiveam:results-status init-results)
-                "PASSED"
-                "FAILED"))
+            (if init-passed "PASSED" "FAILED"))
 
     ;; Run consumer tests
     (format t "~%[2/3] Running Consumer Thread Tests...~%")
     (format t "----------------------------------------~%")
-    (let ((consumer-results (run! 'consumer-tests)))
+    (let ((consumer-passed (run! 'consumer-tests)))
       (format t "~%Consumer Tests: ~a~%"
-              (if (fiveam:results-status consumer-results)
-                  "PASSED"
-                  "FAILED"))
+              (if consumer-passed "PASSED" "FAILED"))
 
       ;; Run HTTP API tests
       (format t "~%[3/3] Running HTTP API Tests...~%")
       (format t "----------------------------------------~%")
-      (let ((http-results (handler-case
-                              (run-http-api-tests)
-                            (error (e)
-                              (format t "~%HTTP tests error: ~a~%" e)
-                              nil))))
+      (let ((http-passed (handler-case
+                             (run-http-api-tests)
+                           (error (e)
+                             (format t "~%HTTP tests error: ~a~%" e)
+                             nil))))
 
         ;; Summary
         (format t "~%~%========================================~%")
         (format t "   Test Summary~%")
         (format t "========================================~%")
         (format t "Init Loader Tests: ~a~%"
-                (if (fiveam:results-status init-results)
-                    "PASSED"
-                    "FAILED"))
+                (if init-passed "PASSED" "FAILED"))
         (format t "Consumer Tests: ~a~%"
-                (if (fiveam:results-status consumer-results)
-                    "PASSED"
-                    "FAILED"))
+                (if consumer-passed "PASSED" "FAILED"))
         (format t "HTTP API Tests: ~a~%"
-                (if (and http-results (fiveam:results-status http-results))
-                    "PASSED"
-                    "FAILED"))
+                (if http-passed "PASSED" "FAILED"))
         (format t "~%~%")
 
-        ;; Return overall status
-        (and (fiveam:results-status init-results)
-             (fiveam:results-status consumer-results)
-             (or (null http-results)
-                 (fiveam:results-status http-results)))))))
+        ;; Return overall status (all tests must pass)
+        (and init-passed consumer-passed (not (null http-passed)))))))
