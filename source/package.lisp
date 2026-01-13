@@ -76,7 +76,10 @@
    :nil
            :events-by-actor
    :document-events
-           :target-events)
+           :target-events
+   :urls-by-url
+           :urls-by-path
+   :urls-by-domain)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
 
