@@ -143,15 +143,15 @@
     (dbg "root response snippet=~s"
          (subseq response 0 (min 200 (length response))))
     (let ((data (jsown:parse response)))
-      (dbg "root parsed type=~a keys(spec? ~a default-dataset? ~a event-log? ~a)"
+      (dbg "root parsed type=~a keys(doc_spec_version? ~a default-dataset? ~a event_log? ~a)"
            (type-of data)
-           (jsown:keyp data "spec")
+           (jsown:keyp data "doc_spec_version")
            (jsown:keyp data "default-dataset")
-           (jsown:keyp data "event-log"))
+           (jsown:keyp data "event_log"))
       (is (not (null data)))
-      (is (jsown:keyp data "spec"))
+      (is (jsown:keyp data "doc_spec_version"))
       (is (jsown:keyp data "default-dataset"))
-      (is (jsown:keyp data "event-log")))))
+      (is (jsown:keyp data "event_log")))))
 
 (test test-root-endpoint-content-type
   "Test root endpoint returns JSON content type."

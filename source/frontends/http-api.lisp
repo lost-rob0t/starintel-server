@@ -385,4 +385,4 @@
                                :max-accept-count 100
                                :request-timeout 300)))
     (log:info "HTTP API server started successfully on ~a:~a" star:*http-api-address* star:*http-api-port*)
-    ))
+    server))
