@@ -1,0 +1,2 @@
+- we use log4cl
+- DO NOT mention Claude or AI authorship in commit messages. The user is the author, you are merely a tool.

@@ -268,6 +268,25 @@
                         (uiop:quit 1)))"
         '';
 
+        # API endpoint test script
+        test-api = pkgs.stdenv.mkDerivation {
+          pname = "test-api";
+          version = "0.1.0";
+          src = ./.;
+
+          dontBuild = true;
+
+          installPhase = ''
+            mkdir -p $out/bin
+            cp test-api.sh $out/bin/test-api
+            chmod +x $out/bin/test-api
+
+            # Make curl available
+            substituteInPlace $out/bin/test-api \
+              --replace "curl" "${pkgs.curl}/bin/curl"
+          '';
+        };
+
         # CLI client binary
         star-cli = pkgs.stdenv.mkDerivation {
           pname = "star-cli";

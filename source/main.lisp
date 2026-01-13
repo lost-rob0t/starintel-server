@@ -18,6 +18,7 @@
         (init-file (clingon:getopt cmd :init-value)))
 
     (safe-load-init init-file)
+    
     (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
     (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
     (star.databases.couchdb:init-db)

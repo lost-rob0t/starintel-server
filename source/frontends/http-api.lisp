@@ -18,13 +18,14 @@
 
 (defparameter *couchdb-pool* (anypool:make-pool :name "couchdb-connections"
                                                 :connector (lambda ()
-                                                             (let ((client (cl-couch:new-couchdb (uiop:getenv "COUCHDB_HOST") 5984 :scheme (string-downcase (uiop:getenv "COUCHDB_SCHEME")))))
-                                                               (cl-couch:password-auth client (uiop:getenv "COUCHDB_USER") (uiop:getenv "COUCHDB_PASSWORD"))
+                                                             (let ((client (cl-couch:new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
+                                                               (cl-couch:password-auth client star:*couchdb-user* star:*couchdb-password*)
                                                                client))
 
                                                 :disconnector (lambda (obj)
                                                                 (setf (cl-couch:couchdb-headers obj) nil))
-                                                :max-open-count 20))
+                                                :max-open-count 20
+                                                :max-idle-count 10))
 
 (defun connect-rabbitmq ()
   (log:info "Connecting to RabbitMQ at ~a:~a" star:*rabbit-address* star:*rabbit-port*)
@@ -63,23 +64,30 @@
 
 
 (defmacro couchdb-handler ((client pool) &body body)
-  `(anypool:with-connection (,client ,pool)
-     (handler-case ,@body
-       (dex:http-request-not-found (e)
-         (log:warn "CouchDB request not found: ~a" e)
-         (status-msg "Not Found" 'error))
-       (dex:http-request-conflict (e)
-         (log:warn "CouchDB request conflict: ~a" e)
-         (status-msg "Conflict" 'error))
-       (usocket:timeout-error (e)
-         (log:error "Socket timeout connecting to database: ~a" e)
-         (status-msg  "Time out Connecting to database" 'error))
-       (dex:http-request-gateway-timeout (e)
-         (log:error "Gateway timeout connecting to couchdb: ~a" e)
-         (status-msg "Timeout connecting to couchdb" 'error))
-       (dex:http-request-bad-request (e)
-         (log:error "CouchDB bad request: ~a" e)
-         (status-msg "Bad Request" 'error :traceback (format nil "~a" e))))))
+  `(handler-case
+       (anypool:with-connection (,client ,pool)
+         (handler-case ,@body
+           (dex:http-request-not-found (e)
+             (log:warn "CouchDB request not found: ~a" e)
+             (status-msg "Not Found" 'error))
+           (dex:http-request-conflict (e)
+             (log:warn "CouchDB request conflict: ~a" e)
+             (status-msg "Conflict" 'error))
+           (usocket:timeout-error (e)
+             (log:error "Socket timeout connecting to database: ~a" e)
+             (status-msg  "Time out Connecting to database" 'error))
+           (dex:http-request-gateway-timeout (e)
+             (log:error "Gateway timeout connecting to couchdb: ~a" e)
+             (status-msg "Timeout connecting to couchdb" 'error))
+           (dex:http-request-bad-request (e)
+             (log:error "CouchDB bad request: ~a" e)
+             (status-msg "Bad Request" 'error :traceback (format nil "~a" e)))))
+     (usocket:timeout-error (e)
+       (log:error "Socket timeout getting connection from pool: ~a" e)
+       (status-msg "Timeout getting database connection" 'error))
+     (error (e)
+       (log:error "Unexpected error in couchdb-handler: ~a" e)
+       (status-msg "Internal Server Error" 'error :traceback (format nil "~a" e)))))
 
 
 (setf (ningle:route *app* "/health" :method :get)
@@ -91,17 +99,15 @@
 (setf (ningle:route *app* "/" :method :get)
       #'(lambda (params)
           (log:info "Root endpoint called - getting server info")
-          (couchdb-handler (client *couchdb-pool*)
-                           (log:debug "Fetching dataset size for default database: ~a" star:*couchdb-default-database*)
-                           (let ((json (jsown:new-js
-                                         ("doc_spec_version" spec:+starintel-doc-version+)
-                                         ("default-dataset" star:*couchdb-default-database*)
-                                         ("event_log" star:*couchdb-event-log-database*)
-                                         ("stats" (jsown:new-js
-                                                    ("dataset-size" (dataset-size client star:*couchdb-default-database* :update :lazy :reduce t :include-docs nil)))))))
-                             (set-default-headers)
-                             (log:debug "Returning server info response")
-                             (jsown:to-json json)))))
+          (set-default-headers)
+          (let ((json (jsown:new-js
+                        ("doc_spec_version" "1.0")
+                        ("default-dataset" star:*couchdb-default-database*)
+                        ("event_log" star:*couchdb-event-log-database*)
+                        ("server" "starintel-gserver")
+                        ("version" star:*star-server-version*))))
+            (log:debug "Returning server info response")
+            (jsown:to-json json))))
 
 
 
@@ -112,22 +118,24 @@
             (log:info "GET /targets/:actor - actor: ~a" actor)
             (set-default-headers)
             (couchdb-handler (client *couchdb-pool*)
-                             (log:debug "Querying targets view for actor: ~a" actor)
-                             (let ((targets (loop for row in (jsown:val (query-view client *couchdb-default-database* "targets" "by_actor" :include-docs t :key actor) "rows")
-                                                  collect (jsown:val row "doc"))))
-                               (log:info "Found ~a targets for actor: ~a" (length targets) actor)
-                               (jsown:to-json targets))))))
+                             (progn
+                               (log:debug "Querying targets view for actor: ~a" actor)
+                               (let ((targets (loop for row in (jsown:val (query-view client *couchdb-default-database* "targets" "by_actor" :include-docs t :key actor) "rows")
+                                                    collect (jsown:val row "doc"))))
+                                 (log:info "Found ~a targets for actor: ~a" (length targets) actor)
+                                 (jsown:to-json targets)))))))
 
 
 (setf (ningle:route *app* "/new/target/:actor" :method :post)
       #'(lambda (params)
+          (set-default-headers)
           (let* ((actor (cdr (assoc :actor params :test #'string=)))
                  (body (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
                  (routing-key (format nil "documents.new.target.~a" actor)))
             (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
             (log:debug "Target body length: ~a" (length body))
-
-
+            (star.actors:publish star.actors:*producer-agent* :body body :routing-key routing-key :properties (list (cons :type "target")))
+            (log:info "Target published to RabbitMQ successfully")
             body)))
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
@@ -148,10 +156,11 @@
           (let ((document-id  (cdr (assoc :id params :test #'string=))))
             (log:info "GET /document/:id - document-id: ~a" document-id)
             (couchdb-handler (client *couchdb-pool*)
-                             (log:debug "Fetching document from database: ~a" star:*couchdb-default-database*)
-                             (let ((result (cl-couch:get-document client star:*couchdb-default-database* document-id)))
-                               (log:debug "Document retrieved successfully")
-                               result)))))
+                             (progn
+                               (log:debug "Fetching document from database: ~a" star:*couchdb-default-database*)
+                               (let ((result (cl-couch:get-document client star:*couchdb-default-database* document-id)))
+                                 (log:debug "Document retrieved successfully")
+                                 result))))))
 
 
 ;;;  search
@@ -162,25 +171,26 @@
                 (limit (parse-integer (or (cdr (assoc "limit" params :test #'string=)) "25"))))
             (log:info "GET /search - query: ~a limit: ~a" q limit)
             (couchdb-handler (client *couchdb-pool*)
-                             (let* ((db star:*couchdb-default-database*)
-                                    (ddoc "search")
-                                    (search-name "fts")
-                                    (bookmark (cdr (assoc "bookmark" params :test #'string=)))
-                                    (sort (cdr (assoc "sort" params :test #'string=)))
-                                    (query (jsown:new-js
-                                             ("q" q)
-                                             ("limit" limit)
-                                             ("include_docs" t))))
-                               (when sort
-                                 (log:debug "Using sort: ~a" sort)
-                                 (setf (jsown:val query "sort") sort))
-                               (when bookmark
-                                 (log:debug "Using bookmark: ~a" bookmark)
-                                 (setf (jsown:val query "bookmark") bookmark))
-                               (log:debug "Executing FTS search on ~a/~a/~a" db ddoc search-name)
-                               (let ((result (cl-couch:fts-search client (jsown:to-json query) db ddoc search-name)))
-                                 (log:info "Search completed successfully")
-                                 result))))))
+                             (progn
+                               (let* ((db star:*couchdb-default-database*)
+                                      (ddoc "search")
+                                      (search-name "fts")
+                                      (bookmark (cdr (assoc "bookmark" params :test #'string=)))
+                                      (sort (cdr (assoc "sort" params :test #'string=)))
+                                      (query (jsown:new-js
+                                               ("q" q)
+                                               ("limit" limit)
+                                               ("include_docs" t))))
+                                 (when sort
+                                   (log:debug "Using sort: ~a" sort)
+                                   (setf (jsown:val query "sort") sort))
+                                 (when bookmark
+                                   (log:debug "Using bookmark: ~a" bookmark)
+                                   (setf (jsown:val query "bookmark") bookmark))
+                                 (log:debug "Executing FTS search on ~a/~a/~a" db ddoc search-name)
+                                 (let ((result (cl-couch:fts-search client (jsown:to-json query) db ddoc search-name)))
+                                   (log:info "Search completed successfully")
+                                   result)))))))
 
 
 
@@ -198,14 +208,15 @@
             (log:info "GET /documents/messages/by-user - user: ~a limit: ~a skip: ~a" user limit skip)
             (jsown:to-json
              (couchdb-handler (client *couchdb-pool*)
-                              (log:debug "Querying messages-by-user view")
-                              (messages-by-user client star:*couchdb-default-database*
-                                                :limit limit
-                                                :start-key (when start-key (jsown:parse start-key))
-                                                :end-key (when end-key (jsown:parse end-key))
-                                                :key user
-                                                :descending descending
-                                                :skip skip))))))
+                              (progn
+                                (log:debug "Querying messages-by-user view")
+                                (messages-by-user client star:*couchdb-default-database*
+                                                  :limit limit
+                                                  :start-key (when start-key (jsown:parse start-key))
+                                                  :end-key (when end-key (jsown:parse end-key))
+                                                  :key user
+                                                  :descending descending
+                                                  :skip skip)))))))
 
 (setf (ningle:route *app* "/documents/messages/by-channel" :method :get)
       #'(lambda (params)
@@ -221,18 +232,19 @@
             (log:info "GET /documents/messages/by-channel - group: ~a channel: ~a limit: ~a reduce: ~a" group channel limit reduce)
             (jsown:to-json
              (couchdb-handler (client *couchdb-pool*)
-                              (log:debug "Querying by-channel view")
-                              (by-channel client star:*couchdb-default-database*
-                                          :limit limit
-                                          :start-key (when start-key (jsown:parse start-key))
-                                          :end-key (when end-key (jsown:parse end-key))
-                                          :key (list group channel)
-                                          :descending descending
-                                          :skip skip
-                                          :update nil
-                                          :include-docs (if reduce nil t)
-                                          :group (if reduce t nil)
-                                          :reduce reduce))))))
+                              (progn
+                                (log:debug "Querying by-channel view")
+                                (by-channel client star:*couchdb-default-database*
+                                            :limit limit
+                                            :start-key (when start-key (jsown:parse start-key))
+                                            :end-key (when end-key (jsown:parse end-key))
+                                            :key (list group channel)
+                                            :descending descending
+                                            :skip skip
+                                            :update nil
+                                            :include-docs (if reduce nil t)
+                                            :group (if reduce t nil)
+                                            :reduce reduce)))))))
 
 
 
@@ -271,14 +283,15 @@
             (log:info "GET /documents/messages/by-platform - platform: ~a limit: ~a" platform limit)
             (jsown:to-json
              (couchdb-handler (client *couchdb-pool*)
-                              (log:debug "Querying messages-by-platform view")
-                              (messages-by-platform client star:*couchdb-default-database*
-                                                    :limit limit
-                                                    :start-key (when start-key (jsown:parse start-key))
-                                                    :end-key (when end-key (jsown:parse end-key))
-                                                    :key platform
-                                                    :descending descending
-                                                    :skip skip))))))
+                              (progn
+                                (log:debug "Querying messages-by-platform view")
+                                (messages-by-platform client star:*couchdb-default-database*
+                                                      :limit limit
+                                                      :start-key (when start-key (jsown:parse start-key))
+                                                      :end-key (when end-key (jsown:parse end-key))
+                                                      :key platform
+                                                      :descending descending
+                                                      :skip skip)))))))
 
 (setf (ningle:route *app* "/documents/messages/groups" :method :get)
       #'(lambda (params)
@@ -361,11 +374,15 @@
 (defun start-http-api ()
   (log:info "Starting HTTP API server")
   (log:info "Server configuration - address: ~a port: ~a" star:*http-api-address* star:*http-api-port*)
+  (log:info "Hunchentoot threading - max threads: 50, max accept: 100")
   (connect-rabbitmq)
   (log:info "Starting Clack server with Hunchentoot backend")
   (let ((server (clack:clackup *server*
                                :server :hunchentoot
                                :address star:*http-api-address*
-                               :port star:*http-api-port*)))
+                               :port star:*http-api-port*
+                               :max-thread-count 50
+                               :max-accept-count 100
+                               :request-timeout 300)))
     (log:info "HTTP API server started successfully on ~a:~a" star:*http-api-address* star:*http-api-port*)
     server))

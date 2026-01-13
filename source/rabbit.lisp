@@ -44,7 +44,7 @@
                              (cl-rabbit:envelope/delivery-tag result) e)
                   (cl-rabbit:basic-nack conn 1 (cl-rabbit:envelope/delivery-tag result) :requeue t)
                   (log:warn "Message with delivery-tag ~a requeued"
-                            (cl-rabbit:envelope/delivery-tag result))))))))
+                            (cl-rabbit:envelope/delivery-tag result)))))))))
 
 (defun emit-document (exchange routing-key body &key (properties nil)
                                                   (immediate nil)

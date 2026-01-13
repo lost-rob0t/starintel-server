@@ -64,6 +64,7 @@
 
 (defun init-db ()
   "Create the database, and all map-reduce views with it."
+  (log:info "Connecting to Couchdb via ~a://~a:~a" star:*couchdb-scheme* star:*couchdb-host* star:*couchdb-port*)
   (let ((database *couchdb-default-database*)
         (client (new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
     (password-auth client star:*couchdb-user* star:*couchdb-password*)
