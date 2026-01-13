@@ -3,7 +3,8 @@
 (defpackage :star-cli
   (:use :cl :star.api.client)
   (:import-from :starintel
-                #:encode 
+                #:encode
+                #:set-meta
                 #:new-host
                 #:new-url
                 #:new-domain)
@@ -726,15 +727,15 @@
 
 (defun make-host-document (hostname dataset)
   "Create a host document using the spec package."
-  (shasht:write-json* (set-meta  (new-host dataset :hostname hostname) dataset)) :stream nil :pretty nil)
+  (encode (set-meta  (new-host dataset :hostname hostname) dataset)))
 
 (defun make-url-document (url dataset)
   "Create a URL document using the spec package."
-  (shasht:write-json* (set-meta (new-url dataset :url url) dataset)) :stream nil :pretty nil)
+  (encode (set-meta (new-url dataset :url url) dataset)))
 
 (defun make-domain-document (domain dataset)
   "Create a domain document using the spec package."
-  (shasht:write-json* (set-meta  (new-domain dataset :record domain :record-type "A") dataset) :pretty nil :stream nil))
+  (encode (set-meta  (new-domain dataset :record domain :record-type "A") dataset)))
 
 (defun bbp/import-handler (cmd)
   "Handler for importing BBP data."
