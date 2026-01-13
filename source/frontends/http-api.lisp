@@ -43,7 +43,6 @@
 
 (defparameter *default-headers* (list
                                  :content-type "application/json"))
-
 (defparameter *cors-headers* (list
                               :access-control-allow-origin "*"
                               :access-control-allow-methods "GET, POST, PUT, DELETE, OPTIONS"
@@ -131,7 +130,7 @@
           (log:info "Root endpoint called - getting server info")
           (set-default-headers)
           (let ((json (jsown:new-js
-                        ("doc_spec_version" "1.0")
+                        ("doc_spec_version" starintel:+starintel-doc-version+)
                         ("default-dataset" star:*couchdb-default-database*)
                         ("event_log" star:*couchdb-event-log-database*)
                         ("server" "starintel-gserver")
@@ -709,7 +708,7 @@
 
 (defparameter *server* (lack:builder
                         :accesslog
-                        *app*))
+                        (cors-middleware *app*)))
 
 (defun start-http-api ()
   (log:info "Starting HTTP API server")

@@ -22,8 +22,8 @@
           repo = pkgs.fetchFromGitHub {
             owner = "lost-rob0t";
             repo = "star-cl";
-            rev = "6ce95fba0c82a70ed1341b3220fd650be164b9d2";
-            sha256 = "sha256-Tc0/sSALuOnINinF11fsirw7T9BT6tIO2K8J/M84EK8=";
+            rev = "91c5da2a5876094581ced831c2c5fe7b9623c33b";
+            sha256 = "sha256-UAEMuL5rniSbDGuXy0g+w4HBUi6Clpj35uRv6LOrCE8=";
           };
         in pkgs.runCommand "star-cl-src" {} ''
           mkdir -p $out
