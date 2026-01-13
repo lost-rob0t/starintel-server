@@ -10,6 +10,31 @@ jobs:
   smoke-tests:
     runs-on: ubuntu-latest
 
+    services:
+      rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      couchdb:
+        image: couchdb:3
+        ports:
+          - 5984:5984
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        options: >-
+          --health-cmd "curl -f http://localhost:5984/_up || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,6 +45,22 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes
+
+      - name: Wait for services and initialize
+        run: |
+          # Wait for RabbitMQ
+          echo "Waiting for RabbitMQ..."
+          timeout 60 bash -c 'until curl -f http://localhost:15672 > /dev/null 2>&1; do sleep 2; done'
+
+          # Wait for CouchDB
+          echo "Waiting for CouchDB..."
+          timeout 60 bash -c 'until curl -f http://localhost:5984/_up > /dev/null 2>&1; do sleep 2; done'
+
+          # Create CouchDB database
+          echo "Creating CouchDB database..."
+          curl -X PUT http://admin:password@localhost:5984/starintel
+
+          echo "Services ready!"
 
       - name: Run smoke tests
         run: nix run .#star-smoke
