@@ -2,7 +2,7 @@
 (in-package :star)
 (format t "Starting starintel....")
 (setq *rabbit-address* "rabbitmq")
-(setq *couchdb-host* "couchdb")
+(setq *couchdb-host* "bots.star.intel")
 (setq *couchdb-default-database* "starintel")
 ;; You can invoke sylnk like so
 ;; (start-debugger)

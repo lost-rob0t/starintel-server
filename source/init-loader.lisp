@@ -38,7 +38,7 @@
   "Safely load initialization configuration.
 
   Returns T on success, signals an error on failure."
-  (let ((resolved-path (uiop:ensure-pathname init-path)))
+  (let ((resolved-path (uiop:ensure-absolute-pathname init-path)))
     (cond
       ((probe-file resolved-path)
        (load-init-file resolved-path))
