@@ -66,6 +66,7 @@
    :targets-by-actor
            :targets-target-count
    :users-by-platform
+           :users-by-name
            :as-json
    :format-key
            :from-json
@@ -77,8 +78,19 @@
            :events-by-actor
    :document-events
            :target-events
-   :urls-by-url
-           :urls-by-path
+   :hosts-by-ip
+           :hosts-by-port
+   :hosts-by-service
+           :emails-by-email
+   :emails-by-domain
+           :emails-with-password
+   :domains-by-record
+           :domains-by-resolved-address
+   :networks-by-asn
+           :networks-by-org
+   :breaches-by-size
+           :urls-by-url
+   :urls-by-path
    :urls-by-domain)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
