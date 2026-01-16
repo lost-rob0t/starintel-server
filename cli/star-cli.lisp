@@ -716,7 +716,8 @@
     :short-name #\d
     :long-name "dataset"
     :required t
-    :key :dataset)
+    :key :dataset
+    :env-vars '("HACKMODE_OPERATION"))
    (clingon:make-option
     :boolean
     :description "Suppress verbose output"

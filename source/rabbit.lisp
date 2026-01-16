@@ -86,21 +86,31 @@
 
 (defun handle-new-document (self message)
   (log:debug "handle-new-document called with message-key: ~a" (cdr message))
-  (let ((connection (rabbit-stream-connection (consumer-stream self)))
-        (document-json (car message))
-        (msg-key (cdr message)))
+  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
+         (document-json (jsown:parse (car message)))
+         (msg-key (cdr message))
+         (id (jsown:val-safe document-json "_id")))
+    ;; ensure a valid _id
+    (when (or (null id)
+              (string= id "")
+              (not (stringp id)))
+      (setf document-json
+            (jsown:extend-js document-json
+              ("_id" (cms-ulid:ulid)))))
     (log:debug "Processing document with msg-key: ~a" msg-key)
     (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-      (handler-case (progn
-                      (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
-                      (couch:create-document client star:*couchdb-default-database* document-json)
-                      (log:info "Document created successfully"))
-
-
+      (handler-case
+          (progn
+            (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
+            (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json))
+            (log:info "Document created successfully"))
+        (dex:http-request-bad-request (e)
+          (log:error "Bad request creating document (~a): ~a"
+                     msg-key (dexador.error:response-body e)))
         (dex:http-request-conflict (e)
-          (log:warn "Document conflict detected for msg-key: ~a - ~a" msg-key e)
-          nil)))
-
+          (log:warn "Document conflict (~a): ~a" msg-key e))
+        (error (e)
+          (log:error "Unexpected error creating document (~a): ~a" msg-key e))))
     (log:debug "Acknowledging message with key: ~a" msg-key)
     (cl-rabbit:basic-ack connection 1 msg-key)))
 
@@ -118,17 +128,63 @@
 
 
 (defun handle-new-target (self message)
-  "Handles any new incoming documents and sends it to the appropriate actors."
+  "Persist target doc to CouchDB, then route it to *targets* actor on success."
   (log:debug "handle-new-target called with message-key: ~a" (cdr message))
-  (let ((connection (rabbit-stream-connection (consumer-stream self)))
-        (body (jsown:parse (car message)))
-        (msg-key (cdr message)))
-    (log:info "Routing target to *targets* actor - actor: ~a"
-              (jsown:val-safe body "actor"))
-    (tell star.actors:*targets* (cons 1 body))
-    (log:debug "Target sent to *targets* actor, acknowledging message")
-    (cl-rabbit:basic-ack connection 1 msg-key)
-    (log:debug "Message with key ~a acknowledged" msg-key)))
+  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
+         (body (jsown:parse (car message)))
+         (msg-key (cdr message))
+         (id (jsown:val-safe body "_id"))
+         (dtype (jsown:val-safe body "dtype")))
+    ;; ----------------------------------------------------------------------
+    ;; normalize doc
+    (when (or (null id) (not (stringp id)) (string= id ""))
+      (setf body (jsown:extend-js body
+                   ("_id" (cms-ulid:ulid)))))
+    (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
+      (setf body (jsown:extend-js body
+                   ("dtype" "target"))))
+
+    ;; ----------------------------------------------------------------------
+    ;; write to db then send on success
+    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+      (handler-case
+          (progn
+            (log:info "Creating target in database: ~a (_id=~a actor=~a)"
+                      star:*couchdb-default-database*
+                      (jsown:val-safe body "_id")
+                      (jsown:val-safe body "actor"))
+
+            (couch:create-document client
+                                   star:*couchdb-default-database*
+                                   (jsown:to-json body))
+
+            (log:info "Target created, routing to *targets* actor - actor: ~a"
+                      (jsown:val-safe body "actor"))
+
+            (tell star.actors:*targets* (cons 1 body))
+
+            (log:debug "Target sent to *targets* actor, acknowledging message")
+            (cl-rabbit:basic-ack connection 1 msg-key)
+            (log:debug "Message with key ~a acknowledged" msg-key))
+
+        (dex:http-request-conflict (e)
+          (log:warn "Target conflict (already exists). msg-key=~a _id=~a err=~a"
+                    msg-key (jsown:val-safe body "_id") e)
+          ;; no send-on-success here; but do ack so it doesn't poison the queue
+          (cl-rabbit:basic-ack connection 1 msg-key))
+
+        (dex:http-request-bad-request (e)
+          (log:error "Bad request creating target. msg-key=~a _id=~a err=~a doc=~a"
+                     msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
+          ;; do NOT ack; let it retry / dead-letter based on your broker policy
+          nil)
+
+        (error (e)
+          (log:error "Unexpected error creating target. msg-key=~a _id=~a err=~a doc=~a"
+                     msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
+          ;; do NOT ack
+          nil)))))
+
 
 (defun start-consumers ()
   (log:info "Starting Consumers.")
