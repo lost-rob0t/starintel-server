@@ -31,6 +31,9 @@
 (defparameter *test-base-url* (format nil "http://localhost:~d" *test-port*)
   "Base URL for test requests")
 
+(defparameter *test-database* "starintel-test"
+  "Database name for tests (separate from production)")
+
 ;;; ----------------------------------------------------------------------
 ;;; Header helpers (Dexador headers are annoyingly inconsistent)
 ;;; ----------------------------------------------------------------------
@@ -87,6 +90,32 @@
 ;;; ----------------------------------------------------------------------
 ;;; Test Fixtures and Helpers
 ;;; ----------------------------------------------------------------------
+
+(defun ensure-test-database ()
+  "Ensure the test database exists, create it if it doesn't."
+  (dbg "Ensuring test database exists: ~a" *test-database*)
+  (handler-case
+      (anypool:with-connection (client star.databases.couchdb::*couchdb-pool*)
+        (handler-case
+            (cl-couch:get-database client *test-database*)
+          (dexador:http-request-not-found ()
+            (dbg "Database doesn't exist, creating: ~a" *test-database*)
+            (cl-couch:create-database client *test-database*))))
+    (error (e)
+      (dbg "Error ensuring database: ~a" e)
+      (error e))))
+
+(defun destroy-test-database ()
+  "Destroy the test database."
+  (dbg "Destroying test database: ~a" *test-database*)
+  (handler-case
+      (anypool:with-connection (client star.databases.couchdb::*couchdb-pool*)
+        (handler-case
+            (cl-couch:delete-database client *test-database*)
+          (dexador:http-request-not-found ()
+            (dbg "Database already doesn't exist: ~a" *test-database*))))
+    (error (e)
+      (dbg "Error destroying database: ~a" e))))
 
 (defun start-test-server ()
   "Start a test HTTP server instance."
@@ -233,7 +262,7 @@
   (dbg "Inserting test document: ~a" (jsown:val doc "_id"))
   (handler-case
       (anypool:with-connection (client star.databases.couchdb::*couchdb-pool*)
-        (cl-couch:create-document client star:*couchdb-default-database*
+        (cl-couch:create-document client *test-database*
                                   (jsown:to-json doc)))
     (error (e)
       (dbg "Error inserting document: ~a" e)
@@ -244,9 +273,14 @@
   (dbg "Deleting test document: ~a" id)
   (handler-case
       (anypool:with-connection (client star.databases.couchdb::*couchdb-pool*)
-        (cl-couch:delete-document client star:*couchdb-default-database* id))
-    (dexador:http-request-not-found ()
-      (dbg "Document ~a not found, already deleted" id))
+        (handler-case
+            (progn
+              (dbg "Deleting document ~a" id)
+              (cl-couch:delete-document client *test-database* id))
+          (dexador:http-request-not-found ()
+            (dbg "Document ~a not found, already deleted" id))))
+    (dexador:http-request-conflict (e)
+      (dbg "Conflict deleting document ~a: ~a (may have been updated/deleted concurrently)" id e))
     (error (e)
       (dbg "Error deleting document: ~a" e))))
 
@@ -627,6 +661,7 @@
     (unwind-protect
          (handler-case
              (progn
+               (ensure-test-database)
                (start-test-server)
                (sleep 1)
                (setf results (run! 'http-api-tests)))
@@ -637,6 +672,7 @@
       ;; Cleanup always runs
       (cleanup-test-documents)
       (stop-test-server)
+      (destroy-test-database)
       (format t "~%HTTP API tests completed~%"))
     ;; Return results after cleanup
     results))
