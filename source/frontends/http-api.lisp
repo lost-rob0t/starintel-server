@@ -191,6 +191,22 @@
                   (log:debug "Document retrieved successfully")
                   result))))))
 
+(setf (ningle:route *app* "/document/:id" :method :delete)
+      #'(lambda (params)
+          (set-default-headers)
+          (let ((document-id (cdr (assoc :id params :test #'string=))))
+            (log:info "DELETE /document/:id - document-id: ~a" document-id)
+            (couchdb-handler (client *couchdb-pool*)
+              (progn
+                (log:debug "Fetching document to get revision")
+                (let* ((doc (cl-couch:get-document client star:*couchdb-default-database* document-id))
+                       (parsed-doc (jsown:parse doc))
+                       (rev (jsown:val parsed-doc "_rev")))
+                  (log:debug "Deleting document ~a with rev ~a" document-id rev)
+                  (cl-couch:delete-document client star:*couchdb-default-database* document-id rev)
+                  (log:info "Document ~a deleted successfully" document-id)
+                  (status-msg (format nil "Document ~a deleted" document-id) 'success)))))))
+
 
 ;;;  search
 (setf (ningle:route *app* "/search" :method :get)
