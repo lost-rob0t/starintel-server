@@ -31,7 +31,8 @@
    #:*star-server-version*
    #:ensure-init-file-exists
    #:load-init-file
-   #:safe-load-init))
+   #:safe-load-init
+   #:*bulk-max-documents*))
 
 
 (uiop:define-package   :star.databases.couchdb
@@ -67,30 +68,28 @@
            :targets-target-count
    :users-by-platform
            :users-by-name
-           :as-json
-   :format-key
-           :from-json
-   :*couchdb-pool*
-           :groups
-   :lazy
-           :t
-   :nil
-           :events-by-actor
-   :document-events
-           :target-events
-   :hosts-by-ip
-           :hosts-by-port
-   :hosts-by-service
-           :emails-by-email
-   :emails-by-domain
-           :emails-with-password
-   :domains-by-record
-           :domains-by-resolved-address
-   :networks-by-asn
-           :networks-by-org
-   :breaches-by-size
-           :urls-by-url
-   :urls-by-path
+   :as-json
+           :format-key
+   :from-json
+           :*couchdb-pool*
+   :groups
+           :lazy
+   :events-by-actor
+           :document-events
+   :target-events
+           :hosts-by-ip
+   :hosts-by-port
+           :hosts-by-service
+   :emails-by-email
+           :emails-by-domain
+   :emails-with-password
+           :domains-by-record
+   :domains-by-resolved-address
+           :networks-by-asn
+   :networks-by-org
+           :breaches-by-size
+   :urls-by-url
+           :urls-by-path
    :urls-by-domain)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
