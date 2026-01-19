@@ -148,11 +148,11 @@
 (defun make-test-document (&key (id "test-123") (dtype "message"))
   "Create a test document structure."
   (jsown:new-js
-    ("_id" id)
-    ("type" dtype)
-    ("content" "test content")
-    ("timestamp" (get-universal-time))
-    ("transient" :false)))
+   ("_id" id)
+   ("type" dtype)
+   ("content" "test content")
+   ("timestamp" (get-universal-time))
+   ("transient" :false)))
 
 (defun make-test-target (&key (id "target-123") (actor "nmap"))
   "Create a test target structure."
@@ -531,9 +531,9 @@
 ;;; Bulk endpoint tests
 
 (test test-bulk-endpoint-success
-      "Test POST /bulk endpoint with valid documents."
+      "Test POST /documents/bulk endpoint with valid documents."
       (dbg "TEST: test-bulk-endpoint-success")
-      (let* ((url (make-test-url "/bulk"))
+      (let* ((url (make-test-url "/documents/bulk"))
              (docs (list (make-test-host :id "bulk-test-1" :ip "10.1.1.1")
                          (make-test-host :id "bulk-test-2" :ip "10.1.1.2")
                          (make-test-email :id "bulk-test-3" :user "bulk1" :domain "test.com")))
@@ -555,9 +555,9 @@
             (pass)))))
 
 (test test-bulk-endpoint-invalid-body
-      "Test POST /bulk endpoint with non-array body."
+      "Test POST /documents/bulk endpoint with non-array body."
       (dbg "TEST: test-bulk-endpoint-invalid-body")
-      (let* ((url (make-test-url "/bulk"))
+      (let* ((url (make-test-url "/documents/bulk"))
              (invalid-json (jsown:to-json (jsown:new-js ("type" "host")))))
         (handler-case
             (progn
@@ -573,9 +573,9 @@
             (pass)))))
 
 (test test-bulk-endpoint-exceeds-max
-      "Test POST /bulk endpoint with too many documents."
+      "Test POST /documents/bulk endpoint with too many documents."
       (dbg "TEST: test-bulk-endpoint-exceeds-max")
-      (let* ((url (make-test-url "/bulk"))
+      (let* ((url (make-test-url "/documents/bulk"))
              (max-docs star:*bulk-max-documents*)
              (docs (loop for i from 1 to (+ max-docs 1)
                          collect (make-test-host :id (format nil "bulk-exceed-~a" i) :ip "10.2.2.2")))
@@ -594,9 +594,9 @@
             (pass)))))
 
 (test test-bulk-endpoint-missing-type
-      "Test POST /bulk endpoint with documents missing type field."
+      "Test POST /documents/bulk endpoint with documents missing type field."
       (dbg "TEST: test-bulk-endpoint-missing-type")
-      (let* ((url (make-test-url "/bulk"))
+      (let* ((url (make-test-url "/documents/bulk"))
              (docs (list (jsown:new-js ("_id" "no-type-1") ("data" "test"))))
              (json-array (jsown:to-json docs)))
         (handler-case
@@ -613,9 +613,9 @@
             (pass)))))
 
 (test test-bulk-endpoint-empty-array
-      "Test POST /bulk endpoint with empty array."
+      "Test POST /documents/bulk endpoint with empty array."
       (dbg "TEST: test-bulk-endpoint-empty-array")
-      (let* ((url (make-test-url "/bulk"))
+      (let* ((url (make-test-url "/documents/bulk"))
              (json-array (jsown:to-json (list))))
         (handler-case
             (let ((response (dex:post url

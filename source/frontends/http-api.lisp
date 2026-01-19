@@ -179,6 +179,59 @@
             (log:info "Document published to RabbitMQ successfully")
             (jsown:to-json body))))
 
+(setf (ningle:route *app* "/documents/bulk" :method :post)
+      #'(lambda (params)
+          (declare (ignore params))
+          (set-default-headers)
+          (handler-case
+              (let* ((body-str (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
+                     (documents (jsown:parse body-str)))
+                (log:info "POST /bulk - received request")
+                (cond
+                  ((not (listp documents))
+                   (log:warn "Bulk request body is not an array")
+                   (setf (lack.response:response-status *response*) 400)
+                   (status-msg "Request body must be a JSON array of documents" 'error))
+                  (t
+                   (let ((doc-count (length documents)))
+                     (log:info "Bulk request contains ~a documents" doc-count)
+                     (cond
+                       ((> doc-count star:*bulk-max-documents*)
+                        (log:warn "Bulk request exceeds maximum allowed documents: ~a > ~a" doc-count star:*bulk-max-documents*)
+                        (setf (lack.response:response-status *response*) 400)
+                        (status-msg (format nil "Bulk request exceeds maximum of ~a documents" star:*bulk-max-documents*) 'error
+                                    :info (jsown:new-js ("requested" doc-count) ("maximum" star:*bulk-max-documents*))))
+                       (t
+                        (let ((success-count 0)
+                              (error-count 0)
+                              (errors (list)))
+                          (loop for doc in documents
+                                for idx from 0
+                                do (handler-case
+                                       (let* ((dtype (jsown:val doc "dtype"))
+                                              (routing-key (format nil "documents.new.~a" dtype)))
+                                         (unless dtype
+                                           (error "Document at index ~a missing 'dtype' field" idx))
+                                         (log:debug "Publishing bulk document ~a: type=~a" idx dtype)
+                                         (star.actors:publish star.actors:*producer-agent* :body doc :routing-key routing-key :properties (list (cons :type dtype)))
+                                         (incf success-count))
+                                     (error (e)
+                                       (log:error "Error publishing bulk document ~a: ~a" idx e)
+                                       (incf error-count)
+                                       (push (jsown:new-js ("index" idx) ("error" (format nil "~a" e))) errors))))
+                          (log:info "Bulk operation completed: ~a succeeded, ~a failed" success-count error-count)
+                          (let ((response (jsown:new-js
+                                            ("total" doc-count)
+                                            ("succeeded" success-count)
+                                            ("failed" error-count))))
+                            (when errors
+                              (jsown:extend-js response ("errors" (nreverse errors))))
+                            (jsown:to-json response)))))))))
+            (error (e)
+              (log:error "Error processing bulk request: ~a" e)
+              (setf (lack.response:response-status *response*) 400)
+              (status-msg "Invalid request format" 'error :traceback (format nil "~a" e))))))
+
 (setf (ningle:route *app* "/document/:id" :method :get)
       #'(lambda (params)
           (set-default-headers)
