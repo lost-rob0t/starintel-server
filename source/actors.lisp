@@ -205,7 +205,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
                                              ;; DEPRECATED Use the producer actor
                                              (progn
                                                (log:info "No local destination actor found for ~a, emitting to RabbitMQ" actor)
-                                               (let ((routing-key (format nil "actors.~a.new-target" actor)))
+                                               (let ((routing-key (format nil "actors.~a.new.target" actor)))
                                                  (log:debug "Publishing to RabbitMQ - exchange: documents routing-key: ~a" routing-key)
                                                  (star.rabbit:emit-document  "documents" routing-key
                                                                              (jsown:to-json target)
