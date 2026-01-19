@@ -1,7 +1,7 @@
 ;;;; ** Actor System
 
 (in-package :star.actors)
-(defparameter *sys* nil "the main actor system")
+(defvar *sys* nil "the main actor system")
 
 (defun start-actor-system ()
   "Start the actors."
@@ -16,7 +16,7 @@
 
 
 ;;;; *** Target Routing
-(defparameter *actor-index-agent* nil "Actor index agent is responsible for registering actors for targets.")
+(defvar *actor-index-agent* nil "Actor index agent is responsible for registering actors for targets.")
 
 (defun start-actor-index (system)
   "Start the actor index for target routing."
@@ -53,7 +53,7 @@
 ;;;; These are sorta kinda maybe deprecated.
 ;;;; In the future these will not be removed, but instead re-worked, outside of consumers these can provide feedback to incase db op failed
 ;;;; Consumers just consume and no way to really provide said feedback.
-(defparameter *couchdb-agent* nil)
+(defvar *couchdb-agent* nil)
 (defun make-couchdb-agent (context client
                            &key (error-fun nil) (dispatcher-id :shared))
   (make-agent (lambda ()
@@ -80,7 +80,7 @@
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:create-document client database (jsown:to-json
                                                (jsown:extend-js (jsown:parse document)
-                                                 ("_rev" revision))))))
+                                                                ("_rev" revision))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
   (anypool:with-connection (client (couchdb-agent-client agent))
@@ -105,7 +105,7 @@
     (setf *couchdb-agent* (make-couchdb-agent system client))))
 
 
-(defparameter *couchdb-inserts* nil "Actor responsible for handling couchdb inserts")
+(defvar *couchdb-inserts* nil "Actor responsible for handling couchdb inserts")
 ;;;; Start the couchdb inserts actor
 (defun start-couchdb-inserts (system)
   (setf *couchdb-inserts* (actor-of system
@@ -119,7 +119,7 @@
                                                    (reply (couchdb-agent-insert *couchdb-agent* database doc))))))))
 
 
-(defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
+(defvar *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
 ;;;; Start the couchdb GET actor.
 ;; FIXME
 (defun start-couchdb-gets (system)
@@ -139,14 +139,14 @@
 ;;;; *** Target Actor
 ;;;; The target actor is responsible for routing TARGET documents to actors. Actors can reside over rabbitmq or in same proccess with lisp
 ;; TODO Target services over ZMQ
-(defparameter *targets* nil "The Target actor.
+(defvar *targets* nil "The Target actor.
 It is responsble for routing TARGET documents to actors. Actors can reside over rabbitmq or in same-process with lisp.")
 
 ;;;; *** Target Operations
 ;;;; Fetch targets from database
 (defun get-targets (client database)
   (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                 ("include_docs" "true"))))) "rows")))
+                                                                                                                                                ("include_docs" "true"))))) "rows")))
     (when (> 0 (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
@@ -228,7 +228,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 ;;;; Start the target timer
 ;;;; The target timer handles recurring targets.
-(defparameter *target-timer* nil "simple wheel timer for targets")
+(defvar *target-timer* nil "simple wheel timer for targets")
 (defun start-target-timer ()
   (log:info "Starting target timer - resolution: 10 max-size: 1000")
   (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000))
@@ -267,8 +267,8 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
                 (star.producers:producer-connect producer)
                 producer) context))
 
-(defparameter *producer-lock* "")
-(defparameter *producer-agent* nil)
+(defvar *producer-lock* "")
+(defvar *producer-agent* nil)
 
 
 (defun publish (agent &key body (properties nil) routing-key)
