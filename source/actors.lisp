@@ -28,7 +28,9 @@
 ;;;; Actors must be registered with actor-index before they will get any target messages.
 (defun register-actor (actor-name actor-symbol)
   (log:info "Registering actor: ~a -> ~a" actor-name actor-symbol)
-  (setf (agent-get *actor-index-agent* #'identity) (serapeum:dict* (agent-get *actor-index-agent*) actor-name actor-symbol))
+  (agent-update *actor-index-agent*
+                (lambda (current-dict)
+                  (serapeum:dict* current-dict actor-name actor-symbol)))
   (log:debug "Actor registered successfully: ~a" actor-name))
 
 ;;;; Return the destination actor symbol by actor name string
