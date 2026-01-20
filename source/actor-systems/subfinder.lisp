@@ -1,11 +1,10 @@
-(uiop:define-package   :star.actors.subfinder
-  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context :star.actors)
+(uiop:define-package :star.actors.subfinder
+  (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context :star.actors)
+  (:import-from :sento.tasks
+                #:with-context
+                #:task-start)
   (:import-from :spec
-                #:doc-dataset
-                #:doc-id
-                #:target
-                #:target-target
-                #:decode)
+                #:doc-dataset #:doc-id #:target #:target-target #:decode)
   (:documentation "doc"))
 
 (in-package :star.actors.subfinder)
@@ -23,92 +22,92 @@
         (actor-of star.actors:*sys*
                   :name "*subfinder*"
                   :receive (lambda (jdoc)
-    (log:info "[subfinder] *** ACTOR RECEIVED MESSAGE ***")
-    (log:debug "[subfinder] Message content: ~a" jdoc)
-    (log:debug "[subfinder] Message type: ~a" (type-of jdoc))
+                             (log:info "[subfinder] *** ACTOR RECEIVED MESSAGE ***")
+                             (log:debug "[subfinder] Message content: ~a" jdoc)
+                             (log:debug "[subfinder] Message type: ~a" (type-of jdoc))
 
-    ;; jdoc is already a parsed JSOWN object, not a JSON string
-    (let* ((dataset   (jsown:val-safe jdoc "dataset"))
-           (target-id (jsown:val-safe jdoc "_id"))
-           (target-str (jsown:val-safe jdoc "target"))
-           (cmd (list "subfinder" "-silent" "-d" target-str)))
+                             ;; jdoc is already a parsed JSOWN object, not a JSON string
+                             (let* ((dataset   (jsown:val-safe jdoc "dataset"))
+                                    (target-id (jsown:val-safe jdoc "_id"))
+                                    (target-str (jsown:val-safe jdoc "target"))
+                                    (cmd (list "subfinder" "-silent" "-d" target-str)))
 
-      (log:info "[subfinder] *** STARTING SCAN *** id=~a target=~a dataset=~a" target-id target-str dataset)
-      (log:debug "[subfinder] Command to run: ~s" cmd)
-      (log-actor-event "subfinder" :event-type "scan-start" :details target-id)
+                               (log:info "[subfinder] *** STARTING SCAN *** id=~a target=~a dataset=~a" target-id target-str dataset)
+                               (log:debug "[subfinder] Command to run: ~s" cmd)
+                               (log-actor-event "subfinder" :event-type "scan-start" :details target-id)
 
-      (with-context (star.actors:*sys*)
-        (task-async
-         (lambda ()
-           (let ((t0 (get-internal-real-time)))
-             (labels ((elapsed-seconds ()
-                        (/ (- (get-internal-real-time) t0)
-                           internal-time-units-per-second)))
+                               (with-context (star.actors:*sys*)
+                                 (tasks:task-async
+                                  (lambda ()
+                                    (let ((t0 (get-internal-real-time)))
+                                      (labels ((elapsed-seconds ()
+                                                 (/ (- (get-internal-real-time) t0)
+                                                    internal-time-units-per-second)))
 
-               (handler-case
-                   (progn
-                     (log:debug "[subfinder] running cmd=~s id=~a" cmd target-id)
+                                        (handler-case
+                                            (progn
+                                              (log:debug "[subfinder] running cmd=~s id=~a" cmd target-id)
 
-                     (multiple-value-bind (out err code)
-                         (uiop:run-program cmd
-                                           :output :string
-                                           :error-output :string
-                                           :ignore-error-status t)
-                       (let* ((raw-out (or out ""))
-                              (raw-err (or err ""))
-                              (lines
-                                (loop for line in (uiop:split-string raw-out :separator '(#\Newline #\Return))
-                                      for trimmed = (string-trim '(#\Space #\Tab) line)
-                                      unless (or (null trimmed) (string= trimmed ""))
-                                        collect trimmed)))
+                                              (multiple-value-bind (out err code)
+                                                  (uiop:run-program cmd
+                                                                    :output :string
+                                                                    :error-output :string
+                                                                    :ignore-error-status t)
+                                                (let* ((raw-out (or out ""))
+                                                       (raw-err (or err ""))
+                                                       (lines
+                                                         (loop for line in (uiop:split-string raw-out :separator '(#\Newline #\Return))
+                                                               for trimmed = (string-trim '(#\Space #\Tab) line)
+                                                               unless (or (null trimmed) (string= trimmed ""))
+                                                                 collect trimmed)))
 
-                         (log:info "[subfinder] run-finished id=~a exit=~d domains=~d elapsed=~,,2fs out-bytes=~d err-bytes=~d"
-                                   target-id code (length lines) (elapsed-seconds)
-                                   (length raw-out) (length raw-err))
+                                                  (log:info "[subfinder] run-finished id=~a exit=~d domains=~d elapsed=~,,2fs out-bytes=~d err-bytes=~d"
+                                                            target-id code (length lines) (elapsed-seconds)
+                                                            (length raw-out) (length raw-err))
 
-                         (when (and raw-err (> (length raw-err) 0))
-                           (log:warn "[subfinder] stderr id=~a exit=~d:~%~a"
-                                     target-id code raw-err)
-                           (log-actor-event "subfinder" :event-type "stderr" :details raw-err))
+                                                  (when (and raw-err (> (length raw-err) 0))
+                                                    (log:warn "[subfinder] stderr id=~a exit=~d:~%~a"
+                                                              target-id code raw-err)
+                                                    (log-actor-event "subfinder" :event-type "stderr" :details raw-err))
 
-                         (log-actor-event "subfinder" :event-type "scan-exit" :details (format nil "~d" code))
-                         (log-actor-event "subfinder" :event-type "scan-count" :details (format nil "~d" (length lines)))
+                                                  (log-actor-event "subfinder" :event-type "scan-exit" :details (format nil "~d" code))
+                                                  (log-actor-event "subfinder" :event-type "scan-count" :details (format nil "~d" (length lines)))
 
-                         (dolist (subdomain lines)
-                           (handler-case
-                               (let* ((domain-doc (spec:new-domain dataset :record subdomain))
-                                      (rel-doc    (spec:new-relation dataset
-                                                                     target-id
-                                                                     (spec:doc-id domain-doc)
-                                                                     :note "subdomain"))
-                                      (domain-json (jsown:to-json domain-doc))
-                                      (rel-json    (jsown:to-json rel-doc)))
+                                                  (dolist (subdomain lines)
+                                                    (handler-case
+                                                        (let* ((domain-doc (spec:new-domain dataset :record subdomain))
+                                                               (rel-doc    (spec:new-relation dataset
+                                                                                              target-id
+                                                                                              (spec:doc-id domain-doc)
+                                                                                              :note "subdomain"))
+                                                               (domain-json (jsown:to-json domain-doc))
+                                                               (rel-json    (jsown:to-json rel-doc)))
 
-                                 (log:info "[subfinder] *** FOUND DOMAIN *** id=~a domain=~s" (spec:doc-id domain-doc) subdomain)
+                                                          (log:info "[subfinder] *** FOUND DOMAIN *** id=~a domain=~s" (spec:doc-id domain-doc) subdomain)
 
-                                 (publish *producer-agent* :body domain-json)
-                                 (publish *producer-agent* :body rel-json)
+                                                          (publish *producer-agent* :body domain-json)
+                                                          (publish *producer-agent* :body rel-json)
 
-                                 (log:debug "[subfinder] published domain id=~a relation id=~a"
-                                            (spec:doc-id domain-doc) (spec:doc-id rel-doc))
+                                                          (log:debug "[subfinder] published domain id=~a relation id=~a"
+                                                                     (spec:doc-id domain-doc) (spec:doc-id rel-doc))
 
-                                 (log-actor-event "subfinder" :event-type "new-domain" :details domain-json)
-                                 (log-actor-event "subfinder" :event-type "new-relation" :details rel-json))
+                                                          (log-actor-event "subfinder" :event-type "new-domain" :details domain-json)
+                                                          (log-actor-event "subfinder" :event-type "new-relation" :details rel-json))
 
-                             (error (e)
-                               (log:error "[subfinder] domain-failed target-id=~a subdomain=~s err=~a"
-                                          target-id subdomain e)
-                               (log-actor-event "subfinder" :event-type "domain-error"
-                                                            :details (format nil "subdomain=~s err=~a" subdomain e)))))
+                                                      (error (e)
+                                                        (log:error "[subfinder] domain-failed target-id=~a subdomain=~s err=~a"
+                                                                   target-id subdomain e)
+                                                        (log-actor-event "subfinder" :event-type "domain-error"
+                                                                                     :details (format nil "subdomain=~s err=~a" subdomain e)))))
 
-                         (log:info "[subfinder] scan-finished id=~a processed=~d elapsed=~,,2fs"
-                                   target-id (length lines) (elapsed-seconds))
-                         (log-actor-event "subfinder" :event-type "scan-finished" :details target-id))))
+                                                  (log:info "[subfinder] scan-finished id=~a processed=~d elapsed=~,,2fs"
+                                                            target-id (length lines) (elapsed-seconds))
+                                                  (log-actor-event "subfinder" :event-type "scan-finished" :details target-id))))
 
-                 (error (e)
-                   (log:error "[subfinder] scan-crashed id=~a elapsed=~,,2fs err=~a"
-                              target-id (elapsed-seconds) e)
-                   (log-actor-event "subfinder" :event-type "scan-error" :details (format nil "~a" e)))))))))))))
+                                          (error (e)
+                                            (log:error "[subfinder] scan-crashed id=~a elapsed=~,,2fs err=~a"
+                                                       target-id (elapsed-seconds) e)
+                                            (log-actor-event "subfinder" :event-type "scan-error" :details (format nil "~a" e)))))))))))))
   ;; Register the actor after it's created
   (log:info "[subfinder] Registering subfinder actor with name 'subfinder'")
   (star.actors:register-actor "subfinder" *subfinder*)
