@@ -4,7 +4,7 @@
 (defvar +updates-queue+ "documents-updates")
 (defvar +injest-key+ "documents.new.#")
 (defvar +update-key+ "documents.update.#")
-(defvar +targets-key+ "documents.new.target.*")
+(defvar +targets-key+ "documents.new.target.#")
 
 (defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
   `(cl-rabbit:with-connection (conn)
