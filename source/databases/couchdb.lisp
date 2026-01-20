@@ -53,11 +53,6 @@
     object))
 
 
-
-
-
-
-
 (defun init-views (client database)
   "Create or update all views from source/views/*.json files."
   (log:info "Initializing CouchDB views for database: ~a" database)
