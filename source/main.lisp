@@ -2,9 +2,6 @@
 
 
 (defun server/options ()
-  (list))
-
-(defun init/options ()
   (list
    (clingon:make-option
     :string
@@ -13,13 +10,18 @@
     :long-name "init"
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
-    :key :init-value)))
+    :key :init-value)
+   ))
 
 (defun server/handler (cmd)
-  (let ((debugger (clingon:getopt cmd :debugger)))
+  (let ((debugger (clingon:getopt cmd :debugger))
+        (init-file (clingon:getopt cmd :init-value)))
 
+    (safe-load-init init-file)
+    
     (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
     (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+    (star.databases.couchdb:init-db)
     (star.actors:start-actors :rabbit-host *rabbit-address*
                               :rabbit-vhost "/"
                               :rabbit-port *rabbit-port*
@@ -35,22 +37,6 @@
 
 
 
-(defun init/handler (cmd)
-  (let ((init-file (clingon:getopt cmd :init-value)))
-    (safe-load-init init-file)
-    (star.databases.couchdb:init-db)
-    (format t "Database initialized and init file loaded: ~a~%" init-file)))
-
-(defun init/command ()
-  "Initialize database and load configuration"
-  (clingon:make-command
-   :name "init"
-   :description "Initialize database"
-   :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
-   :options (init/options)
-   :handler #'init/handler))
-
 (defun server/command ()
   "Start server"
   (clingon:make-command
@@ -64,7 +50,6 @@
 
 (defun main/commands ()
   (list
-   (init/command)
    (server/command)))
 
 (defun main/handler (cmd)
@@ -98,6 +83,7 @@
   (safe-load-init init-file)
   (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
   (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+  (star.databases.couchdb:init-db)
   (star.actors:start-actors :rabbit-host *rabbit-address*
                             :rabbit-vhost "/"
                             :rabbit-port *rabbit-port*
