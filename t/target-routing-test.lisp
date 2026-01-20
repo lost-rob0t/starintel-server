@@ -99,7 +99,7 @@
   (rdbg "TEST test-actor-index-creation")
   (setup-test-actor-system)
   (is (not (null *test-actor-index*)))
-  (is (typep *test-actor-index* 'sento.agent:agent))
+  (is (typep *test-actor-index* 'sento.actor:actor))
   (teardown-test-actor-system))
 
 (test test-register-actor
