@@ -62,7 +62,7 @@
   (if transient
       (api-request client (format nil "/new/target/~a" actor) :method :post
                                                               :content (jsown:to-json (jsown:extend-js (jsown:parse target-doc)
-                                                                                        ("transient" t))))
+                                                                                                       ("transient" t))))
       (api-request client (format nil "/new/target/~a" actor) :method :post
                                                               :content target-doc)))
 
@@ -94,7 +94,7 @@
 (defmethod bulk-submit ((client star-client) documents)
   "Submit multiple documents in bulk. DOCUMENTS should be a JSON array string or list."
   (let ((content (if (stringp documents) documents (jsown:to-json documents))))
-    (api-request client "/bulk" :method :post :content content)))
+    (api-request client "/documents/bulk" :method :post :content content)))
 
 (defmethod get-document ((client star-client) document-id)
   "Get the document by id."

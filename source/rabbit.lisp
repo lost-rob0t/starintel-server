@@ -154,14 +154,13 @@
 
     ;; ----------------------------------------------------------------------
     ;; If transient, skip db write and route directly to actor
-    (if transient
-        (progn
-          (log:info "Transient target, skipping database - routing to *targets* actor (_id=~a actor=~a)"
-                    (jsown:val-safe body "_id")
-                    (jsown:val-safe body "actor"))
-          (tell star.actors:*targets* (cons 1 body))
-          (cl-rabbit:basic-ack connection 1 msg-key)
-          (log:debug "Transient target sent to *targets* actor, message acknowledged")))))
+    (log:info "Transient target, skipping database - routing to *targets* actor (_id=~a actor=~a)"
+              (jsown:val-safe body "_id")
+              (jsown:val-safe body "actor"))
+
+    (tell star.actors:*targets* (cons 1 body))
+    (cl-rabbit:basic-ack connection 1 msg-key)
+    (log:debug "Transient target sent to *targets* actor, message acknowledged")))
 
 ;; Non-transient: write to db then send on success
 ;; (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
