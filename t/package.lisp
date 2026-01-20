@@ -27,15 +27,25 @@
                 #:rabbit-stream-open-p)
   (:import-from #:star.rabbit
                 #:transient-p)
+  (:import-from #:star.actors
+                #:make-actor-system
+                #:actor-of
+                #:tell
+                #:reply
+                #:make-agent
+                #:agent-get
+                #:agent-update)
   (:import-from #:star.frontends.http-api
                 #:*app*)
   (:export #:run-all-gserver-tests
            #:run-consumer-tests
            #:run-http-api-tests
            #:run-init-loader-tests
+           #:run-target-routing-tests
            #:consumer-tests
            #:http-api-tests
-           #:init-loader-tests)
+           #:init-loader-tests
+           #:target-routing-tests)
   (:documentation "Test suite for starintel-gserver including consumer threads and HTTP API tests"))
 
 (in-package :star-server-tests)
