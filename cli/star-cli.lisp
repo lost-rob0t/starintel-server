@@ -911,7 +911,7 @@
                         (make-url-document entry dataset))
                        ((string= type "domain")
                         (make-domain-document entry dataset)))))
-            (submit-document client doc type)
+            (submit-document client (jsown:to-json doc) type)
             (incf success-count)
             (when verbose
               (format t "✓ Imported ~a: ~a~%" type entry)))
