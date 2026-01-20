@@ -1,1 +1,7 @@
-{"_id":"_design/emails","views":{"by_email":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype.toLowerCase() === 'email' && doc.user && doc.domain) {\n    var email = doc.user + '@' + doc.domain;\n    emit(email, doc._id);\n  }\n}"},"by_user":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype.toLowerCase() === 'email' && doc.user) {\n    emit(doc.user, doc._id);\n  }\n}"},"by_domain":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype.toLowerCase() === 'email' && doc.domain) {\n    emit(doc.domain, doc._id);\n  }\n}"},"with_password":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype.toLowerCase() === 'email' && doc.password && doc.password !== '') {\n    emit(doc.user, doc._id);\n  }\n}"},"count_by_domain":{"map":"function(doc) {\n  if (doc.dtype && doc.dtype.toLowerCase() === 'email' && doc.domain) {\n    emit(doc.domain, 1);\n  }\n}","reduce":"_count"}},"language":"javascript"}
+{"_id":"_design/emails","views":{"by_email":{"map":"function(doc){if(doc.dtype){var dt=(''+doc.dtype).toLowerCase();if(dt==='email'&&doc.user&&doc.domain){var email=doc.user+'@'+doc.domain;emit(email,doc._id);}}}"},"by_user":{"map":"function(doc){if(doc.dtype){var dt=(''+doc.dtype).toLowerCase();if(dt==='email'&&doc.user){emit(doc.user,doc._id);}}}"},"by_domain":{"map":"function(doc){if(doc.dtype){var dt=(''+doc.dtype).toLowerCase();if(dt==='email'&&doc.domain){emit(doc.domain,doc._id);}}}"},"with_password":{"map":"function(doc){if(doc.dtype){var dt=(''+doc.dtype).toLowerCase();if(dt==='email'&&doc.password&&doc.password!==''){emit(doc.user,doc._id);}}}"},"count_by_domain":{"map":"function(doc){if(doc.dtype){var dt=(''+doc.dtype).toLowerCase();if(dt==='email'&&doc.domain){emit(doc.domain,1);}}}","reduce":"_count"}},"language":"javascript"}
+
+
+
+
+
+
