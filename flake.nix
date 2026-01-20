@@ -3,9 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    star-cl = {
+      url = "github:lost-rob0t/star-cl";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, star-cl }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
@@ -14,35 +18,18 @@
         lmdb openssl rabbitmq-c libffi sqlite
       ];
 
+      starintel = star-cl.packages.${system}.starintel;
+      cms-ulid = star-cl.packages.${system}.cms-ulid;
+
       # Define custom lisp dependencies using buildASDFSystem
-      star-cl = pkgs.sbcl.buildASDFSystem rec {
-        pname = "starintel";
-        version = "latest";
-        src = let
-          repo = pkgs.fetchFromGitHub {
-            owner = "lost-rob0t";
-            repo = "star-cl";
-            rev = "91c5da2a5876094581ced831c2c5fe7b9623c33b";
-            sha256 = "sha256-UAEMuL5rniSbDGuXy0g+w4HBUi6Clpj35uRv6LOrCE8=";
-          };
-        in pkgs.runCommand "star-cl-src" {} ''
-          mkdir -p $out
-          cp -r ${repo}/src/* $out/
-        '';
-        lispLibs = with pkgs.sbclPackages; [
-          jsown ironclad local-time cms-ulid str
-
-        ];
-      };
-
-      cl-couch = pkgs.sbcl.buildASDFSystem rec {
+       cl-couch = pkgs.sbcl.buildASDFSystem rec {
         pname = "cl-couch";
         version = "latest";
         src = pkgs.fetchFromGitHub {
           owner = "lost-rob0t";
           repo = "cl-couch";
-          rev = "e3c8e7d1548c7814e49528869c098e5e03ccbe80";
-          hash = "sha256-7UYNz+0eHnllHTfM46XgANG202058HcFZpC7NCd5hN4=";
+          rev = "9085da82d3b26c82a44be1d830b0f9bf374b5368";
+          hash = "sha256-jtHNWK7ekKqoxMp+VJvLU4hF74fPnddrx/yeXvCPZVM=";
         };
         lispLibs = with pkgs.sbclPackages; [ dexador jsown serapeum ];
       };
@@ -86,17 +73,6 @@
           hash = "sha256-h7zbXow3uzLxnodPRcqHDtFyQ+wiUNk1wg9+I9VlNMw=";
         };
         lispLibs = with pkgs.sbclPackages; [ serapeum bordeaux-threads closer-mop ];
-      };
-
-      cms-ulid = pkgs.sbcl.buildASDFSystem rec {
-        pname = "cms-ulid";
-        version = "latest";
-        src = pkgs.fetchgit {
-          url = "https://gitlab.com/colinstrickland/cms-ulid.git";
-          rev = "fff84302dee5db42fb90aafd834af3ffbfd6c2bb";
-          hash = "sha256-B5rekME60bWHk47kDepQpOr9drjgXjZBiRpA+Ob1CuU=";
-        };
-        lispLibs = with pkgs.sbclPackages; [ local-time ironclad bit-smasher serapeum ];
       };
 
       lack-middleware-accesslog = pkgs.sbcl.buildASDFSystem rec {
