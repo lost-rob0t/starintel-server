@@ -885,7 +885,7 @@
 
 (defun make-domain-document (domain dataset)
   "Create a domain document using the spec package."
-  (encode (set-meta  (new-domain dataset :record domain :record-type "A") dataset)))
+  (encode (set-meta  (new-domain dataset :record domain) dataset)))
 
 (defun bbp/import-handler (cmd)
   "Handler for importing BBP data."
