@@ -125,16 +125,24 @@
     (log:debug "Message insert check: ~a" result)
     result))
 
+(defun target-p (message)
+  "Test if message dtype is 'target'"
+  (let* ((body (jsown:parse (car message)))
+         (dtype (jsown:val-safe body "dtype"))
+         (result (string= dtype "target")))
+    (log:debug "Message target-p check: dtype=~a result=~a" dtype result)
+    result))
 
 
 (defun handle-new-target (self message)
-  "Persist target doc to CouchDB, then route it to *targets* actor on success."
+  "Handle target doc - persist to CouchDB if not transient, then route to *targets* actor."
   (log:debug "handle-new-target called with message-key: ~a" (cdr message))
   (let* ((connection (rabbit-stream-connection (consumer-stream self)))
          (body (jsown:parse (car message)))
          (msg-key (cdr message))
          (id (jsown:val-safe body "_id"))
-         (dtype (jsown:val-safe body "dtype")))
+         (dtype (jsown:val-safe body "dtype"))
+         (transient (jsown:val-safe body "transient")))
     ;; ----------------------------------------------------------------------
     ;; normalize doc
     (when (or (null id) (not (stringp id)) (string= id ""))
@@ -145,45 +153,55 @@
                    ("dtype" "target"))))
 
     ;; ----------------------------------------------------------------------
-    ;; write to db then send on success
-    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-      (handler-case
-          (progn
-            (log:info "Creating target in database: ~a (_id=~a actor=~a)"
-                      star:*couchdb-default-database*
-                      (jsown:val-safe body "_id")
-                      (jsown:val-safe body "actor"))
+    ;; If transient, skip db write and route directly to actor
+    (if transient
+        (progn
+          (log:info "Transient target, skipping database - routing to *targets* actor (_id=~a actor=~a)"
+                    (jsown:val-safe body "_id")
+                    (jsown:val-safe body "actor"))
+          (tell star.actors:*targets* (cons 1 body))
+          (cl-rabbit:basic-ack connection 1 msg-key)
+          (log:debug "Transient target sent to *targets* actor, message acknowledged"))
 
-            (couch:create-document client
-                                   star:*couchdb-default-database*
-                                   (jsown:to-json body))
+        ;; Non-transient: write to db then send on success
+        (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+          (handler-case
+              (progn
+                (log:info "Creating target in database: ~a (_id=~a actor=~a)"
+                          star:*couchdb-default-database*
+                          (jsown:val-safe body "_id")
+                          (jsown:val-safe body "actor"))
 
-            (log:info "Target created, routing to *targets* actor - actor: ~a"
-                      (jsown:val-safe body "actor"))
+                (couch:create-document client
+                                       star:*couchdb-default-database*
+                                       (jsown:to-json body))
 
-            (tell star.actors:*targets* (cons 1 body))
+                (log:info "Target created, routing to *targets* actor - actor: ~a"
+                          (jsown:val-safe body "actor"))
 
-            (log:debug "Target sent to *targets* actor, acknowledging message")
-            (cl-rabbit:basic-ack connection 1 msg-key)
-            (log:debug "Message with key ~a acknowledged" msg-key))
+                (tell star.actors:*targets* (cons 1 body))
 
-        (dex:http-request-conflict (e)
-          (log:warn "Target conflict (already exists). msg-key=~a _id=~a err=~a"
-                    msg-key (jsown:val-safe body "_id") e)
-          ;; no send-on-success here; but do ack so it doesn't poison the queue
-          (cl-rabbit:basic-ack connection 1 msg-key))
+                (log:debug "Target sent to *targets* actor, acknowledging message")
+                (cl-rabbit:basic-ack connection 1 msg-key)
+                (log:debug "Message with key ~a acknowledged" msg-key))
 
-        (dex:http-request-bad-request (e)
-          (log:error "Bad request creating target. msg-key=~a _id=~a err=~a doc=~a"
-                     msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
-          ;; do NOT ack; let it retry / dead-letter based on your broker policy
-          nil)
+            (dex:http-request-conflict (e)
+              (log:warn "Target conflict (already exists). msg-key=~a _id=~a err=~a"
+                        msg-key (jsown:val-safe body "_id") e)
+              ;; no send-on-success here; but do ack so it doesn't poison the queue
+              (cl-rabbit:basic-ack connection 1 msg-key))
 
-        (error (e)
-          (log:error "Unexpected error creating target. msg-key=~a _id=~a err=~a doc=~a"
-                     msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
-          ;; do NOT ack
-          nil)))))
+            (dex:http-request-bad-request (e)
+              (log:error "Bad request creating target. msg-key=~a _id=~a err=~a doc=~a"
+                         msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
+              ;; do NOT ack; let it retry / dead-letter based on your broker policy
+              nil)
+
+            (error (e)
+              (log:error "Unexpected error creating target. msg-key=~a _id=~a err=~a doc=~a"
+                         msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
+              ;; do NOT ack
+              nil))))))
 
 
 (defun start-consumers ()
@@ -212,7 +230,7 @@
                                                   :host star:*rabbit-address*
                                                   :port star:*rabbit-port*
                                                   :handler-fn #'handle-new-target
-                                                  :test-fn #'insertp)))
+                                                  :test-fn #'target-p)))
     (log:info "Starting document consumers")
     (start-consumer document-consumers)
     (log:info "Document consumers started")

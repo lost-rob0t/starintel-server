@@ -58,3 +58,6 @@
 (defun log-actor-event (actor-name &key event-type details source-id)
   (log:debug "Told *actor-event-reciver*")
   (tell *actor-event-receiver* (make-actor-event :actor-name actor-name :event-type event-type :details  details :source-id source-id)))
+
+(nhooks:add-hook star:*actors-start-hook*
+                 (lambda () (star.actors:register-actor "actor-event-receiver" *actor-event-receiver*)))

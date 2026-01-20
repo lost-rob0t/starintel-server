@@ -1,5 +1,5 @@
 (uiop:define-package   :star.actors.subfinder
-  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context :star.actors)
   (:documentation "doc"))
 
 (in-package :star.actors.subfinder)
@@ -8,7 +8,7 @@
 (defvar *subfinder* nil
   "doc")
 
-(define-actor ((subfinder *sys*))
+(define-actor (*subfinder* star.actors:*sys*)
   (lambda (target)
     (let* ((dataset   (doc-dataset target))
            (target-id (doc-id target))
@@ -60,8 +60,8 @@
                            (handler-case
                                (let* ((domain-doc (spec:new-domain dataset :record subdomain))
                                       (rel-doc    (spec:new-relation dataset
-                                                                     :source target-id
-                                                                     :target (doc-id domain-doc)
+                                                                     target-id
+                                                                     (doc-id domain-doc)
                                                                      :note "subdomain"))
                                       (domain-json (star.databases.couchdb:as-json domain-doc))
                                       (rel-json    (star.databases.couchdb:as-json rel-doc)))
@@ -92,6 +92,8 @@
                               target-id (elapsed-seconds) e)
                    (log-actor-event "subfinder" :event-type "scan-error" :details (format nil "~a" e))))))))))))
 
+(nhooks:add-hook star:*actors-start-hook*
+                 (lambda () (star.actors:register-actor "subfinder" *subfinder*)))
 
 ;; (defun start-subfinder ()
 ;;   "doc"

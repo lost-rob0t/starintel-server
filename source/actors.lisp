@@ -82,7 +82,7 @@
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:create-document client database (jsown:to-json
                                                (jsown:extend-js (jsown:parse document)
-                                                 ("_rev" revision))))))
+                                                                ("_rev" revision))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
   (anypool:with-connection (client (couchdb-agent-client agent))
@@ -148,7 +148,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; Fetch targets from database
 (defun get-targets (client database)
   (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                 ("include_docs" "true"))))) "rows")))
+                                                                                                                                                ("include_docs" "true"))))) "rows")))
     (when (> 0 (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
