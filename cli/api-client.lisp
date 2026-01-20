@@ -11,6 +11,7 @@
    #:read-targets-csv
    #:import-targets-from-csv
    #:submit-document
+   #:bulk-submit
    #:get-document
    #:fts
    #:messages-by-user
@@ -89,6 +90,11 @@
 (defmethod submit-document ((client star-client) document document-type)
   "Create a new document"
   (api-request client (format nil "/new/document/~a" document-type) :method :post :content document))
+
+(defmethod bulk-submit ((client star-client) documents)
+  "Submit multiple documents in bulk. DOCUMENTS should be a JSON array string or list."
+  (let ((content (if (stringp documents) documents (jsown:to-json documents))))
+    (api-request client "/bulk" :method :post :content content)))
 
 (defmethod get-document ((client star-client) document-id)
   "Get the document by id."

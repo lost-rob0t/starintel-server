@@ -690,6 +690,148 @@
                   (query/messages-by-platform-command))))
 
 ;;; ============================================================================
+;;; Bulk Commands
+;;; ============================================================================
+
+(defun bulk/import-options ()
+  "Options for bulk importing documents."
+  (list
+   (clingon:make-option
+    :string
+    :description "Path to file containing documents (NDJSON by default, use --format for array)"
+    :short-name #\f
+    :long-name "file"
+    :required t
+    :key :file)
+   (clingon:make-option
+    :integer
+    :description "Maximum documents per batch (default: 500)"
+    :short-name #\b
+    :long-name "batch-size"
+    :initial-value 500
+    :key :batch-size)
+   (clingon:make-option
+    :string
+    :description "Input format: 'ndjson' (newline-delimited JSON) or 'array' (JSON array)"
+    :long-name "format"
+    :initial-value "ndjson"
+    :key :format)
+   (clingon:make-option
+    :boolean
+    :description "Suppress verbose output"
+    :short-name #\q
+    :long-name "quiet"
+    :initial-value nil
+    :key :quiet)))
+
+(defun read-ndjson-file (file)
+  "Read NDJSON file and return a list of parsed JSON objects."
+  (with-open-file (stream file :direction :input)
+    (loop for line = (read-line stream nil nil)
+          while line
+          for trimmed = (string-trim '(#\Space #\Tab #\Return #\Newline) line)
+          unless (string= trimmed "")
+            collect (jsown:parse trimmed))))
+
+(defun read-json-array-file (file)
+  "Read a JSON array file and return a list of parsed JSON objects."
+  (with-open-file (stream file :direction :input)
+    (let ((content (make-string (file-length stream))))
+      (read-sequence content stream)
+      (jsown:parse content))))
+
+(defun bulk/import-handler (cmd)
+  "Handler for bulk importing documents."
+  (let* ((client (make-client cmd))
+         (file (clingon:getopt cmd :file))
+         (batch-size (clingon:getopt cmd :batch-size))
+         (format (string-downcase (clingon:getopt cmd :format)))
+         (verbose (not (clingon:getopt cmd :quiet))))
+
+    (unless (probe-file file)
+      (print-error (format nil "File not found: ~a" file))
+      (clingon:exit 1))
+
+    (unless (member format '("ndjson" "array") :test #'string=)
+      (print-error (format nil "Invalid format '~a'. Must be 'ndjson' or 'array'" format))
+      (clingon:exit 1))
+
+    (handler-case
+        (let* ((documents (if (string= format "ndjson")
+                              (read-ndjson-file file)
+                              (read-json-array-file file))))
+
+          (unless (listp documents)
+            (print-error "File must contain a JSON array of documents")
+            (clingon:exit 1))
+
+          (let ((total-count (length documents))
+                (total-success 0)
+                (total-failed 0))
+
+            (when verbose
+              (format t "Found ~a documents to import (format: ~a)~%" total-count format))
+
+            (loop for batch-start from 0 below total-count by batch-size
+                  for batch-num from 1
+                  do (let* ((batch-end (min (+ batch-start batch-size) total-count))
+                            (batch (subseq documents batch-start batch-end)))
+                       (when verbose
+                         (format t "~%Submitting batch ~a (~a documents)...~%"
+                                 batch-num (length batch)))
+                       (handler-case
+                           (let* ((response (bulk-submit client batch))
+                                  (result (jsown:parse response))
+                                  (succeeded (jsown:val result "succeeded"))
+                                  (failed (jsown:val result "failed")))
+                             (incf total-success succeeded)
+                             (incf total-failed failed)
+                             (when verbose
+                               (format t "Batch ~a: ~a succeeded, ~a failed~%"
+                                       batch-num succeeded failed))
+                             (when (and (jsown:keyp result "errors") verbose)
+                               (loop for error in (jsown:val result "errors")
+                                     do (format *error-output* "  Error at index ~a: ~a~%"
+                                                (jsown:val error "index")
+                                                (jsown:val error "error")))))
+                         (error (e)
+                           (incf total-failed (length batch))
+                           (when verbose
+                             (format *error-output* "Batch ~a failed: ~a~%" batch-num e))))))
+
+            (format t "~%Bulk import complete: ~a succeeded, ~a failed~%"
+                    total-success total-failed)
+            (if (> total-failed 0)
+                (clingon:exit 1)
+                (clingon:exit 0))))
+      (error (e)
+        (print-error (format nil "Failed to process file: ~a" e))
+        (clingon:exit 1)))))
+
+(defun bulk/import-command ()
+  "Bulk import command."
+  (clingon:make-command
+   :name "import"
+   :description "Import multiple documents from NDJSON or JSON array file"
+   :options (bulk/import-options)
+   :handler #'bulk/import-handler))
+
+(defun bulk/handler (cmd)
+  "Handler for bulk command group."
+  (clingon:print-usage-and-exit cmd t))
+
+(defun bulk/command ()
+  "Bulk command group."
+  (clingon:make-command
+   :name "bulk"
+   :description "Bulk document operations"
+   :authors '("nsaspy <nsaspy@airmail.cc>")
+   :license "GPL v3"
+   :handler #'bulk/handler
+   :sub-commands (list
+                  (bulk/import-command))))
+
+;;; ============================================================================
 ;;; BBP Commands
 ;;; ============================================================================
 
@@ -703,6 +845,13 @@
     :long-name "type"
     :required t
     :key :type)
+   (clingon:make-option
+    :string
+    :description "The Source of the data. eg nmap, subfinder."
+    :required nil
+    :short-name #\s
+    :long-name "source"
+    :key :source)
    (clingon:make-option
     :string
     :description "Path to file containing data (one entry per line)"
