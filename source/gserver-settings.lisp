@@ -43,3 +43,5 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 (defparameter *injest-workers* 4 "Number of workers for handling documents, set to 4 by default.")
 ;;;; *** actor event log
 (defparameter *couchdb-event-log-database* "starintel-event-source" "The name of the database to be used for event logs.")
+;;;; *** Bulk operations
+(defparameter *bulk-max-documents* 500 "Maximum number of documents allowed in a single bulk operation.")
