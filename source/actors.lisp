@@ -253,8 +253,8 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
          (setf ,name
                (actor-of ,system
                          :name ,(symbol-name name)
-                         :receive ,@body)))
-       (serapeum:add-hook starintel-gserver:*actors-start-hook* #',start-fn-name :append t))))
+                         :receive ,(car body))))
+       (nhooks:add-hook starintel-gserver:*actors-start-hook* #',start-fn-name))))
 
 ;;;; * Producer Agent
 ;;;; The producer agent
