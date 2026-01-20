@@ -1,5 +1,11 @@
 (uiop:define-package   :star.actors.subfinder
   (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context :star.actors)
+  (:import-from :spec
+                #:doc-dataset
+                #:doc-id
+                #:target
+                #:target-target
+                #:decode)
   (:documentation "doc"))
 
 (in-package :star.actors.subfinder)
@@ -8,15 +14,27 @@
 (defvar *subfinder* nil
   "doc")
 
-(define-actor (*subfinder* star.actors:*sys*)
-  (lambda (target)
-    (let* ((dataset   (doc-dataset target))
-           (target-id (doc-id target))
-           (target-str (target-target target))
+(defvar *subfinder* nil
+  "doc")
+
+(defun start-subfinder ()
+  (log:info "[subfinder] Initializing subfinder actor")
+  (setf *subfinder*
+        (actor-of star.actors:*sys*
+                  :name "*subfinder*"
+                  :receive (lambda (jdoc)
+    (log:info "[subfinder] *** ACTOR RECEIVED MESSAGE ***")
+    (log:debug "[subfinder] Message content: ~a" jdoc)
+    (log:debug "[subfinder] Message type: ~a" (type-of jdoc))
+
+    ;; jdoc is already a parsed JSOWN object, not a JSON string
+    (let* ((dataset   (jsown:val-safe jdoc "dataset"))
+           (target-id (jsown:val-safe jdoc "_id"))
+           (target-str (jsown:val-safe jdoc "target"))
            (cmd (list "subfinder" "-silent" "-d" target-str)))
 
-      (log:info "[subfinder] scan-start id=~a target=~a dataset=~a cmd=~s"
-                target-id target-str dataset cmd)
+      (log:info "[subfinder] *** STARTING SCAN *** id=~a target=~a dataset=~a" target-id target-str dataset)
+      (log:debug "[subfinder] Command to run: ~s" cmd)
       (log-actor-event "subfinder" :event-type "scan-start" :details target-id)
 
       (with-context (star.actors:*sys*)
@@ -61,18 +79,18 @@
                                (let* ((domain-doc (spec:new-domain dataset :record subdomain))
                                       (rel-doc    (spec:new-relation dataset
                                                                      target-id
-                                                                     (doc-id domain-doc)
+                                                                     (spec:doc-id domain-doc)
                                                                      :note "subdomain"))
-                                      (domain-json (star.databases.couchdb:as-json domain-doc))
-                                      (rel-json    (star.databases.couchdb:as-json rel-doc)))
+                                      (domain-json (jsown:to-json domain-doc))
+                                      (rel-json    (jsown:to-json rel-doc)))
 
-                                 (log:debug "[subfinder] emit domain id=~a record=~s" (doc-id domain-doc) subdomain)
+                                 (log:info "[subfinder] *** FOUND DOMAIN *** id=~a domain=~s" (spec:doc-id domain-doc) subdomain)
 
                                  (publish *producer-agent* :body domain-json)
                                  (publish *producer-agent* :body rel-json)
 
                                  (log:debug "[subfinder] published domain id=~a relation id=~a"
-                                            (doc-id domain-doc) (doc-id rel-doc))
+                                            (spec:doc-id domain-doc) (spec:doc-id rel-doc))
 
                                  (log-actor-event "subfinder" :event-type "new-domain" :details domain-json)
                                  (log-actor-event "subfinder" :event-type "new-relation" :details rel-json))
@@ -90,10 +108,13 @@
                  (error (e)
                    (log:error "[subfinder] scan-crashed id=~a elapsed=~,,2fs err=~a"
                               target-id (elapsed-seconds) e)
-                   (log-actor-event "subfinder" :event-type "scan-error" :details (format nil "~a" e))))))))))))
+                   (log-actor-event "subfinder" :event-type "scan-error" :details (format nil "~a" e)))))))))))))
+  ;; Register the actor after it's created
+  (log:info "[subfinder] Registering subfinder actor with name 'subfinder'")
+  (star.actors:register-actor "subfinder" *subfinder*)
+  (log:info "[subfinder] Subfinder actor registered successfully"))
 
-(nhooks:add-hook star:*actors-start-hook*
-                 (lambda () (star.actors:register-actor "subfinder" *subfinder*)))
+(nhooks:add-hook star:*actors-start-hook* #'start-subfinder)
 
 ;; (defun start-subfinder ()
 ;;   "doc"

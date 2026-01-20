@@ -18,6 +18,13 @@
         lmdb openssl rabbitmq-c libffi sqlite
       ];
 
+      tools = with pkgs; [
+        katana
+        subfinder
+        nmap
+        httpx
+        
+      ];
       starintel = star-cl.packages.${system}.starintel;
       cms-ulid = star-cl.packages.${system}.cms-ulid;
 
@@ -96,7 +103,7 @@
         src = ./.;
 
         nativeLibs = runtimeLibs;
-
+        buildInputs = [] ++ tools;
         lispLibs = with sbcl'.pkgs; [
           starintel cl-couch serapeum alexandria cl-rabbit
           sento babel uuid anypool clack ningle clingon
@@ -212,7 +219,8 @@
             mkdir -p $out/bin
             cp star-server $out/bin/
             wrapProgram $out/bin/star-server \
-              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}"
+              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
+              --prefix PATH : "${pkgs.lib.makeBinPath tools}"
           '';
         };
 
@@ -384,13 +392,14 @@
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           sbcl-wrapped pkg-config
-        ] ++ runtimeLibs;
+        ] ++ runtimeLibs ++ tools;
 
         shellHook = ''
           export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           unset LD_PRELOAD
           echo "Starintel Gserver dev environment ready"
           echo "Use: sbcl to start SBCL with all dependencies"
+          echo "Tools available: subfinder, katana, nmap, httpx"
         '';
       };
     };

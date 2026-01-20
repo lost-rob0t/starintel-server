@@ -200,28 +200,34 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
                                               (actor (jsown:val target "actor"))
                                               (delay (jsown:val-safe target "delay"))
                                               (recurring (jsown:val-safe target "recurring"))
-                                              (target-id (jsown:val-safe target "target")))
+                                              (target-id (jsown:val-safe target "target"))
+                                              (dest-actor (get-dest-actor actor)))
                                          (log:info "Processing target message - actor: ~a recurring: ~a first-time: ~a"
                                                    actor recurring (first-time-p msg))
-                                         (if (not (get-dest-actor actor))
-                                             ;; DEPRECATED Use the producer actor
-                                             (progn
-                                               (log:info "No local destination actor found for ~a, emitting to RabbitMQ" actor)
-                                               (let ((routing-key (format nil "actors.~a.new.target" actor)))
-                                                 (log:debug "Publishing to RabbitMQ - exchange: documents routing-key: ~a" routing-key)
-                                                 (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json target) :routing-key routing-key :properties (list (cons :type "target")))
-                                                 (log:debug "Target published to RabbitMQ successfully"))))
 
-                                         (when (and (get-dest-actor actor) recurring (first-time-p msg))
-                                           (log:debug "Scheduling recurring target - actor: ~a delay: ~a target-id: ~a"
-                                                      actor delay target-id)
-                                           (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
-                                                                                             (submit-target target nil))
-                                                                  target-id)
-                                           (log:debug "Recurring target scheduled successfully"))
-                                         (when (and (get-dest-actor actor) (not (first-time-p msg)))
-                                           (log:debug "Routing non-first-time target to actor: ~a" actor)
-                                           (route-target target actor))))))
+                                         (cond
+                                           ;; No local actor - emit to RabbitMQ
+                                           ((not dest-actor)
+                                            (log:info "No local destination actor found for ~a, emitting to RabbitMQ" actor)
+                                            (let ((routing-key (format nil "actors.~a.new.target" actor)))
+                                              (log:debug "Publishing to RabbitMQ - exchange: documents routing-key: ~a" routing-key)
+                                              (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json target) :routing-key routing-key :properties (list (cons :type "target")))
+                                              (log:debug "Target published to RabbitMQ successfully")))
+
+                                           ;; Local actor exists + recurring + first-time - schedule it
+                                           ((and dest-actor recurring (first-time-p msg))
+                                            (log:debug "Scheduling recurring target - actor: ~a delay: ~a target-id: ~a"
+                                                       actor delay target-id)
+                                            (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
+                                                                                              (submit-target target nil))
+                                                                   target-id)
+                                            (log:debug "Recurring target scheduled successfully"))
+
+                                           ;; Local actor exists + (non-recurring first-time OR not first-time) - route immediately
+                                           (dest-actor
+                                            (log:debug "Routing target to local actor: ~a (first-time: ~a recurring: ~a)"
+                                                       actor (first-time-p msg) recurring)
+                                            (route-target target actor)))))))
   (log:info "Target actor started successfully"))
 
 ;;;; Start the target timer

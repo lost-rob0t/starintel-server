@@ -96,7 +96,7 @@
               (not (stringp id)))
       (setf document-json
             (jsown:extend-js document-json
-              ("_id" (cms-ulid:ulid)))))
+                             ("_id" (cms-ulid:ulid)))))
     (log:debug "Processing document with msg-key: ~a" msg-key)
     (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
       (handler-case
@@ -147,10 +147,10 @@
     ;; normalize doc
     (when (or (null id) (not (stringp id)) (string= id ""))
       (setf body (jsown:extend-js body
-                   ("_id" (cms-ulid:ulid)))))
+                                  ("_id" (cms-ulid:ulid)))))
     (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
       (setf body (jsown:extend-js body
-                   ("dtype" "target"))))
+                                  ("dtype" "target"))))
 
     ;; ----------------------------------------------------------------------
     ;; If transient, skip db write and route directly to actor
@@ -161,47 +161,58 @@
                     (jsown:val-safe body "actor"))
           (tell star.actors:*targets* (cons 1 body))
           (cl-rabbit:basic-ack connection 1 msg-key)
-          (log:debug "Transient target sent to *targets* actor, message acknowledged"))
+          (log:debug "Transient target sent to *targets* actor, message acknowledged")))))
 
-        ;; Non-transient: write to db then send on success
-        (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-          (handler-case
-              (progn
-                (log:info "Creating target in database: ~a (_id=~a actor=~a)"
-                          star:*couchdb-default-database*
-                          (jsown:val-safe body "_id")
-                          (jsown:val-safe body "actor"))
+;; Non-transient: write to db then send on success
+;; (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+;;   (handler-case
+;;       (progn
+;;         (log:info "Creating target in database: ~a (_id=~a actor=~a)"
+;;                   star:*couchdb-default-database*
+;;                   (jsown:val-safe body "_id")
+;;                   (jsown:val-safe body "actor"))
 
-                (couch:create-document client
-                                       star:*couchdb-default-database*
-                                       (jsown:to-json body))
+;;         (couch:create-document client
+;;                                star:*couchdb-default-database*
+;;                                (jsown:to-json body))
 
-                (log:info "Target created, routing to *targets* actor - actor: ~a"
-                          (jsown:val-safe body "actor"))
+;;         (log:info "Target created, routing to *targets* actor - actor: ~a"
+;;                   (jsown:val-safe body "actor"))
 
-                (tell star.actors:*targets* (cons 1 body))
+;;         (log:debug "About to tell *targets* actor. *targets*=~a body=~a"
+;;                    star.actors:*targets* (jsown:to-json body))
+;;         (tell star.actors:*targets* (cons 1 body))
+;;         (log:debug "Tell completed")
 
-                (log:debug "Target sent to *targets* actor, acknowledging message")
-                (cl-rabbit:basic-ack connection 1 msg-key)
-                (log:debug "Message with key ~a acknowledged" msg-key))
+;;         (log:debug "Target sent to *targets* actor, acknowledging message")
+;;         (cl-rabbit:basic-ack connection 1 msg-key)
+;;         (log:debug "Message with key ~a acknowledged" msg-key))
 
-            (dex:http-request-conflict (e)
-              (log:warn "Target conflict (already exists). msg-key=~a _id=~a err=~a"
-                        msg-key (jsown:val-safe body "_id") e)
-              ;; no send-on-success here; but do ack so it doesn't poison the queue
-              (cl-rabbit:basic-ack connection 1 msg-key))
+;;     (dex:http-request-conflict (e)
+;;       (log:warn "Target conflict (already exists). msg-key=~a _id=~a err=~a"
+;;                 msg-key (jsown:val-safe body "_id") e)
+;;       (log:info "Target already exists, still routing to *targets* actor - actor: ~a"
+;;                 (jsown:val-safe body "actor"))
+;;       ;; Still route to *targets* actor even if doc exists
+;;       (log:debug "About to tell *targets* actor. *targets*=~a body=~a"
+;;                  star.actors:*targets* (jsown:to-json body))
+;;       (tell star.actors:*targets* (cons 1 body))
+;;       (log:debug "Tell completed, acknowledging message")
+;;       (cl-rabbit:basic-ack connection 1 msg-key)
+;;       (log:debug "Conflict handled: target sent to *targets* actor, message acknowledged"))
 
-            (dex:http-request-bad-request (e)
-              (log:error "Bad request creating target. msg-key=~a _id=~a err=~a doc=~a"
-                         msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
-              ;; do NOT ack; let it retry / dead-letter based on your broker policy
-              nil)
+;;     (dex:http-request-bad-request (e)
+;;       (log:error "Bad request creating target. msg-key=~a _id=~a err=~a doc=~a"
+;;                  msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
+;;       ;; do NOT ack; let it retry / dead-letter based on your broker policy
+;;       nil)
 
-            (error (e)
-              (log:error "Unexpected error creating target. msg-key=~a _id=~a err=~a doc=~a"
-                         msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
-              ;; do NOT ack
-              nil))))))
+;;     (error (e)
+;;       (log:error "Unexpected error creating target. msg-key=~a _id=~a err=~a doc=~a"
+;;                  msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
+;;       ;; do NOT ack
+;;       nil)))
+
 
 
 (defun start-consumers ()
