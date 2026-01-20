@@ -148,11 +148,11 @@
 (defun make-test-document (&key (id "test-123") (dtype "message"))
   "Create a test document structure."
   (jsown:new-js
-   ("_id" id)
-   ("type" dtype)
-   ("content" "test content")
-   ("timestamp" (get-universal-time))
-   ("transient" :false)))
+    ("_id" id)
+    ("dtype" dtype)
+    ("content" "test content")
+    ("timestamp" (get-universal-time))
+    ("transient" :false)))
 
 (defun make-test-target (&key (id "target-123") (actor "nmap"))
   "Create a test target structure."
@@ -780,10 +780,8 @@
              (format t "~%Error running HTTP tests: ~a~%" e)
              (dbg "TOP-LEVEL ERROR: ~a" e)
              (setf results nil)))
-      ;; Cleanup always runs
       (stop-test-server)
       (stop-test-actor-system)
       (destroy-test-database)
       (format t "~%HTTP API tests completed~%"))
-    ;; Return results after cleanup
     results))
