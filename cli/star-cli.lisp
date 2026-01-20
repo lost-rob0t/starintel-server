@@ -949,6 +949,276 @@
                   (bbp/import-command))))
 
 ;;; ============================================================================
+;;; Document Creation
+;;; ============================================================================
+
+
+
+(defun kebab-case (sym-or-str)
+  "Convert symbol/string into lowercase kebab-case string."
+  (let* ((s (etypecase sym-or-str
+              (symbol (string-downcase (symbol-name sym-or-str)))
+              (string (string-downcase sym-or-str)))))
+    (substitute #\- #\_ s)))
+
+(defun parse-comma-list (s)
+  "Parse comma-separated string into a list of trimmed, non-empty strings."
+  (when s
+    (remove-if (lambda (x) (or (null x) (string= x "")))
+               (mapcar (lambda (x) (string-trim '(#\Space #\Tab #\Return #\Newline) x))
+                       (uiop:split-string s :separator ",")))))
+
+(defun ensure-list (x) (if (listp x) x (list x)))
+
+(defun plist-put (plist key value)
+  "Functional plist set."
+  (let ((pos (position key plist :test #'eq)))
+    (if pos
+        (let ((out (copy-list plist)))
+          (setf (nth (1+ pos) out) value)
+          out)
+        (list* key value plist))))
+
+(defun maybe-parse-integer (x)
+  (cond
+    ((integerp x) x)
+    ((stringp x)
+     (handler-case (parse-integer x)
+       (error () x)))
+    (t x)))
+
+(defun gen/print-one-json (x)
+  (cond
+    ((null x) nil)
+    ((stringp x) (format t "~a~%" x))
+    (t (format t "~a~%" (jsown:to-json x)))))
+
+(defun gen/print-documents (docs)
+  (cond
+    ((listp docs)
+     (dolist (d docs)
+       (gen/print-one-json d)))
+    (t
+     (gen/print-one-json docs))))
+
+(defun gen/ensure-finalized-class (class-or-symbol)
+  "Return a finalized class object (SBCL requires finalization for CLASS-SLOTS)."
+  (let ((class (etypecase class-or-symbol
+                 (symbol (find-class class-or-symbol))
+                 (class class-or-symbol))))
+    (unless (sb-mop:class-finalized-p class)
+      (sb-mop:finalize-inheritance class))
+    class))
+
+;;; ---------------------------------------------------------------------------
+;;; Registry: dtype -> class
+;;; ---------------------------------------------------------------------------
+
+(defparameter *gen-dtype-registry* (make-hash-table :test 'equal))
+(defparameter *gen-dtype-order* '()) ; deterministic ordering
+
+(defmacro define-gen-dtype (dtype class-symbol)
+  "Register a dtype string to a CLOS class symbol."
+  `(progn
+     (setf (gethash (string-downcase ,dtype) *gen-dtype-registry*) ',class-symbol)
+     (pushnew (string-downcase ,dtype) *gen-dtype-order* :test #'string=)
+     ',class-symbol))
+
+(defun gen/class-for-dtype (dtype)
+  (or (gethash (string-downcase dtype) *gen-dtype-registry*)
+      (error "Unknown dtype '~a'. Register with (define-gen-dtype ...)." dtype)))
+
+;;; ---------------------------------------------------------------------------
+;;; Slots to hide from CLI (base/meta fields)
+;;; ---------------------------------------------------------------------------
+
+(defparameter *gen-excluded-slot-names*
+  ;; compare by symbol-name (case-insensitive) to avoid package headaches
+  '("_ID" "_REV" "DTYPE" "DATASET" "DATE-ADDED" "DATE-UPDATED" "VERSION" "SOURCES"))
+
+(defun gen/slot-allowed-p (slot-name-symbol)
+  (let ((n (string-upcase (symbol-name slot-name-symbol))))
+    (not (member n *gen-excluded-slot-names* :test #'string=))))
+
+(defun gen/slot-initarg (slotd)
+  (first (sb-mop:slot-definition-initargs slotd)))
+
+(defun gen/slot-default (slotd)
+  (ignore-errors (sb-mop:slot-definition-initform slotd)))
+
+(defun gen/slot-type (slotd)
+  (ignore-errors (sb-mop:slot-definition-type slotd)))
+
+(defun gen/list-of-integers-type-p (stype)
+  (and (consp stype)
+       (eq (first stype) 'list)
+       (member 'integer (rest stype) :test #'eq)))
+
+(defun gen/infer-option-type (slotd)
+  "Infer a clingon option type from slot type/initform (best-effort)."
+  (let ((stype (gen/slot-type slotd))
+        (initf (gen/slot-default slotd)))
+    (cond
+      ((or (eq stype 'boolean) (typep initf 'boolean)) :boolean)
+      ((or (eq stype 'integer) (typep initf 'integer)) :integer)
+      (t :string))))
+
+;;; ---------------------------------------------------------------------------
+;;; Common gen options
+;;; ---------------------------------------------------------------------------
+
+(defun gen/common-options ()
+  (list
+   (clingon:make-option
+    :string
+    :description "Dataset name"
+    :short-name #\d
+    :long-name "dataset"
+    :env-vars '("HACKMODE_OPERATION" "STAR_DATASET")
+    :initial-value "default"
+    :key :dataset)))
+
+
+;;; ---------------------------------------------------------------------------
+;;; Build clingon options dynamically from class slots
+;;; ---------------------------------------------------------------------------
+
+(defun gen/make-slot-option (slotd)
+  (let* ((slot-name (sb-mop:slot-definition-name slotd))
+         (initarg   (gen/slot-initarg slotd)))
+    (when (and initarg (gen/slot-allowed-p slot-name))
+      (let* ((otype (gen/infer-option-type slotd))
+             (lname (kebab-case slot-name)))
+        ;; DO NOT set initial values from initforms; let the class defaults apply.
+        (clingon:make-option
+         otype
+         :description (format nil "Set ~a" slot-name)
+         :long-name lname
+         :key initarg
+         :initial-value (if (eq otype :boolean) nil nil))))))
+
+(defun gen/options-for-class (class-symbol)
+  (let* ((class (gen/ensure-finalized-class class-symbol))
+         (slots (sb-mop:class-slots class)))
+    (remove nil (mapcar #'gen/make-slot-option slots))))
+
+;;; ---------------------------------------------------------------------------
+;;; Multi-doc emission support (comma list -> N docs)
+;;;   Map dtype -> slot-name (string) whose value can be "a,b,c" => emit 3 docs.
+;;; ---------------------------------------------------------------------------
+
+(defparameter *gen-multi-slot-by-dtype*
+  ;; dtype -> slot-name-string (case-insensitive match vs slot-definition-name)
+  '(("target" . "TARGET")))
+
+(defun gen/find-slotd-by-name (class slot-name-upcase)
+  (find slot-name-upcase
+        (sb-mop:class-slots class)
+        :key (lambda (sd) (string-upcase (symbol-name (sb-mop:slot-definition-name sd))))
+        :test #'string=))
+
+(defun gen/multi-slot-name (dtype)
+  (cdr (assoc (string-downcase dtype) *gen-multi-slot-by-dtype* :test #'string=)))
+
+;;; ---------------------------------------------------------------------------
+;;; Build initargs from CLI + make/encode instances
+;;; ---------------------------------------------------------------------------
+
+(defun gen/build-initargs (cmd class-symbol)
+  "Collect initargs for CLASS-SYMBOL from CLI values. Only include non-NIL values."
+  (let* ((class (gen/ensure-finalized-class class-symbol))
+         (slots (sb-mop:class-slots class))
+         (initargs '()))
+    (dolist (slotd slots initargs)
+      (let* ((slot-name (sb-mop:slot-definition-name slotd))
+             (initarg   (gen/slot-initarg slotd)))
+        (when (and initarg (gen/slot-allowed-p slot-name))
+          (let ((val (clingon:getopt cmd initarg)))
+            (when (not (null val))
+              (let* ((stype (gen/slot-type slotd))
+                     (parsed
+                       (cond
+                         ;; list slot: allow comma parsing
+                         ((or (eq stype 'list) (and (consp stype) (eq (first stype) 'list)))
+                          (let ((lst (if (stringp val) (parse-comma-list val) (ensure-list val))))
+                            (if (gen/list-of-integers-type-p stype)
+                                (mapcar #'maybe-parse-integer lst)
+                                lst)))
+                         ;; integer slot: already integer from clingon, but be safe
+                         ((eq stype 'integer) (maybe-parse-integer val))
+                         (t val))))
+                (setf initargs (plist-put initargs initarg parsed))))))))))
+
+(defun gen/encode-instance (instance dataset)
+  (encode (set-meta instance dataset)))
+
+(defun gen/generate (cmd dtype)
+  "Generate JSON doc strings for a dtype."
+  (let* ((dataset      (clingon:getopt cmd :dataset))
+         (class-symbol (gen/class-for-dtype dtype))
+         ;; finalize once, early
+         (class        (gen/ensure-finalized-class class-symbol))
+         (initargs     (gen/build-initargs cmd class-symbol))
+         (multi-slot   (gen/multi-slot-name dtype)))
+    (declare (ignore class))
+    (if multi-slot
+        (let* ((class   (gen/ensure-finalized-class class-symbol))
+               (slotd   (or (gen/find-slotd-by-name class (string-upcase multi-slot))
+                            (error "Configured multi-slot ~a not found on class ~a" multi-slot class-symbol)))
+               (initarg  (or (gen/slot-initarg slotd)
+                             (error "Slot ~a has no initarg on class ~a" multi-slot class-symbol)))
+               (raw      (clingon:getopt cmd initarg))
+               (vals     (if (stringp raw) (parse-comma-list raw) (ensure-list raw))))
+          (unless (and vals (>= (length vals) 1))
+            (error "Missing multi value for --~a" (kebab-case multi-slot)))
+          (mapcar (lambda (v)
+                    (gen/encode-instance
+                     (apply #'make-instance class-symbol
+                            (plist-put initargs initarg v))
+                     dataset))
+                  vals))
+        (gen/encode-instance
+         (apply #'make-instance class-symbol initargs)
+         dataset))))
+
+(defun gen/make-subcommand-for-dtype (dtype)
+  (let* ((class-symbol (gen/class-for-dtype dtype))
+         (_class (gen/ensure-finalized-class class-symbol))
+         (opts (append (gen/common-options)
+                       (gen/options-for-class class-symbol))))
+    (declare (ignore _class))
+    (clingon:make-command
+     :name dtype
+     :description (format nil "Generate ~a document(s) locally (MOP-derived options)" dtype)
+     :options opts
+     :handler (lambda (cmd)
+                (handler-case
+                    (gen/print-documents (gen/generate cmd dtype))
+                  (error (e)
+                    (print-error (format nil "Gen failed: ~a" e))
+                    (clingon:exit 1)))))))
+
+(defun gen/handler (cmd)
+  (clingon:print-usage-and-exit cmd t))
+
+(defun gen/command ()
+  (clingon:make-command
+   :name "gen"
+   :description "Generate StarIntel documents locally (MOP-derived options)"
+   :handler #'gen/handler
+   :sub-commands
+   (let ((dtypes (sort (copy-list *gen-dtype-order*) #'string<)))
+     (mapcar #'gen/make-subcommand-for-dtype dtypes))))
+
+(define-gen-dtype "target" starintel:target)
+(define-gen-dtype "person" starintel:person)
+(define-gen-dtype "url"    starintel:url)
+(define-gen-dtype "host"   starintel:host)
+(define-gen-dtype "domain" starintel:domain)
+(define-gen-dtype "org"    starintel:org)
+(define-gen-dtype "relation"    starintel:relation)
+
+;;; ============================================================================
 ;;; Main Command
 ;;; ============================================================================
 
@@ -970,7 +1240,9 @@
                   (document/command)
                   (target/command)
                   (query/command)
-                  (bbp/command))))
+                  (bulk/command)
+                  (bbp/command)
+                  (gen/command))))
 
 (defun main ()
   "Main entry point for the CLI application."
