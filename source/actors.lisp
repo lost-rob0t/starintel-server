@@ -39,7 +39,7 @@
 
 ;;;; Send the the target to the destination actor
 (defun route-target (target actor)
-  (log:info "Routing target to actor: ~a" actor)
+  (log:debug "Routing target to actor: ~a" actor)
   (let ((dest (get-dest-actor actor)))
     (log:debug "Destination actor lookup result: ~a" dest)
     (if dest
@@ -80,7 +80,7 @@
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:create-document client database (jsown:to-json
                                                (jsown:extend-js (jsown:parse document)
-                                                                ("_rev" revision))))))
+                                                 ("_rev" revision))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
   (anypool:with-connection (client (couchdb-agent-client agent))
@@ -146,7 +146,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; Fetch targets from database
 (defun get-targets (client database)
   (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                ("include_docs" "true"))))) "rows")))
+                                                                                                                                                 ("include_docs" "true"))))) "rows")))
     (when (> 0 (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
@@ -207,16 +207,12 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
                                                (log:info "No local destination actor found for ~a, emitting to RabbitMQ" actor)
                                                (let ((routing-key (format nil "actors.~a.new.target" actor)))
                                                  (log:debug "Publishing to RabbitMQ - exchange: documents routing-key: ~a" routing-key)
-                                                 (star.rabbit:emit-document  "documents" routing-key
-                                                                             (jsown:to-json target)
-                                                                             :host star:*rabbit-address*
-                                                                             :port star:*rabbit-port*
-                                                                             :username star:*rabbit-user* :password star:*rabbit-password*)
-                                                 (log:info "Target published to RabbitMQ successfully"))))
+                                                 (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json target) :routing-key routing-key :properties (list (cons :type "target")))
+                                                 (log:debug "Target published to RabbitMQ successfully"))))
 
                                          (when (and (get-dest-actor actor) recurring (first-time-p msg))
-                                           (log:info "Scheduling recurring target - actor: ~a delay: ~a target-id: ~a"
-                                                     actor delay target-id)
+                                           (log:debug "Scheduling recurring target - actor: ~a delay: ~a target-id: ~a"
+                                                      actor delay target-id)
                                            (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
                                                                                              (submit-target target nil))
                                                                   target-id)
@@ -249,7 +245,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 
 ;;;; Define a actor and its start function
-(defmacro define-actor ((name system) &body body)
+(defmacro define-actor ((name system &key (register t)) &body body)
   (let ((start-fn-name (intern (format nil "START-~A" (str:replace-all "*" "" (symbol-name name))))))
     `(progn
        (defvar ,name nil)
