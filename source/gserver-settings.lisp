@@ -16,7 +16,9 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 (defparameter *couchdb-views* (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
                                 (loop for file in files
                                       collect (with-open-file (str file)
-                                                (read-line str))))
+                                                (let ((content (make-string (file-length str))))
+                                                  (read-sequence content str)
+                                                  content))))
   "List of views to install into couchdb.")
 
 ;;;; *** HTTP API
