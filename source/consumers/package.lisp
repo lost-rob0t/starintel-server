@@ -40,4 +40,7 @@
    #:close-stream
    #:stream-read
    #:rabbit-consumer
-   #:create-rabbit-consumer))
+   #:create-rabbit-consumer
+   #:connection-error
+   #:connection-error-consumer
+   #:connection-error-cause))
