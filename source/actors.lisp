@@ -278,8 +278,8 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 (defun publish (agent &key body (properties nil) routing-key)
   "Publish a message to RabbitMQ. Body Must be a jsown object."
   (let* ((producer (agent-get agent #'identity))
-         (json-body (jsown:to-json body))
-         (result (star.producers:publish producer :body json-body :properties properties :routing-key routing-key)))
+         
+         (result (star.producers:publish producer :body body :properties properties :routing-key routing-key)))
     (log:info result)))
 
 
