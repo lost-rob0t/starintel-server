@@ -37,8 +37,9 @@
 
 (uiop:define-package   :star.databases.couchdb
   (:use       :cl-couch :cl :star #:lparallel)
-  (:export :init-db
-   :init-views
+(:export :init-db
+    :init-views
+    :init-event-db
            :get-targets*
    :get-view-docs
            :query-view

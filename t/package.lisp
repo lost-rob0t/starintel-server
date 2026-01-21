@@ -3,6 +3,7 @@
   (:import-from #:star
                 #:*injest-workers*
                 #:*couchdb-default-database*
+                #:*couchdb-event-log-database*
                 #:*rabbit-address*
                 #:*rabbit-port*)
   (:import-from #:star.consumers
@@ -37,6 +38,9 @@
                 #:agent-update)
   (:import-from #:star.frontends.http-api
                 #:*app*)
+  (:import-from #:star.databases.couchdb
+                #:init-db
+                #:init-event-db)
   (:export #:run-all-gserver-tests
            #:run-consumer-tests
            #:run-http-api-tests
