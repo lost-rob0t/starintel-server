@@ -35,7 +35,7 @@
 
 (defun handle-event-message (self message)
   "Handler function for processing event messages."
-  (let* ((jdoc (jsown:parse message)))
+  (let* ((jdoc (jsown:parse (car message))))
     (tell *actor-event-receiver* (spec:decode jdoc 'actor-event))))
 
 
