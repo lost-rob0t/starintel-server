@@ -183,7 +183,7 @@
                  (routing-key (format nil "documents.new.~a" dtype)))
             (log:info "POST /new/document/:dtype - dtype: ~a routing-key: ~a" dtype routing-key)
             (log:debug "Document body length: ~a" (length body))
-            (star.actors:publish star.actors:*producer-agent* :body body :routing-key routing-key :properties (list (cons :type dtype)))
+            (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json body) :routing-key routing-key :properties (list (cons :type dtype)))
             (log:info "Document published to RabbitMQ successfully")
             (jsown:to-json body))))
 
@@ -221,7 +221,7 @@
                                          (unless dtype
                                            (error "Document at index ~a missing 'dtype' field" idx))
                                          (log:debug "Publishing bulk document ~a: type=~a" idx dtype)
-                                         (star.actors:publish star.actors:*producer-agent* :body doc :routing-key routing-key :properties (list (cons :type dtype)))
+                                         (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json doc) :routing-key routing-key :properties (list (cons :type dtype)))
                                          (incf success-count))
                                      (error (e)
                                        (log:error "Error publishing bulk document ~a: ~a" idx e)
