@@ -187,10 +187,11 @@
                                 :source-id target-id)
 
       (handler-case
-          (let* ((proc (uiop:launch-program cmd
-                                            :output :stream
-                                            :error-output :output
-                                            :ignore-error-status t))
+           (let* ((proc (uiop:launch-program cmd
+                                             :output :stream
+                                             :error-output :output
+                                             :working-directory "/tmp"
+                                             :ignore-error-status t))
                  (out  (uiop:process-info-output proc)))
             (unwind-protect
                  (loop for line = (read-line out nil nil)

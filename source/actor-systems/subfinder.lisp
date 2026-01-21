@@ -30,10 +30,17 @@
                              (let* ((dataset   (jsown:val-safe jdoc "dataset"))
                                     (target-id (jsown:val-safe jdoc "_id"))
                                     (target-str (jsown:val-safe jdoc "target"))
-                                    (cmd (list "subfinder" "-silent" "-d" target-str)))
+                                    (config-dir (or (uiop:getenv "XDG_CONFIG_HOME")
+                                                    (merge-pathnames ".config/" (user-homedir-pathname))))
+                                    (cmd (list "subfinder" "-silent" "-d" target-str
+                                               "-config" (namestring (merge-pathnames "subfinder/" config-dir)))))
 
                                (log:info "[subfinder] *** STARTING SCAN *** id=~a target=~a dataset=~a" target-id target-str dataset)
                                (log:debug "[subfinder] Command to run: ~s" cmd)
+
+                               ;; Ensure config directory exists
+                               (ensure-directories-exist (merge-pathnames "subfinder/" config-dir))
+
                                (log-actor-event "subfinder" :event-type "scan-start" :details target-id)
 
                                (with-context (star.actors:*sys*)

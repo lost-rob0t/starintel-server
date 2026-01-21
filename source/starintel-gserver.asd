@@ -21,6 +21,7 @@
                  (:file "actor-systems/event-actor")
                  (:file "actor-systems/matcher-actor")
                  (:file "actor-systems/subfinder")
+                 (:file "actor-systems/katana")
                  (:file "rabbit")
                  (:file "frontends/http-api")
                  (:file "main"))
