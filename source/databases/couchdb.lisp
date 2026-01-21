@@ -87,15 +87,65 @@
 
 (defun init-db ()
   "Create the database if needed, and ensure all map-reduce views are up to date."
+  (log:info "Starting database initialization sequence")
+  (log:info "Initializing main database: ~a" *couchdb-default-database*)
+  (log:debug "Database connection parameters: host=~a, port=~a, scheme=~a, user=~a" 
+              star:*couchdb-host* star:*couchdb-port* star:*couchdb-scheme* star:*couchdb-user*)
   (log:info "Connecting to Couchdb via ~a://~a:~a" star:*couchdb-scheme* star:*couchdb-host* star:*couchdb-port*)
+  
   (let ((database *couchdb-default-database*)
         (client (new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
+    (log:debug "Created CouchDB client for main database")
+    (log:debug "Authenticating with CouchDB")
     (password-auth client star:*couchdb-user* star:*couchdb-password*)
-    (handler-case (get-database client database)
+    (log:debug "Authentication successful")
+    
+    (handler-case 
+        (progn
+          (log:debug "Checking if main database ~a exists" database)
+          (get-database client database)
+          (log:info "Main database ~a already exists" database))
       (dexador:http-request-not-found (e)
-        (log:info "Database ~a does not exist, creating" database)
-        (cl-couch:create-database client database)))
-    (init-views client database)))
+        (log:warn "Main database ~a does not exist (404), creating new database" database)
+        (log:debug "Creating database with parameters: ~a" (list :client client :database database))
+        (cl-couch:create-database client database)
+        (log:info "Main database ~a created successfully" database))
+      (error (e)
+        (log:error "Unexpected error checking/creating main database ~a: ~a" database e)
+        (signal e)))
+    
+    (log:info "Initializing views for main database ~a" database)
+    (log:debug "Processing ~a view definitions for main database" (length star:*couchdb-views*))
+    (handler-case 
+        (progn
+          (init-views client database)
+          (log:info "Main database ~a views initialized successfully" database))
+      (error (e)
+        (log:error "Failed to initialize views for main database ~a: ~a" database e)
+        (signal e)))
+    
+    (log:info "Main database ~a initialization completed" database))
+  
+  ;; Initialize event source database
+  (log:info "Proceeding to event source database initialization")
+  (init-event-db)
+  (log:info "All database initialization completed successfully"))
+
+(defun init-event-db ()
+  "Create the event source database if needed."
+  (log:info "Initializing event source database: ~a" star:*couchdb-event-log-database*)
+  (let ((event-database star:*couchdb-event-log-database*)
+        (client (new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
+    (password-auth client star:*couchdb-user* star:*couchdb-password*)
+    (handler-case 
+        (progn
+          (get-database client event-database)
+          (log:info "Event source database ~a already exists" event-database))
+      (dexador:http-request-not-found (e)
+        (log:info "Event source database ~a does not exist, creating" event-database)
+        (cl-couch:create-database client event-database)
+        (log:info "Event source database ~a created successfully" event-database)))
+    (log:info "Event source database ~a initialization completed" event-database)))
 
 ;; TODO use query view
 (defun get-targets* (client database &rest actors)
