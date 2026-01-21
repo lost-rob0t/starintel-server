@@ -170,8 +170,9 @@
                  (routing-key (format nil "documents.new.target.~a" actor)))
             (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
             (log:debug "Target body length: ~a" (length body))
-            (star.actors:publish star.actors:*producer-agent* :body body :routing-key routing-key :properties (list (cons :type "target")))
+            (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json body) :routing-key routing-key :properties (list (cons :type "target")))
             (log:info "Target published to RabbitMQ successfully")
+            (log:info "Target: ~a" (jsown:to-json body))
             (jsown:to-json body))))
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)

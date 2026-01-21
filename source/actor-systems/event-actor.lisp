@@ -33,7 +33,7 @@
 
 
 
-(defun handle-event-message (message)
+(defun handle-event-message (self message)
   "Handler function for processing event messages."
   (let* ((jdoc (jsown:parse message)))
     (tell *actor-event-receiver* (spec:decode jdoc 'actor-event))))
