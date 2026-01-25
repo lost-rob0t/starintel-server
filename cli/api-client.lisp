@@ -2,26 +2,24 @@
   (:nicknames :star.api.client)
   (:use       :cl)
   (:documentation "doc")
-  (:export
-   #:star-client
-   #:make-url
-   #:api-request
-   #:get-targets
-   #:new-target
-   #:read-targets-csv
-   #:import-targets-from-csv
-   #:submit-document
-   #:bulk-submit
-   #:get-document
-   #:fts
-   #:messages-by-user
-   #:messages-by-channel
-   #:messages-by-platform
-   #:messages-by-group
-   #:social-posts-by-user
-   #:dataset-size
-   #:do-view
-   #:groups))
+   (:export
+    #:star-client
+    #:make-url
+    #:api-request
+    #:get-targets
+    #:new-target
+    #:submit-document
+    #:bulk-submit
+    #:get-document
+    #:fts
+    #:messages-by-user
+    #:messages-by-channel
+    #:messages-by-platform
+    #:messages-by-group
+    #:social-posts-by-user
+    #:dataset-size
+    #:do-view
+    #:groups))
 
 (in-package :star.api.client)
 (defclass star-client ()
@@ -66,26 +64,7 @@
       (api-request client (format nil "/new/target/~a" actor) :method :post
                                                               :content target-doc)))
 
-(defun read-targets-csv (targets-file)
-  (let ((targets (data-table:select-columns  (cl-csv:get-data-table-from-csv targets-file) (list "dataset" "target" "actor" "recurring" "delay" "options"))))
-    (loop for row in (data-table:rows targets)
-          collect (cons (nth 2 row) (with-output-to-string (str)
-                                      (jsown:to-json
-                                       (spec:new-target (nth 0 row)
-                                                        (nth 1 row)
-                                                        (nth 2 row)
-                                                        :options (nth 5 row)
-                                                        :recurring (cond ((string= (string-downcase (nth 3 row)) "true") t)
-                                                                         ((string= (string-downcase (nth 3 row)) "t") t)
-                                                                         ((string= (nth 3 row) "1") t)
-                                                                         ((string= (nth 3 row) "0") nil)
-                                                                         ((string= (string-downcase (nth 3 row)) "nil") nil)
-                                                                         ((string= (string-downcase (nth 3 row)) "false") nil))
-                                                        :delay (nth 4 row)) str))))))
 
-(defmethod import-targets-from-csv ((client star-client) file)
-  (loop for target in (read-targets-csv file)
-        do (new-target client (cdr target) (car target))))
 
 (defmethod submit-document ((client star-client) document document-type)
   "Create a new document"

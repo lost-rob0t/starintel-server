@@ -5,4 +5,4 @@
   :serial       t
   :license      "GNU GPL, version 3"
   :components   ((:file "api-client"))
-  :depends-on   (#:starintel #:jsown #:uuid #:dexador #:quri #:cl-csv #:data-table #:cl-csv-data-table))
+  :depends-on   (#:starintel #:jsown #:uuid #:dexador #:quri))
