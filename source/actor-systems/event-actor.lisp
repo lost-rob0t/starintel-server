@@ -36,7 +36,14 @@
 (defun handle-event-message (self message)
   "Handler function for processing event messages."
   (let* ((jdoc (jsown:parse (car message))))
-    (tell *actor-event-receiver* (spec:decode jdoc 'actor-event))))
+    (tell *actor-event-receiver* 
+          (make-instance 'actor-event
+                       :id (jsown:val jdoc "_id")
+                       :timestamp (jsown:val jdoc "timestamp")
+                       :actor-name (jsown:val jdoc "actorName")
+                       :event-type (jsown:val jdoc "eventType")
+                       :details (jsown:val jdoc "details")
+                       :source-id (jsown:val jdoc "sourceId")))))
 
 
 (defun start-event-consumer (n)
