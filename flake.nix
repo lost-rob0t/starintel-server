@@ -176,9 +176,6 @@ EOF
           uuid
           dexador
           quri
-          cl-csv
-          data-table
-          cl-csv-data-table
         ];
 
         systems = [ "starintel-gserver-client" ];
