@@ -1,16 +1,16 @@
 (in-package #:star.actors)
 
-(defparameter *actor-event-log* nil)
-
-
-
+(in-package :star.actors)
 (defclass actor-event ()
   ((_id :initarg :id :accessor event-id :initform (cms-ulid:ulid))
    (timestamp  :initarg :timestamp :accessor event-timestamp :initform (spec:unix-now))
-   (actor-name :initarg :actor-name :accessor event-actor-name)
-   (event-type :initarg :event-type :accessor event-type)
-   (details :initarg :details :accessor event-details)
-   (source-id :initarg :source-id :accessor event-source-document)))
+   (dtype  :initarg :timestamp :accessor doc-type :initform "actorevent")
+   (actor-name :initarg :actor-name :accessor event-actor-name :initform "")
+   (event-type :initarg :event-type :accessor event-type :initform "")
+   (details :initarg :details :accessor event-details :initform "")
+   (source-id :initarg :source-id :accessor event-source-document :initform "")))
+
+
 
 
 (defun make-actor-event (&key actor-name event-type details source-id)
@@ -36,14 +36,15 @@
 (defun handle-event-message (self message)
   "Handler function for processing event messages."
   (let* ((jdoc (jsown:parse (car message))))
+    (log:trace "Got Event: ~a" (spec:decode jdoc 'actor-event))
     (tell *actor-event-receiver* 
           (make-instance 'actor-event
-                       :id (jsown:val jdoc "_id")
-                       :timestamp (jsown:val jdoc "timestamp")
-                       :actor-name (jsown:val jdoc "actorName")
-                       :event-type (jsown:val jdoc "eventType")
-                       :details (jsown:val jdoc "details")
-                       :source-id (jsown:val jdoc "sourceId")))))
+                         :id (jsown:val jdoc "_id")
+                         :timestamp (jsown:val jdoc "timestamp")
+                         :actor-name (jsown:val jdoc "actorName")
+                         :event-type (jsown:val jdoc "eventType")
+                         :details (jsown:val jdoc "details")
+                         :source-id (jsown:val jdoc "sourceId")))))
 
 
 (defun start-event-consumer (n)
