@@ -86,9 +86,8 @@
     (when (or (null id)
               (string= id "")
               (not (stringp id)))
-      (setf document-json
-            (jsown:extend-js document-json
-                             ("_id" (cms-ulid:ulid)))))))
+      (jsown:extend-js document
+                       ("_id" (cms-ulid:ulid))))))
 
 
 (defun insert-document (client document)
