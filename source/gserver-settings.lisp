@@ -42,7 +42,7 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 ;;;; *** Patterns
 ;;;; Patterns are
 (defparameter *document-patterns* () "A List of document patterns created by defpattern")
-(defparameter *injest-workers* 4 "Number of workers for handling documents, set to 4 by default.")
+(defparameter *ingest-workers* 4 "Number of workers for handling documents, set to 4 by default.")
 ;;;; *** actor event log
 (defparameter *couchdb-event-log-database* "starintel-event-source" "The name of the database to be used for event logs.")
 ;;;; *** Bulk operations

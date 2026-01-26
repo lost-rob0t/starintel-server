@@ -18,11 +18,6 @@
         lmdb openssl rabbitmq-c libffi sqlite
       ];
 
-      tools = with pkgs; [
-        nmap
-        httpx
-      ];
-
       starintel = star-cl.packages.${system}.starintel;
       cms-ulid  = star-cl.packages.${system}.cms-ulid;
 
@@ -116,7 +111,6 @@ EOF
         src = ./.;
 
         nativeLibs = runtimeLibs;
-        buildInputs = tools;
 
         lispLibs = with sbcl'.pkgs; [
           starintel
@@ -235,7 +229,6 @@ EOF
               --run 'export XDG_CACHE_HOME=''${XDG_CACHE_HOME:-$HOME/.cache}' \
               --run 'mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"' \
               --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
-              --prefix PATH : "${pkgs.lib.makeBinPath tools}"
           '';
         };
 
@@ -302,7 +295,7 @@ EOF
       };
 
       devShells.${system}.default = pkgs.mkShell {
-        buildInputs = with pkgs; [ sbcl-wrapped pkg-config ] ++ runtimeLibs ++ tools;
+        buildInputs = with pkgs; [ sbcl-wrapped pkg-config ] ++ runtimeLibs;
 
         shellHook = ''
           export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
