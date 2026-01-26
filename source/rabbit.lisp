@@ -92,22 +92,14 @@
 (defun insert-document (client document)
   "Normalizes the document then inserts it."
   (normalize-id document)
-  (handler-case
-      (progn
-        (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
-        (let ((response (jsown:parse (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json)))))
-          (jsown:extend-js document
-            ("_rev" (jsown:val-safe response "_rev"))))
-        
-        
-        (log:info "Document created successfully"))
-    (dex:http-request-bad-request (e)
-      (log:error "Bad request creating document (~a): ~a"
-                 msg-key (dexador.error:response-body e)))
-    (dex:http-request-conflict (e)
-      (log:warn "Document conflict (~a): ~a" msg-key e))
-    (error (e)
-      (log:error "Unexpected error creating document (~a): ~a" msg-key e))))
+  (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
+  (let ((response (jsown:parse (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json)))))
+    (jsown:extend-js document
+      ("_rev" (jsown:val-safe response "_rev"))))
+  
+  
+  (log:info "Document created successfully"))
+
 
 
 (defun handle-new-document (self message)
@@ -120,12 +112,23 @@
          (routing-key (format nil "documents.new.~a" dtype)))
     (setf document-json (normalize-id document-json))
     (log:debug "Processing document with msg-key: ~a" msg-key)
-    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-      (setf response (insert-document client document-json))
-      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js document-json
-                                                                               ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype))))
-    (log:debug "Acknowledging message with key: ~a" msg-key)
-    (cl-rabbit:basic-ack connection 1 msg-key)))
+    (handler-case (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+                    (setf response (insert-document client document-json))
+                    (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js document-json
+                                                                                             ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype)))
+                    
+                    (log:debug "Acknowledging message with key: ~a" msg-key)
+                    (cl-rabbit:basic-ack connection 1 msg-key))
+      
+      (dex:http-request-bad-request (e)
+        (log:error "Bad request creating document (~a): ~a"
+                   msg-key (dexador.error:response-body e)))
+      (dex:http-request-conflict (e)
+        (log:warn "Document conflict (~a): ~a" msg-key e))
+      (error (e)
+        (log:error "Unexpected error creating document (~a): ~a" msg-key e)))))
+
+
 
 
 (defun transient-p (message)
