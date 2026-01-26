@@ -79,7 +79,7 @@
 
 
 
-(defun normlize-id (document)
+(defun normalize-id (document)
   "Ensure the ID is set, if not create a ULID id for it."
   (let ((id (jsown:val-safe document "_id")))
     (when (or (null id)
