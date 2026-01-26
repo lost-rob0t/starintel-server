@@ -2,10 +2,9 @@
 
 (defvar +ingest-queue+ "ingest")
 (defvar +ingest-targets-queue+ "ingest-targets")
-(defvar +updates-queue+ "updates")
 (defvar +updates-queue+ "documents-updates")
 (defvar +ingest-key+ "documents.ingest.#")
-(defvar +update-key+ "documents.update.#")
+(defvar +updates-key+ "documents.update.#")
 (defvar +targets-key+ "documents.new.target.#")
 
 (defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
@@ -87,7 +86,7 @@
               (string= id "")
               (not (stringp id)))
       (jsown:extend-js document
-                       ("_id" (cms-ulid:ulid))))))
+        ("_id" (cms-ulid:ulid))))))
 
 
 (defun insert-document (client document)
@@ -97,7 +96,8 @@
       (progn
         (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
         (let ((response (jsown:parse (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json)))))
-          (jsown:extend-js "_rev" (jsown:val-safe response "_rev")))
+          (jsown:extend-js document
+            ("_rev" (jsown:val-safe response "_rev"))))
         
         
         (log:info "Document created successfully"))
@@ -118,11 +118,12 @@
          (msg-key (cdr message))
          (dtype (jsown:val-safe document-json "dtype"))
          (routing-key (format nil "documents.new.~a" dtype)))
-    (normalize-id document-json)
+    (setf document-json (normalize-id document-json))
     (log:debug "Processing document with msg-key: ~a" msg-key)
     (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
       (setf response (insert-document client document-json))
-      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json doc) :routing-key routing-key :properties (list (cons :type dtype))))
+      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js document-json
+                                                                               ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype))))
     (log:debug "Acknowledging message with key: ~a" msg-key)
     (cl-rabbit:basic-ack connection 1 msg-key)))
 
@@ -157,12 +158,10 @@
          (transient (jsown:val-safe body "transient")))
     ;; ----------------------------------------------------------------------
     ;; normalize doc
-    (when (or (null id) (not (stringp id)) (string= id ""))
-      (setf body (jsown:extend-js body
-                                  ("_id" (cms-ulid:ulid)))))
+    (normalize-id)
     (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
       (setf body (jsown:extend-js body
-                                  ("dtype" "target"))))
+                   ("dtype" "target"))))
 
     ;; ----------------------------------------------------------------------
     ;; If transient, skip db write and route directly to actor
@@ -224,6 +223,20 @@
 ;;       ;; do NOT ack
 ;;       nil)))
 
+(defun handle-update (self message)
+  "Handle document updates and publish them to the resulting documents.updates.<dtype>"
+  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
+         (body (jsown:parse (car message)))
+         (msg-key (cdr message))
+         (_rev (jsown:val-safe body "_rev"))
+         (dtype (jsown:val-safe body "dtype")))
+    (assert (and _rev dtype) ()
+            "handle-update: missing required fields:~@[ _rev~]~@[ dtype~] (routing-key=~S)"
+            (null _rev) (null dtype) msg-key)
+    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+      (setf response (cl-couch:update-document client  (jsown:to-json body)))
+      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js body ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype))))))
+
 
 
 (defun start-consumers ()
@@ -241,7 +254,19 @@
                                                     :port star:*rabbit-port*
                                                     :handler-fn #'handle-new-document
                                                     :test-fn #'insertp))
+        (updates-consumers (create-rabbit-consumer :name "documents"
+                                                   :n star:*ingest-workers*
+                                                   :queue-name +ingest-updates-queue+
+                                                   :exchange-name "documents"
+                                                   :routing-key +updates-key+
+                                                   :username star:*rabbit-user*
+                                                   :password star:*rabbit-password*
+                                                   :host star:*rabbit-address*
+                                                   :port star:*rabbit-port*
+                                                   :handler-fn #'handle-new-target
+                                                   :test-fn #'insertp))
 
+        
         (target-consumers (create-rabbit-consumer :name "documents"
                                                   :n star:*ingest-workers*
                                                   :queue-name +ingest-targets-queue+
