@@ -10,8 +10,8 @@
     :long-name "init"
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
-    :key :init-value)
-   ))
+    :key :init-value)))
+
 
 (defun server/handler (cmd)
   (let ((debugger (clingon:getopt cmd :debugger))
@@ -19,8 +19,8 @@
 
     (safe-load-init init-file)
     
-    (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
-    (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+    (log:info (format nil "Creating ~a worker threads" star:*ingest-workers*))
+    (setf lparallel:*kernel* (lparallel:make-kernel star:*ingest-workers*))
     (star.databases.couchdb:init-db)
     (star.actors:start-actors :rabbit-host *rabbit-address*
                               :rabbit-vhost "/"
@@ -45,8 +45,8 @@
    :authors '("nsaspy <nsaspy@airmail.cc>")
    :license "GPL v3"
    :options (server/options)
-   :handler #'server/handler)
-  )
+   :handler #'server/handler))
+
 
 (defun main/commands ()
   (list
@@ -81,8 +81,8 @@
   "Load the server from the repl"
   
   (safe-load-init init-file)
-  (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
-  (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+  (log:info (format nil "Creating ~a worker threads" star:*ingest-workers*))
+  (setf lparallel:*kernel* (lparallel:make-kernel star:*ingest-workers*))
   (star.databases.couchdb:init-db)
   (star.actors:start-actors :rabbit-host *rabbit-address*
                             :rabbit-vhost "/"
@@ -91,5 +91,5 @@
                             :rabbit-password *rabbit-password*)
   (star.frontends.http-api::start-http-api)
   (star.rabbit:start-consumers)
-  (star.actors:start-event-consumer 2)
-  )
+  (star.actors:start-event-consumer 2))
+

@@ -1,8 +1,10 @@
 (in-package :star.rabbit)
 
-(defvar +injest-queue+ "injest")
+(defvar +ingest-queue+ "ingest")
+(defvar +ingest-targets-queue+ "ingest-targets")
+(defvar +updates-queue+ "updates")
 (defvar +updates-queue+ "documents-updates")
-(defvar +injest-key+ "documents.new.#")
+(defvar +ingest-key+ "documents.ingest.#")
 (defvar +update-key+ "documents.update.#")
 (defvar +targets-key+ "documents.new.target.#")
 
@@ -78,39 +80,50 @@
 
 
 
-(defun insert (client database document)
-  (log:debug "Inserting document into database: ~a" database)
-  (format nil "~a~%" (couch:create-document client database document)))
-;; (dex:http-request-conflict (e) (log:warn e))
-;; (dex:http-request-unauthorized (e) (log:error e))
-
-(defun handle-new-document (self message)
-  (log:debug "handle-new-document called with message-key: ~a" (cdr message))
-  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
-         (document-json (jsown:parse (car message)))
-         (msg-key (cdr message))
-         (id (jsown:val-safe document-json "_id")))
-    ;; ensure a valid _id
+(defun normlize-id (document)
+  "Ensure the ID is set, if not create a ULID id for it."
+  (let ((id (jsown:val-safe document "_id")))
     (when (or (null id)
               (string= id "")
               (not (stringp id)))
       (setf document-json
             (jsown:extend-js document-json
-                             ("_id" (cms-ulid:ulid)))))
+                             ("_id" (cms-ulid:ulid)))))))
+
+
+(defun insert-document (client document)
+  "Normalizes the document then inserts it."
+  (normalize-id document)
+  (handler-case
+      (progn
+        (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
+        (let ((response (jsown:parse (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json)))))
+          (jsown:extend-js "_rev" (jsown:val-safe response "_rev")))
+        
+        
+        (log:info "Document created successfully"))
+    (dex:http-request-bad-request (e)
+      (log:error "Bad request creating document (~a): ~a"
+                 msg-key (dexador.error:response-body e)))
+    (dex:http-request-conflict (e)
+      (log:warn "Document conflict (~a): ~a" msg-key e))
+    (error (e)
+      (log:error "Unexpected error creating document (~a): ~a" msg-key e))))
+
+
+(defun handle-new-document (self message)
+  (log:debug "handle-new-document called with message-key: ~a" (cdr message))
+  (let* ((response nil)
+         (connection (rabbit-stream-connection (consumer-stream self)))
+         (document-json (jsown:parse (car message)))
+         (msg-key (cdr message))
+         (dtype (jsown:val-safe document-json "dtype"))
+         (routing-key (format nil "documents.new.~a" dtype)))
+    (normalize-id document-json)
     (log:debug "Processing document with msg-key: ~a" msg-key)
     (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-      (handler-case
-          (progn
-            (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
-            (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json))
-            (log:info "Document created successfully"))
-        (dex:http-request-bad-request (e)
-          (log:error "Bad request creating document (~a): ~a"
-                     msg-key (dexador.error:response-body e)))
-        (dex:http-request-conflict (e)
-          (log:warn "Document conflict (~a): ~a" msg-key e))
-        (error (e)
-          (log:error "Unexpected error creating document (~a): ~a" msg-key e))))
+      (setf response (insert-document client document-json))
+      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json doc) :routing-key routing-key :properties (list (cons :type dtype))))
     (log:debug "Acknowledging message with key: ~a" msg-key)
     (cl-rabbit:basic-ack connection 1 msg-key)))
 
@@ -216,13 +229,13 @@
 
 (defun start-consumers ()
   (log:info "Starting Consumers.")
-  (log:info "Creating document consumer - workers: ~a queue: injest exchange: documents routing-key: ~a"
-            star:*injest-workers* +injest-key+)
+  (log:info "Creating document consumer - workers: ~a queue: ingest exchange: documents routing-key: ~a"
+            star:*ingest-workers* +ingest-key+)
   (let ((document-consumers (create-rabbit-consumer :name "documents"
-                                                    :n star:*injest-workers*
-                                                    :queue-name "injest"
+                                                    :n star:*ingest-workers*
+                                                    :queue-name +ingest-queue+
                                                     :exchange-name "documents"
-                                                    :routing-key +injest-key+
+                                                    :routing-key +ingest-key+
                                                     :username star:*rabbit-user*
                                                     :password star:*rabbit-password*
                                                     :host star:*rabbit-address*
@@ -231,8 +244,8 @@
                                                     :test-fn #'insertp))
 
         (target-consumers (create-rabbit-consumer :name "documents"
-                                                  :n star:*injest-workers*
-                                                  :queue-name "injest-targets"
+                                                  :n star:*ingest-workers*
+                                                  :queue-name +ingest-targets-queue+
                                                   :exchange-name "documents"
                                                   :routing-key +targets-key+
                                                   :username star:*rabbit-user*
@@ -244,8 +257,8 @@
     (log:info "Starting document consumers")
     (start-consumer document-consumers)
     (log:info "Document consumers started")
-    (log:info "Creating target consumer - workers: ~a queue: injest-targets routing-key: ~a"
-              star:*injest-workers* +targets-key+)
+    (log:info "Creating target consumer - workers: ~a queue: ingest-targets routing-key: ~a"
+              star:*ingest-workers* +targets-key+)
     (log:info "Starting target consumers")
     (start-consumer target-consumers)
     (log:info "Target consumers started")
