@@ -233,9 +233,17 @@
     (assert (and _rev dtype) ()
             "handle-update: missing required fields:~@[ _rev~]~@[ dtype~] (routing-key=~S)"
             (null _rev) (null dtype) msg-key)
-    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+    (handler-case (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*))
       (setf response (cl-couch:update-document client  (jsown:to-json body)))
-      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js body ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype))))))
+      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js body ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype))) 
+      
+      (dex:http-request-bad-request (e)
+        (log:error "Bad request creating document (~a): ~a"
+                   msg-key (dexador.error:response-body e)))
+      (dex:http-request-conflict (e)
+        (log:warn "Document conflict (~a): ~a" msg-key e))
+      (error (e)
+        (log:error "Unexpected error creating document (~a): ~a" msg-key e)))))
 
 
 

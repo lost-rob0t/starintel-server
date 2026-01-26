@@ -27,8 +27,8 @@
         src = pkgs.fetchFromGitHub {
           owner = "lost-rob0t";
           repo  = "cl-couch";
-          rev   = "9085da82d3b26c82a44be1d830b0f9bf374b5368";
-          hash  = "sha256-jtHNWK7ekKqoxMp+VJvLU4hF74fPnddrx/yeXvCPZVM=";
+          rev   = "6abd2fc28333de5f438862d7f35b7e09e6d1ef9f";
+          hash  = "sha256-+ait9GwEwVa0vr1PaGGBEl3esQg7wdp97RgKaPbvvsg=";
         };
         lispLibs = with pkgs.sbclPackages; [ dexador jsown serapeum ];
       };
