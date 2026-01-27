@@ -167,7 +167,7 @@
           (set-default-headers)
           (let* ((actor (cdr (assoc :actor params :test #'string=)))
                  (body (jsown:parse (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8)))
-                 (routing-key (format nil "documents.new.target.~a" actor)))
+                 (routing-key (format nil star.rabbit:+ingest-fmt-key+  (jsown:val body "dtype"))))
             (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
             (log:debug "Target body length: ~a" (length body))
             (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json body) :routing-key routing-key :properties (list (cons :type "target")))
@@ -180,7 +180,7 @@
           (set-default-headers)
           (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
                  (body (jsown:parse (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8)))
-                 (routing-key (format nil "documents.new.~a" dtype)))
+                 (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype)))
             (log:info "POST /new/document/:dtype - dtype: ~a routing-key: ~a" dtype routing-key)
             (log:debug "Document body length: ~a" (length body))
             (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json body) :routing-key routing-key :properties (list (cons :type dtype)))
@@ -217,7 +217,7 @@
                                 for idx from 0
                                 do (handler-case
                                        (let* ((dtype (jsown:val doc "dtype"))
-                                              (routing-key (format nil "documents.new.~a" dtype)))
+                                              (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype)))
                                          (unless dtype
                                            (error "Document at index ~a missing 'dtype' field" idx))
                                          (log:debug "Publishing bulk document ~a: type=~a" idx dtype)
