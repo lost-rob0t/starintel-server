@@ -205,8 +205,7 @@ Behavior:
   "Normalize _id, insert to CouchDB, then return document with _rev set."
   (assert client () "insert-document: client is NIL")
   (assert document () "insert-document: document is NIL")
-
-  (setf document (normalize-id document))
+  
 
   (log:info "Creating document in database: ~a" database)
   (let* ((resp (cl-couch:create-document client database (jsown:to-json document)))
@@ -215,6 +214,7 @@ Behavior:
                    (jsown:val-safe obj "_rev")))
          (id   (or (jsown:val-safe obj "id")
                    (jsown:val-safe obj "_id"))))
+    
     (when id
       (setf document (jsown:extend-js document ("_id" id))))
     (when rev

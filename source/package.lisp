@@ -32,7 +32,8 @@
    #:ensure-init-file-exists
    #:load-init-file
    #:safe-load-init
-   #:*bulk-max-documents*))
+   #:*bulk-max-documents*
+   #:repl/main))
 
 
 (uiop:define-package   :star.databases.couchdb
