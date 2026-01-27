@@ -15,6 +15,9 @@ documents.ingest.#, documents.new.#, and documents.updated.# work.")
 (defparameter +ingest-key+ "documents.ingest.#"
   "Wildcard routing key for ALL ingest messages (initial insert path).")
 
+(defparameter +ingest-queue+ "documents.ingest"
+  "RabbitMQ Queue name for document ingest")
+
 
 (defparameter +ingest-fmt-key+ "documents.ingest.~a"
   "Format string for ingest routing keys by dtype. Example: (format nil +ingest-fmt-key+ \"target\")
@@ -32,6 +35,9 @@ documents.ingest.#, documents.new.#, and documents.updated.# work.")
 (defparameter +updated-documents-key+ "documents.updated.#"
   "Wildcard routing key for document update messages emitted by actors/services.")
 
+(defparameter +updates-queue+ "documents.updates.ingest"
+  "RabbitMQ Queue name for document update ingest")
+
 
 (defparameter +updated-documents-fmt-key+ "documents.updated.~a"
   "Format string for documents.updated routing keys by dtype. Example: \"documents.updated.host\".")
@@ -40,6 +46,8 @@ documents.ingest.#, documents.new.#, and documents.updated.# work.")
 (defparameter +targets-key+ "documents.ingest.target.#"
   "Wildcard routing key for ingest-phase target messages (initial targets coming into the system).")
 
+
+(defparameter +targets-queue+ "documents.targets")
 
 (defparameter +new-targets-key+ "documents.new.target.#"
   "Wildcard routing key for post-ingest target messages (targets after CouchDB insert/_rev enrichment).")
@@ -232,8 +240,8 @@ Behavior:
     (log:debug "Message target-p check: dtype=~a result=~a" dtype result)
     result))
 
-;;; ----------------------------------------------------------------------
-;;; handlers
+
+
 
 (defun handle-new-document (self message)
   "Handle an ingested document: insert to CouchDB, then republish as documents.new.<dtype>."
@@ -264,7 +272,7 @@ Behavior:
 
       (dex:http-request-conflict (e)
         (log:warn "Document conflict (msg-key=~a): ~a" msg-key e)
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue nil))
 
       (error (e)
         (log:error "Unexpected error creating document (msg-key=~a): ~a" msg-key e)
@@ -396,7 +404,7 @@ Behavior:
         (target-consumers
           (create-rabbit-consumer :name "documents-targets"
                                   :n star:*ingest-workers*
-                                  :queue-name +ingest-targets-queue+
+                                  :queue-name +targets-queue+
                                   :exchange-name +documents-exchange+
                                   :routing-key +targets-key+
                                   :username star:*rabbit-user*

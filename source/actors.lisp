@@ -57,9 +57,13 @@
 ;;;; Consumers just consume and no way to really provide said feedback.
 (defvar *couchdb-agent* nil)
 (defun make-couchdb-agent (context client
-                           &key (error-fun nil) (dispatcher-id :shared))
+                           &key (error-fun nil) (dispatcher-id :pinned))
+  (declare (ignore client error-fun))
+  ;; Keep the CouchDB pool lookup off the shared dispatcher.
   (make-agent (lambda ()
-                star.databases.couchdb:*couchdb-pool*)))
+                star.databases.couchdb:*couchdb-pool*)
+              context
+              dispatcher-id))
 
 
 ;;;; Get the couchdb client for use with cl-couch
@@ -71,8 +75,9 @@
 (defun couchdb-agent-insert (agent database document)
   "Preform a insert operation into couchdb."
   (anypool:with-connection (client (couchdb-agent-client agent))
-    (format t "~a~%" (jsown:to-json document))
-    (force-output t)
+    ;; IMPORTANT: Never print/force-output here.
+    ;; This function runs on the actor dispatcher; writing to stdout can block
+    ;; (e.g. when stdout is a pipe), which can deadlock the whole system.
     (cl-couch:create-document client database document)))
 
 ;;;; Preform a update operation on couchdb. You must provide the revision tag.
@@ -267,20 +272,44 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; * Producer Agent
 ;;;; The producer agent
 (defun make-producer-agent (producer context)
+  ;; Publishing must never depend on the shared dispatcher: if the shared
+  ;; dispatcher is saturated (e.g. DB ops, logging stalls), `agent-get`/publish
+  ;; will block the HTTP handler threads and look like a full service lockup.
   (make-agent (lambda ()
                 (star.producers:producer-connect producer)
-                producer) context))
+                producer)
+              context
+              :pinned))
 
 (defvar *producer-lock* "")
 (defvar *producer-agent* nil)
 
+(defparameter *publish-timeout-seconds* 5
+  "Maximum time allowed for a publish operation before failing fast.
+
+This protects the HTTP API (and target routing) from deadlocking when RabbitMQ
+or a dispatcher thread gets stuck.")
 
 (defun publish (agent &key body (properties nil) routing-key)
-  "Publish a message to RabbitMQ. Body Must be a jsown object."
-  (let* ((producer (agent-get agent #'identity))
-         
-         (result (star.producers:publish producer :body body :properties properties :routing-key routing-key)))
-    (log:info result)))
+  "Publish a message to RabbitMQ. BODY must be a JSON string.
+
+Fail-fast: if the producer agent or the underlying publish blocks for too long,
+signal an error so callers can return a 5xx instead of hanging indefinitely."
+  (handler-case
+      (bt:with-timeout (*publish-timeout-seconds*)
+        (let* ((producer (agent-get agent #'identity))
+               (result (star.producers:publish producer
+                                              :body body
+                                              :properties properties
+                                              :routing-key routing-key)))
+          (log:info result)
+          result))
+    (bt:timeout (e)
+      (log:error "Rabbit publish timeout (routing-key=~a): ~a" routing-key e)
+      (error e))
+    (error (e)
+      (log:error "Rabbit publish failed (routing-key=~a): ~a" routing-key e)
+      (error e))))
 
 
 

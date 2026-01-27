@@ -170,10 +170,23 @@
                  (routing-key (format nil star.rabbit:+ingest-fmt-key+  (jsown:val body "dtype"))))
             (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
             (log:debug "Target body length: ~a" (length body))
-            (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json body) :routing-key routing-key :properties (list (cons :type "target")))
-            (log:info "Target published to RabbitMQ successfully")
-            (log:info "Target: ~a" (jsown:to-json body))
-            (jsown:to-json body))))
+            (handler-case
+                (progn
+                  (star.actors:publish star.actors:*producer-agent*
+                                      :body (jsown:to-json body)
+                                      :routing-key routing-key
+                                      :properties (list (cons :type "target")))
+                  (log:info "Target published to RabbitMQ successfully")
+                  (log:info "Target: ~a" (jsown:to-json body))
+                  (jsown:to-json body))
+              (bt:timeout (e)
+                (log:error "Timeout publishing target (actor=~a): ~a" actor e)
+                (setf (lack.response:response-status *response*) 504)
+                (status-msg "Timeout publishing target" 'error))
+              (error (e)
+                (log:error "Error publishing target (actor=~a): ~a" actor e)
+                (setf (lack.response:response-status *response*) 502)
+                (status-msg "Failed to publish target" 'error :traceback (format nil "~a" e)))))))
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
       #'(lambda (params)
@@ -183,9 +196,22 @@
                  (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype)))
             (log:info "POST /new/document/:dtype - dtype: ~a routing-key: ~a" dtype routing-key)
             (log:debug "Document body length: ~a" (length body))
-            (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json body) :routing-key routing-key :properties (list (cons :type dtype)))
-            (log:info "Document published to RabbitMQ successfully")
-            (jsown:to-json body))))
+            (handler-case
+                (progn
+                  (star.actors:publish star.actors:*producer-agent*
+                                      :body (jsown:to-json body)
+                                      :routing-key routing-key
+                                      :properties (list (cons :type dtype)))
+                  (log:info "Document published to RabbitMQ successfully")
+                  (jsown:to-json body))
+              (bt:timeout (e)
+                (log:error "Timeout publishing document (dtype=~a): ~a" dtype e)
+                (setf (lack.response:response-status *response*) 504)
+                (status-msg "Timeout publishing document" 'error))
+              (error (e)
+                (log:error "Error publishing document (dtype=~a): ~a" dtype e)
+                (setf (lack.response:response-status *response*) 502)
+                (status-msg "Failed to publish document" 'error :traceback (format nil "~a" e)))))))
 
 (setf (ningle:route *app* "/documents/bulk" :method :post)
       #'(lambda (params)
