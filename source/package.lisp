@@ -111,7 +111,19 @@
    #:transient-p
    #:test-make-doc
    #:test-send
-   #:start-consumers))
+   #:start-consumers
+   #:+documents-exchange+
+   #:+documents-exchange-type+
+   #:+ingest-updates-queue+
+   #:+ingest-fmt-key+
+   #:+new-documents-key+
+   #:+new-documents-fmt-key+
+   #:+updated-documents-key+
+   #:+updated-documents-fmt-key+
+   #:+new-targets-key+
+   #:+targets-fmt-key+
+   #:+ingest-topic-key+
+   #:+updates-topic-key+))
 ;; Namespace setup:3 ends here
 
 (uiop:define-package   :star.actors
