@@ -242,7 +242,6 @@ Behavior:
 
 
 
-
 (defun handle-new-document (self message)
   "Handle an ingested document: insert to CouchDB, then republish as documents.new.<dtype>."
   (log:debug "handle-new-document called with message-key: ~a" (cdr message))
