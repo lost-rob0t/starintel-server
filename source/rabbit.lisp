@@ -222,6 +222,76 @@ Behavior:
     (log:info "Document created successfully (_id=~a _rev=~a)" id rev)
     document))
 
+(defun jsown-object-p (obj)
+  (and (consp obj) (eq (car obj) :obj)))
+
+(defun merge-jsown (base patch &key (skip-keys nil) (deep t))
+  "Merge PATCH into BASE (mutating BASE).
+
+Rules:
+- keys in PATCH overwrite BASE
+- keys in SKIP-KEYS are ignored
+- when DEEP and both values are objects, merge recursively"
+  (unless (and (jsown-object-p base) (jsown-object-p patch))
+    (return-from merge-jsown base))
+
+  (dolist (pair (cdr patch) base)
+    (destructuring-bind (key . value) pair
+      (unless (member key skip-keys :test #'string=)
+        (let ((existing (jsown:val-safe base key)))
+          (cond
+            ((and deep (jsown-object-p existing) (jsown-object-p value))
+             (setf (jsown:val base key)
+                   (merge-jsown existing value :skip-keys skip-keys :deep deep)))
+            (t
+             (setf (jsown:val base key) value))))))))
+
+(defun get-document* (client database id)
+  "Fetch a document as a JSOWN object or NIL if not found."
+  (handler-case
+      (cl-couch:get-document* client database id)
+    (dex:http-request-not-found () nil)))
+
+(defun upsert-document-update (client patch &key (database star:*couchdb-default-database*) (max-retries 2))
+  "Upsert-style update.
+
+- If PATCH has no _rev, fetch it from CouchDB.
+- Merge PATCH into existing doc so partial updates don't drop fields.
+- On conflict, refetch latest rev/doc and retry up to MAX-RETRIES times.
+
+Returns the document (JSOWN) with the latest _rev."
+  (let ((id (jsown:val-safe patch "_id")))
+    (assert (and id (stringp id) (not (string= id ""))) ()
+            "upsert-document-update: missing/invalid _id")
+
+    (loop for attempt from 0 to max-retries
+          do (let* ((existing (get-document* client database id))
+                    (doc (if existing
+                             (merge-jsown existing patch)
+                             patch))
+                    (rev (or (jsown:val-safe doc "_rev")
+                             (jsown:val-safe existing "_rev"))))
+               (cond
+                 ((null existing)
+                  (setf doc (normalize-id doc))
+                  (return (insert-document client doc :database database)))
+
+                 (t
+                  (when rev
+                    (setf doc (jsown:extend-js doc ("_rev" rev))))
+
+                  (handler-case
+                      (let* ((resp (cl-couch:update-document* client database (jsown:to-json doc) id rev))
+                             (new-rev (jsown:val-safe resp "rev")))
+                        (when (and new-rev (stringp new-rev) (not (string= new-rev "")))
+                          (setf doc (jsown:extend-js doc ("_rev" new-rev))))
+                        (return doc))
+
+                    (dex:http-request-conflict (e)
+                      (when (>= attempt max-retries)
+                        (signal e))
+                      (log:warn "Update conflict => retrying (attempt=~a _id=~a): ~a" attempt id e)))))))))
+
 (defun transient-p (message)
   (let ((result (jsown:val-safe (jsown:parse (car message)) "transient")))
     (log:debug "Message transient check: ~a" result)
@@ -331,28 +401,30 @@ Behavior:
              (cl-rabbit:basic-nack connection 1 msg-key :requeue t))))))))
 
 (defun handle-update (self message)
-  "Persist document updates to CouchDB. Requires _id, _rev, dtype."
+  "Persist document updates to CouchDB.
+
+Upsert behavior:
+- Requires _id and dtype
+- If _rev is missing, fetch it from CouchDB
+- Merge PATCH into existing doc so partial updates don't drop fields"
   (let* ((connection (rabbit-stream-connection (consumer-stream self)))
          (body       (jsown:parse (car message)))
          (msg-key    (cdr message))
          (id         (jsown:val-safe body "_id"))
-         (_rev       (jsown:val-safe body "_rev"))
          (dtype      (jsown:val-safe body "dtype")))
-    (assert (and id _rev dtype) ()
-            "handle-update: missing required fields:~@[ _id~]~@[ _rev~]~@[ dtype~] (msg-key=~S)"
-            (null id) (null _rev) (null dtype) msg-key)
+    (assert (and id dtype) ()
+            "handle-update: missing required fields:~@[ _id~]~@[ dtype~] (msg-key=~S)"
+            (null id) (null dtype) msg-key)
 
     (handler-case
         (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-          (let* ((resp (cl-couch:update-document* client star:*couchdb-default-database* body _rev))
-                 (new-rev (jsown:val-safe resp "rev")))
-            (when (and new-rev (stringp new-rev) (not (string= new-rev "")))
-              (setf body (jsown:extend-js body ("_rev" new-rev))))
-            (log:info "Update persisted (dtype=~a _id=~a _rev=~a)"
-                      dtype id (jsown:val-safe body "_rev"))
-            (cl-rabbit:basic-ack connection 1 msg-key)))
+          (setf body (upsert-document-update client body :database star:*couchdb-default-database*))
+          (log:info "Update persisted (dtype=~a _id=~a _rev=~a)"
+                    dtype id (jsown:val-safe body "_rev"))
+          (cl-rabbit:basic-ack connection 1 msg-key))
 
       (dex:http-request-conflict (e)
+        ;; Upsert already retries, but still may fail if we hit max retries.
         (log:warn "Update conflict (dtype=~a _id=~a): ~a" dtype id e)
         (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
 

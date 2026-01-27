@@ -291,25 +291,35 @@ This protects the HTTP API (and target routing) from deadlocking when RabbitMQ
 or a dispatcher thread gets stuck.")
 
 (defun publish (agent &key body (properties nil) routing-key)
-  "Publish a message to RabbitMQ. BODY must be a JSON string.
+  "Publish a message to RabbitMQ.
 
-Fail-fast: if the producer agent or the underlying publish blocks for too long,
-signal an error so callers can return a 5xx instead of hanging indefinitely."
-  (handler-case
-      (bt:with-timeout (*publish-timeout-seconds*)
-        (let* ((producer (agent-get agent #'identity))
-               (result (star.producers:publish producer
-                                              :body body
-                                              :properties properties
-                                              :routing-key routing-key)))
-          (log:info result)
-          result))
-    (bt:timeout (e)
-      (log:error "Rabbit publish timeout (routing-key=~a): ~a" routing-key e)
-      (error e))
-    (error (e)
-      (log:error "Rabbit publish failed (routing-key=~a): ~a" routing-key e)
-      (error e))))
+Sento agent semantics: do the publish *inside* the agent via `agent-get`, so the
+producer state (connection/channel) is touched from one pinned thread.
+
+BODY is expected to be a JSON string, but accept a JSOWN object as a convenience
+and normalize it to JSON.
+
+"
+  (assert agent () "publish: producer agent is NIL")
+  (let ((normalized-body
+          (cond
+            ((stringp body) body)
+            ((null body) (error "publish: body is NIL"))
+            (t (jsown:to-json body)))))
+    (handler-case
+        (bt:with-timeout (*publish-timeout-seconds*)
+          (agent-get agent
+                     (lambda (producer)
+                       (star.producers:publish producer
+                                               :body normalized-body
+                                               :properties properties
+                                               :routing-key routing-key))))
+      (bt:timeout (e)
+        (log:error "Rabbit publish timeout (routing-key=~a): ~a" routing-key e)
+        (error e))
+      (error (e)
+        (log:error "Rabbit publish failed (routing-key=~a): ~a" routing-key e)
+        (error e)))))
 
 
 

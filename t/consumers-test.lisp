@@ -278,15 +278,28 @@ non-sequence internal state (sometimes T), then anything doing (length ...) dies
 ;;; Integration Test Helpers
 ;;; ----------------------------------------------------------------------
 
-(test test-routing-key-patterns
-  "Test routing key pattern matching"
-  (cdbg "TEST test-routing-key-patterns")
-  (let ((document-key "documents.new.message")
-        (target-key "documents.new.target.nmap")
-        (update-key "documents.update.message"))
-    (is (search "documents.new." document-key))
-    (is (search "documents.new.target." target-key))
-    (is (search "documents.update." update-key))))
+
+(test test-update-upsert-fetches-rev-and-merges
+  "Update upsert should fetch _rev and merge fields"
+  (cdbg "TEST test-update-upsert-fetches-rev-and-merges")
+  (let* ((existing (jsown:parse "{\"_id\":\"abc\",\"_rev\":\"1-a\",\"dtype\":\"message\",\"a\":1}"))
+         (patch (jsown:parse "{\"_id\":\"abc\",\"dtype\":\"message\",\"b\":2}"))
+         (seen nil))
+    (flet ((cl-couch:get-document* (client database id)
+             (declare (ignore client database id))
+             existing)
+           (cl-couch:update-document* (client database doc rev)
+             (declare (ignore client database))
+             (setf seen (list (jsown:val-safe doc "a")
+                              (jsown:val-safe doc "b")
+                              (jsown:val-safe doc "_rev")
+                              rev))
+             (jsown:new-js ("rev" "2-b"))))
+      (let ((result (star.rabbit::upsert-document-update :fake patch :database "db" :max-retries 0)))
+        (is (equal '(1 2 "1-a" "1-a") seen))
+        (is (= 1 (jsown:val result "a")))
+        (is (= 2 (jsown:val result "b")))
+        (is (string= "2-b" (jsown:val result "_rev"))))))
 
 (test test-consumer-name-formatting
   "Test consumer thread name formatting"
