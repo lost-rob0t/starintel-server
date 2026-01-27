@@ -1,13 +1,82 @@
 (in-package :star.rabbit)
 
-(defvar +ingest-queue+ "ingest")
-(defvar +ingest-targets-queue+ "ingest-targets")
-(defvar +updates-queue+ "documents-updates")
-(defvar +ingest-key+ "documents.ingest.#")
-(defvar +updates-key+ "documents.update.#")
-(defvar +targets-key+ "documents.new.target.#")
+;;; ----------------------------------------------------------------------
+;;; constants
 
-(defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key &key (port star:*rabbit-port*) (host star:*rabbit-address*) (username star:*rabbit-user*) (password star:*rabbit-password*) (vhost "/") (durable nil) (exclusive nil) (auto-delete nil)) &body body)
+(defparameter +documents-exchange+ "documents"
+  "RabbitMQ exchange name for document traffic (ingest/new/updated).")
+
+
+(defparameter +documents-exchange-type+ "topic"
+  "Exchange type for +documents-exchange+. Must be \"topic\" so routing keys like
+documents.ingest.#, documents.new.#, and documents.updated.# work.")
+
+;; routing keys (canonical)
+(defparameter +ingest-key+ "documents.ingest.#"
+  "Wildcard routing key for ALL ingest messages (initial insert path).")
+
+
+(defparameter +ingest-fmt-key+ "documents.ingest.~a"
+  "Format string for ingest routing keys by dtype. Example: (format nil +ingest-fmt-key+ \"target\")
+=> \"documents.ingest.target\"")
+
+
+(defparameter +new-documents-key+ "documents.new.#"
+  "Wildcard routing key for post-ingest 'new document' messages (after CouchDB insert/_rev enrichment).")
+
+
+(defparameter +new-documents-fmt-key+ "documents.new.~a"
+  "Format string for documents.new routing keys by dtype. Example: \"documents.new.url\".")
+
+
+(defparameter +updated-documents-key+ "documents.updated.#"
+  "Wildcard routing key for document update messages emitted by actors/services.")
+
+
+(defparameter +updated-documents-fmt-key+ "documents.updated.~a"
+  "Format string for documents.updated routing keys by dtype. Example: \"documents.updated.host\".")
+
+
+(defparameter +targets-key+ "documents.ingest.target.#"
+  "Wildcard routing key for ingest-phase target messages (initial targets coming into the system).")
+
+
+(defparameter +new-targets-key+ "documents.new.target.#"
+  "Wildcard routing key for post-ingest target messages (targets after CouchDB insert/_rev enrichment).")
+
+
+(defparameter +targets-fmt-key+ "documents.ingest.target.#"
+  "Alias for +targets-key+. Name is historical; value is intentionally the same wildcard.");;; ----------------------------------------------------------------------
+;;; rabbit helpers
+
+(defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key
+                             &key (port star:*rabbit-port*)
+                               (host star:*rabbit-address*)
+                               (username star:*rabbit-user*)
+                               (password star:*rabbit-password*)
+                               (vhost "/")
+                               (durable nil)
+                               (exclusive nil)
+                               (auto-delete nil))
+                            &body body)
+  "Open a RabbitMQ connection and continuously consume messages from a bound queue.
+
+Binds/declares:
+- Exchange: EXCHANGE-NAME of type EXCHANGE-TYPE (typically +documents-exchange+ / +documents-exchange-type+).
+- Queue: QUEUE-NAME with durability/exclusive/auto-delete options.
+- Binding: queue -> exchange with ROUTING-KEY (wildcards allowed for topic exchanges).
+
+Consume loop:
+- Starts a consumer via BASIC-CONSUME, then repeatedly calls CONSUME-MESSAGE.
+- For each message:
+  - Evaluates BODY with `msg` bound to the message payload (via cl-rabbit:envelope/message).
+  - On success: ACKs by delivery-tag.
+  - On error: logs, NACKs, and requeues the message (requeue t).
+
+Notes:
+- This macro owns the connection lifecycle; it does not return until the loop exits.
+- Authentication uses SASL PLAIN when USERNAME and PASSWORD are non-nil.
+- Uses channel 1 (single channel)."
   `(cl-rabbit:with-connection (conn)
      (log:info "Creating RabbitMQ connection to ~a:~a" ,host ,port)
      (let ((socket (cl-rabbit:tcp-socket-new conn)))
