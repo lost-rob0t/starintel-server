@@ -1,14 +1,5 @@
 (in-package :star.consumers)
 
-;;; Connection error condition for RabbitMQ failures
-(define-condition connection-error (error)
-  ((consumer :initarg :consumer :reader connection-error-consumer)
-   (error :initarg :error :reader connection-error-cause))
-  (:documentation "Signaled when a consumer connection error occurs")
-  (:report (lambda (condition stream)
-             (format stream "Consumer ~a connection error: ~a"
-                     (consumer-name (connection-error-consumer condition))
-                     (connection-error-cause condition)))))
 
 (defclass consumer ()
   ((name :initarg :name :accessor consumer-name :initform "")
@@ -45,17 +36,10 @@
   (with-consumer-lock (consumer)
     (stream-read (consumer-stream consumer))))
 
-(defmethod consume ((consumer consumer) data)
-  "Submit message processing task. Handler errors are caught and logged."
-  (submit-task (consumer-channel consumer)
-               (lambda ()
-                 (handler-case
-                     (when (funcall (consumer-filter consumer) data)
-                       (funcall (consumer-fn consumer) consumer data))
-                   (error (e)
-                     (log:error "[~a] Handler error processing message: ~a~%Data: ~a"
-                                (consumer-name consumer) e data)
-                     nil)))))
+(defmethod consume  ((consumer consumer) data)
+  (submit-task (consumer-channel consumer) (lambda ()
+                                             (if (funcall (consumer-filter consumer) data)
+                                                 (funcall (consumer-fn consumer) consumer data)))))
 
 
 
@@ -112,15 +96,9 @@
     (setf (rabbit-stream-open-p stream) t)))
 
 (defmethod close-stream ((stream rabbit-queue-stream))
-  "Close RabbitMQ connection safely, ignoring errors."
-  (when (and (rabbit-stream-connection stream)
-             (rabbit-stream-open-p stream))
-    (ignore-errors
-      (cl-rabbit:channel-close (rabbit-stream-connection stream) 1))
-    (ignore-errors
-      (cl-rabbit:destroy-connection (rabbit-stream-connection stream)))
-    (setf (rabbit-stream-open-p stream) nil
-          (rabbit-stream-connection stream) nil)))
+  (cl-rabbit:channel-close (rabbit-stream-connection stream) 1)
+  (cl-rabbit:destroy-connection (rabbit-stream-connection stream))
+  (setf (rabbit-stream-open-p stream) nil))
 
 (defmethod stream-read ((stream rabbit-queue-stream))
   (let ((conn (rabbit-stream-connection stream)))
@@ -131,21 +109,11 @@
   (:documentation "Custom consumer class for RabbitMQ"))
 
 (defmethod consumer-read ((consumer rabbit-consumer))
-  "Read a message from RabbitMQ. Signals connection-error on failures."
-  (handler-case
-      (let ((msg (stream-read (consumer-stream consumer))))
-        (cons (babel:octets-to-string
-                (cl-rabbit:message/body (cl-rabbit:envelope/message msg))
-                :encoding :utf-8)
-              (cl-rabbit:envelope/delivery-tag msg)))
-    (cl-rabbit:rabbitmq-library-error (e)
-      (log:error "[~a] RabbitMQ library error in consumer-read: ~a"
-                 (consumer-name consumer) e)
-      (signal 'connection-error :consumer consumer :error e))
-    (error (e)
-      (log:error "[~a] Unexpected error in consumer-read: ~a"
-                 (consumer-name consumer) e)
-      (signal 'connection-error :consumer consumer :error e))))
+  (let ((msg (stream-read (consumer-stream consumer))))
+    (cons (babel:octets-to-string
+           (cl-rabbit:message/body (cl-rabbit:envelope/message msg))
+           :encoding :utf-8)
+          (cl-rabbit:envelope/delivery-tag msg))))
 
 
 (defmethod start-consumer ((consumer rabbit-consumer))
@@ -163,72 +131,13 @@
                                      :password (rabbit-stream-password (consumer-stream consumer))
                                      :test-fn (consumer-filter consumer)
                                      :handler-fn (consumer-fn consumer))))
-              ;; Don't open stream here - let self-healing loop handle it
+              (open-stream (consumer-stream thread-consumer))
+              (assert (rabbit-stream-open-p (consumer-stream thread-consumer)) nil "Rabbitmq stream wasnt opened!!!!")
               (lambda ()
-                (let ((retry-delay 1)           ; Start with 1 second
-                      (max-retry-delay 60)      ; Cap at 60 seconds
-                      (backoff-multiplier 2))   ; Double each time
-                  (loop
-                    ;; Outer loop: Connection lifecycle management
-                    do (handler-case
-                           (progn
-                             ;; Establish/re-establish connection
-                             (log:info "[~a-~D] Connecting to RabbitMQ ~a:~a queue: ~a"
-                                       (consumer-name consumer) thread-number
-                                       (rabbit-stream-host (consumer-stream thread-consumer))
-                                       (rabbit-stream-port (consumer-stream thread-consumer))
-                                       (rabbit-stream-queue-name (consumer-stream thread-consumer)))
-
-                             (open-stream (consumer-stream thread-consumer))
-                             (assert (rabbit-stream-open-p (consumer-stream thread-consumer)) nil
-                                     "RabbitMQ stream failed to open for ~a-~D"
-                                     (consumer-name consumer) thread-number)
-
-                             (log:info "[~a-~D] Connected successfully, starting message processing"
-                                       (consumer-name consumer) thread-number)
-
-                             ;; Reset backoff on successful connection
-                             (setf retry-delay 1)
-
-                             ;; Inner loop: Process messages until connection breaks
-                             (loop
-                               (handler-case
-                                   (let ((data (consumer-read thread-consumer)))
-                                     (consume thread-consumer data)
-                                     (receive-result (consumer-channel thread-consumer)))
-                                 (connection-error (e)
-                                   ;; Connection broken, exit inner loop to reconnect
-                                   (log:warn "[~a-~D] Connection error, will reconnect: ~a"
-                                             (consumer-name consumer) thread-number e)
-                                   (return))
-                                 (error (e)
-                                   ;; Handler error, log but continue processing
-                                   (log:error "[~a-~D] Error processing message: ~a"
-                                              (consumer-name consumer) thread-number e)))))
-
-                         ;; Outer handler: Connection failed or inner loop exited
-                         (connection-error (e)
-                           (log:error "[~a-~D] Connection error, reconnecting in ~D seconds: ~a"
-                                      (consumer-name consumer) thread-number retry-delay e))
-                         (error (e)
-                           (log:error "[~a-~D] Fatal error, reconnecting in ~D seconds: ~a"
-                                      (consumer-name consumer) thread-number retry-delay e)))
-
-                    ;; Cleanup old connection
-                    do (handler-case
-                           (when (rabbit-stream-open-p (consumer-stream thread-consumer))
-                             (log:info "[~a-~D] Closing old connection"
-                                       (consumer-name consumer) thread-number)
-                             (close-stream (consumer-stream thread-consumer)))
-                         (error (e)
-                           (log:warn "[~a-~D] Error closing connection (ignoring): ~a"
-                                     (consumer-name consumer) thread-number e)))
-
-                    ;; Exponential backoff before retry
-                    do (log:info "[~a-~D] Waiting ~D seconds before reconnecting..."
-                                 (consumer-name consumer) thread-number retry-delay)
-                    do (sleep retry-delay)
-                    do (setf retry-delay (min (* retry-delay backoff-multiplier) max-retry-delay)))))))))
+                (loop
+                  for data = (consumer-read thread-consumer)
+                  do (consume thread-consumer data)
+                  do (receive-result (consumer-channel thread-consumer))))))))
     (loop for i from 1 to (consumer-worker-count consumer)
           do (bt:make-thread (funcall create-thread-consumer i)
                              :name (format nil "~A-~D" (consumer-name consumer) i)))))

@@ -38,7 +38,6 @@
                  #:ningle
                  #:clingon
                  #:slynk
-                 #:agnostic-lizard
                  #:nhooks
                  #:lparallel
                  #:cl-stream
