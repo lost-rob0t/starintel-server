@@ -92,23 +92,33 @@ Notes:
 
          (log:info "Declaring queue: ~a (durable: ~a, exclusive: ~a, auto-delete: ~a)"
                    ,queue-name ,durable ,exclusive ,auto-delete)
-         (cl-rabbit:queue-declare conn 1 :queue ,queue-name :durable ,auto-delete ,auto-delete :exclusive ,exclusive)
+         (cl-rabbit:queue-declare conn 1
+                                  :queue ,queue-name
+                                  :durable ,durable
+                                  :auto-delete ,auto-delete
+                                  :exclusive ,exclusive)
+
          (log:info "Binding queue ~a to exchange ~a with routing-key: ~a"
                    ,queue-name ,exchange-name ,routing-key)
-         (cl-rabbit:queue-bind conn 1 :queue ,queue-name :exchange ,exchange-name :routing-key ,routing-key)
+         (cl-rabbit:queue-bind conn 1
+                               :queue ,queue-name
+                               :exchange ,exchange-name
+                               :routing-key ,routing-key)
 
          (log:info "Starting consumer on queue: ~a" ,queue-name)
          (cl-rabbit:basic-consume conn 1 ,queue-name)
+
          (loop
            for result = (cl-rabbit:consume-message conn)
            for msg = (cl-rabbit:envelope/message result)
-           do (handler-case (progn
-                              (log:debug "Received message with delivery-tag: ~a"
-                                         (cl-rabbit:envelope/delivery-tag result))
-                              ,@body
-                              (log:debug "Acknowledging message with delivery-tag: ~a"
-                                         (cl-rabbit:envelope/delivery-tag result))
-                              (cl-rabbit:basic-ack conn 1 (cl-rabbit:envelope/delivery-tag result)))
+           do (handler-case
+                  (progn
+                    (log:debug "Received message with delivery-tag: ~a"
+                               (cl-rabbit:envelope/delivery-tag result))
+                    ,@body
+                    (log:debug "Acknowledging message with delivery-tag: ~a"
+                               (cl-rabbit:envelope/delivery-tag result))
+                    (cl-rabbit:basic-ack conn 1 (cl-rabbit:envelope/delivery-tag result)))
                 (error (e)
                   (log:error "Error processing message with delivery-tag ~a: ~a"
                              (cl-rabbit:envelope/delivery-tag result) e)
@@ -124,6 +134,23 @@ Notes:
                                                   (username star:*rabbit-user*)
                                                   (password star:*rabbit-password*)
                                                   (vhost "/"))
+  "Publish a document message to RabbitMQ.
+
+Arguments:
+- EXCHANGE: exchange name (typically +documents-exchange+).
+- ROUTING-KEY: topic routing key (e.g. \"documents.ingest.target\", \"documents.new.url\").
+- BODY: message payload string/bytes (commonly a JSON string).
+
+Keyword args:
+- PROPERTIES: AMQP message properties alist/plist as expected by cl-rabbit.
+- MANDATORY: if true, broker returns unroutable messages (requires return handler on the channel).
+- IMMEDIATE: if true, broker requires immediate delivery to a consumer (often unsupported/ignored by brokers).
+- HOST/PORT/USERNAME/PASSWORD/VHOST: connection parameters.
+
+Behavior:
+- Opens a fresh connection and channel per call, publishes once, then closes.
+- Uses SASL PLAIN auth when USERNAME and PASSWORD are non-nil.
+- Logs publish intent and basic payload metadata (body length)."
   (log:info "Publishing document to exchange: ~a routing-key: ~a" exchange routing-key)
   (log:debug "Publish properties: ~a body-length: ~a" properties (length body))
   (cl-rabbit:with-connection (conn)
@@ -134,71 +161,58 @@ Notes:
         (log:debug "Authenticating publish connection user: ~a vhost: ~a" username vhost)
         (cl-rabbit:login-sasl-plain conn vhost username password))
       (cl-rabbit:with-channel (conn 1)
-        (cl-rabbit:basic-publish conn 1 :routing-key routing-key :exchange exchange :mandatory mandatory :immediate immediate :properties properties :body body)
-        (log:info "Document published successfully to ~a with routing-key: ~a" exchange routing-key)))))
+        (cl-rabbit:basic-publish conn 1
+                                 :routing-key routing-key
+                                 :exchange exchange
+                                 :mandatory mandatory
+                                 :immediate immediate
+                                 :properties properties
+                                 :body body)
+        (log:info "Document published successfully to ~a with routing-key: ~a"
+                  exchange routing-key)))))
 
 (defun message->string (msg &key (encoding :utf-8))
-  "take a rabbitmq message and return the boddy as a string"
+  "Take a RabbitMQ message and return the body as a string."
   (babel:octets-to-string (cl-rabbit:message/body msg) :encoding encoding))
 
-                                        ;TODO
 (defun message->object (msg)
-  "Tale a rabbbitmq message and return a object. The object that will be returned depends on the message property 'dtype`.")
+  "TODO: Parse a RabbitMQ message into an object based on message properties."
+  (declare (ignore msg))
+  nil)
 
-
-
+;;; ----------------------------------------------------------------------
+;;; couch helpers
 
 (defun normalize-id (document)
-  "Ensure the ID is set, if not create a ULID id for it."
+  "Ensure document has a usable _id. Returns the (possibly updated) document."
+  (assert document () "normalize-id: document is NIL")
   (let ((id (jsown:val-safe document "_id")))
-    (when (or (null id)
-              (string= id "")
-              (not (stringp id)))
-      (jsown:extend-js document
-        ("_id" (cms-ulid:ulid))))))
+    (cond
+      ((and (stringp id) (not (string= id "")))
+       document)
+      (t
+       (jsown:extend-js document ("_id" (cms-ulid:ulid)))))))
 
+(defun insert-document (client document &key (database star:*couchdb-default-database*))
+  "Normalize _id, insert to CouchDB, then return document with _rev set."
+  (assert client () "insert-document: client is NIL")
+  (assert document () "insert-document: document is NIL")
 
-(defun insert-document (client document)
-  "Normalizes the document then inserts it."
-  (normalize-id document)
-  (log:info "Creating document in database: ~a" star:*couchdb-default-database*)
-  (let ((response (jsown:parse (couch:create-document client star:*couchdb-default-database* (jsown:to-json document-json)))))
-    (jsown:extend-js document
-      ("_rev" (jsown:val-safe response "_rev"))))
-  
-  
-  (log:info "Document created successfully"))
+  (setf document (normalize-id document))
 
-
-
-(defun handle-new-document (self message)
-  (log:debug "handle-new-document called with message-key: ~a" (cdr message))
-  (let* ((response nil)
-         (connection (rabbit-stream-connection (consumer-stream self)))
-         (document-json (jsown:parse (car message)))
-         (msg-key (cdr message))
-         (dtype (jsown:val-safe document-json "dtype"))
-         (routing-key (format nil "documents.new.~a" dtype)))
-    (setf document-json (normalize-id document-json))
-    (log:debug "Processing document with msg-key: ~a" msg-key)
-    (handler-case (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-                    (setf response (insert-document client document-json))
-                    (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js document-json
-                                                                                             ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype)))
-                    
-                    (log:debug "Acknowledging message with key: ~a" msg-key)
-                    (cl-rabbit:basic-ack connection 1 msg-key))
-      
-      (dex:http-request-bad-request (e)
-        (log:error "Bad request creating document (~a): ~a"
-                   msg-key (dexador.error:response-body e)))
-      (dex:http-request-conflict (e)
-        (log:warn "Document conflict (~a): ~a" msg-key e))
-      (error (e)
-        (log:error "Unexpected error creating document (~a): ~a" msg-key e)))))
-
-
-
+  (log:info "Creating document in database: ~a" database)
+  (let* ((resp (cl-couch:create-document client database (jsown:to-json document)))
+         (obj  (jsown:parse resp))
+         (rev  (or (jsown:val-safe obj "rev")
+                   (jsown:val-safe obj "_rev")))
+         (id   (or (jsown:val-safe obj "id")
+                   (jsown:val-safe obj "_id"))))
+    (when id
+      (setf document (jsown:extend-js document ("_id" id))))
+    (when rev
+      (setf document (jsown:extend-js document ("_rev" rev))))
+    (log:info "Document created successfully (_id=~a _rev=~a)" id rev)
+    document))
 
 (defun transient-p (message)
   (let ((result (jsown:val-safe (jsown:parse (car message)) "transient")))
@@ -211,159 +225,194 @@ Notes:
     result))
 
 (defun target-p (message)
-  "Test if message dtype is 'target'"
+  "Test if message dtype is 'target'."
   (let* ((body (jsown:parse (car message)))
          (dtype (jsown:val-safe body "dtype"))
          (result (string= dtype "target")))
     (log:debug "Message target-p check: dtype=~a result=~a" dtype result)
     result))
 
+;;; ----------------------------------------------------------------------
+;;; handlers
+
+(defun handle-new-document (self message)
+  "Handle an ingested document: insert to CouchDB, then republish as documents.new.<dtype>."
+  (log:debug "handle-new-document called with message-key: ~a" (cdr message))
+  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
+         (doc        (jsown:parse (car message)))
+         (msg-key    (cdr message))
+         (dtype       (jsown:val-safe doc "dtype")))
+    (assert (and dtype (stringp dtype) (not (string= dtype ""))) ()
+            "handle-new-document: missing/invalid dtype (msg-key=~S)" msg-key)
+
+    (setf doc (normalize-id doc))
+
+    (handler-case
+        (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+          (setf doc (insert-document client doc))
+          (let ((routing-key (format nil "documents.new.~a" dtype)))
+            (star.actors:publish star.actors:*producer-agent*
+                                 :body (jsown:to-json doc)
+                                 :routing-key routing-key
+                                 :properties (list (cons :type dtype))))
+          (cl-rabbit:basic-ack connection 1 msg-key))
+
+      (dex:http-request-bad-request (e)
+        (log:error "Bad request creating document (msg-key=~a): ~a"
+                   msg-key (dexador.error:response-body e))
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
+
+      (dex:http-request-conflict (e)
+        (log:warn "Document conflict (msg-key=~a): ~a" msg-key e)
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
+
+      (error (e)
+        (log:error "Unexpected error creating document (msg-key=~a): ~a" msg-key e)
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue t)))))
 
 (defun handle-new-target (self message)
-  "Handle target doc - persist to CouchDB if not transient, then route to *targets* actor."
+  "Handle target doc: if transient => route directly; else insert to CouchDB then route."
   (log:debug "handle-new-target called with message-key: ~a" (cdr message))
   (let* ((connection (rabbit-stream-connection (consumer-stream self)))
-         (body (jsown:parse (car message)))
-         (msg-key (cdr message))
-         (id (jsown:val-safe body "_id"))
-         (dtype (jsown:val-safe body "dtype"))
-         (transient (jsown:val-safe body "transient")))
-    ;; ----------------------------------------------------------------------
-    ;; normalize doc
-    (normalize-id)
-    (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
-      (setf body (jsown:extend-js body
-                   ("dtype" "target"))))
+         (body       (jsown:parse (car message)))
+         (msg-key    (cdr message)))
+    (setf body (normalize-id body))
 
-    ;; ----------------------------------------------------------------------
-    ;; If transient, skip db write and route directly to actor
-    (log:info "Transient target, skipping database - routing to *targets* actor (_id=~a actor=~a)"
-              (jsown:val-safe body "_id")
-              (jsown:val-safe body "actor"))
+    (let* ((dtype     (jsown:val-safe body "dtype"))
+           (transient (jsown:val-safe body "transient"))
+           (id        (jsown:val-safe body "_id")))
+      (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
+        (setf body (jsown:extend-js body ("dtype" "target"))))
 
-    (tell star.actors:*targets* (cons 1 body))
-    (cl-rabbit:basic-ack connection 1 msg-key)
-    (log:debug "Transient target sent to *targets* actor, message acknowledged")))
+      (cond
+        (transient
+         (log:info "Transient target => skipping DB (_id=~a actor=~a)"
+                   id (jsown:val-safe body "actor"))
+         (tell star.actors:*targets* (cons 1 body))
+         (cl-rabbit:basic-ack connection 1 msg-key))
 
-;; Non-transient: write to db then send on success
-;; (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-;;   (handler-case
-;;       (progn
-;;         (log:info "Creating target in database: ~a (_id=~a actor=~a)"
-;;                   star:*couchdb-default-database*
-;;                   (jsown:val-safe body "_id")
-;;                   (jsown:val-safe body "actor"))
+        (t
+         (handler-case
+             (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+               (setf body (insert-document client body))
+               (log:info "Target inserted => routing (_id=~a _rev=~a actor=~a)"
+                         (jsown:val-safe body "_id")
+                         (jsown:val-safe body "_rev")
+                         (jsown:val-safe body "actor"))
+               (tell star.actors:*targets* (cons 1 body))
+               (cl-rabbit:basic-ack connection 1 msg-key))
 
-;;         (couch:create-document client
-;;                                star:*couchdb-default-database*
-;;                                (jsown:to-json body))
+           (dex:http-request-conflict (e)
+             ;; If it exists, fetch _rev and still route.
+             (log:warn "Target conflict => fetching _rev and routing anyway (_id=~a): ~a" id e)
+             (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+               (let* ((existing (cl-couch:get-document* client star:*couchdb-default-database* id))
+                      (rev      (jsown:val-safe existing "_rev")))
+                 (when rev
+                   (setf body (jsown:extend-js body ("_rev" rev)))))
+               (tell star.actors:*targets* (cons 1 body))
+               (cl-rabbit:basic-ack connection 1 msg-key)))
 
-;;         (log:info "Target created, routing to *targets* actor - actor: ~a"
-;;                   (jsown:val-safe body "actor"))
+           (dex:http-request-bad-request (e)
+             (log:error "Bad request creating target (msg-key=~a _id=~a): ~a"
+                        msg-key id (dexador.error:response-body e))
+             (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
 
-;;         (log:debug "About to tell *targets* actor. *targets*=~a body=~a"
-;;                    star.actors:*targets* (jsown:to-json body))
-;;         (tell star.actors:*targets* (cons 1 body))
-;;         (log:debug "Tell completed")
-
-;;         (log:debug "Target sent to *targets* actor, acknowledging message")
-;;         (cl-rabbit:basic-ack connection 1 msg-key)
-;;         (log:debug "Message with key ~a acknowledged" msg-key))
-
-;;     (dex:http-request-conflict (e)
-;;       (log:warn "Target conflict (already exists). msg-key=~a _id=~a err=~a"
-;;                 msg-key (jsown:val-safe body "_id") e)
-;;       (log:info "Target already exists, still routing to *targets* actor - actor: ~a"
-;;                 (jsown:val-safe body "actor"))
-;;       ;; Still route to *targets* actor even if doc exists
-;;       (log:debug "About to tell *targets* actor. *targets*=~a body=~a"
-;;                  star.actors:*targets* (jsown:to-json body))
-;;       (tell star.actors:*targets* (cons 1 body))
-;;       (log:debug "Tell completed, acknowledging message")
-;;       (cl-rabbit:basic-ack connection 1 msg-key)
-;;       (log:debug "Conflict handled: target sent to *targets* actor, message acknowledged"))
-
-;;     (dex:http-request-bad-request (e)
-;;       (log:error "Bad request creating target. msg-key=~a _id=~a err=~a doc=~a"
-;;                  msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
-;;       ;; do NOT ack; let it retry / dead-letter based on your broker policy
-;;       nil)
-
-;;     (error (e)
-;;       (log:error "Unexpected error creating target. msg-key=~a _id=~a err=~a doc=~a"
-;;                  msg-key (jsown:val-safe body "_id") e (jsown:to-json body))
-;;       ;; do NOT ack
-;;       nil)))
+           (error (e)
+             (log:error "Unexpected error creating target (msg-key=~a _id=~a): ~a"
+                        msg-key id e)
+             (cl-rabbit:basic-nack connection 1 msg-key :requeue t))))))))
 
 (defun handle-update (self message)
-  "Handle document updates and publish them to the resulting documents.updates.<dtype>"
+  "Persist document updates to CouchDB. Requires _id, _rev, dtype."
   (let* ((connection (rabbit-stream-connection (consumer-stream self)))
-         (body (jsown:parse (car message)))
-         (msg-key (cdr message))
-         (_rev (jsown:val-safe body "_rev"))
-         (dtype (jsown:val-safe body "dtype")))
-    (assert (and _rev dtype) ()
-            "handle-update: missing required fields:~@[ _rev~]~@[ dtype~] (routing-key=~S)"
-            (null _rev) (null dtype) msg-key)
-    (handler-case (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*))
-      (setf response (cl-couch:update-document client  (jsown:to-json body)))
-      (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json (jsown:extend-js body ("_rev" (jsown:val response "_rev")))) :routing-key routing-key :properties (list (cons :type dtype))) 
-      
-      (dex:http-request-bad-request (e)
-        (log:error "Bad request creating document (~a): ~a"
-                   msg-key (dexador.error:response-body e)))
+         (body       (jsown:parse (car message)))
+         (msg-key    (cdr message))
+         (id         (jsown:val-safe body "_id"))
+         (_rev       (jsown:val-safe body "_rev"))
+         (dtype      (jsown:val-safe body "dtype")))
+    (assert (and id _rev dtype) ()
+            "handle-update: missing required fields:~@[ _id~]~@[ _rev~]~@[ dtype~] (msg-key=~S)"
+            (null id) (null _rev) (null dtype) msg-key)
+
+    (handler-case
+        (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+          (let* ((resp (cl-couch:update-document* client star:*couchdb-default-database* body _rev))
+                 (new-rev (jsown:val-safe resp "rev")))
+            (when (and new-rev (stringp new-rev) (not (string= new-rev "")))
+              (setf body (jsown:extend-js body ("_rev" new-rev))))
+            (log:info "Update persisted (dtype=~a _id=~a _rev=~a)"
+                      dtype id (jsown:val-safe body "_rev"))
+            (cl-rabbit:basic-ack connection 1 msg-key)))
+
       (dex:http-request-conflict (e)
-        (log:warn "Document conflict (~a): ~a" msg-key e))
+        (log:warn "Update conflict (dtype=~a _id=~a): ~a" dtype id e)
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
+
+      (dex:http-request-bad-request (e)
+        (log:error "Bad request updating doc (dtype=~a _id=~a): ~a"
+                   dtype id (dexador.error:response-body e))
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
+
       (error (e)
-        (log:error "Unexpected error creating document (~a): ~a" msg-key e)))))
+        (log:error "Unexpected error updating doc (dtype=~a _id=~a): ~a" dtype id e)
+        (cl-rabbit:basic-nack connection 1 msg-key :requeue t)))))
 
-
+;;; ----------------------------------------------------------------------
+;;; consumer wiring
 
 (defun start-consumers ()
   (log:info "Starting Consumers.")
-  (log:info "Creating document consumer - workers: ~a queue: ingest exchange: documents routing-key: ~a"
-            star:*ingest-workers* +ingest-key+)
-  (let ((document-consumers (create-rabbit-consumer :name "documents"
-                                                    :n star:*ingest-workers*
-                                                    :queue-name +ingest-queue+
-                                                    :exchange-name "documents"
-                                                    :routing-key +ingest-key+
-                                                    :username star:*rabbit-user*
-                                                    :password star:*rabbit-password*
-                                                    :host star:*rabbit-address*
-                                                    :port star:*rabbit-port*
-                                                    :handler-fn #'handle-new-document
-                                                    :test-fn #'insertp))
-        (updates-consumers (create-rabbit-consumer :name "documents"
-                                                   :n star:*ingest-workers*
-                                                   :queue-name +ingest-updates-queue+
-                                                   :exchange-name "documents"
-                                                   :routing-key +updates-key+
-                                                   :username star:*rabbit-user*
-                                                   :password star:*rabbit-password*
-                                                   :host star:*rabbit-address*
-                                                   :port star:*rabbit-port*
-                                                   :handler-fn #'handle-new-target
-                                                   :test-fn #'insertp))
 
-        
-        (target-consumers (create-rabbit-consumer :name "documents"
-                                                  :n star:*ingest-workers*
-                                                  :queue-name +ingest-targets-queue+
-                                                  :exchange-name "documents"
-                                                  :routing-key +targets-key+
-                                                  :username star:*rabbit-user*
-                                                  :password star:*rabbit-password*
-                                                  :host star:*rabbit-address*
-                                                  :port star:*rabbit-port*
-                                                  :handler-fn #'handle-new-target
-                                                  :test-fn #'target-p)))
-    (log:info "Starting document consumers")
+  (log:info "Creating ingest consumer - workers: ~a queue: ~a exchange: documents routing-key: ~a"
+            star:*ingest-workers* +ingest-queue+ +ingest-key+)
+
+  (let ((document-consumers
+          (create-rabbit-consumer :name "ingest"
+                                  :n star:*ingest-workers*
+                                  :queue-name +ingest-queue+
+                                  :exchange-name +documents-exchange+
+                                  :routing-key +ingest-key+
+                                  :username star:*rabbit-user*
+                                  :password star:*rabbit-password*
+                                  :host star:*rabbit-address*
+                                  :port star:*rabbit-port*
+                                  :handler-fn #'handle-new-document
+                                  :test-fn #'insertp))
+
+        (updates-consumers
+          (create-rabbit-consumer :name "documents-updates"
+                                  :n star:*ingest-workers*
+                                  :queue-name +updates-queue+
+                                  :exchange-name +documents-exchange+
+                                  :routing-key +updated-documents-key+
+                                  :username star:*rabbit-user*
+                                  :password star:*rabbit-password*
+                                  :host star:*rabbit-address*
+                                  :port star:*rabbit-port*
+                                  :handler-fn #'handle-update
+                                  :test-fn #'insertp))
+
+        (target-consumers
+          (create-rabbit-consumer :name "documents-targets"
+                                  :n star:*ingest-workers*
+                                  :queue-name +ingest-targets-queue+
+                                  :exchange-name +documents-exchange+
+                                  :routing-key +targets-key+
+                                  :username star:*rabbit-user*
+                                  :password star:*rabbit-password*
+                                  :host star:*rabbit-address*
+                                  :port star:*rabbit-port*
+                                  :handler-fn #'handle-new-target
+                                  :test-fn #'target-p)))
+
+    (log:info "Starting ingest consumers")
     (start-consumer document-consumers)
-    (log:info "Document consumers started")
-    (log:info "Creating target consumer - workers: ~a queue: ingest-targets routing-key: ~a"
-              star:*ingest-workers* +targets-key+)
+
+    (log:info "Starting updates consumers")
+    (start-consumer updates-consumers)
+
     (log:info "Starting target consumers")
     (start-consumer target-consumers)
-    (log:info "Target consumers started")
+
     (log:info "All consumers started successfully")))
