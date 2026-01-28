@@ -210,10 +210,8 @@ Behavior:
   (log:info "Creating document in database: ~a" database)
   (let* ((resp (cl-couch:create-document client database (jsown:to-json document)))
          (obj  (jsown:parse resp))
-         (rev  (or (jsown:val-safe obj "rev")
-                   (jsown:val-safe obj "_rev")))
-         (id   (or (jsown:val-safe obj "id")
-                   (jsown:val-safe obj "_id"))))
+         (rev (jsown:val-safe obj "_rev"))
+         (id (jsown:val-safe obj "_id")))
     
     (when id
       (setf document (jsown:extend-js document ("_id" id))))
