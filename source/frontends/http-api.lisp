@@ -166,27 +166,33 @@
       #'(lambda (params)
           (set-default-headers)
           (let* ((actor (cdr (assoc :actor params :test #'string=)))
-                 (body (jsown:parse (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8)))
-                 (routing-key (format nil star.rabbit:+ingest-fmt-key+  (jsown:val body "dtype"))))
-            (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
-            (log:debug "Target body length: ~a" (length body))
-            (handler-case
-                (progn
-                  (star.actors:publish star.actors:*producer-agent*
-                                      :body (jsown:to-json body)
-                                      :routing-key routing-key
-                                      :properties (list (cons :type "target")))
-                  (log:info "Target published to RabbitMQ successfully")
-                  (log:info "Target: ~a" (jsown:to-json body))
-                  (jsown:to-json body))
-              (bt:timeout (e)
-                (log:error "Timeout publishing target (actor=~a): ~a" actor e)
-                (setf (lack.response:response-status *response*) 504)
-                (status-msg "Timeout publishing target" 'error))
-              (error (e)
-                (log:error "Error publishing target (actor=~a): ~a" actor e)
-                (setf (lack.response:response-status *response*) 502)
-                (status-msg "Failed to publish target" 'error :traceback (format nil "~a" e)))))))
+                 (body (jsown:parse
+                        (babel:octets-to-string
+                         (lack.request:request-content (ningle:context :request))
+                         :encoding :utf-8))))
+            (assert (and actor (stringp actor) (> (length actor) 0)) (actor)
+                    "URL is missing :actor")
+            (setf (jsown:val body "dtype") "target")
+            (setf (jsown:val body "actor") actor)
+
+            (let ((routing-key (format nil star.rabbit:+ingest-fmt-key+ "target")))
+              (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
+              (handler-case
+                  (progn
+                    (star.actors:publish star.actors:*producer-agent*
+                                         :body (jsown:to-json body)
+                                         :routing-key routing-key
+                                         :properties (list (cons :type "target")))
+                    (log:info "Target published to RabbitMQ successfully")
+                    (jsown:to-json body))
+                (bt:timeout (e)
+                  (log:error "Timeout publishing target (actor=~a): ~a" actor e)
+                  (setf (lack.response:response-status *response*) 504)
+                  (status-msg "Timeout publishing target" 'error))
+                (error (e)
+                  (log:error "Error publishing target (actor=~a): ~a" actor e)
+                  (setf (lack.response:response-status *response*) 502)
+                  (status-msg "Failed to publish target" 'error :traceback (format nil "~a" e))))))))
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
       #'(lambda (params)
@@ -199,9 +205,9 @@
             (handler-case
                 (progn
                   (star.actors:publish star.actors:*producer-agent*
-                                      :body (jsown:to-json body)
-                                      :routing-key routing-key
-                                      :properties (list (cons :type dtype)))
+                                       :body (jsown:to-json body)
+                                       :routing-key routing-key
+                                       :properties (list (cons :type dtype)))
                   (log:info "Document published to RabbitMQ successfully")
                   (jsown:to-json body))
               (bt:timeout (e)

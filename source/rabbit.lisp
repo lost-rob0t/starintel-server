@@ -210,9 +210,8 @@ Behavior:
   (log:info "Creating document in database: ~a" database)
   (let* ((resp (cl-couch:create-document client database (jsown:to-json document)))
          (obj  (jsown:parse resp))
-         (rev (jsown:val-safe obj "_rev"))
-         (id (jsown:val-safe obj "_id")))
-    
+         (rev (jsown:val-safe obj "rev"))
+         (id (jsown:val-safe obj "id")))
     (when id
       (setf document (jsown:extend-js document ("_id" id))))
     (when rev
@@ -326,6 +325,7 @@ Returns the document (JSOWN) with the latest _rev."
         (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
           (setf doc (insert-document client doc))
           (let ((routing-key (format nil "documents.new.~a" dtype)))
+            (log:trace "Publishing Document: ~a" (jsown:to-json doc))
             (star.actors:publish star.actors:*producer-agent*
                                  :body (jsown:to-json doc)
                                  :routing-key routing-key
@@ -350,53 +350,17 @@ Returns the document (JSOWN) with the latest _rev."
   (log:debug "handle-new-target called with message-key: ~a" (cdr message))
   (let* ((connection (rabbit-stream-connection (consumer-stream self)))
          (body       (jsown:parse (car message)))
-         (msg-key    (cdr message)))
+         (msg-key    (cdr message))
+         (dtype     (jsown:val-safe body "dtype")))
+    (log:trace "Got Target: ~a for ~a" (jsown:val body "target") (jsown:val-safe body "actor"))
     (setf body (normalize-id body))
+    ;;  Set the Dtype if it is not present
+    (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
+      (setf body (jsown:extend-js body ("dtype" "target"))))
+    (tell star.actors:*targets* (cons 1 body))
+    (cl-rabbit:basic-ack connection 1 msg-key)))
 
-    (let* ((dtype     (jsown:val-safe body "dtype"))
-           (transient (jsown:val-safe body "transient"))
-           (id        (jsown:val-safe body "_id")))
-      (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
-        (setf body (jsown:extend-js body ("dtype" "target"))))
 
-      (cond
-        (transient
-         (log:info "Transient target => skipping DB (_id=~a actor=~a)"
-                   id (jsown:val-safe body "actor"))
-         (tell star.actors:*targets* (cons 1 body))
-         (cl-rabbit:basic-ack connection 1 msg-key))
-
-        (t
-         (handler-case
-             (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-               (setf body (insert-document client body))
-               (log:info "Target inserted => routing (_id=~a _rev=~a actor=~a)"
-                         (jsown:val-safe body "_id")
-                         (jsown:val-safe body "_rev")
-                         (jsown:val-safe body "actor"))
-               (tell star.actors:*targets* (cons 1 body))
-               (cl-rabbit:basic-ack connection 1 msg-key))
-
-           (dex:http-request-conflict (e)
-             ;; If it exists, fetch _rev and still route.
-             (log:warn "Target conflict => fetching _rev and routing anyway (_id=~a): ~a" id e)
-             (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-               (let* ((existing (cl-couch:get-document* client star:*couchdb-default-database* id))
-                      (rev      (jsown:val-safe existing "_rev")))
-                 (when rev
-                   (setf body (jsown:extend-js body ("_rev" rev)))))
-               (tell star.actors:*targets* (cons 1 body))
-               (cl-rabbit:basic-ack connection 1 msg-key)))
-
-           (dex:http-request-bad-request (e)
-             (log:error "Bad request creating target (msg-key=~a _id=~a): ~a"
-                        msg-key id (dexador.error:response-body e))
-             (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
-
-           (error (e)
-             (log:error "Unexpected error creating target (msg-key=~a _id=~a): ~a"
-                        msg-key id e)
-             (cl-rabbit:basic-nack connection 1 msg-key :requeue t))))))))
 
 (defun handle-update (self message)
   "Persist document updates to CouchDB.
