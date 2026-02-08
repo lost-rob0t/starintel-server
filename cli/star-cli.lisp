@@ -993,8 +993,14 @@
     ((stringp x) (format t "~a~%" x))
     (t (format t "~a~%" (jsown:to-json x)))))
 
+(defun gen/jsown-structure-p (value)
+  (and (consp value)
+       (member (first value) '(:obj :arr :array) :test #'eq)))
+
 (defun gen/print-documents (docs)
   (cond
+    ((gen/jsown-structure-p docs)
+     (gen/print-one-json docs))
     ((listp docs)
      (dolist (d docs)
        (gen/print-one-json d)))

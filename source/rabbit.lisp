@@ -43,17 +43,13 @@ documents.ingest.#, documents.new.#, and documents.updated.# work.")
   "Format string for documents.updated routing keys by dtype. Example: \"documents.updated.host\".")
 
 
-(defparameter +targets-key+ "documents.ingest.target.#"
-  "Wildcard routing key for ingest-phase target messages (initial targets coming into the system).")
+(defparameter +targets-key+ "documents.new.target.#"
+  "Wildcard routing key for post-ingest target messages (targets after CouchDB insert/_rev enrichment).")
 
 
 (defparameter +targets-queue+ "documents.targets")
 
-(defparameter +new-targets-key+ "documents.new.target.#"
-  "Wildcard routing key for post-ingest target messages (targets after CouchDB insert/_rev enrichment).")
-
-
-(defparameter +targets-fmt-key+ "documents.ingest.target.#"
+(defparameter +targets-fmt-key+ "documents.new.target.#"
   "Alias for +targets-key+. Name is historical; value is intentionally the same wildcard.");;; ----------------------------------------------------------------------
 ;;; rabbit helpers
 
@@ -205,7 +201,8 @@ Behavior:
   "Normalize _id, insert to CouchDB, then return document with _rev set."
   (assert client () "insert-document: client is NIL")
   (assert document () "insert-document: document is NIL")
-  
+
+  ;; Why? (setf document (remove-jsown-key document "_rev"))
 
   (log:info "Creating document in database: ~a" database)
   (let* ((resp (cl-couch:create-document client database (jsown:to-json document)))
@@ -221,6 +218,13 @@ Behavior:
 
 (defun jsown-object-p (obj)
   (and (consp obj) (eq (car obj) :obj)))
+
+(defun remove-jsown-key (obj key)
+  "Remove KEY from JSOWN object OBJ (mutates OBJ)."
+  (when (jsown-object-p obj)
+    (setf (cdr obj)
+          (remove key (cdr obj) :key #'car :test #'string=)))
+  obj)
 
 (defun merge-jsown (base patch &key (skip-keys nil) (deep t))
   "Merge PATCH into BASE (mutating BASE).
@@ -266,8 +270,8 @@ Returns the document (JSOWN) with the latest _rev."
                     (doc (if existing
                              (merge-jsown existing patch)
                              patch))
-                    (rev (or (jsown:val-safe doc "_rev")
-                             (jsown:val-safe existing "_rev"))))
+                    (rev (or (jsown:val-safe existing "_rev")
+                             (jsown:val-safe doc "_rev"))))
                (cond
                  ((null existing)
                   (setf doc (normalize-id doc))
@@ -324,7 +328,7 @@ Returns the document (JSOWN) with the latest _rev."
     (handler-case
         (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
           (setf doc (insert-document client doc))
-          (let ((routing-key (format nil "documents.new.~a" dtype)))
+          (let ((routing-key (format nil +new-documents-fmt-key+ dtype)))
             (log:trace "Publishing Document: ~a" (jsown:to-json doc))
             (star.actors:publish star.actors:*producer-agent*
                                  :body (jsown:to-json doc)
@@ -346,12 +350,12 @@ Returns the document (JSOWN) with the latest _rev."
         (cl-rabbit:basic-nack connection 1 msg-key :requeue t)))))
 
 (defun handle-new-target (self message)
-  "Handle target doc: if transient => route directly; else insert to CouchDB then route."
+  "Handle target doc: route post-ingest targets (expects _rev)."
   (log:debug "handle-new-target called with message-key: ~a" (cdr message))
   (let* ((connection (rabbit-stream-connection (consumer-stream self)))
          (body       (jsown:parse (car message)))
          (msg-key    (cdr message))
-         (dtype     (jsown:val-safe body "dtype")))
+         (dtype      (jsown:val-safe body "dtype")))
     (log:trace "Got Target: ~a for ~a" (jsown:val body "target") (jsown:val-safe body "actor"))
     (setf body (normalize-id body))
     ;;  Set the Dtype if it is not present
@@ -383,6 +387,12 @@ Upsert behavior:
           (setf body (upsert-document-update client body :database star:*couchdb-default-database*))
           (log:info "Update persisted (dtype=~a _id=~a _rev=~a)"
                     dtype id (jsown:val-safe body "_rev"))
+          (let ((routing-key (format nil +updated-documents-fmt-key+ dtype)))
+            (log:trace "Publishing updated document: ~a" (jsown:to-json body))
+            (star.actors:publish star.actors:*producer-agent*
+                                 :body (jsown:to-json body)
+                                 :routing-key routing-key
+                                 :properties (list (cons :type dtype))))
           (cl-rabbit:basic-ack connection 1 msg-key))
 
       (dex:http-request-conflict (e)

@@ -58,6 +58,51 @@ The bug is in the starintel-server codebase, NOT in cl-couch. The cl-couch libra
 - Any code calling ~couchdb-agent-delete~ will fail with "invalid number of arguments: 4" error
 - This affects document deletion functionality throughout the actor system
 - HTTP API delete endpoint works correctly because it fetches revision first
+** TODO TODO.org — Fix target publish + ingest conflicts
+
+Stop double-consuming targets (cause of 409 conflicts)
+
+Right now targets are delivered to both:
+
+documents.ingest queue (bound to documents.ingest.# → handle-new-document)
+
+targets queue (bound to documents.ingest.target.# → handle-new-target)
+
+Pick one path:
+
+Option A (single consumer): don’t start target-consumers / don’t bind targets queue.
+
+Option B (keep both queues): make handle-new-document ignore dtype=target (ACK + return) so only handle-new-target inserts/routes.
+
+Fix target “final hop” routing key (why actors never see targets)
+
+In actors.lisp inside the *targets* actor, change routing key from:
+
+actors.~a.new.target
+
+To:
+
+documents.new.target.~a
+
+This must match your exchange bindings for final actor consumption.
+
+(If moving to one consumer) simplify target handling
+
+Use a stripped-down target handler that only does:
+
+normalize id / ensure dtype
+
+(tell star.actors:*targets* (cons 1 body))
+
+basic-ack
+
+Keep DB insert in exactly one place (either ingest consumer or target consumer, not both).
+
+Verify your ingest binding intent
+
+documents.ingest.# means ingest consumer will receive all dtypes (target, domain, url, etc.).
+
+If you meant “targets only”, bind to documents.ingest.target.# instead (or keep documents.ingest.# but route by dtype internally).
 
 * FEATURES
 ** TODO Add bulk document deletion support
