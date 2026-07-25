@@ -23,6 +23,7 @@
                  (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
                  (:file "frontends/http-api")
+                 (:file "frontends/http-api-v09")
                  (:file "main"))
   :depends-on   (#:starintel
                  #:cl-couch
