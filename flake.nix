@@ -268,7 +268,8 @@ EOF
           inherit name;
           runtimeInputs = runtimeLibs;
           text = ''
-            export HOME="$(mktemp -d)"
+            test_home="$(mktemp -d)"
+            export HOME="$test_home"
             export XDG_CACHE_HOME="$HOME/.cache"
             export TMPDIR="/tmp"
             export TMP="/tmp"
