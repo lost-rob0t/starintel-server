@@ -27,9 +27,9 @@
   :initargs (:%version :latest)
   :version "ql-2024-10-12"))
 ("ningle" .
- (:class qlot/source/ql:source-ql
-  :initargs (:%version :latest)
-  :version "ql-2024-10-12"))
+ (:class qlot/source/github:source-github
+  :initargs (:repos "fukamachi/ningle" :ref nil :branch "master" :tag nil)
+  :version "github-ae0c79bbd7c71633268fe3130ed4f12ca4be2f9a"))
 ("clingon" .
  (:class qlot/source/ql:source-ql
   :initargs (:%version :latest)
