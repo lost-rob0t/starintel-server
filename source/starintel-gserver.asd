@@ -16,6 +16,7 @@
                  (:file "document-v09")
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
+                 (:file "databases/couchdb-v09")
                  (:file "init")
                  (:file "actors")
                  (:file "actor-systems/event-actor")
