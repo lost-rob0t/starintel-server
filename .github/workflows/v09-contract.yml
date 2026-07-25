@@ -1,0 +1,29 @@
+name: v0.9 contract
+
+on:
+  push:
+    branches:
+      - master
+      - "agent/**"
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: python -m unittest discover -s tests -p 'test_v09_contract.py' -v
+      - run: node tests/check-view-js.mjs
+      - run: git diff --check
