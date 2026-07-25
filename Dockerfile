@@ -1,4 +1,4 @@
-FROM fukamachi/qlot:latest as build
+FROM fukamachi/qlot:latest AS build
 
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
@@ -23,11 +23,12 @@ RUN qlot exec sbcl --non-interactive \
     --eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t)"
 
 
-FROM build as star-server
+FROM build AS star-server
 
 VOLUME /config
 EXPOSE 5000
-EXPOSE 4009 # NOTE Debug port do not expose in production.
+# NOTE: Debug port. Do not expose in production.
+EXPOSE 4009
 RUN echo '#!/bin/sh\n\
 set -e\n\
 # Check if /config/init.lisp exists; if not, use /root/init.lisp\n\
