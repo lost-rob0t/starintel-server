@@ -17,6 +17,8 @@ COPY . /root/
 
 WORKDIR /root/
 RUN qlot install
+RUN echo "Systems requesting cl-syntax-annot:" && \
+    grep -RIl "cl-syntax-annot" /root/.cache/qlot /root/.qlot 2>/dev/null || true
 RUN qlot exec sbcl --non-interactive \
     --load source/starintel-gserver.asd \
     --eval '(ql:quickload :starintel-gserver)' \
