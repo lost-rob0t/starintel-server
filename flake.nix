@@ -95,7 +95,10 @@ EOF
         version = "latest";
         src = pkgs.sbclPackages.lack.src;
         lispLibs = with pkgs.sbclPackages; [ lack local-time ];
-        systems = [ "lack/middleware/accesslog" ];
+        systems = [
+          "lack-middleware-accesslog"
+          "lack/middleware/accesslog"
+        ];
       };
 
       sbcl' = pkgs.sbcl.withOverrides (self: super: {
@@ -387,4 +390,3 @@ EOF
       };
     };
 }
-
