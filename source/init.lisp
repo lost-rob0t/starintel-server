@@ -1,18 +1,41 @@
 (in-package :starintel-gserver)
 
+(defun read-view-document (path)
+  (jsown:parse
+   (with-open-file (stream path)
+     (let ((content (make-string (file-length stream))))
+       (read-sequence content stream)
+       content))))
+
+(defun upsert-view-document (client database document)
+  (let ((document-id (jsown:val document "_id")))
+    (handler-case
+        (let* ((current (jsown:parse
+                         (cl-couch:get-document client database document-id)))
+               (revision (jsown:val current "_rev")))
+          (setf (jsown:val document "_rev") revision)
+          (cl-couch:create-document client database (jsown:to-json document)))
+      (dexador:http-request-not-found ()
+        (cl-couch:create-document client database (jsown:to-json document))))))
+
 (defun init-views (client database)
-  (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
+  "Create or update every checked-in CouchDB design document."
+  (let ((files (uiop:directory-files
+                (uiop:merge-pathnames* "views/"
+                                       (asdf:system-source-directory :starintel-gserver)))))
     (loop for file in files
-          for jdata = (with-open-file (str file)
-                        (format nil "~a~%" (read-line str)))
-          do (cl-couch:create-document client database jdata))))
+          for document = (read-view-document file)
+          do (upsert-view-document client database document))))
 
 (defun init-db ()
-  "Create the database, and all map-reduce views with it."
-  (let* ((client (cl-couch:new-couchdb *couchdb-host* *couchdb-port* :scheme (string-downcase "http")))
+  "Create the database when missing and always synchronize v0.9 design documents."
+  (let* ((client (cl-couch:new-couchdb *couchdb-host*
+                                       *couchdb-port*
+                                       :scheme (string-downcase *couchdb-scheme*)))
          (database *couchdb-default-database*))
     (cl-couch:password-auth client *couchdb-user* *couchdb-password*)
-    (handler-case (cl-couch:get-database client database)
-      (dexador:http-request-not-found () (progn
-                                           (cl-couch:create-database client database)
-                                           (init-views client database))))))
+    (handler-case
+        (cl-couch:get-database client database)
+      (dexador:http-request-not-found ()
+        (cl-couch:create-database client database)))
+    (init-views client database)))
