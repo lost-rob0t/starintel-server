@@ -767,21 +767,15 @@
 (defun run-http-api-tests ()
   "Run all HTTP API tests."
   (format t "~%Starting HTTP API tests...~%")
-  (let ((results nil))
-    (unwind-protect
-         (handler-case
-             (progn
-               (start-test-actor-system)
-               (ensure-test-database)
-               (start-test-server)
-               (sleep 1)
-               (setf results (run! 'http-api-tests)))
-           (error (e)
-             (format t "~%Error running HTTP tests: ~a~%" e)
-             (dbg "TOP-LEVEL ERROR: ~a" e)
-             (setf results nil)))
-      (stop-test-server)
-      (stop-test-actor-system)
-      (destroy-test-database)
-      (format t "~%HTTP API tests completed~%"))
-    results))
+  (run-required-suite
+   'http-api-tests
+   :setup (lambda ()
+            (start-test-actor-system)
+            (ensure-test-database)
+            (start-test-server)
+            (sleep 1))
+   :teardown (lambda ()
+               (stop-test-server)
+               (stop-test-actor-system)
+               (destroy-test-database)
+               (format t "~%HTTP API tests completed~%"))))

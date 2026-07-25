@@ -138,7 +138,7 @@ EOF
         ];
 
         systems = [ "starintel-gserver" ];
-        asdFilesToKeep = [ "starintel-gserver.asd" "starintel-gserver-tests.asd" ];
+        asdFilesToKeep = [ "starintel-gserver.asd" ];
         dontStrip = true;
       };
 
@@ -149,6 +149,10 @@ EOF
 
         lispLibs = with sbcl'.pkgs; [
           starintel-gserver
+          starintel-gserver-client
+          star-cli-lib
+          star-ui-lib
+          star-migrations-lib
           fiveam
           bordeaux-threads
           jsown
@@ -156,6 +160,23 @@ EOF
         ];
 
         systems = [ "starintel-gserver-tests" ];
+        asdFilesToKeep = [
+          "starintel-gserver-tests.asd"
+          "starintel-gserver-integration-tests.asd"
+        ];
+        dontStrip = true;
+      };
+
+      starintel-gserver-integration-tests = sbcl'.buildASDFSystem {
+        pname = "starintel-gserver-integration-tests";
+        version = "0.1.0";
+        src = ./.;
+
+        lispLibs = with sbcl'.pkgs; [
+          starintel-gserver-tests
+        ];
+
+        systems = [ "starintel-gserver-integration-tests" ];
         dontStrip = true;
       };
 
@@ -195,9 +216,83 @@ EOF
         dontStrip = true;
       };
 
+      star-ui-lib = sbcl'.buildASDFSystem {
+        pname = "star-ui";
+        version = "0.1.0";
+        src = ./ui;
+
+        lispLibs = with sbcl'.pkgs; [
+          ningle
+          clack
+          clack-handler-hunchentoot
+          lack
+          jsown
+          babel
+          alexandria
+          dexador
+          log4cl
+        ];
+
+        systems = [ "star-ui" ];
+        dontStrip = true;
+      };
+
+      star-migrations-lib = sbcl'.buildASDFSystem {
+        pname = "star-migrations";
+        version = "0.1.0";
+        src = ./source/migrations;
+
+        lispLibs = with sbcl'.pkgs; [
+          lparallel
+          dexador
+          cl-couch
+        ];
+
+        systems = [ "star-migrations" ];
+        dontStrip = true;
+      };
+
       sbcl-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver ]);
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver-tests ]);
+      sbcl-integration-test-wrapped = sbcl'.withPackages
+        (ps: with ps; [ starintel-gserver-integration-tests ]);
       sbcl-cli-wrapped = sbcl'.withPackages (ps: with ps; [ star-cli-lib ]);
+
+      make-test-runner = name: wrapped: asdfSystem:
+        pkgs.writeShellApplication {
+          inherit name;
+          runtimeInputs = runtimeLibs;
+          text = ''
+            export HOME="$(mktemp -d)"
+            export XDG_CACHE_HOME="$HOME/.cache"
+            export TMPDIR="/tmp"
+            export TMP="/tmp"
+            export TEMP="/tmp"
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
+
+            ${wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+              --eval "(require :asdf)" \
+              --eval "(handler-case
+                        (progn
+                          (asdf:test-system :${asdfSystem})
+                          (uiop:quit 0))
+                        (error (condition)
+                          (format *error-output*
+                                  \"~&Test system ${asdfSystem} failed: ~a~%\"
+                                  condition)
+                          (uiop:quit 1)))"
+          '';
+        };
+
+      unit-test-runner = make-test-runner
+        "star-unit-tests"
+        sbcl-test-wrapped
+        "starintel-gserver-tests";
+
+      integration-test-runner = make-test-runner
+        "star-integration-tests"
+        sbcl-integration-test-wrapped
+        "starintel-gserver-integration-tests";
 
     in {
       packages.${system} = {
@@ -232,34 +327,9 @@ EOF
           '';
         };
 
-        star-smoke = pkgs.writeScriptBin "star-smoke" ''
-          #!/usr/bin/env bash
-          set -e
-          export HOME="$(mktemp -d)"
-          export XDG_CACHE_HOME="$HOME/.cache"
-          export TMPDIR="/tmp"
-          export TMP="/tmp"
-          export TEMP="/tmp"
-          export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
-
-          echo "=========================================="
-          echo "  StarIntel Gserver Smoke Tests"
-          echo "=========================================="
-          echo ""
-
-          ${sbcl-test-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
-            --eval "(require :asdf)" \
-            --eval "(asdf:load-system :starintel-gserver-tests)" \
-            --eval "(in-package :star-server-tests)" \
-            --eval "(handler-case
-                      (progn
-                        (run-all-gserver-tests)
-                        (format t \"~%~%✓ Smoke tests completed~%\")
-                        (uiop:quit 0))
-                      (error (e)
-                        (format t \"~%~%✗ Smoke tests failed: ~a~%\" e)
-                        (uiop:quit 1)))"
-        '';
+        star-unit-tests = unit-test-runner;
+        star-smoke = unit-test-runner;
+        star-integration-tests = integration-test-runner;
 
         star-cli = pkgs.stdenv.mkDerivation {
           pname = "star-cli";
@@ -290,8 +360,12 @@ EOF
 
         starintel-gserver = starintel-gserver;
         starintel-gserver-tests = starintel-gserver-tests;
+        starintel-gserver-integration-tests =
+          starintel-gserver-integration-tests;
         starintel-gserver-client = starintel-gserver-client;
         star-cli-lib = star-cli-lib;
+        star-ui-lib = star-ui-lib;
+        star-migrations-lib = star-migrations-lib;
       };
 
       devShells.${system}.default = pkgs.mkShell {
@@ -311,6 +385,5 @@ EOF
       };
     };
 }
-
 
 
