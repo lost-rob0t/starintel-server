@@ -13,6 +13,7 @@ ql cl-ppcre :latest
 ql bordeaux-threads :latest
 
 # GitHub repositories
+github melisgl/named-readtables :branch master
 github fukamachi/ningle :branch master
 github lost-rob0t/star-cl :branch agent/schema-org-v0.9
 github lost-rob0t/cl-couch
