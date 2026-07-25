@@ -95,6 +95,7 @@ EOF
         version = "latest";
         src = pkgs.sbclPackages.lack.src;
         lispLibs = with pkgs.sbclPackages; [ lack local-time ];
+        systems = [ "lack/middleware/accesslog" ];
       };
 
       sbcl' = pkgs.sbcl.withOverrides (self: super: {
@@ -226,6 +227,7 @@ EOF
           clack
           clack-handler-hunchentoot
           lack
+          lack-middleware-accesslog
           jsown
           babel
           alexandria
@@ -385,5 +387,4 @@ EOF
       };
     };
 }
-
 

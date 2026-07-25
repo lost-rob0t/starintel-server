@@ -34,6 +34,7 @@
                  #:uuid
                  #:anypool
                  #:clack
+                 #:lack/middleware/accesslog
                  #:clack-handler-hunchentoot
                  #:ningle
                  #:clingon
