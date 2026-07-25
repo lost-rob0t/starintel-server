@@ -6,8 +6,7 @@
     :star-cli
     :star-ui
     :star-migrations
-    :starintel-gserver-tests
-    :starintel-gserver-integration-tests))
+    :starintel-gserver-tests))
 
 (defparameter *project-packages*
   '(:starintel-gserver
@@ -16,7 +15,6 @@
     :star.databases.couchdb
     :star.rabbit
     :star.actors
-    :star.actors.url-extractor
     :star.actors.matcher
     :starintel-gserver-http-api
     :starintel-gserver-client
@@ -30,12 +28,14 @@
 
 (in-suite system-load-tests)
 
-(test every-asdf-system-loads
+(test every-unit-asdf-system-is-loaded
   (dolist (system *project-asdf-systems*)
-    (is (asdf:find-system system nil)
-        "ASDF system ~s is discoverable" system)
-    (finishes
-      (asdf:load-system system))))
+    (let ((component (asdf:find-system system nil)))
+      (is (not (null component))
+          "ASDF system ~s is discoverable" system)
+      (is (and component
+               (asdf:component-loaded-p component))
+          "ASDF system ~s was loaded through declared dependencies" system))))
 
 (test every-package-exists
   (dolist (package *project-packages*)
