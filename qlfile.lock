@@ -14,10 +14,6 @@
  (:class qlot/source/ql:source-ql
   :initargs (:%version :latest)
   :version "ql-2024-10-12"))
-("cl-json" .
- (:class qlot/source/ql:source-ql
-  :initargs (:%version :latest)
-  :version "ql-2022-07-07"))
 ("uuid" .
  (:class qlot/source/ql:source-ql
   :initargs (:%version :latest)
@@ -60,8 +56,8 @@
   :version "ql-2024-10-12"))
 ("star-cl" .
  (:class qlot/source/github:source-github
-  :initargs (:repos "lost-rob0t/star-cl" :ref nil :branch nil :tag nil)
-  :version "github-4065d8689ad118dc93fc95688ca1bf63973e3c0d"))
+  :initargs (:repos "lost-rob0t/star-cl" :ref nil :branch "agent/schema-org-v0.9" :tag nil)
+  :version "github-69bb6761d88850ab8a46da222015ef596c48d9f5"))
 ("cl-couch" .
  (:class qlot/source/github:source-github
   :initargs (:repos "lost-rob0t/cl-couch" :ref nil :branch nil :tag nil)
