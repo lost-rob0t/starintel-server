@@ -8,13 +8,15 @@ on:
   pull_request:
     branches:
       - master
+      - dev
+      - "agent/schema-org-v0.9"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  contract:
+  fixture-contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,6 +26,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - run: python -m unittest discover -s tests -p 'test_v09_contract.py' -v
+      - run: python -m unittest discover -s tests -p 'test_*contract.py' -v
       - run: node tests/check-view-js.mjs
       - run: git diff --check
+
+  clos-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run CLOS/MOP document conformance
+        run: docker build --target conformance --progress=plain -t starintel-conformance .
