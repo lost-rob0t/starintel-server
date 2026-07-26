@@ -30,7 +30,8 @@ RUN qlot exec sbcl --non-interactive \
     --load source/starintel-gserver.asd \
     --eval '(ql:quickload :starintel-gserver)' \
     --load tests/run-document-conformance.lisp \
-    --load tests/run-server-codec-conformance.lisp
+    --load tests/run-server-codec-conformance.lisp \
+    --load tests/run-outbox-conformance.lisp
 
 FROM conformance AS star-server
 

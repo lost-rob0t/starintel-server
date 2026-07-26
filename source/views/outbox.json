@@ -1,0 +1,9 @@
+{
+  "_id": "_design/outbox",
+  "language": "javascript",
+  "views": {
+    "pending": {
+      "map": "function (doc) { var ext = doc.extensions || {}; var entries = ext._server_outbox || []; for (var i = 0; i < entries.length; i += 1) { var event = entries[i]; if (event && event.status === 'pending') { emit([doc._id, event.sequence], { event_id: event.event_id, mutation_id: event.mutation_id, routing_key: event.routing_key }); } } }"
+    }
+  }
+}
