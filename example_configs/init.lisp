@@ -7,8 +7,14 @@
 ;; You can invoke sylnk like so
 ;; (start-debugger)
 ;; Set log config path to logs
-(log:config :daily "logs/gserver.log"
+;; here it defaults to the /config/logs/star-server.log
+;; Just uncomment this if you want to not use docker the docker volumne
+;; TODO Make a docker vol for logs, instead of writing to the config dir SECURITY risk
+;; (log:config :daily "./logs/gserver.log"
+;;             :file2
+;;             :sane)
+(log:config :daily "/config/logs/gserver.log"
             :file2
             :sane)
 
-;;
+
