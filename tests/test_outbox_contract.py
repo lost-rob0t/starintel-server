@@ -29,12 +29,13 @@ class CouchDBOutboxContractTests(unittest.TestCase):
         self.assertIn("mark-outbox-published", source)
         self.assertIn("recover-outbox-documents", source)
         self.assertIn("pending-outbox-tuples", source)
+        self.assertIn('(:updated "updated")', source)
+        self.assertIn('"documents.~a.~a"', source)
 
     def test_rabbit_ingress_and_downstream_routes_are_separate(self) -> None:
         source = (ROOT / "source" / "rabbit.lisp").read_text(encoding="utf-8")
         self.assertIn('+injest-key+ "documents.ingest.#"', source)
         self.assertIn('+update-key+ "documents.update.#"', source)
-        self.assertIn('"documents.updated.', (ROOT / "source" / "databases" / "outbox.lisp").read_text(encoding="utf-8"))
         self.assertIn("couchdb-process-outbox-mutation", source)
         self.assertIn("recover-pending-publications", source)
 
