@@ -19,6 +19,10 @@
 
 (define-condition document-update-store-conflict (error) ())
 
+(defparameter +document-update-persistence-keys+
+  '("_id" "_rev")
+  "Envelope fields controlled only by CouchDB persistence.")
+
 (defparameter +document-update-invariant-keys+
   '("_id" "dtype" "schema_version" "dataset" "date_added")
   "Envelope fields that a patch cannot change after document creation.")
@@ -74,6 +78,9 @@
       (let ((result (clone-document-update-json current)))
         (jsown:do-json-keys (key value) incoming
           (unless (or (and (null path)
+                           (member key +document-update-persistence-keys+
+                                   :test #'string=))
+                      (and (null path)
                            (member key +document-update-invariant-keys+
                                    :test #'string=))
                       (and (equal path '("extensions"))
@@ -91,8 +98,8 @@
 (defun merge-document-update (document-id existing patch)
   "Return a new merged document; EXISTING and PATCH remain unchanged.
 
-Caller `_rev` is ignored. The current `_rev` and server-private extension fields
-remain controlled by persistence."
+Caller `_rev` is never copied. The current `_rev` and server-private extension
+fields remain controlled by persistence."
   (validate-document-update-compatibility document-id existing patch)
   (let ((merged (merge-document-update-value existing patch nil)))
     (setf (jsown:val merged "_id") document-id)
