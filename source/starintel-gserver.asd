@@ -22,6 +22,8 @@
                   (:file "databases/couchdb")
                   (:file "databases/couchdb-v09")
                   (:file "databases/outbox")
+                  (:file "databases/document-update-package")
+                  (:file "databases/document-update")
                   (:file "databases/quarantine")
                   (:file "databases/target-acceptance")
                   (:file "init")
@@ -36,6 +38,7 @@
                   (:file "rabbit")
                   (:file "frontends/http-api")
                   (:file "frontends/http-api-v09")
+                  (:file "frontends/http-document-update")
                   (:file "main"))
   :depends-on   (#:starintel
                   #:cl-couch
