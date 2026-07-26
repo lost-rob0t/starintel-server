@@ -1,8 +1,8 @@
 (asdf:defsystem :starintel-gserver
-  :version      "0.1.0"
-  :description  "hackable/moddable starintel acess api."
+  :version      "0.9.0"
+  :description  "Hackable StarIntel v0.9 processing and access server."
   :author       "nsaspy@airmail.cc"
-  :license      "GPL v3"
+  :license      "GPL-3.0-or-later"
   :serial t
   :build-operation program-op
   :build-pathname "star-server" ;; shell name

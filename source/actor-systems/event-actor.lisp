@@ -12,7 +12,6 @@
 
 
 
-
 (defun make-actor-event (&key actor-name event-type details source-id)
   (make-instance 'actor-event
                  :actor-name actor-name
@@ -20,15 +19,23 @@
                  :details details
                  :source-id source-id))
 
-
-
-
-
 (define-actor (*actor-event-receiver* *sys*)
     (lambda (event)
       (let ((event-json (jsown:to-json (as-json event))))
         (tell *couchdb-inserts* (list :id (event-id event) :database star:*couchdb-event-log-database* :document event-json)))))
 
+(defun decode-actor-event-delivery (message)
+  (handler-case
+      (let ((json-document
+              (jsown:with-injective-reader
+                (jsown:parse (car message)))))
+        (star.databases.couchdb:from-json json-document 'actor-event))
+    (star.consumers:delivery-processing-error (condition)
+      (error condition))
+    (error (condition)
+      (error 'star.consumers:schema-invalid-delivery-error
+             :cause condition
+             :reason (princ-to-string condition)))))
 
 
 
@@ -48,19 +55,29 @@
 
 
 (defun start-event-consumer (n)
-  "Initialize and set up the event consumer."
-  (let ((consumer (star.consumers:create-rabbit-consumer
-                   :name "event-consumers"
-                   :n n
-                   :host star:*rabbit-address*
-                   :port star:*rabbit-port*
-                   :username star:*rabbit-user*
-                   :password star:*rabbit-password*
-                   :queue-name "events"
-                   :exchange-name "events"
-                   :routing-key "event.#"
-                   :test-fn #'star.rabbit::insertp
-                   :handler-fn #'handle-event-message)))
+  "Initialize bounded-retry owner-thread event consumers."
+  (let ((consumer
+          (star.consumers:create-rabbit-consumer
+           :name "event-consumers"
+           :n n
+           :host star:*rabbit-address*
+           :port star:*rabbit-port*
+           :username star:*rabbit-user*
+           :password star:*rabbit-password*
+           :queue-name "events"
+           :exchange-name "events"
+           :routing-key "event.#"
+           :test-fn #'identity
+           :handler-fn #'handle-event-message
+           :on-error :retry
+           :on-filter :filtered-ack
+           :max-retries star:*rabbit-max-retries*
+           :retry-base-delay-ms star:*rabbit-retry-base-delay-ms*
+           :retry-max-delay-ms star:*rabbit-retry-max-delay-ms*
+           :retry-jitter-ratio star:*rabbit-retry-jitter-ratio*
+           :quarantine-fn #'star.rabbit:persist-quarantine-record
+           :quarantine-exchange star:*rabbit-quarantine-exchange*
+           :quarantine-queue star:*rabbit-quarantine-queue*)))
     (star.consumers:start-consumer consumer)))
 
 (defun log-actor-event (actor-name &key event-type details source-id)

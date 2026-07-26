@@ -1,0 +1,35 @@
+name: v0.9 build diagnostic
+
+on:
+  push:
+    branches:
+      - "agent/schema-org-v0.9"
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image and capture failure tail
+        id: build
+        shell: bash
+        run: |
+          set +e
+          docker build --progress=plain -t starintel-server-v09 . > /tmp/build.log 2>&1
+          status=$?
+          tail -n 250 /tmp/build.log > /tmp/build-tail.log
+          cat /tmp/build-tail.log
+          exit "$status"
+      - name: Upload build failure tail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v09-build-tail
+          path: /tmp/build-tail.log
