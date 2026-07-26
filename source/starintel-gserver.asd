@@ -13,6 +13,7 @@
                  (:file "producers/producers")
                  (:file "document-v09-package")
                  (:file "package")
+                 (:file "document-schema-profile")
                  (:file "document-v09")
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
@@ -43,4 +44,5 @@
                  #:cl-stream
                  #:cl-ppcre
                  #:cms-ulid
-                 #:bordeaux-threads))
+                 #:bordeaux-threads
+                 #:closer-mop))

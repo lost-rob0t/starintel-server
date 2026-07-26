@@ -24,8 +24,14 @@ RUN qlot exec sbcl --non-interactive \
     --eval '(ql:quickload :starintel-gserver)' \
     --eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t)"
 
+FROM build AS conformance
 
-FROM build AS star-server
+RUN qlot exec sbcl --non-interactive \
+    --load source/starintel-gserver.asd \
+    --eval '(ql:quickload :starintel-gserver)' \
+    --load tests/run-document-conformance.lisp
+
+FROM conformance AS star-server
 
 VOLUME /config
 EXPOSE 5000
