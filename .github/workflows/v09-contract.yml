@@ -4,12 +4,12 @@ on:
   push:
     branches:
       - master
+      - dev
       - "agent/**"
   pull_request:
     branches:
       - master
       - dev
-      - "agent/schema-org-v0.9"
   workflow_dispatch:
 
 permissions:
@@ -26,23 +26,51 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - run: python -m unittest discover -s tests -p 'test_*contract.py' -v
+      - name: Run fixture and source contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -p 'test_*contract.py' -v \
+            2>&1 | tee /tmp/fixture-contract.log
       - run: node tests/check-view-js.mjs
       - run: git diff --check
+      - name: Upload fixture diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-contract-log
+          path: /tmp/fixture-contract.log
 
   clos-conformance:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
       - name: Run CLOS/MOP document conformance
         id: conformance
         shell: bash
         run: |
           set +e
-          docker build --target conformance --progress=plain \
-            -t starintel-conformance . > /tmp/conformance.log 2>&1
+          nix develop --command bash -lc '
+            sbcl --non-interactive --no-userinit --no-sysinit \
+              --eval "(require :asdf)" \
+              --eval "(asdf:load-system :starintel-gserver)" \
+              --load tests/run-document-conformance.lisp \
+              --load tests/run-server-codec-conformance.lisp \
+              --load tests/run-outbox-conformance.lisp \
+              --load tests/run-consumer-owner-conformance.lisp \
+              --load tests/run-retry-quarantine-conformance.lisp \
+              --load tests/run-target-recovery-conformance.lisp \
+              --load tests/run-target-dispatch-acceptance.lisp \
+              --load tests/run-document-update-conformance.lisp \
+              --load tests/run-view-registry-conformance.lisp
+          ' > /tmp/conformance.log 2>&1
           status=$?
-          tail -n 180 /tmp/conformance.log > /tmp/conformance-tail.log
+          tail -n 240 /tmp/conformance.log > /tmp/conformance-tail.log
           cat /tmp/conformance-tail.log
           exit "$status"
       - name: Upload CLOS conformance diagnostics
