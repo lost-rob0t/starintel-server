@@ -179,7 +179,7 @@ when its CouchDB revision loses a compare-and-swap race."
                       :document existing
                       :attempts attempt
                       :reason
-                      (document-update-validation-reason condition)))))))))
+                      (document-update-validation-reason condition))))))))))
 
 (defun couchdb-upsert-document-update
     (client database document-id patch &key (max-attempts 8))
