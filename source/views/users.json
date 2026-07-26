@@ -1,0 +1,9 @@
+{
+  "_id": "_design/users",
+  "language": "javascript",
+  "views": {
+    "by_platform": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'user') { emit(v('platform'), doc._id); } }"
+    }
+  }
+}
