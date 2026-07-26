@@ -47,7 +47,7 @@
 (defun object-keys (object)
   (let ((keys nil))
     (jsown:do-json-keys (key value) object
-      (declare (ignore value))
+      (when value nil)
       (push key keys))
     (nreverse keys)))
 
