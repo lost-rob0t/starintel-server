@@ -26,6 +26,7 @@
                   (:file "init")
                   (:file "actors")
                   (:file "actors-v09")
+                  (:file "target-recovery")
                   (:file "actor-systems/event-actor")
                   (:file "actor-systems/matcher-actor")
                   (:file "rabbit")
