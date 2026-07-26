@@ -23,6 +23,7 @@
    #:unknown-document-dtype-value
    #:unknown-document-dtype-schema-version
    #:document-class-mismatch
+   #:object-value
    #:parse-document-object
    #:document-field-value
    #:document-value
