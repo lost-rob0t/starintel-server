@@ -1,1 +1,28 @@
-{"_id":"_design/targets","language":"javascript","views":{"by_actor":{"map":"function(doc){function v(k){return doc.data&&doc.data[k]!==undefined?doc.data[k]:doc[k];}if(doc.dtype==='target'||doc.dtype==='investigation-target'){emit(v('actor'),v('target'));}}"},"actor-targets":{"map":"function(doc){function v(k){return doc.data&&doc.data[k]!==undefined?doc.data[k]:doc[k];}if(doc.dtype==='target'||doc.dtype==='investigation-target'){emit(v('actor'),v('target'));}}"},"actor-target-count":{"map":"function(doc){function v(k){return doc.data&&doc.data[k]!==undefined?doc.data[k]:doc[k];}if(doc.dtype==='target'||doc.dtype==='investigation-target'){emit(v('actor'),1);}}","reduce":"_count"},"target-count":{"map":"function(doc){function v(k){return doc.data&&doc.data[k]!==undefined?doc.data[k]:doc[k];}if(doc.dtype==='target'||doc.dtype==='investigation-target'){emit(v('target'),1);}}","reduce":"_sum"}}}
+{
+  "_id": "_design/targets",
+  "language": "javascript",
+  "views": {
+    "by_actor": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'target' || doc.dtype === 'investigation-target') { emit(v('actor'), v('target')); } }"
+    },
+    "actor_count": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'target' || doc.dtype === 'investigation-target') { emit(v('actor'), 1); } }",
+      "reduce": "_count"
+    },
+    "target_count": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'target' || doc.dtype === 'investigation-target') { emit(v('target'), 1); } }",
+      "reduce": "_count"
+    },
+    "actor-targets": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'target' || doc.dtype === 'investigation-target') { emit(v('actor'), v('target')); } }"
+    },
+    "actor-target-count": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'target' || doc.dtype === 'investigation-target') { emit(v('actor'), 1); } }",
+      "reduce": "_count"
+    },
+    "target-count": {
+      "map": "function (doc) { function v(k) { return doc.data && doc.data[k] !== undefined ? doc.data[k] : doc[k]; } if (doc.dtype === 'target' || doc.dtype === 'investigation-target') { emit(v('target'), 1); } }",
+      "reduce": "_count"
+    }
+  }
+}
