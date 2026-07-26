@@ -151,8 +151,8 @@
         (settlement-filtered-ack
          "transient target intentionally ignored")
         (progn
-          (tell star.actors:*targets* (cons 1 body))
-          (settlement-ack "target accepted by actor mailbox")))))
+          (star.actors:submit-target body :first-time-p t)
+          (settlement-ack "target accepted by typed actor mailbox")))))
 
 (defun consumer-retry-options ()
   (list
