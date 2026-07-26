@@ -81,7 +81,7 @@ class TargetDispatchContractTests(unittest.TestCase):
             "test-duplicate-and-conflicting-schedule-identities",
             "test-durable-pending-state-resumes-after-scheduler-crash",
             "test-canonical-remote-route-is-bound-by-consumer",
-            "test-overloaded-stopped-and-invalid_ingress_settlement",
+            "test-overloaded-stopped-and-invalid-ingress_settlement",
         ):
             self.assertIn(name, tests)
         self.assertIn("run-target-dispatch-acceptance.lisp", dockerfile)
