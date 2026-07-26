@@ -1,6 +1,6 @@
-(uiop:define-package   :star.consumers
-  (:use       :cl #:LPARALLEL)
-  (:documentation "doc")
+(uiop:define-package :star.consumers
+  (:use :cl)
+  (:documentation "Owner-thread stream consumers with explicit settlement results.")
   (:export
    #:consumer
    #:consumer-name
@@ -13,14 +13,42 @@
    #:consumer-state
    #:consumer-stream
    #:consumer-lock
+   #:consumer-worker-count
+   #:consumer-worker-instances
+   #:consumer-threads
+   #:consumer-running-p
+   #:consumer-failure-action
+   #:consumer-filtered-action
+   #:consumer-in-flight
+   #:consumer-unsettled
+   #:consumer-failures
+   #:consumer-settlement-count
+   #:consumer-metrics
    #:consumer-update-state
    #:consumer-cleanup
    #:with-consumer-lock
    #:consumer-update
    #:consumer-read
+   #:consumer-process-delivery
    #:consume
+   #:run-consumer
    #:start-consumer
+   #:stop-consumer
    #:make-consumer
+   #:consumer-settlement
+   #:consumer-settlement-action
+   #:consumer-settlement-reason
+   #:consumer-settlement-condition
+   #:settlement-ack
+   #:settlement-filtered-ack
+   #:settlement-retry
+   #:settlement-dead-letter
+   #:settlement-reject
+   #:normalize-settlement
+   #:stream-settle
+   #:wrong-stream-owner
+   #:wrong-stream-owner-expected
+   #:wrong-stream-owner-actual
    #:rabbit-queue-stream
    #:rabbit-stream-exchange
    #:rabbit-exchange-type
@@ -35,9 +63,12 @@
    #:rabbit-stream-queue-name
    #:rabbit-stream-connection
    #:rabbit-stream-channel
+   #:rabbit-stream-owner-thread
+   #:rabbit-stream-prefetch-count
    #:rabbit-stream-open-p
    #:open-stream
    #:close-stream
    #:stream-read
    #:rabbit-consumer
+   #:make-rabbit-worker-consumer
    #:create-rabbit-consumer))

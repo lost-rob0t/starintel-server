@@ -6,6 +6,18 @@
 (defvar +update-key+ "documents.update.#")
 (defvar +targets-key+ "documents.new.target.*")
 
+(defun settle-rabbit-delivery (connection channel delivery-tag settlement)
+  (ecase (consumer-settlement-action settlement)
+    ((:ack :filtered-ack)
+     (cl-rabbit:basic-ack connection channel delivery-tag))
+    (:retry
+     (cl-rabbit:basic-nack
+      connection channel delivery-tag :requeue t))
+    ((:dead-letter :reject)
+     (cl-rabbit:basic-nack
+      connection channel delivery-tag :requeue nil)))
+  settlement)
+
 (defmacro with-rabbit-recv
     ((queue-name exchange-name exchange-type routing-key
       &key
@@ -18,6 +30,7 @@
         (exclusive nil)
         (auto-delete nil))
      &body body)
+  "Compatibility owner-thread receive loop with structured settlement results."
   `(cl-rabbit:with-connection (connection)
      (let ((socket (cl-rabbit:tcp-socket-new connection)))
        (cl-rabbit:socket-open socket ,host ,port)
@@ -42,21 +55,15 @@
          (loop
            for result = (cl-rabbit:consume-message connection)
            for message = (cl-rabbit:envelope/message result)
-           do
-              (handler-case
-                  (progn
-                    ,@body
-                    (cl-rabbit:basic-ack
-                     connection
-                     1
-                     (cl-rabbit:envelope/delivery-tag result)))
-                (error (condition)
-                  (log:error "Rabbit document rejected: ~a" condition)
-                  (cl-rabbit:basic-nack
-                   connection
-                   1
-                   (cl-rabbit:envelope/delivery-tag result)
-                   :requeue nil))))))))
+           for delivery-tag = (cl-rabbit:envelope/delivery-tag result)
+           for settlement =
+             (handler-case
+                 (normalize-settlement (progn ,@body))
+               (condition (error)
+                 (log:error "Rabbit handler failed: ~a" error)
+                 (settlement-retry (princ-to-string error) error)))
+           do (settle-rabbit-delivery
+               connection 1 delivery-tag settlement))))))
 
 (defun emit-document
     (exchange routing-key body
@@ -111,11 +118,9 @@
   t)
 
 (defun process-rabbit-document-mutation (self message operation)
-  (let* ((connection
-           (rabbit-stream-connection (consumer-stream self)))
-         (document
-           (star.documents:ensure-v09-document (car message)))
-         (delivery-tag (cdr message)))
+  (declare (ignore self))
+  (let ((document
+          (star.documents:ensure-v09-document (car message))))
     (anypool:with-connection
         (client star.databases.couchdb:*couchdb-pool*)
       (star.databases.couchdb:couchdb-process-outbox-mutation
@@ -124,9 +129,7 @@
        #'publish-outbox-event
        document
        operation))
-    ;; The delivery is settled only after the document revision containing the
-    ;; outbox entry is durable and publication has returned successfully.
-    (cl-rabbit:basic-ack connection 1 delivery-tag)))
+    (settlement-ack "outbox mutation persisted and published")))
 
 (defun handle-document (self message)
   (process-rabbit-document-mutation self message :new))
@@ -151,18 +154,16 @@
   (not (transient-p message)))
 
 (defun handle-target (self message)
-  (let ((connection
-          (rabbit-stream-connection (consumer-stream self)))
-        (body
+  (declare (ignore self))
+  (let ((body
           (star.documents:ensure-v09-document
            (car message)
-           :route-dtype "target"))
-        (delivery-tag (cdr message)))
+           :route-dtype "target")))
     (tell star.actors:*targets* (cons 1 body))
-    (cl-rabbit:basic-ack connection 1 delivery-tag)))
+    (settlement-ack "target submitted to local actor")))
 
 (defun start-consumers ()
-  (log:info "Starting crash-safe v0.9 document consumers.")
+  (log:info "Starting owner-thread v0.9 document consumers.")
   (let ((document-consumers
           (create-rabbit-consumer
            :name "documents-ingest"
@@ -175,7 +176,9 @@
            :host star:*rabbit-address*
            :port star:*rabbit-port*
            :handler-fn #'handle-document
-           :test-fn #'insertp))
+           :test-fn #'insertp
+           :on-error :retry
+           :on-filter :filtered-ack))
         (update-consumers
           (create-rabbit-consumer
            :name "documents-update"
@@ -188,7 +191,9 @@
            :host star:*rabbit-address*
            :port star:*rabbit-port*
            :handler-fn #'handle-update-document
-           :test-fn #'insertp))
+           :test-fn #'insertp
+           :on-error :retry
+           :on-filter :filtered-ack))
         (target-consumers
           (create-rabbit-consumer
            :name "documents-targets"
@@ -201,7 +206,9 @@
            :host star:*rabbit-address*
            :port star:*rabbit-port*
            :handler-fn #'handle-target
-           :test-fn #'insertp)))
+           :test-fn #'insertp
+           :on-error :retry
+           :on-filter :filtered-ack)))
     (start-consumer document-consumers)
     (start-consumer update-consumers)
     (start-consumer target-consumers)
