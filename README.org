@@ -29,6 +29,9 @@ Something along the lines of
 I will have to do more research to better utlize the sento system.
 
 ** Documentation
+*** Containers
+See [[file:DOCKER.md][the Nix-built Compose stack guide]] for image builds,
+secret setup, migration, backup, and upgrades.
 *** HTTP
 For http documentation: [[file:./docs/http-api-docs.org][Api Documentation]]
 *** Setting up dev env

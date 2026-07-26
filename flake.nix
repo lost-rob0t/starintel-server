@@ -300,42 +300,54 @@ EOF
         sbcl-integration-test-wrapped
         "starintel-gserver-integration-tests";
 
+      star-server-bin = pkgs.stdenv.mkDerivation {
+        pname = "star-server";
+        version = "0.1.0";
+
+        dontUnpack = true;
+        dontStrip = true;
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+
+        buildPhase = ''
+          ${sbcl-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval "(require :asdf)" \
+            --eval "(asdf:load-system :starintel-gserver)" \
+            --eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t :compression t)"
+        '';
+
+        installPhase = ''
+          mkdir -p $out/bin
+          cp star-server $out/bin/
+
+          wrapProgram $out/bin/star-server \
+            --set TMPDIR /tmp \
+            --set TMP /tmp \
+            --set TEMP /tmp \
+            --run 'export HOME=''${HOME:-$(mktemp -d)}' \
+            --run 'export XDG_CONFIG_HOME=''${XDG_CONFIG_HOME:-$HOME/.config}' \
+            --run 'export XDG_CACHE_HOME=''${XDG_CACHE_HOME:-$HOME/.cache}' \
+            --run 'mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"' \
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
+        '';
+      };
+
+      containerImages = import ./nix/images.nix {
+        inherit pkgs;
+        starServer = star-server-bin;
+      };
+
     in {
       packages.${system} = {
-        default = pkgs.stdenv.mkDerivation {
-          pname = "star-server";
-          version = "0.1.0";
-
-          dontUnpack = true;
-          dontStrip = true;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-
-          buildPhase = ''
-            ${sbcl-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
-              --eval "(require :asdf)" \
-              --eval "(asdf:load-system :starintel-gserver)" \
-              --eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t :compression t)"
-          '';
-
-          installPhase = ''
-            mkdir -p $out/bin
-            cp star-server $out/bin/
-
-            wrapProgram $out/bin/star-server \
-              --set TMPDIR /tmp \
-              --set TMP /tmp \
-              --set TEMP /tmp \
-              --run 'export HOME=''${HOME:-$(mktemp -d)}' \
-              --run 'export XDG_CONFIG_HOME=''${XDG_CONFIG_HOME:-$HOME/.config}' \
-              --run 'export XDG_CACHE_HOME=''${XDG_CACHE_HOME:-$HOME/.cache}' \
-              --run 'mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"' \
-              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
-          '';
-        };
+        default = star-server-bin;
 
         star-unit-tests = unit-test-runner;
         star-smoke = unit-test-runner;
         star-integration-tests = integration-test-runner;
+        star-server-image = containerImages.serverImage;
+        couchdb-image = containerImages.couchdbImage;
+        clouseau-image = containerImages.clouseauImage;
+        container-images = containerImages.allImages;
+        load-images = containerImages.loadImages;
 
         star-cli = pkgs.stdenv.mkDerivation {
           pname = "star-cli";
@@ -372,6 +384,11 @@ EOF
         star-cli-lib = star-cli-lib;
         star-ui-lib = star-ui-lib;
         star-migrations-lib = star-migrations-lib;
+      };
+
+      apps.${system}.load-images = {
+        type = "app";
+        program = "${containerImages.loadImages}/bin/load-starintel-images";
       };
 
       devShells.${system}.default = pkgs.mkShell {
