@@ -1,6 +1,9 @@
 name: Reconcile stable release
 
 on:
+  push:
+    branches:
+      - release/dev-to-master-2026-07-26
   pull_request:
     branches:
       - master
@@ -11,7 +14,7 @@ permissions:
 
 jobs:
   reconcile:
-    if: github.head_ref == 'release/dev-to-master-2026-07-26'
+    if: github.head_ref == 'release/dev-to-master-2026-07-26' || github.ref_name == 'release/dev-to-master-2026-07-26'
     runs-on: ubuntu-latest
     steps:
       - name: Check out release branch
