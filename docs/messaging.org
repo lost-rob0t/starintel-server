@@ -1,0 +1,258 @@
+#+title: StarIntel messaging and recursive dataflow
+#+options: toc:3
+
+* Messaging
+
+RabbitMQ carries distributed document traffic. Sento mailboxes carry local actor
+traffic. They are separate layers and have different guarantees.
+
+** Documents exchange
+
+The main exchange is a durable RabbitMQ topic exchange named =documents=.
+
+| Flow | Queue | Binding / emitted key | Meaning |
+|------+-------+-----------------------+---------|
+| Initial ingest | =documents.ingest= | bind =documents.ingest.#= | Persist a new document |
+| Initial ingest by type | — | emit =documents.ingest.<dtype>= | Standard producer key |
+| Post-insert event | actor-specific | emit =documents.new.<dtype>= | Document now has CouchDB =_id= and =_rev= |
+| Update ingest | =documents.updates.ingest= | bind =documents.updated.#= | Persist a partial/full update |
+| Update event | same topic family | emit =documents.updated.<dtype>= | Updated document with latest =_rev= |
+| Target intake | =documents.targets= | bind =documents.new.target.#= | Route a persisted target |
+| Remote actor target | actor-defined | emit =actors.<actor>.new.target= | Deliver target to an external actor |
+
+The target wildcard currently equals =documents.new.target.#=. A normal target
+is published to =documents.ingest.target=, persisted, republished as
+=documents.new.target=, then consumed by the target router.
+
+** Events exchange
+
+Actor events can also enter through a separate exchange and queue:
+
+| Exchange | Queue | Binding |
+|----------+-------+---------|
+| =events= | =events= | =event.#= |
+
+The consumer converts the event JSON to an =actor-event= and tells the local
+actor-event receiver, which writes it to the event database.
+
+Local actors normally call =log-actor-event= directly and skip RabbitMQ.
+
+** Local actor messages
+
+*** Tell
+
+Use =sento.actor:tell= for one-way local messages:
+
+#+begin_src lisp
+(tell actor-ref message)
+#+end_src
+
+Actor lookup by operator name:
+
+#+begin_src lisp
+(let ((actor (star.actors:get-dest-actor "domain-enricher")))
+  (when actor
+    (tell actor document)))
+#+end_src
+
+*** Internal database actors
+
+The server has local actors for CouchDB insert and get operations. Their message
+formats are implementation-specific lists/plists. They are useful inside the
+server but are not a stable network protocol.
+
+*** Timers
+
+Recurring target work uses =timer-wheel=. The target's =delay= is the interval
+in seconds. A recurring target is scheduled on first delivery and later
+deliveries are sent directly without scheduling another timer.
+
+** Delivery and acknowledgement
+
+The system provides *at-least-once processing*, not exactly-once processing.
+
+- A successful handler ACKs.
+- Most errors NACK and requeue.
+- A process crash can occur after an external side effect but before ACK.
+- Multiple consumers or retries can observe the same document.
+- Initial insert conflicts are treated as a duplicate/conflict and are not
+  requeued.
+- Update handlers refetch the current CouchDB revision and retry conflicts.
+
+Every actor must therefore be idempotent.
+
+Recommended rules:
+
+1. Use deterministic IDs for deterministic findings.
+2. Treat CouchDB conflict as a duplicate unless the payload is materially
+   different.
+3. Put external side effects behind a durable outbox or their own idempotency
+   key.
+4. Never rely on message ordering across queues.
+5. Do not use Rabbit delivery count as recursion depth.
+
+** Durable versus event-only actor output
+
+*** Durable output
+
+Publish derived documents to =documents.ingest.<dtype>= when they must be
+stored:
+
+#+begin_src lisp
+(star.actors:publish
+ star.actors:*producer-agent*
+ :body (jsown:to-json derived)
+ :routing-key (format nil "documents.ingest.~a"
+                      (jsown:val derived "dtype"))
+ :properties (list (cons :type (jsown:val derived "dtype"))))
+#+end_src
+
+This path assigns =_id= when absent, writes CouchDB, attaches =_rev=, and emits
+=documents.new.<dtype>=.
+
+*** Event-only output
+
+Publish to =documents.new.<dtype>= only when the document is already durable or
+when an actor deliberately wants an event that bypasses the ingest consumer.
+
+Several experimental actors currently publish directly to =documents.new.*=.
+That does *not* persist a new document by itself.
+
+** Recursive nature of actors
+
+StarIntel recursion is a graph/dataflow property:
+
+#+begin_example
+person
+  -> username candidate actor
+     -> user documents
+        -> account verifier actor
+           -> verified user documents
+           -> relation documents
+              -> graph/query actors
+                 -> more targets
+#+end_example
+
+Each output can become another input. An actor may:
+
+- derive zero, one, or many documents;
+- attach relations between source and derived documents;
+- create a target for itself or another actor;
+- update the source document;
+- emit an actor event;
+- schedule the target again.
+
+The recursion may be local, distributed, delayed, and branching. There is no
+global recursion controller in the current server.
+
+** Loop prevention
+
+A recursive actor network can become an accidental message amplifier. Every
+actor chain should enforce a termination policy.
+
+*** Deterministic identity
+
+Use a stable ID from the source identity, actor identity, and derivation type.
+The legacy =star-cl= constructors already hash many object types. For custom
+documents:
+
+#+begin_example
+derived-id = hash(root-id, source-id, actor-name, operation, normalized-value)
+#+end_example
+
+*** Depth and hop budget
+
+The server does not add a hop counter automatically. Actors should carry a
+shared extension object:
+
+#+begin_src json
+{
+  "extensions": {
+    "star_server": {
+      "trace_id": "01J...",
+      "root_id": "root-document-id",
+      "parent_id": "source-document-id",
+      "actor_path": ["seed", "domain-enricher", "dns-resolver"],
+      "depth": 2,
+      "hop": 3,
+      "max_depth": 8,
+      "max_hops": 32
+    }
+  }
+}
+#+end_src
+
+Reject, dead-letter, or emit a terminal event when a budget is exceeded.
+
+*** Actor-path cycle check
+
+Do not invoke an actor again when its name is already present in =actor_path=
+unless the actor explicitly supports fixed-point iteration.
+
+*** Fixed-point actors
+
+An actor that refines a document repeatedly should stop when its normalized
+output hash equals the previous output hash. Store the hash in actor metadata.
+
+*** Recurring targets
+
+Recurring targets are intentional cycles. Set a positive delay, use a stable
+target ID, and make each run idempotent. A delay of zero on a recurring target
+is an operational hazard.
+
+** Recursive metadata propagation
+
+The server itself currently:
+
+- preserves fields present in a document;
+- deep-merges nested objects during updates;
+- adds CouchDB =_id= and =_rev=;
+- does not automatically append actor provenance, sources, depth, or trace data.
+
+Actor code owns recursive metadata propagation.
+
+A derived document should:
+
+1. preserve the original =dataset= unless crossing datasets intentionally;
+2. carry forward =sources= and append the actor/tool source;
+3. set =parent_id= to the input document;
+4. preserve =root_id= and =trace_id=;
+5. increment =depth= and =hop=;
+6. append the actor name to =actor_path=;
+7. create a =relation= using =derived-from=, =extracted-from=,
+   =discovered-by=, or another allowed predicate;
+8. call =log-actor-event= for important lifecycle events.
+
+** Transient messages
+
+A JSON document with =transient: true= is filtered out by the standard ingest
+and update consumers. It can still be routed to actor-specific queues.
+
+Use transient messages for high-volume intermediate work that should not enter
+CouchDB. Do not use them for evidence that must be reproducible.
+
+** External actor contract
+
+An external actor service normally:
+
+1. declares a durable queue;
+2. binds it to =documents= with one or more topic keys;
+3. parses one StarIntel JSON document per message;
+4. performs idempotent work;
+5. publishes durable outputs to =documents.ingest.<dtype>=;
+6. publishes partial updates to =documents.updated.<dtype>=;
+7. publishes actor events to =events= / =event.<actor>= when needed;
+8. ACKs only after required side effects complete.
+
+Suggested queue naming:
+
+#+begin_example
+actors.<actor-name>.targets
+actors.<actor-name>.documents.<dtype>
+#+end_example
+
+Suggested target binding:
+
+#+begin_example
+actors.<actor-name>.new.target
+#+end_example
