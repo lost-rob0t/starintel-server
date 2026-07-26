@@ -18,11 +18,10 @@
 
 (defun couchdb-list-quarantine-records
     (client database &key (status "quarantined") (limit 100))
-  "Return quarantine documents ordered by failure time through the checked-in view."
+  "Return quarantine documents through the checked-in status view."
   (let* ((result
            (query-view client database "quarantine" "by_status"
-                       :start-key (vector status "")
-                       :end-key (vector status (string #\U10FFFF))
+                       :key status
                        :include-docs t
                        :reduce nil
                        :limit limit))
