@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - release/dev-to-master-2026-07-26
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
