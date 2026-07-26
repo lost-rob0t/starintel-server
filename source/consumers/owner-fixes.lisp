@@ -1,5 +1,18 @@
 (in-package :star.consumers)
 
+(defun normalize-settlement (value)
+  "Convert handler results to a structured settlement.
+
+Known settlement keywords are accepted. NIL and ordinary success values remain
+backward-compatible ACK results, while unknown keywords fail closed so a typo
+cannot silently acknowledge a Rabbit delivery."
+  (cond
+    ((consumer-settlement-p value) value)
+    ((valid-settlement-action-p value) (make-settlement value))
+    ((keywordp value)
+     (error "Unknown consumer settlement action: ~s" value))
+    (t (settlement-ack))))
+
 (defun update-consumer-metric-slot (consumer slot-name delta)
   (bt:with-lock-held ((consumer-metrics-lock consumer))
     (let ((value (+ (slot-value consumer slot-name) delta)))
