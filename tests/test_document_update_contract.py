@@ -57,7 +57,7 @@ class DocumentUpdateContractTests(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         for name in (
             "test-stale-client-revision-refetches-and-updates",
-            "test-missing-document-strips_stale_revision_before-create",
+            "test-missing-document-strips_stale_revision_before_create",
             "test-patch-cannot_change_identity_or_schema",
             "test-conflict_retries_are_bounded_and_refetch_latest_revision",
             "test_revision_only_patch_is_duplicate",
