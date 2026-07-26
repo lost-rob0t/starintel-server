@@ -18,3 +18,7 @@ init.lisp
 # Build artifacts
 result
 result-*
+
+# Local deployment configuration and secrets
+.env
+secrets/

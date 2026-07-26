@@ -11,7 +11,7 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 (defparameter *couchdb-auth-database* "starintel-gserver-auth")
 (defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
 (defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
-(defparameter *couchdb-password* (or (uiop:getenv "COUCHDB_PASSWORD") "password") "couchdb user password")
+(defparameter *couchdb-password* (uiop:getenv "COUCHDB_PASSWORD") "couchdb user password")
 ;;;; By Default the views in starintel-gserver/views will be installed, but you can append your own to this setting to have it created at startup.
 (defparameter *couchdb-views* (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
                                 (loop for file in files
@@ -32,8 +32,8 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 ;;;; *** RabbitMQ
 (defparameter *rabbit-address* (or (uiop:getenv "RABBITMQ_ADDRESS") "localhost") "The address rabbitmq is running on.")
 (defparameter *rabbit-port* 5672 "The port that rabbitmq is listening on.")
-(defparameter *rabbit-user* "guest" "the username for rabbimq")
-(defparameter *rabbit-password* "guest" "the password for the rabbitmq user.")
+(defparameter *rabbit-user* (or (uiop:getenv "RABBITMQ_USER") "guest") "the username for rabbitmq")
+(defparameter *rabbit-password* (uiop:getenv "RABBITMQ_PASSWORD") "the password for the rabbitmq user.")
 (defparameter *slynk-port* 4009 "Port to use for SLYNK remote debugging")
 
 ;;;; *** Actors

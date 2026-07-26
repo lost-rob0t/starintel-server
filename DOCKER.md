@@ -1,141 +1,176 @@
-# Docker Setup Guide
+# Nix-built Compose stack
 
-This document describes how to build and run StarIntel-Gserver using Docker.
+The production-shaped local stack uses project-owned OCI images built by the
+Nix flake:
 
-## Overview
+- StarIntel Server 0.1.0
+- Apache CouchDB 3.5.2
+- Clouseau 3.3.0 on Java 21
+- RabbitMQ 4.3.4 with the management plugin
 
-The Docker setup uses a multi-stage build with Nix to ensure reproducible builds:
-- **Build stage**: Uses `nixos/nix` to build the server binary via the flake
-- **Runtime stage**: Uses `debian:bookworm-slim` with only the necessary runtime libraries
+CouchDB is pinned by its linux/amd64 manifest digest and Nix content hash.
+Clouseau is pinned by its release artifact hash. Compose never builds or pulls
+a project-owned image.
 
-## Building the Docker Image
+## Prerequisites
 
-```bash
-# Build the image
-docker build -t star-server:latest .
+- Nix with flakes enabled
+- Docker Engine
+- Docker Compose v2
+- `curl`, `jq`, and `openssl` for the operator commands below
 
-# Or use docker-compose to build
-docker-compose build star-server
-```
+## Build and load
 
-## Running with Docker Compose
-
-The `docker-compose.yml` file sets up the complete stack:
-- **CouchDB**: Document database (port 5984)
-- **RabbitMQ**: Message queue (ports 5672, 15672)
-- **star-server**: The StarIntel API server (port 5000)
-
-### Start all services:
+Build every project-owned image without loading it:
 
 ```bash
-docker-compose up -d
+nix build .#star-server-image .#couchdb-image .#clouseau-image
 ```
 
-### View logs:
+Build the images, merge their archives, and load them into Docker:
 
 ```bash
-# All services
-docker-compose logs -f
-
-# Specific service
-docker-compose logs -f star-server
+nix run .#load-images
 ```
 
-### Stop services:
+The loaded tags are `starintel/server:0.1.0`,
+`starintel/couchdb:3.5.2`, and `starintel/clouseau:3.3.0`.
+
+## Configure secrets
+
+Compose reads credentials from files and mounts them as Docker secrets. Secret
+values are not stored in the image, Compose file, or `.env`.
 
 ```bash
-docker-compose down
+cp .env.example .env
+install -d -m 0700 secrets
+openssl rand -base64 32 > secrets/couchdb_password
+openssl rand -base64 48 > secrets/couchdb_secret
+openssl rand -hex 24 | tr '[:lower:]' '[:upper:]' > secrets/erlang_cookie
+openssl rand -base64 32 > secrets/rabbitmq_password
+chmod 0600 secrets/*
 ```
 
-## Configuration
+The Erlang cookie is shared only by CouchDB and Clouseau. Change usernames,
+bind addresses, ports, the credentials directory, or the Clouseau heap in
+`.env`.
 
-### Init File
-
-The server expects an `init.lisp` configuration file. You can:
-
-1. **Mount your own init.lisp** (recommended):
-   ```bash
-   # Edit docker-compose.yml to point to your config
-   volumes:
-     - ./my-init.lisp:/config/init.lisp
-   ```
-
-2. **Use default config**: If no `/config/init.lisp` is found, the server will use `/root/example_configs/init.lisp`
-
-### Environment Variables
-
-Default credentials (⚠️ **CHANGE IN PRODUCTION**):
-- CouchDB: `admin:password`
-- RabbitMQ: `guest:guest`
-
-Edit these in `docker-compose.yml` before deploying.
-
-## Network
-
-All services run on the `star` network. Services can communicate using their hostnames:
-- `couchdb:5984`
-- `rabbitmq:5672`
-- `star-server:5000`
-
-## Volumes
-
-- `couchdb_data`: Persists CouchDB data across container restarts
-
-## Health Checks
-
-Verify services are running:
+Validate the fully resolved Compose model before starting it:
 
 ```bash
-# CouchDB
-curl http://localhost:5984
-
-# RabbitMQ Management
-open http://localhost:15672
-
-# Star Server API
-curl http://localhost:5000/api/v1/health
+docker compose config --quiet
 ```
 
-## Rebuilding After Changes
-
-After modifying the code:
+## Start and operate
 
 ```bash
-# Rebuild and restart
-docker-compose build star-server
-docker-compose up -d star-server
+nix run .#load-images
+docker compose up --detach --wait
+docker compose ps
+docker compose logs --follow
 ```
 
-## Troubleshooting
+The default host bindings are:
 
-### Check container logs:
+- StarIntel API: `http://127.0.0.1:5000`
+- CouchDB: `http://127.0.0.1:5984`
+- RabbitMQ AMQP: `127.0.0.1:5672`
+- RabbitMQ management: `http://127.0.0.1:15672`
+
+Clouseau is internal-only. CouchDB and Clouseau share an Erlang cookie and
+CouchDB addresses the search node as
+`clouseau@clouseau.starintel.internal`.
+
+Stop containers while keeping all data:
+
 ```bash
-docker-compose logs -f star-server
+docker compose down
 ```
 
-### Access container shell:
+Delete the stack and all persisted data:
+
 ```bash
-docker-compose exec star-server /bin/bash
+docker compose down --volumes
 ```
 
-### Verify binary:
+The destructive command above removes the `couchdb_data`, `clouseau_index`,
+and `rabbitmq_data` volumes.
+
+## Search initialization and verification
+
+StarIntel creates the application database and installs
+`source/views/search.json` during startup. Verify indexing through the server:
+
 ```bash
-docker-compose exec star-server /usr/local/bin/star-server --help
+password="$(<secrets/couchdb_password)"
+curl --fail --user "admin:${password}" \
+  --header 'Content-Type: application/json' \
+  --request PUT \
+  --data '{"dtype":"note","content":"starintelftsfixture"}' \
+  http://127.0.0.1:5984/starintel/fts-fixture
+
+curl --fail --get \
+  --data-urlencode 'q=content:starintelftsfixture' \
+  http://127.0.0.1:5000/search | jq
 ```
 
-### Remove all containers and volumes:
+The automated acceptance test builds and loads all images, waits for every
+health check, verifies FTS, restarts the stack, and verifies document and index
+recovery:
+
 ```bash
-docker-compose down -v
+./scripts/stack-test.sh
 ```
 
-## Production Considerations
+## Migration
 
-⚠️ **This setup is EXPERIMENTAL - DO NOT EXPOSE TO WEB**
+Export each application database from the old stack while writes are stopped:
 
-Before production use:
-1. Change default passwords in `docker-compose.yml`
-2. Configure proper init.lisp with production settings
-3. Set up proper volume backups
-4. Configure TLS/SSL termination
-5. Implement proper monitoring and logging
-6. Review security settings for all services
+```bash
+password="$(<secrets/couchdb_password)"
+curl --fail --user "admin:${password}" \
+  'http://127.0.0.1:5984/starintel/_all_docs?include_docs=true&attachments=true' |
+  jq '{docs: [.rows[].doc
+      | select(._id | startswith("_design/") | not)
+      | del(._rev)]}' > starintel-backup.json
+```
+
+Start the new stack, then restore:
+
+```bash
+password="$(<secrets/couchdb_password)"
+curl --fail --user "admin:${password}" \
+  --header 'Content-Type: application/json' \
+  --data-binary @starintel-backup.json \
+  http://127.0.0.1:5984/starintel/_bulk_docs
+```
+
+Repeat for `starintel-event-source` and any additional databases. Search
+indexes are derived data; Clouseau rebuilds them when the restored databases
+are queried. Keep the old volumes until document counts and representative FTS
+queries match.
+
+## Persistence and backup
+
+Named volumes preserve CouchDB documents, Clouseau indexes, and RabbitMQ state
+across container replacement. Back up CouchDB through its HTTP API rather than
+copying a live volume. The export command in the migration section includes
+attachments; store its output in encrypted backup storage. Back up every
+application database and test a restore regularly.
+
+The Clouseau volume improves restart time but does not need an independent
+backup because its indexes can be rebuilt from CouchDB.
+
+## Upgrade
+
+1. Read the CouchDB and Clouseau release notes and compatibility requirements.
+2. Export every CouchDB database.
+3. Update the pinned versions, digest, and hashes in `nix/images.nix`.
+4. Update the matching image tags in `docker-compose.yml`.
+5. Run `nix build` for all three images and `./scripts/stack-test.sh`.
+6. Load the new images and recreate the stack with
+   `docker compose up --detach --wait`.
+7. Verify health, document counts, and representative FTS queries before
+   removing old images or backups.
+
+For Clouseau 3.x, Java 21 and CouchDB 3.5 or newer are required.
