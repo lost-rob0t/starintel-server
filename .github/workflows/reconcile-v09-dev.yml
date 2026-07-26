@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/reconcile-v09-dev
+  pull_request:
+    branches:
+      - dev
   workflow_dispatch:
 
 permissions:
@@ -11,6 +14,7 @@ permissions:
 
 jobs:
   reconcile:
+    if: github.head_ref == 'agent/reconcile-v09-dev' || github.ref_name == 'agent/reconcile-v09-dev'
     runs-on: ubuntu-latest
     steps:
       - name: Check out reconciliation branch
