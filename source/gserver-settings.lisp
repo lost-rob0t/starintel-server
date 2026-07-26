@@ -35,7 +35,7 @@
 ;; HTTP API configuration
 (defparameter *http-api-address* +default-http-api-address+
   "The address on which the HTTP API listens.")
-(defparameter *http-api-port* 5000  "Port for the HTTP API.")
+(defparameter *http-api-port* 5000 "Port for the HTTP API.")
 (defparameter *http-api-base-path* "/api" "Base URL for the API endpoint.")
 (defparameter *http-cert-file* nil "Path to the HTTPS cert file.")
 (defparameter *http-key-file* nil "Path to the HTTPS key file.")
@@ -50,6 +50,18 @@
   "The RabbitMQ user name.")
 (defparameter *rabbit-password* +default-rabbit-password+
   "The RabbitMQ user password.")
+(defparameter *rabbit-max-retries* 4
+  "Maximum republished attempts after the original delivery.")
+(defparameter *rabbit-retry-base-delay-ms* 250
+  "Initial retry delay in milliseconds.")
+(defparameter *rabbit-retry-max-delay-ms* 30000
+  "Maximum exponential retry delay in milliseconds.")
+(defparameter *rabbit-retry-jitter-ratio* 0.20d0
+  "Symmetric retry jitter ratio.")
+(defparameter *rabbit-quarantine-exchange* "starintel.quarantine"
+  "Durable topic exchange receiving structured dead-letter records.")
+(defparameter *rabbit-quarantine-queue* "starintel-quarantine"
+  "Durable queue used for poison-message inspection.")
 
 ;; Other configurations
 (defparameter *slynk-port* +default-slynk-port+

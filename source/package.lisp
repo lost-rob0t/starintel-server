@@ -6,6 +6,12 @@
    #:*rabbit-user*
    #:*rabbit-port*
    #:*rabbit-address*
+   #:*rabbit-max-retries*
+   #:*rabbit-retry-base-delay-ms*
+   #:*rabbit-retry-max-delay-ms*
+   #:*rabbit-retry-jitter-ratio*
+   #:*rabbit-quarantine-exchange*
+   #:*rabbit-quarantine-queue*
    #:*http-scheme*
    #:*http-key-file*
    #:*http-cert-file*
@@ -85,25 +91,35 @@
    #:missing-document-for-update
    #:couchdb-process-outbox-mutation
    #:couchdb-pending-outbox-documents
-   #:recover-couchdb-outbox)
-  (:documentation "CouchDB persistence, query, and outbox support."))
+   #:recover-couchdb-outbox
+   #:couchdb-save-quarantine-record
+   #:couchdb-get-quarantine-record
+   #:couchdb-list-quarantine-records
+   #:update-quarantine-record
+   #:mark-quarantine-replayed
+   #:replay-quarantine-record)
+  (:documentation "CouchDB persistence, query, outbox, and quarantine support."))
 
 (uiop:define-package :star.rabbit
   (:use :cl :star.consumers :sento.actor)
-  (:documentation "RabbitMQ document transport.")
+  (:documentation "RabbitMQ document transport with bounded retries and quarantine.")
   (:export
-   #:with-rabbit-send
-   #:with-rabbit-recv
    #:emit-document
+   #:publish-raw-message
    #:+injest-queue+
    #:+updates-queue+
    #:+injest-key+
    #:+update-key+
    #:+targets-key+
    #:transient-p
+   #:decode-rabbit-document
    #:handle-document
    #:handle-update-document
+   #:handle-target
    #:publish-outbox-event
+   #:persist-quarantine-record
+   #:inspect-quarantine
+   #:replay-quarantined-message
    #:recover-pending-publications
    #:test-make-doc
    #:test-send
