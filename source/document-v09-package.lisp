@@ -14,11 +14,25 @@
    #:normalize-document-for-index
    #:unsupported-document-schema
    #:read-only-document-schema
+   #:document-class-registry
+   #:class-registry-profile
+   #:register-document-class
+   #:registered-document-class
+   #:registered-document-dtypes
+   #:unknown-document-dtype
+   #:unknown-document-dtype-value
+   #:unknown-document-dtype-schema-version
+   #:document-class-mismatch
+   #:parse-document-object
+   #:document-field-value
    #:document-value
    #:document-data
+   #:document-dataset
    #:document-dtype
    #:document-date-added
+   #:document-date-updated
    #:document-transient-p
+   #:decode-document
    #:ensure-v09-document
    #:v09-document-p
    #:v09-document-json
