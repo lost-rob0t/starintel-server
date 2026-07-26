@@ -17,7 +17,6 @@
   (let ((keys nil))
     (when object
       (jsown:do-json-keys (key value) object
-        (declare (ignore value))
         (push key keys)))
     (nreverse keys)))
 
