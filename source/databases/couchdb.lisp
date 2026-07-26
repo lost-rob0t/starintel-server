@@ -114,6 +114,8 @@
         (log:error "Unexpected error checking/creating main database ~a: ~a" database e)
         (signal e)))
     
+    (log:info "Validating registered CouchDB views")
+    (validate-view-registry)
     (log:info "Initializing views for main database ~a" database)
     (log:debug "Processing ~a view definitions for main database" (length star:*couchdb-views*))
     (handler-case 
@@ -279,9 +281,16 @@
 
 ;; TODO use from-json to parse documents
 (defun sort-docs-by-date (docs)
-  "Sort a list of documents by the dateAdded field in descending order."
-  (sort docs #'> :key (lambda (doc)
-                        (jsown:val doc "dateAdded"))))
+  "Sort documents newest-first across legacy numeric and current ISO dates."
+  (labels ((date-value (document)
+             (or (star.documents:document-date-added document) 0))
+           (newer-p (left right)
+             (cond
+               ((and (numberp left) (numberp right)) (> left right))
+               ((and (stringp left) (stringp right)) (string> left right))
+               ((stringp left) t)
+               (t nil))))
+    (sort docs #'newer-p :key #'date-value)))
 
 ;;; Mesages View
 
