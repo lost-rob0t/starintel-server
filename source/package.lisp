@@ -127,7 +127,7 @@
 
 (uiop:define-package :star.actors
   (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
-  (:documentation "StarIntel actors.")
+  (:documentation "StarIntel actors and typed target recovery.")
   (:export
    #:register-actor
    #:*targets*
@@ -144,6 +144,32 @@
    #:*pattern-actor*
    #:*wmn-relations-p*
    #:publish
+   #:target-record
+   #:target-record-id
+   #:target-record-actor
+   #:target-record-target
+   #:target-record-delay
+   #:target-record-recurring-p
+   #:target-record-options
+   #:target-record-document
+   #:target-record-revision
+   #:target-record-lease-owner
+   #:target-record-lease-expires-at
+   #:target-command
+   #:target-command-record
+   #:target-command-first-time-p
+   #:target-command-recovered-p
+   #:parse-target-record
+   #:query-persisted-target-documents
+   #:load-persisted-target-records
+   #:submit-target
+   #:recover-target-record
+   #:recover-persisted-targets
+   #:target-active-lease-p
+   #:invalid-persisted-target
+   #:invalid-target-document-id
+   #:invalid-target-reason
+   #:*recovered-target-fingerprints*
    #:handle-event-message
    #:start-event-consumer
    #:log-actor-event
