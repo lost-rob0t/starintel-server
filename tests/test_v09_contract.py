@@ -17,7 +17,13 @@ class ServerV09ContractTests(unittest.TestCase):
                 self.assertTrue(document["_id"].startswith("_design/"))
 
     def test_nested_data_views_are_migrated(self) -> None:
-        for name in ("messages.json", "orgs.json", "persons.json", "relations.json", "targets.json"):
+        for name in (
+            "messages.json",
+            "orgs.json",
+            "persons.json",
+            "relations.json",
+            "targets.json",
+        ):
             text = (ROOT / "source" / "views" / name).read_text(encoding="utf-8")
             with self.subTest(view=name):
                 self.assertIn("doc.data", text)
@@ -40,12 +46,16 @@ class ServerV09ContractTests(unittest.TestCase):
             "data",
         ):
             self.assertIn(f'\"{field}\"', text)
-        self.assertIn('string= (or (object-value document \"schema_version\") \"\") \"0.9.0\"', text)
+        self.assertIn("writable-schema-profile-for-document", text)
+        self.assertIn('"0.9.0"', text)
         self.assertIn("spec:schema-org-metadata", text)
+        self.assertIn("valid-optional-revision-p", text)
 
     def test_ingestion_routes_use_boundary(self) -> None:
         rabbit = (ROOT / "source" / "rabbit.lisp").read_text(encoding="utf-8")
-        http = (ROOT / "source" / "frontends" / "http-api-v09.lisp").read_text(encoding="utf-8")
+        http = (
+            ROOT / "source" / "frontends" / "http-api-v09.lisp"
+        ).read_text(encoding="utf-8")
         self.assertIn("ensure-v09-document", rabbit)
         self.assertIn("ensure-v09-document", http)
         self.assertIn("route-dtype", http)
