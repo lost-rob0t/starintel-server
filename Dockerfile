@@ -36,7 +36,8 @@ RUN qlot exec sbcl --non-interactive \
     --load tests/run-retry-quarantine-conformance.lisp \
     --load tests/run-target-recovery-conformance.lisp \
     --load tests/run-target-dispatch-acceptance.lisp \
-    --load tests/run-document-update-conformance.lisp
+    --load tests/run-document-update-conformance.lisp \
+    --load tests/run-view-registry-conformance.lisp
 
 FROM conformance AS star-server
 
