@@ -1,0 +1,29 @@
+(in-package :star.databases.couchdb)
+
+(export
+ '(view-spec
+   view-spec-name
+   view-spec-design-document
+   view-spec-view-name
+   view-spec-reducer-p
+   view-spec-default-reduce
+   view-spec-default-include-docs
+   view-spec-accepted-keywords
+   view-map-result
+   view-map-result-rows
+   view-document-result
+   view-document-result-documents
+   view-document-result-rows
+   view-reduced-result
+   view-reduced-result-rows
+   view-registry-error
+   view-registry-error-reason
+   registered-view-spec
+   registered-view-names
+   execute-registered-view
+   view-result-value
+   validate-view-registry
+   view-registry-matrix
+   social-posts-by-platform
+   documents-by-dataset)
+ :star.databases.couchdb)
