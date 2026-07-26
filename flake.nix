@@ -136,6 +136,9 @@ EOF
           cl-ppcre
           cms-ulid
           bordeaux-threads
+          jsown
+          closer-mop
+          ironclad
           xmls
           lack
           lack-middleware-accesslog

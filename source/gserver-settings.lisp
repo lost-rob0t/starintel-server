@@ -47,3 +47,17 @@ Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
 (defparameter *couchdb-event-log-database* "starintel-event-source" "The name of the database to be used for event logs.")
 ;;;; *** Bulk operations
 (defparameter *bulk-max-documents* 500 "Maximum number of documents allowed in a single bulk operation.")
+
+;;;; *** Rabbit retry and quarantine
+(defparameter *rabbit-max-retries* 4
+  "Maximum republished attempts after the original delivery.")
+(defparameter *rabbit-retry-base-delay-ms* 250
+  "Initial retry delay in milliseconds.")
+(defparameter *rabbit-retry-max-delay-ms* 30000
+  "Maximum exponential retry delay in milliseconds.")
+(defparameter *rabbit-retry-jitter-ratio* 0.20d0
+  "Symmetric retry jitter ratio.")
+(defparameter *rabbit-quarantine-exchange* "starintel.quarantine"
+  "Durable topic exchange receiving structured quarantine records.")
+(defparameter *rabbit-quarantine-queue* "starintel-quarantine"
+  "Durable queue used for poison-message inspection.")

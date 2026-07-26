@@ -1,12 +1,17 @@
-;; [[file:../source.org::*Namespace setup][Namespace setup:2]]
-(uiop:define-package   :starintel-gserver
+(uiop:define-package :starintel-gserver
   (:nicknames :star)
-  (:use       :cl)
+  (:use :cl)
   (:export
    #:*rabbit-password*
    #:*rabbit-user*
    #:*rabbit-port*
    #:*rabbit-address*
+   #:*rabbit-max-retries*
+   #:*rabbit-retry-base-delay-ms*
+   #:*rabbit-retry-max-delay-ms*
+   #:*rabbit-retry-jitter-ratio*
+   #:*rabbit-quarantine-exchange*
+   #:*rabbit-quarantine-queue*
    #:*http-scheme*
    #:*http-key-file*
    #:*http-cert-file*
@@ -35,108 +40,138 @@
    #:*bulk-max-documents*
    #:repl/main))
 
-
-(uiop:define-package   :star.databases.couchdb
-  (:use       :cl-couch :cl :star #:lparallel)
-  (:export :init-db
-   :init-views
-           :init-event-db
-   :get-targets*
-           :get-view-docs
-   :query-view
-           :map-view-results
-   :get-neighbors
-           :search-fts
-   :sort-docs-by-date
-           :messages-by-user
-   :messages-by-platform
-           :messages-by-group
-   :social-posts-by-user
-           :social-posts-by-group
-   :by-channel
-           :export-by-dataset*
-   :count-by-dtype
-           :dataset-size
-   :total-documents-since
-           :orgs-by-country
-   :orgs-by-name
-           :persons-by-name
-   :persons-by-region
-           :relations-edges
-   :relations-incoming-count
-           :relations-outgoing-count
-   :targets-actor-counts
-           :targets-by-actor
-   :targets-target-count
-           :users-by-platform
-   :users-by-name
-           :as-json
-   :format-key
-           :from-json
-   :*couchdb-pool*
-           :groups
-   :lazy
-           :events-by-actor
-   :document-events
-           :target-events
-   :hosts-by-ip
-           :hosts-by-port
-   :hosts-by-service
-           :emails-by-email
-   :emails-by-domain
-           :emails-with-password
-   :domains-by-record
-           :domains-by-resolved-address
-   :networks-by-asn
-           :networks-by-org
-   :breaches-by-size
-           :urls-by-url
-   :urls-by-path
-           :urls-by-domain)
-  (:documentation "doc"))
-;; Namespace setup:2 ends here
-
-;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
-(uiop:define-package   :star.rabbit
-  (:use       :cl :star.consumers  :sento.actor)
-  (:documentation "Rabitmq namespace")
+(uiop:define-package :star.databases.couchdb
+  (:use :cl-couch :cl :star #:lparallel)
   (:export
-   #:with-rabbit-send
-   #:with-rabbit-recv
+   #:init-db
+   #:init-views
+   #:init-event-db
+   #:get-targets*
+   #:get-view-docs
+   #:query-view
+   #:map-view-results
+   #:get-neighbors
+   #:search-fts
+   #:sort-docs-by-date
+   #:messages-by-user
+   #:messages-by-platform
+   #:messages-by-group
+   #:social-posts-by-user
+   #:social-posts-by-group
+   #:by-channel
+   #:export-by-dataset*
+   #:count-by-dtype
+   #:dataset-size
+   #:total-documents-since
+   #:orgs-by-country
+   #:orgs-by-name
+   #:persons-by-name
+   #:persons-by-region
+   #:relations-edges
+   #:relations-incoming-count
+   #:relations-outgoing-count
+   #:targets-actor-counts
+   #:targets-by-actor
+   #:targets-target-count
+   #:users-by-platform
+   #:users-by-name
+   #:as-json
+   #:format-key
+   #:from-json
+   #:*couchdb-pool*
+   #:groups
+   #:lazy
+   #:events-by-actor
+   #:document-events
+   #:target-events
+   #:hosts-by-ip
+   #:hosts-by-port
+   #:hosts-by-service
+   #:emails-by-email
+   #:emails-by-domain
+   #:emails-with-password
+   #:domains-by-record
+   #:domains-by-resolved-address
+   #:networks-by-asn
+   #:networks-by-org
+   #:breaches-by-size
+   #:urls-by-url
+   #:urls-by-path
+   #:urls-by-domain
+   #:prepare-outbox-mutation
+   #:persist-outbox-mutation
+   #:process-outbox-mutation
+   #:recover-outbox-documents
+   #:document-outbox-entries
+   #:find-outbox-entry
+   #:outbox-entry-published-p
+   #:outbox-entry-mutation-id
+   #:outbox-entry-sequence
+   #:mutation-conflict
+   #:mutation-conflict-id
+   #:mutation-conflict-document-id
+   #:mutation-conflict-reason
+   #:outbox-store-conflict
+   #:missing-document-for-update
+   #:couchdb-process-outbox-mutation
+   #:couchdb-pending-outbox-documents
+   #:recover-couchdb-outbox
+   #:couchdb-save-quarantine-record
+   #:couchdb-get-quarantine-record
+   #:couchdb-list-quarantine-records
+   #:update-quarantine-record
+   #:mark-quarantine-replayed
+   #:replay-quarantine-record
+   #:target-acceptance-store-conflict
+   #:couchdb-load-target-acceptance
+   #:couchdb-save-target-acceptance
+   #:couchdb-update-target-acceptance
+   #:couchdb-persist-target-acceptance))
+
+(uiop:define-package :star.rabbit
+  (:use :cl :star.consumers :sento.actor)
+  (:export
    #:emit-document
+   #:publish-raw-message
+   #:+documents-exchange+
+   #:+documents-exchange-type+
    #:+ingest-queue+
    #:+updates-queue+
+   #:+targets-queue+
    #:+ingest-key+
    #:+update-key+
    #:+targets-key+
-   #:transient-p
-   #:test-make-doc
-   #:test-send
-   #:start-consumers
-   #:+documents-exchange+
-   #:+documents-exchange-type+
-   #:+ingest-updates-queue+
    #:+ingest-fmt-key+
    #:+new-documents-key+
    #:+new-documents-fmt-key+
    #:+updated-documents-key+
    #:+updated-documents-fmt-key+
-   #:+new-targets-key+
-   #:+targets-fmt-key+
-   #:+ingest-topic-key+
-   #:+updates-topic-key+))
-;; Namespace setup:3 ends here
+   #:transient-p
+   #:decode-rabbit-document
+   #:handle-document
+   #:handle-update-document
+   #:handle-target
+   #:publish-outbox-event
+   #:persist-quarantine-record
+   #:inspect-quarantine
+   #:replay-quarantined-message
+   #:recover-pending-publications
+   #:start-consumers))
 
-(uiop:define-package   :star.actors
-  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
-  (:documentation "doc")
+(uiop:define-package :star.actors
+  (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
   (:export
    #:register-actor
+   #:get-dest-actor
+   #:*actor-index-agent*
    #:*targets*
+   #:*target-timer*
    #:*couchdb-gets*
    #:*couchdb-inserts*
    #:*sys*
    #:start-actors
+   #:start-target-timer
+   #:start-target-actor
    #:define-actor
    #:with-json
    #:emit
@@ -146,6 +181,78 @@
    #:*pattern-actor*
    #:*wmn-relations-p*
    #:publish
+   #:target-record
+   #:target-record-id
+   #:target-record-actor
+   #:target-record-target
+   #:target-record-delay
+   #:target-record-recurring-p
+   #:target-record-options
+   #:target-record-document
+   #:target-record-revision
+   #:target-record-lease-owner
+   #:target-record-lease-expires-at
+   #:target-command
+   #:target-command-record
+   #:target-command-first-time-p
+   #:target-command-recovered-p
+   #:parse-target-record
+   #:query-persisted-target-documents
+   #:load-persisted-target-records
+   #:submit-target
+   #:sumbit-target
+   #:recover-target-record
+   #:recover-persisted-targets
+   #:target-active-lease-p
+   #:invalid-persisted-target
+   #:invalid-target-document-id
+   #:invalid-target-reason
+   #:*recovered-target-fingerprints*
+   #:target-destination-handle
+   #:target-destination-handle-kind
+   #:target-destination-handle-name
+   #:target-destination-handle-component
+   #:target-destination-handle-routing-key
+   #:target-destination-handle-compatibility-routing-keys
+   #:target-dispatch-envelope
+   #:target-dispatch-envelope-record
+   #:target-dispatch-envelope-destination
+   #:target-dispatch-envelope-schedule-id
+   #:target-dispatch-envelope-execution-id
+   #:target-dispatch-envelope-attempt
+   #:target-dispatch-envelope-trace-id
+   #:target-dispatch-envelope-lease-id
+   #:target-dispatch-envelope-fencing-token
+   #:target-dispatch-envelope-deadline
+   #:target-dispatch-outcome
+   #:target-dispatch-outcome-status
+   #:target-dispatch-outcome-reason
+   #:target-dispatch-outcome-acceptance-id
+   #:target-dispatch-outcome-envelope
+   #:target-dispatch-outcome-retryable-p
+   #:invalid-target-dispatch
+   #:invalid-target-dispatch-reason
+   #:target-ingress-overloaded
+   #:target-ingress-overloaded-reason
+   #:target-destination-unavailable
+   #:target-destination-unavailable-reason
+   #:canonical-target-routing-key
+   #:compatibility-target-routing-keys
+   #:resolve-target-destination
+   #:validate-target-dispatch-record
+   #:make-target-dispatch-envelope
+   #:target-acceptance-id
+   #:target-acceptance-document
+   #:target-acceptance-equivalent-p
+   #:dispatch-target-envelope-now
+   #:register-target-schedule
+   #:process-target-dispatch-envelope
+   #:accept-target-record
+   #:accept-target-delivery
+   #:target-outcome-success-p
+   #:make-remote-target-consumer
+   #:*active-target-schedules*
+   #:*target-max-delay-seconds*
    #:handle-event-message
    #:start-event-consumer
    #:log-actor-event
@@ -160,12 +267,7 @@
    #:event-source-document
    #:event-id))
 
-
-;; [[file:../source.org::*Namespace setup][Namespace setup:4]]
-(uiop:define-package   :starintel-gserver-http-api
+(uiop:define-package :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
-  (:use       :cl :ningle :anypool :star.databases.couchdb :star)
-  (:documentation "simple http api.")
-  (:export
-   #:*default-headers*))
-;; Namespace setup:4 ends here
+  (:use :cl :ningle :anypool :star.databases.couchdb :star)
+  (:export #:*default-headers*))
