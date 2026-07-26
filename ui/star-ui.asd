@@ -14,6 +14,7 @@
                #:clack
                #:clack-handler-hunchentoot
                #:lack
+               #:lack/middleware/accesslog
                #:jsown
                #:babel
                #:alexandria

@@ -7,6 +7,7 @@
   :build-operation program-op
   :build-pathname "star-server" ;; shell name
   :entry-point "star::main"     ;; thunk
+  :in-order-to ((test-op (test-op "starintel-gserver-tests")))
   :components   (
                  (:file "consumers/package")
                  (:file "consumers/consumers")
@@ -15,7 +16,6 @@
                  (:file "package")
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
-                 (:file "init")
                  (:file "init-loader")
                  (:file "actors")
                  (:file "actor-systems/event-actor")
@@ -34,6 +34,7 @@
                  #:uuid
                  #:anypool
                  #:clack
+                 #:lack/middleware/accesslog
                  #:clack-handler-hunchentoot
                  #:ningle
                  #:clingon

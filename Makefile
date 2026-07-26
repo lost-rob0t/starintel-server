@@ -9,6 +9,12 @@ LISP ?= sbcl
 
 all: test
 
+test:
+	nix run .#star-unit-tests
+
+integration-test:
+	nix run .#star-integration-tests
+
 run:
 	$(LISP) --load run.lisp
 
