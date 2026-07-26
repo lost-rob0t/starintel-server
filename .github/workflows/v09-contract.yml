@@ -35,4 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run CLOS/MOP document conformance
-        run: docker build --target conformance --progress=plain -t starintel-conformance .
+        shell: bash
+        run: |
+          set +e
+          docker build --target conformance --progress=plain \
+            -t starintel-conformance . > /tmp/conformance.log 2>&1
+          status=$?
+          tail -n 220 /tmp/conformance.log
+          exit "$status"
