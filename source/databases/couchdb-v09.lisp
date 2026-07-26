@@ -1,10 +1,27 @@
 (in-package :star.databases.couchdb)
 
+(fmakunbound 'as-json)
+(fmakunbound 'from-json)
+
 (defun as-json (object &key (format-fn #'format-key))
-  (declare (ignore format-fn))
-  (if (typep object 'spec:document)
-      (spec:encode object)
-      (error "AS-JSON only accepts canonical StarIntel document objects in v0.9 mode")))
+  "Compatibility wrapper over the canonical StarIntel codec.
+
+Returns a JSOWN object. Serialization remains the caller's responsibility."
+  (let ((encoded (spec:encode object :format-fn format-fn)))
+    (when (typep object 'spec:document)
+      (star.documents:writable-schema-profile-for-document encoded))
+    encoded))
+
+(defun from-json (json-obj class-name &key (format-fn #'format-key))
+  "Compatibility wrapper over the canonical typed decoder.
+
+Document classes are checked against the registered dtype. Explicit helper
+classes, such as actor-event, use the canonical standard-object decoder."
+  (if (and (symbolp class-name)
+           (ignore-errors
+             (nth-value 0 (subtypep class-name 'spec:document))))
+      (star.documents:decode-document json-obj :expected-class class-name)
+      (spec:decode json-obj class-name :format-fn format-fn)))
 
 (defun get-targets* (client database &rest actors)
   (let* ((response (query-view client database "targets" "by_actor"
@@ -14,11 +31,11 @@
          (rows (jsown:val response "rows")))
     (loop for row in rows
           for document = (jsown:val row "doc")
-          for actor = (star.documents.v09:document-value document "actor")
+          for actor = (star.documents:document-value document "actor")
           collect (cons actor document))))
 
 (defun date-sort-key (document)
-  (star.documents.v09:document-date-added document))
+  (star.documents:document-date-added document))
 
 (defun date-after-p (left right)
   (cond
@@ -28,7 +45,7 @@
     (t nil)))
 
 (defun sort-docs-by-date (documents)
-  "Sort canonical v0.9 documents by ISO-8601 date_added descending."
+  "Sort StarIntel documents by date-added descending across supported schemas."
   (sort documents #'date-after-p :key #'date-sort-key))
 
 (defun seconds-ago-iso (seconds)
@@ -39,7 +56,7 @@
    :format local-time:+iso-8601-format+))
 
 (defun total-documents-since (client database seconds &key (include-docs nil) (reduce nil))
-  "Count canonical v0.9 documents added during the previous SECONDS."
+  "Count documents added during the previous SECONDS."
   (declare (ignore reduce))
   (length
    (jsown:val
