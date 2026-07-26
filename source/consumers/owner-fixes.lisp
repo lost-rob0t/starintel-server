@@ -25,6 +25,34 @@
 (defun increment-failures (consumer)
   (update-consumer-metric-slot consumer 'failures 1))
 
+(defun consumer-process-delivery (consumer delivery)
+  "Run filter/handler and settle DELIVERY exactly once on the owner thread."
+  (increment-unsettled consumer)
+  (let ((settlement
+          (handler-case
+              (if (funcall (consumer-filter consumer) delivery)
+                  (progn
+                    (increment-in-flight consumer)
+                    (unwind-protect
+                         (normalize-settlement
+                          (funcall
+                           (consumer-fn consumer)
+                           consumer
+                           delivery))
+                      (decrement-in-flight consumer)))
+                  (configured-filter-settlement consumer))
+            (error (condition)
+              (increment-failures consumer)
+              (configured-failure-settlement consumer condition)))))
+    ;; If settlement fails, UNSETTLED remains non-zero. The owner loop exits
+    ;; rather than pretending Rabbit prefetch credit was restored.
+    (stream-settle (consumer-stream consumer) delivery settlement)
+    (decrement-unsettled consumer)
+    (increment-settlement-count
+     consumer
+     (consumer-settlement-action settlement))
+    settlement))
+
 (defmethod open-stream ((stream rabbit-queue-stream))
   (when (rabbit-stream-open-p stream)
     (error "Rabbit stream is already open"))
