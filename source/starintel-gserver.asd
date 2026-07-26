@@ -9,6 +9,7 @@
   :entry-point "star::main"
   :components   ((:file "consumers/package")
                  (:file "consumers/consumers")
+                 (:file "consumers/owner-fixes")
                  (:file "producers/package")
                  (:file "producers/producers")
                  (:file "document-v09-package")
