@@ -35,7 +35,8 @@ RUN qlot exec sbcl --non-interactive \
     --load tests/run-consumer-owner-conformance.lisp \
     --load tests/run-retry-quarantine-conformance.lisp \
     --load tests/run-target-recovery-conformance.lisp \
-    --load tests/run-target-dispatch-acceptance.lisp
+    --load tests/run-target-dispatch-acceptance.lisp \
+    --load tests/run-document-update-conformance.lisp
 
 FROM conformance AS star-server
 
