@@ -97,8 +97,13 @@
    #:couchdb-list-quarantine-records
    #:update-quarantine-record
    #:mark-quarantine-replayed
-   #:replay-quarantine-record)
-  (:documentation "CouchDB persistence, query, outbox, and quarantine support."))
+   #:replay-quarantine-record
+   #:target-acceptance-store-conflict
+   #:couchdb-load-target-acceptance
+   #:couchdb-save-target-acceptance
+   #:couchdb-update-target-acceptance
+   #:couchdb-persist-target-acceptance)
+  (:documentation "CouchDB persistence, query, outbox, quarantine, and target acceptance support."))
 
 (uiop:define-package :star.rabbit
   (:use :cl :star.consumers :sento.actor)
@@ -127,7 +132,7 @@
 
 (uiop:define-package :star.actors
   (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
-  (:documentation "StarIntel actors and typed target recovery.")
+  (:documentation "StarIntel actors, target recovery, and durable target dispatch.")
   (:export
    #:register-actor
    #:*targets*
@@ -170,6 +175,51 @@
    #:invalid-target-document-id
    #:invalid-target-reason
    #:*recovered-target-fingerprints*
+   #:target-destination-handle
+   #:target-destination-handle-kind
+   #:target-destination-handle-name
+   #:target-destination-handle-component
+   #:target-destination-handle-routing-key
+   #:target-destination-handle-compatibility-routing-keys
+   #:target-dispatch-envelope
+   #:target-dispatch-envelope-record
+   #:target-dispatch-envelope-destination
+   #:target-dispatch-envelope-schedule-id
+   #:target-dispatch-envelope-execution-id
+   #:target-dispatch-envelope-attempt
+   #:target-dispatch-envelope-trace-id
+   #:target-dispatch-envelope-lease-id
+   #:target-dispatch-envelope-fencing-token
+   #:target-dispatch-envelope-deadline
+   #:target-dispatch-outcome
+   #:target-dispatch-outcome-status
+   #:target-dispatch-outcome-reason
+   #:target-dispatch-outcome-acceptance-id
+   #:target-dispatch-outcome-envelope
+   #:target-dispatch-outcome-retryable-p
+   #:invalid-target-dispatch
+   #:invalid-target-dispatch-reason
+   #:target-ingress-overloaded
+   #:target-ingress-overloaded-reason
+   #:target-destination-unavailable
+   #:target-destination-unavailable-reason
+   #:canonical-target-routing-key
+   #:compatibility-target-routing-keys
+   #:resolve-target-destination
+   #:validate-target-dispatch-record
+   #:make-target-dispatch-envelope
+   #:target-acceptance-id
+   #:target-acceptance-document
+   #:target-acceptance-equivalent-p
+   #:dispatch-target-envelope-now
+   #:register-target-schedule
+   #:process-target-dispatch-envelope
+   #:accept-target-record
+   #:accept-target-delivery
+   #:target-outcome-success-p
+   #:make-remote-target-consumer
+   #:*active-target-schedules*
+   #:*target-max-delay-seconds*
    #:handle-event-message
    #:start-event-consumer
    #:log-actor-event

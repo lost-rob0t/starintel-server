@@ -144,15 +144,36 @@
   (star.documents:document-transient-p
    (decode-rabbit-document message)))
 
+(defun target-outcome-settlement (outcome)
+  "Translate durable target acceptance outcomes to owner-thread settlement."
+  (case (star.actors:target-dispatch-outcome-status outcome)
+    ((:accepted :duplicate)
+     (settlement-ack
+      (or (star.actors:target-dispatch-outcome-reason outcome)
+          "target dispatch durably accepted")))
+    (:invalid
+     (settlement-dead-letter
+      (star.actors:target-dispatch-outcome-reason outcome)
+      (make-condition
+       'star.consumers:permanent-delivery-error
+       :reason (star.actors:target-dispatch-outcome-reason outcome))))
+    ((:overloaded :unavailable :failed)
+     (settlement-retry
+      (star.actors:target-dispatch-outcome-reason outcome)
+      (make-condition
+       'star.consumers:transient-delivery-error
+       :reason (star.actors:target-dispatch-outcome-reason outcome))))
+    (otherwise
+     (settlement-reject
+      "unknown target dispatch outcome"
+      (make-condition
+       'star.consumers:permanent-delivery-error
+       :reason "unknown target dispatch outcome")))))
+
 (defun handle-target (self message)
-  (declare (ignore self))
   (let ((body (decode-rabbit-document message :route-dtype "target")))
-    (if (star.documents:document-transient-p body)
-        (settlement-filtered-ack
-         "transient target intentionally ignored")
-        (progn
-          (star.actors:submit-target body :first-time-p t)
-          (settlement-ack "target accepted by typed actor mailbox")))))
+    (target-outcome-settlement
+     (star.actors:accept-target-delivery self body))))
 
 (defun consumer-retry-options ()
   (list
