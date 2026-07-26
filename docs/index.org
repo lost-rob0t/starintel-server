@@ -1,0 +1,44 @@
+#+title: StarIntel Server documentation
+#+options: toc:2
+
+* Documentation index
+
+This directory documents the implemented StarIntel Server runtime. It is written
+from the code in =source/starintel-gserver.asd=, not from an aspirational
+architecture.
+
+** Start here
+
+1. [[file:../README.org][README]] — install, run, submit a document, and find the main entry points.
+2. [[file:architecture.org][Architecture]] — understand startup, components, concurrency, and the repository.
+3. [[file:document-spec.org][Document specification]] — understand the data that moves through the system.
+4. [[file:actors.org][Actors]] — build local actors and connect external actor services.
+5. [[file:messaging.org][Messaging]] — understand routing, delivery, recursion, and loop control.
+6. [[file:configuration.org][Configuration]] — configure local, container, remote, and tuned deployments.
+7. [[file:http-api-docs.org][HTTP API]] — call the service.
+8. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
+
+** Implementation status
+
+| Area | Status | Notes |
+|------+--------+-------|
+| CouchDB database initialization | Active | Creates main and actor-event databases; upserts design documents |
+| RabbitMQ document ingest | Active | =documents.ingest.#= |
+| RabbitMQ update ingest | Active | =documents.updated.#=; partial deep merge and conflict retry |
+| Target routing | Active | Local Sento actor or =actors.<name>.new.target= |
+| Actor event storage | Active | Local receiver and separate =events= exchange consumer |
+| HTTP API | Active | No authentication; CORS allows every origin |
+| Clouseau full-text search | Active in Compose | Search endpoint uses CouchDB FTS design document |
+| URL extractor pattern | Experimental | Actor starts; complete global pattern dispatcher is not evident |
+| User-finder/user-hunt actors | Present, inactive | Files are not in the ASDF component list |
+| HTTP event endpoint | Stub | =/new/event/:id= has no implementation |
+| Strict StarIntel 0.9 ingest validation | Not wired | Validators exist in =star-cl=, but HTTP/Rabbit ingest accepts raw JSON |
+
+** Source-of-truth rule
+
+When documentation and code disagree, the current code wins. Correct the docs in
+the same pull request as behavior changes.
+
+The document model itself lives in [[https://github.com/lost-rob0t/star-cl][lost-rob0t/star-cl]]. The Python adapter lives
+in [[https://github.com/lost-rob0t/starintel-doc][lost-rob0t/starintel-doc]]. This server transports and stores those documents,
+but it currently also carries legacy flat 0.8 behavior.
