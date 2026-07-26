@@ -1,7 +1,6 @@
-;; [[file:../source.org::*Namespace setup][Namespace setup:2]]
-(uiop:define-package   :starintel-gserver
+(uiop:define-package :starintel-gserver
   (:nicknames :star)
-  (:use       :cl)
+  (:use :cl)
   (:export
    #:*rabbit-password*
    #:*rabbit-user*
@@ -30,54 +29,68 @@
    #:*couchdb-views*
    #:*star-server-version*))
 
+(uiop:define-package :star.databases.couchdb
+  (:use :cl-couch :cl :star #:lparallel)
+  (:export
+   #:init-db
+   #:init-views
+   #:get-targets*
+   #:get-view-docs
+   #:query-view
+   #:map-view-results
+   #:get-neighbors
+   #:search-fts
+   #:sort-docs-by-date
+   #:messages-by-user
+   #:messages-by-platform
+   #:messages-by-group
+   #:social-posts-by-user
+   #:social-posts-by-group
+   #:by-channel
+   #:export-by-dataset*
+   #:count-by-dtype
+   #:dataset-size
+   #:total-documents-since
+   #:orgs-by-country
+   #:orgs-by-name
+   #:persons-by-name
+   #:persons-by-region
+   #:relations-edges
+   #:relations-incoming-count
+   #:relations-outgoing-count
+   #:targets-actor-counts
+   #:targets-by-actor
+   #:targets-target-count
+   #:users-by-platform
+   #:as-json
+   #:format-key
+   #:from-json
+   #:*couchdb-pool*
+   #:groups
+   #:lazy
+   #:prepare-outbox-mutation
+   #:persist-outbox-mutation
+   #:process-outbox-mutation
+   #:recover-outbox-documents
+   #:document-outbox-entries
+   #:find-outbox-entry
+   #:outbox-entry-published-p
+   #:outbox-entry-mutation-id
+   #:outbox-entry-sequence
+   #:mutation-conflict
+   #:mutation-conflict-id
+   #:mutation-conflict-document-id
+   #:mutation-conflict-reason
+   #:outbox-store-conflict
+   #:missing-document-for-update
+   #:couchdb-process-outbox-mutation
+   #:couchdb-pending-outbox-documents
+   #:recover-couchdb-outbox)
+  (:documentation "CouchDB persistence, query, and outbox support."))
 
-(uiop:define-package   :star.databases.couchdb
-  (:use       :cl-couch :cl :star #:lparallel)
-  (:export :init-db
-   :init-views
-           :get-targets*
-   :get-view-docs
-           :query-view
-   :map-view-results
-           :get-neighbors
-   :search-fts
-           :sort-docs-by-date
-   :messages-by-user
-           :messages-by-platform
-   :messages-by-group
-           :social-posts-by-user
-   :social-posts-by-group
-           :by-channel
-   :export-by-dataset*
-           :count-by-dtype
-   :dataset-size
-           :total-documents-since
-   :orgs-by-country
-           :orgs-by-name
-   :persons-by-name
-           :persons-by-region
-   :relations-edges
-           :relations-incoming-count
-   :relations-outgoing-count
-           :targets-actor-counts
-   :targets-by-actor
-           :targets-target-count
-   :users-by-platform
-           :as-json
-   :format-key
-           :from-json
-   :*couchdb-pool*
-           :groups
-   :lazy
-           :t
-   :nil)
-  (:documentation "doc"))
-;; Namespace setup:2 ends here
-
-;; [[file:../source.org::*Namespace setup][Namespace setup:3]]
-(uiop:define-package   :star.rabbit
-  (:use       :cl :star.consumers  :sento.actor)
-  (:documentation "Rabitmq namespace")
+(uiop:define-package :star.rabbit
+  (:use :cl :star.consumers :sento.actor)
+  (:documentation "RabbitMQ document transport.")
   (:export
    #:with-rabbit-send
    #:with-rabbit-recv
@@ -88,14 +101,17 @@
    #:+update-key+
    #:+targets-key+
    #:transient-p
+   #:handle-document
+   #:handle-update-document
+   #:publish-outbox-event
+   #:recover-pending-publications
    #:test-make-doc
    #:test-send
    #:start-consumers))
-;; Namespace setup:3 ends here
 
-(uiop:define-package   :star.actors
-  (:use       :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
-  (:documentation "doc")
+(uiop:define-package :star.actors
+  (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+  (:documentation "StarIntel actors.")
   (:export
    #:register-actor
    #:*targets*
@@ -126,12 +142,8 @@
    #:event-source-document
    #:event-id))
 
-
-;; [[file:../source.org::*Namespace setup][Namespace setup:4]]
-(uiop:define-package   :starintel-gserver-http-api
+(uiop:define-package :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
-  (:use       :cl :ningle :anypool :star.databases.couchdb :star)
-  (:documentation "simple http api.")
-  (:export
-   #:*default-headers*))
-;; Namespace setup:4 ends here
+  (:use :cl :ningle :anypool :star.databases.couchdb :star)
+  (:documentation "StarIntel HTTP API.")
+  (:export #:*default-headers*))
