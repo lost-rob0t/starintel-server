@@ -68,7 +68,7 @@ class TargetRecoveryContractTests(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         for name in (
             "test-target-repository-uses-configured-database-and_canonical_view",
-            "test-empty-target_repository-is_empty",
+            "test-empty-target_repository_is_empty",
             "test-invalid-persisted_target_is_quarantined",
             "test_one_shot_and_recurring_targets_recover_once",
             "test-active_lease_suppresses_recovery",
