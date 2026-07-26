@@ -10,16 +10,17 @@
     :long-name "init"
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
-    :key :init-value)
-   ))
+    :key :init-value)))
+
 
 (defun server/handler (cmd)
   (let ((debugger (clingon:getopt cmd :debugger))
         (init-file (clingon:getopt cmd :init-value)))
 
-    (load init-file :if-does-not-exist :create)
-    (log:info (format nil "Creating ~a worker threads" star:*injest-workers*))
-    (setf lparallel:*kernel* (lparallel:make-kernel star:*injest-workers*))
+    (safe-load-init init-file)
+    
+    (log:info (format nil "Creating ~a worker threads" star:*ingest-workers*))
+    (setf lparallel:*kernel* (lparallel:make-kernel star:*ingest-workers*))
     (star.databases.couchdb:init-db)
     (star.actors:start-actors :rabbit-host *rabbit-address*
                               :rabbit-vhost "/"
@@ -44,8 +45,8 @@
    :authors '("nsaspy <nsaspy@airmail.cc>")
    :license "GPL v3"
    :options (server/options)
-   :handler #'server/handler)
-  )
+   :handler #'server/handler))
+
 
 (defun main/commands ()
   (list
@@ -66,7 +67,6 @@
                         :sub-commands (main/commands)))
 
 (defun start-debugger ()
-  (ql:quickload '("slynk" "bordeaux-threads"))
   (format t "Creating slynk server on port: ~a" star:*slynk-port*)
   (slynk:create-server :port star:*slynk-port*))
 
@@ -76,4 +76,20 @@
   (let ((app (main/command)))
     (clingon:run app)))
 
+
+(defun repl/main (init-file)
+  "Load the server from the repl"
+  
+  (safe-load-init init-file)
+  (log:info (format nil "Creating ~a worker threads" star:*ingest-workers*))
+  (setf lparallel:*kernel* (lparallel:make-kernel star:*ingest-workers*))
+  (star.databases.couchdb:init-db)
+  (star.actors:start-actors :rabbit-host *rabbit-address*
+                            :rabbit-vhost "/"
+                            :rabbit-port *rabbit-port*
+                            :rabbit-user *rabbit-user*
+                            :rabbit-password *rabbit-password*)
+  (star.frontends.http-api::start-http-api)
+  (star.rabbit:start-consumers)
+  (star.actors:start-event-consumer 2))
 

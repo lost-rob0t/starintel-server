@@ -7,6 +7,18 @@
 .direnv/*
 /gserver.log
 /star-server
+./tokens.org
 /ideas/*.org
-/.context/**
-/tasks.org
+
+# Generated/runtime files
+logs/
+init.lisp
+.context/
+
+# Build artifacts
+result
+result-*
+
+# Local deployment configuration and secrets
+.env
+secrets/

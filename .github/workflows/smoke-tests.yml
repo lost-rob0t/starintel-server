@@ -1,0 +1,88 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [ "dev", "master" ]
+  pull_request:
+    branches: [ "dev", "master" ]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Run hermetic unit tests
+        run: nix run .#star-unit-tests
+
+  integration-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      rabbitmq:
+        image: rabbitmq:4.3.4-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      couchdb:
+        image: couchdb:3.5.2
+        ports:
+          - 5984:5984
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        options: >-
+          --health-cmd "curl -f http://localhost:5984/_up || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Wait for services and initialize
+        run: |
+          # Wait for RabbitMQ
+          echo "Waiting for RabbitMQ..."
+          timeout 60 bash -c 'until curl -f http://localhost:15672 > /dev/null 2>&1; do sleep 2; done'
+
+          # Wait for CouchDB
+          echo "Waiting for CouchDB..."
+          timeout 60 bash -c 'until curl -f http://localhost:5984/_up > /dev/null 2>&1; do sleep 2; done'
+
+          # Create CouchDB database
+          echo "Creating CouchDB database..."
+          curl -X PUT http://admin:password@localhost:5984/starintel
+
+          echo "Services ready!"
+
+      - name: Run service-backed integration tests
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+          RABBITMQ_USER: guest
+          RABBITMQ_PASSWORD: guest
+        run: nix run .#star-integration-tests

@@ -2,22 +2,44 @@
   "nodes": {
     "nixpkgs": {
       "locked": {
-        "lastModified": 1739384983,
-        "narHash": "sha256-rgI0sh+dH0tXo36xs1r8QUe5g2aS0jkK7IRQ44k79sI=",
+        "lastModified": 1770115704,
+        "narHash": "sha256-KHFT9UWOF2yRPlAnSXQJh6uVcgNcWlFqqiAZ7OVlHNc=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "88b1f5871aea206dedadb0331f902f430847350e",
+        "rev": "e6eae2ee2110f3d31110d5c222cd395303343b08",
         "type": "github"
       },
       "original": {
         "owner": "nixos",
+        "ref": "nixos-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "star-cl": "star-cl"
+      }
+    },
+    "star-cl": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1769361023,
+        "narHash": "sha256-CJMDv+FVsrSTIolKxOS7DIRrPxI70uE/YRvoDBtucAY=",
+        "owner": "lost-rob0t",
+        "repo": "star-cl",
+        "rev": "36c88aabcbe43a02c189e5b7704a1f063461c888",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lost-rob0t",
+        "repo": "star-cl",
+        "type": "github"
       }
     }
   },

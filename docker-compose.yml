@@ -1,64 +1,137 @@
-version: '3.8'
+name: starintel
 
 services:
-  couchdb:
-    container_name: "couchdb"
-    hostname: couchdb
-    image: ibmcom/couchdb3
-    volumes:
-      - couchdb:/opt/couchdb/data
+  clouseau:
+    image: starintel/clouseau:3.3.0
+    hostname: clouseau
+    domainname: starintel.internal
+    restart: unless-stopped
     environment:
-      #NOTE CHANGE ME
-      COUCHDB_USER: admin
-      COUCHDB_PASSWORD: password
-    ports:
-      - "5984:5984"
+      CLOUSEAU_COOKIE_FILE: /run/secrets/erlang_cookie
+      JAVA_TOOL_OPTIONS: ${CLOUSEAU_JAVA_OPTS:--Xms256m -Xmx1g}
+    secrets:
+      - erlang_cookie
+    volumes:
+      - clouseau_index:/var/lib/clouseau
     networks:
-      - star
+      backend:
+        aliases:
+          - clouseau.starintel.internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - epmd -names | grep -q 'name clouseau at port'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  couchdb:
+    image: starintel/couchdb:3.5.2
+    hostname: couchdb
+    domainname: starintel.internal
+    restart: unless-stopped
+    environment:
+      COUCHDB_USER: ${COUCHDB_USER:-admin}
+      COUCHDB_PASSWORD_FILE: /run/secrets/couchdb_password
+      COUCHDB_SECRET_FILE: /run/secrets/couchdb_secret
+      COUCHDB_ERLANG_COOKIE_FILE: /run/secrets/erlang_cookie
+      NODENAME: couchdb.starintel.internal
+    secrets:
+      - couchdb_password
+      - couchdb_secret
+      - erlang_cookie
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    ports:
+      - "${COUCHDB_BIND_ADDRESS:-127.0.0.1}:${COUCHDB_PORT:-5984}:5984"
+    networks:
+      backend:
+        aliases:
+          - couchdb.starintel.internal
+    depends_on:
+      clouseau:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:5984/_up]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   rabbitmq:
-    image: rabbitmq:management
+    image: rabbitmq:4.3.4-management
     hostname: rabbitmq
-    container_name: "rabbitmq"
+    restart: unless-stopped
     environment:
-      #NOTE CHANGEME
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-starintel}
+    entrypoint: [/bin/bash, -ec]
+    command:
+      - |
+        export RABBITMQ_DEFAULT_PASS="$$(< /run/secrets/rabbitmq_password)"
+        exec /usr/local/bin/docker-entrypoint.sh rabbitmq-server
+    secrets:
+      - rabbitmq_password
     volumes:
-      - rabbitmq:/var/lib/rabbitmq
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     networks:
-      - star
+      - backend
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   star-server:
+    image: starintel/server:0.1.0
     hostname: star-server
-    container_name: "star-server"
-    restart: always
-    build: .
-    volumes:
-      # You can copy example_configs to ./config in order to configure star-server
-      - ./config:/config
+    restart: unless-stopped
     environment:
-      BUILD_MODE: DEV
+      COUCHDB_HOST: couchdb
+      COUCHDB_DATABASE: ${COUCHDB_DATABASE:-starintel}
+      COUCHDB_USER: ${COUCHDB_USER:-admin}
+      COUCHDB_PASSWORD_FILE: /run/secrets/couchdb_password
+      RABBITMQ_ADDRESS: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-starintel}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      HTTP_API_LISTEN_ADDRESS: 0.0.0.0
+    secrets:
+      - couchdb_password
+      - rabbitmq_password
     ports:
-      # port 4009 is a debugging port and you MUST disable it during prod use
-      - "5000:5000"
+      - "${STAR_SERVER_BIND_ADDRESS:-127.0.0.1}:${STAR_SERVER_PORT:-5000}:5000"
     networks:
-      - star
-      - default
+      - backend
     depends_on:
-      - couchdb
-      - rabbitmq
-    extra_hosts:
-      - host.docker.internal:host-gateway
+      couchdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:5000/health]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
+secrets:
+  couchdb_password:
+    file: ${CREDENTIALS_DIR:-./secrets}/couchdb_password
+  couchdb_secret:
+    file: ${CREDENTIALS_DIR:-./secrets}/couchdb_secret
+  erlang_cookie:
+    file: ${CREDENTIALS_DIR:-./secrets}/erlang_cookie
+  rabbitmq_password:
+    file: ${CREDENTIALS_DIR:-./secrets}/rabbitmq_password
 
+volumes:
+  clouseau_index:
+  couchdb_data:
+  rabbitmq_data:
 
 networks:
-  star:
-    name: star
-  default:
-volumes:
-    couchdb:
-    rabbitmq:
+  backend:

@@ -1,0 +1,127 @@
+#+TITLE: StarIntel Server TODO
+#+AUTHOR: unseen
+#+DATE: 2026-01-16
+
+* BUGS
+** TODO Fix couchdb-agent-delete function signature
+:PROPERTIES:
+:CREATED: [2026-01-16]
+:PRIORITY: HIGH
+:FILE: source/actors.lisp:85-87
+:END:
+
+The ~couchdb-agent-delete~ function is calling ~cl-couch:delete-document~ with only 3 arguments (client, database, document-id), but the cl-couch library requires 4 arguments (client, database, id, rev).
+
+*** Error Message
+#+begin_example
+[http-tests] Error deleting document: invalid number of arguments: 4
+#+end_example
+
+*** Current Implementation (BROKEN) - source/actors.lisp:85-87
+#+begin_src lisp
+(defun couchdb-agent-delete (agent database document-id)
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (cl-couch:delete-document client database document-id)))
+#+end_src
+
+*** Actual cl-couch Signature - /home/unseen/common-lisp/cl-couch/couch.lisp:527
+#+begin_src lisp
+(defmethod delete-document ((client couchdb-client) database id rev)
+  (couchdb-request client
+                   (quri:make-uri :path (format nil "/~a/~a" database id)
+                                  :query (quri:url-encode-params (safe-alist `((rev . ,rev)))))
+                   :method :delete))
+#+end_src
+
+The revision parameter is REQUIRED by CouchDB's REST API for document deletion to prevent conflicts.
+
+*** Correct Implementation Pattern
+See ~source/frontends/http-api.lisp:199-208~ and ~t/http-api-test.lisp:271-287~ for examples of correct usage:
+
+1. Fetch the document to get its current revision
+2. Parse the document JSON to extract ~_rev~
+3. Call ~delete-document~ with all 4 required arguments
+
+#+begin_src lisp
+(defun couchdb-agent-delete (agent database document-id)
+  (anypool:with-connection (client (couchdb-agent-client agent))
+    (let* ((doc (cl-couch:get-document client database document-id))
+           (parsed-doc (jsown:parse doc))
+           (rev (jsown:val parsed-doc "_rev")))
+      (cl-couch:delete-document client database document-id rev))))
+#+end_src
+
+*** Root Cause
+The bug is in the starintel-server codebase, NOT in cl-couch. The cl-couch library correctly requires a revision parameter (as per CouchDB's REST API), but ~couchdb-agent-delete~ is not fetching the revision before attempting deletion.
+
+*** Impact
+- Any code calling ~couchdb-agent-delete~ will fail with "invalid number of arguments: 4" error
+- This affects document deletion functionality throughout the actor system
+- HTTP API delete endpoint works correctly because it fetches revision first
+** TODO TODO.org — Fix target publish + ingest conflicts
+
+Stop double-consuming targets (cause of 409 conflicts)
+
+Right now targets are delivered to both:
+
+documents.ingest queue (bound to documents.ingest.# → handle-new-document)
+
+targets queue (bound to documents.ingest.target.# → handle-new-target)
+
+Pick one path:
+
+Option A (single consumer): don’t start target-consumers / don’t bind targets queue.
+
+Option B (keep both queues): make handle-new-document ignore dtype=target (ACK + return) so only handle-new-target inserts/routes.
+
+Fix target “final hop” routing key (why actors never see targets)
+
+In actors.lisp inside the *targets* actor, change routing key from:
+
+actors.~a.new.target
+
+To:
+
+documents.new.target.~a
+
+This must match your exchange bindings for final actor consumption.
+
+(If moving to one consumer) simplify target handling
+
+Use a stripped-down target handler that only does:
+
+normalize id / ensure dtype
+
+(tell star.actors:*targets* (cons 1 body))
+
+basic-ack
+
+Keep DB insert in exactly one place (either ingest consumer or target consumer, not both).
+
+Verify your ingest binding intent
+
+documents.ingest.# means ingest consumer will receive all dtypes (target, domain, url, etc.).
+
+If you meant “targets only”, bind to documents.ingest.target.# instead (or keep documents.ingest.# but route by dtype internally).
+
+* FEATURES
+** TODO Add bulk document deletion support
+Consider adding a bulk delete operation for efficiency when cleaning up multiple documents.
+
+* DOCUMENTATION
+** TODO Document actor system patterns
+Create comprehensive documentation for common actor patterns and message flows.
+
+** TODO Add API endpoint documentation
+Generate OpenAPI/Swagger documentation for HTTP API endpoints.
+
+* REFACTORING
+** TODO Consolidate CouchDB connection handling
+Connection pooling is implemented in multiple places. Consider creating a unified module.
+
+* TESTING
+** TODO Add integration tests for actor message flows
+Current tests focus on HTTP API. Need tests for actor-to-actor messaging.
+
+** TODO Add performance/load tests
+Test system behavior under high document throughput.

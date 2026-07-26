@@ -1,5 +1,6 @@
 (in-package :star.consumers)
 
+
 (defclass consumer ()
   ((name :initarg :name :accessor consumer-name :initform "")
    (predicate :initarg :test-fn :initform (lambda (self message)
@@ -109,7 +110,9 @@
 
 (defmethod consumer-read ((consumer rabbit-consumer))
   (let ((msg (stream-read (consumer-stream consumer))))
-    (cons (babel:octets-to-string (cl-rabbit:message/body (cl-rabbit:envelope/message msg)) :encoding :utf-8)
+    (cons (babel:octets-to-string
+           (cl-rabbit:message/body (cl-rabbit:envelope/message msg))
+           :encoding :utf-8)
           (cl-rabbit:envelope/delivery-tag msg))))
 
 

@@ -1,0 +1,8 @@
+* Project Tasks
+** Testing
+#+Name: smoke-test
+#+begin_src sh :async :results output replace
+nix run .#star-smoke; echo $?
+#+end_src
+
+#+RESULTS: smoke-test

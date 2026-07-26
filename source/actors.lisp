@@ -1,12 +1,12 @@
 ;;;; ** Actor System
 
 (in-package :star.actors)
-(defparameter *sys* nil "the main actor system")
+(defvar *sys* nil "the main actor system")
 
 (defun start-actor-system ()
   "Start the actors."
   (setf *sys* (make-actor-system `(:dispatchers
-                                   (:pinned (:workers ,star:*injest-workers* :strategy :random))
+                                   (:pinned (:workers ,star:*ingest-workers* :strategy :random))
                                    :timeout-timer
                                    (:resolution 500 :max-size 1000)
                                    :eventstream
@@ -16,37 +16,54 @@
 
 
 ;;;; *** Target Routing
-(defparameter *actor-index-agent* nil "Actor index agent is responsible for registering actors for targets.")
+(defvar *actor-index-agent* nil "Actor index agent is responsible for registering actors for targets.")
 
 (defun start-actor-index (system)
   "Start the actor index for target routing."
-  (setf *actor-index-agent* (make-agent #'serapeum:dict system)))
+  (log:info "Starting actor index for target routing")
+  (setf *actor-index-agent* (make-agent #'serapeum:dict system))
+  (log:info "Actor index started successfully"))
 
 ;;;; Register an actor for recieving target inputs
 ;;;; Actors must be registered with actor-index before they will get any target messages.
 (defun register-actor (actor-name actor-symbol)
-  (setf (agent-get *actor-index-agent* #'identity) (serapeum:dict* (agent-get *actor-index-agent*) actor-name actor-symbol)))
+  (log:info "Registering actor: ~a -> ~a" actor-name actor-symbol)
+  (agent-update *actor-index-agent*
+                (lambda (current-dict)
+                  (serapeum:dict* current-dict actor-name actor-symbol)))
+  (log:debug "Actor registered successfully: ~a" actor-name))
 
 ;;;; Return the destination actor symbol by actor name string
 (defun get-dest-actor (actor)
-  (serapeum:@  (agent-get *actor-index-agent* #'identity) actor))
+  (let ((dest (serapeum:@  (agent-get *actor-index-agent* #'identity) actor)))
+    (log:debug "Looking up destination actor for: ~a -> ~a" actor dest)
+    dest))
 
 ;;;; Send the the target to the destination actor
 (defun route-target (target actor)
+  (log:debug "Routing target to actor: ~a" actor)
   (let ((dest (get-dest-actor actor)))
-    (format t "got ~a" actor)
-    (when dest
-      (tell dest target))))
+    (log:debug "Destination actor lookup result: ~a" dest)
+    (if dest
+        (progn
+          (log:info "Sending target to destination actor: ~a" dest)
+          (tell dest target)
+          (log:debug "Target sent successfully to: ~a" dest))
+        (log:warn "No destination actor found for: ~a" actor))))
 
 ;;;; *** Couchdb Actors
 ;;;; These are sorta kinda maybe deprecated.
 ;;;; In the future these will not be removed, but instead re-worked, outside of consumers these can provide feedback to incase db op failed
 ;;;; Consumers just consume and no way to really provide said feedback.
-(defparameter *couchdb-agent* nil)
+(defvar *couchdb-agent* nil)
 (defun make-couchdb-agent (context client
-                           &key (error-fun nil) (dispatcher-id :shared))
+                           &key (error-fun nil) (dispatcher-id :pinned))
+  (declare (ignore client error-fun))
+  ;; Keep the CouchDB pool lookup off the shared dispatcher.
   (make-agent (lambda ()
-                star.databases.couchdb:*couchdb-pool*)))
+                star.databases.couchdb:*couchdb-pool*)
+              context
+              dispatcher-id))
 
 
 ;;;; Get the couchdb client for use with cl-couch
@@ -58,8 +75,9 @@
 (defun couchdb-agent-insert (agent database document)
   "Preform a insert operation into couchdb."
   (anypool:with-connection (client (couchdb-agent-client agent))
-    (format t "~a~%" (jsown:to-json document))
-    (force-output t)
+    ;; IMPORTANT: Never print/force-output here.
+    ;; This function runs on the actor dispatcher; writing to stdout can block
+    ;; (e.g. when stdout is a pipe), which can deadlock the whole system.
     (cl-couch:create-document client database document)))
 
 ;;;; Preform a update operation on couchdb. You must provide the revision tag.
@@ -69,7 +87,7 @@
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:create-document client database (jsown:to-json
                                                (jsown:extend-js (jsown:parse document)
-                                                 ("_rev" revision))))))
+                                                                ("_rev" revision))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
   (anypool:with-connection (client (couchdb-agent-client agent))
@@ -94,7 +112,7 @@
     (setf *couchdb-agent* (make-couchdb-agent system client))))
 
 
-(defparameter *couchdb-inserts* nil "Actor responsible for handling couchdb inserts")
+(defvar *couchdb-inserts* nil "Actor responsible for handling couchdb inserts")
 ;;;; Start the couchdb inserts actor
 (defun start-couchdb-inserts (system)
   (setf *couchdb-inserts* (actor-of system
@@ -108,7 +126,7 @@
                                                    (reply (couchdb-agent-insert *couchdb-agent* database doc))))))))
 
 
-(defparameter *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
+(defvar *couchdb-gets* nil "The Couchdb actor responsible for handling document gets.")
 ;;;; Start the couchdb GET actor.
 ;; FIXME
 (defun start-couchdb-gets (system)
@@ -128,14 +146,14 @@
 ;;;; *** Target Actor
 ;;;; The target actor is responsible for routing TARGET documents to actors. Actors can reside over rabbitmq or in same proccess with lisp
 ;; TODO Target services over ZMQ
-(defparameter *targets* nil "The Target actor.
+(defvar *targets* nil "The Target actor.
 It is responsble for routing TARGET documents to actors. Actors can reside over rabbitmq or in same-process with lisp.")
 
 ;;;; *** Target Operations
 ;;;; Fetch targets from database
 (defun get-targets (client database)
   (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                 ("include_docs" "true"))))) "rows")))
+                                                                                                                                                ("include_docs" "true"))))) "rows")))
     (when (> 0 (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
@@ -146,9 +164,15 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; target actor will route the message to a registered lisp actor or submit to rabbitmq
 (defun sumbit-target (target &optional (first-time t))
   "Create a message for the *targets* actor."
+  (log:info "Submitting target - first-time: ~a actor: ~a"
+            first-time (jsown:val-safe target "actor"))
+  (log:debug "Target details: recurring=~a delay=~a"
+             (jsown:val-safe target "recurring")
+             (jsown:val-safe target "delay"))
   (tell *targets*  (if first-time
                        (cons t target)
-                       (cons nil target))))
+                       (cons nil target)))
+  (log:debug "Target submitted to *targets* actor"))
 
 ;;;; return t if this is the first time we handled this target.
 (defun first-time-p (msg)
@@ -161,41 +185,63 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 ;;;;  Start the targets loader
 (defun start-target-loader ()
+  (log:info "Starting target loader")
   (let (targets (get-targets (anypool:with-connection (client *couchdb-pool*)
                                (get-targets client star:*couchdb-default-database*))))
+    (log:info "Loaded ~a targets from database" (length targets))
     (loop for target in targets
-          do (submit-target target t))))
+          do (submit-target target t))
+    (log:info "Target loader completed - all targets submitted")))
 
 
 ;;;; Start the target routing actor.
 (defun start-target-actor (system)
+  (log:info "Starting target actor")
   (setf *targets* (actor-of system
                             :name "*targets*"
                             :receive (lambda (msg)
+                                       (log:debug "*targets* actor received message")
                                        (let* ((target (cdr msg))
                                               (actor (jsown:val target "actor"))
-                                              (delay (jsown:val-safe target "delay")))
-                                         (if (not (get-dest-actor actor))
-                                             ;; DEPRECATED Use the producer actor
-                                             (progn
-                                               (star.rabbit:emit-document  "documents" (format nil "actors.~a.new-target" actor)
-                                                                           (jsown:to-json target)
-                                                                           :host star:*rabbit-address*
-                                                                           :port star:*rabbit-port*
-                                                                           :username star:*rabbit-user* :password star:*rabbit-password*)))
+                                              (delay (jsown:val-safe target "delay"))
+                                              (recurring (jsown:val-safe target "recurring"))
+                                              (target-id (jsown:val-safe target "target"))
+                                              (dest-actor (get-dest-actor actor)))
+                                         (log:info "Processing target message - actor: ~a recurring: ~a first-time: ~a"
+                                                   actor recurring (first-time-p msg))
 
-                                         (if (and (get-dest-actor actor) (jsown:val target "recurring") (first-time-p msg))
-                                             (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
-                                                                                               (submit-target target nil))
-                                                                    (jsown:val target "target")))
-                                         (if (and (get-dest-actor actor) (not (first-time-p msg)))
-                                             (route-target target actor)))))))
+                                         (cond
+                                           ;; No local actor - emit to RabbitMQ
+                                           ((not dest-actor)
+                                            (log:info "No local destination actor found for ~a, emitting to RabbitMQ" actor)
+                                            (let ((routing-key (format nil "actors.~a.new.target" actor)))
+                                              (log:debug "Publishing to RabbitMQ - exchange: documents routing-key: ~a" routing-key)
+                                              (star.actors:publish star.actors:*producer-agent* :body (jsown:to-json target) :routing-key routing-key :properties (list (cons :type "target")))
+                                              (log:debug "Target published to RabbitMQ successfully")))
+
+                                           ;; Local actor exists + recurring + first-time - schedule it
+                                           ((and dest-actor recurring (first-time-p msg))
+                                            (log:debug "Scheduling recurring target - actor: ~a delay: ~a target-id: ~a"
+                                                       actor delay target-id)
+                                            (wt:schedule-recurring *target-timer* 0.0 delay (lambda ()
+                                                                                              (submit-target target nil))
+                                                                   target-id)
+                                            (log:debug "Recurring target scheduled successfully"))
+
+                                           ;; Local actor exists + (non-recurring first-time OR not first-time) - route immediately
+                                           (dest-actor
+                                            (log:debug "Routing target to local actor: ~a (first-time: ~a recurring: ~a)"
+                                                       actor (first-time-p msg) recurring)
+                                            (route-target target actor)))))))
+  (log:info "Target actor started successfully"))
 
 ;;;; Start the target timer
 ;;;; The target timer handles recurring targets.
-(defparameter *target-timer* nil "simple wheel timer for targets")
+(defvar *target-timer* nil "simple wheel timer for targets")
 (defun start-target-timer ()
-  (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000)))
+  (log:info "Starting target timer - resolution: 10 max-size: 1000")
+  (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000))
+  (log:info "Target timer started successfully"))
 
 
 
@@ -212,7 +258,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 
 ;;;; Define a actor and its start function
-(defmacro define-actor ((name system) &body body)
+(defmacro define-actor ((name system &key (register t)) &body body)
   (let ((start-fn-name (intern (format nil "START-~A" (str:replace-all "*" "" (symbol-name name))))))
     `(progn
        (defvar ,name nil)
@@ -220,22 +266,60 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
          (setf ,name
                (actor-of ,system
                          :name ,(symbol-name name)
-                         :receive ,@body)))
-       (serapeum:add-hook starintel-gserver:*actors-start-hook* #',start-fn-name :append t))))
+                         :receive ,(car body))))
+       (nhooks:add-hook starintel-gserver:*actors-start-hook* #',start-fn-name))))
 
 ;;;; * Producer Agent
 ;;;; The producer agent
 (defun make-producer-agent (producer context)
+  ;; Publishing must never depend on the shared dispatcher: if the shared
+  ;; dispatcher is saturated (e.g. DB ops, logging stalls), `agent-get`/publish
+  ;; will block the HTTP handler threads and look like a full service lockup.
   (make-agent (lambda ()
                 (star.producers:producer-connect producer)
-                producer) context))
+                producer)
+              context
+              :pinned))
 
-(defparameter *producer-lock* "")
-(defparameter *producer-agent* nil)
+(defvar *producer-lock* "")
+(defvar *producer-agent* nil)
 
+(defparameter *publish-timeout-seconds* 5
+  "Maximum time allowed for a publish operation before failing fast.
+
+This protects the HTTP API (and target routing) from deadlocking when RabbitMQ
+or a dispatcher thread gets stuck.")
 
 (defun publish (agent &key body (properties nil) routing-key)
-  (log:info (star.producers:publish (agent-get agent #'identity) :body (jsown:to-json body) :properties properties :routing-key routing-key)))
+  "Publish a message to RabbitMQ.
+
+Sento agent semantics: do the publish *inside* the agent via `agent-get`, so the
+producer state (connection/channel) is touched from one pinned thread.
+
+BODY is expected to be a JSON string, but accept a JSOWN object as a convenience
+and normalize it to JSON.
+
+"
+  (assert agent () "publish: producer agent is NIL")
+  (let ((normalized-body
+          (cond
+            ((stringp body) body)
+            ((null body) (error "publish: body is NIL"))
+            (t (jsown:to-json body)))))
+    (handler-case
+        (bt:with-timeout (*publish-timeout-seconds*)
+          (agent-get agent
+                     (lambda (producer)
+                       (star.producers:publish producer
+                                               :body normalized-body
+                                               :properties properties
+                                               :routing-key routing-key))))
+      (bt:timeout (e)
+        (log:error "Rabbit publish timeout (routing-key=~a): ~a" routing-key e)
+        (error e))
+      (error (e)
+        (log:error "Rabbit publish failed (routing-key=~a): ~a" routing-key e)
+        (error e)))))
 
 
 

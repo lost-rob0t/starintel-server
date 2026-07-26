@@ -40,4 +40,5 @@
    #:close-stream
    #:stream-read
    #:rabbit-consumer
-   #:create-rabbit-consumer))
+   #:create-rabbit-consumer
+   ))

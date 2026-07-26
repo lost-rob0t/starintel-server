@@ -59,7 +59,7 @@
     (remove-if #'null  (alexandria:flatten (test-users source users nil)))))
 
 
-(define-actor *user-hunt* *sys*
+(define-actor (*user-hunt* *sys*)
   (lambda (msg)
     (let* ((source-user (from-json msg 'spec:user))
            (potential-users (make-new-users source-user))
@@ -78,3 +78,5 @@
                        for routing-key = (format nil "documents.new.~a" (spec:doc-type doc))
                        do (publish *producer-agent* :body json :properties (cons :type (spec:doc-type doc)) :routing-key routing-key))))))))
 
+(nhooks:add-hook star:*actors-start-hook*
+                 (lambda () (star.actors:register-actor "user-hunt" *user-hunt*)))

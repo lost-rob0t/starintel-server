@@ -7,7 +7,27 @@
 
 LISP ?= sbcl
 
+.PHONY: all test integration-test images load-images compose-config stack-test
+
 all: test
+
+test:
+	nix run .#star-unit-tests
+
+integration-test:
+	nix run .#star-integration-tests
+
+images:
+	nix build .#star-server-image .#couchdb-image .#clouseau-image
+
+load-images:
+	nix run .#load-images
+
+compose-config:
+	docker compose config --quiet
+
+stack-test:
+	./scripts/stack-test.sh
 
 run:
 	$(LISP) --load run.lisp
@@ -27,8 +47,6 @@ build:
 install:
 	cp star-server /usr/local/bin
 
-docker:
-	docker build . -t "star-server"
 clean:
 	rm -v ./star-server
 

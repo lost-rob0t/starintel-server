@@ -47,7 +47,11 @@
 
 (defmethod publish ((producer producer) &key body routing-key (properties nil))
   (with-producer-lock (producer)
-    (cl-rabbit:basic-publish (producer-conn producer) 1 :exchange (producer-exchange producer) :body body :properties properties :routing-key routing-key)))
+    (cl-rabbit:basic-publish (producer-conn producer) 1
+                             :exchange (producer-exchange producer)
+                             :body body
+                             :properties properties
+                             :routing-key routing-key)))
 
 
 

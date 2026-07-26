@@ -25,52 +25,74 @@
    #:*slynk-port*
    #:*actors-start-hook*
    #:*document-patterns*
-   #:*injest-workers*
+   #:*ingest-workers*
    #:*couchdb-event-log-database*
    #:*couchdb-views*
-   #:*star-server-version*))
+   #:*star-server-version*
+   #:ensure-init-file-exists
+   #:load-init-file
+   #:safe-load-init
+   #:*bulk-max-documents*
+   #:repl/main))
 
 
 (uiop:define-package   :star.databases.couchdb
   (:use       :cl-couch :cl :star #:lparallel)
   (:export :init-db
    :init-views
-           :get-targets*
-   :get-view-docs
-           :query-view
-   :map-view-results
-           :get-neighbors
-   :search-fts
-           :sort-docs-by-date
-   :messages-by-user
-           :messages-by-platform
-   :messages-by-group
-           :social-posts-by-user
-   :social-posts-by-group
-           :by-channel
-   :export-by-dataset*
-           :count-by-dtype
-   :dataset-size
-           :total-documents-since
-   :orgs-by-country
-           :orgs-by-name
-   :persons-by-name
-           :persons-by-region
-   :relations-edges
-           :relations-incoming-count
-   :relations-outgoing-count
-           :targets-actor-counts
-   :targets-by-actor
-           :targets-target-count
-   :users-by-platform
+           :init-event-db
+   :get-targets*
+           :get-view-docs
+   :query-view
+           :map-view-results
+   :get-neighbors
+           :search-fts
+   :sort-docs-by-date
+           :messages-by-user
+   :messages-by-platform
+           :messages-by-group
+   :social-posts-by-user
+           :social-posts-by-group
+   :by-channel
+           :export-by-dataset*
+   :count-by-dtype
+           :dataset-size
+   :total-documents-since
+           :orgs-by-country
+   :orgs-by-name
+           :persons-by-name
+   :persons-by-region
+           :relations-edges
+   :relations-incoming-count
+           :relations-outgoing-count
+   :targets-actor-counts
+           :targets-by-actor
+   :targets-target-count
+           :users-by-platform
+   :users-by-name
            :as-json
    :format-key
            :from-json
    :*couchdb-pool*
            :groups
    :lazy
-           :t
-   :nil)
+           :events-by-actor
+   :document-events
+           :target-events
+   :hosts-by-ip
+           :hosts-by-port
+   :hosts-by-service
+           :emails-by-email
+   :emails-by-domain
+           :emails-with-password
+   :domains-by-record
+           :domains-by-resolved-address
+   :networks-by-asn
+           :networks-by-org
+   :breaches-by-size
+           :urls-by-url
+   :urls-by-path
+           :urls-by-domain)
   (:documentation "doc"))
 ;; Namespace setup:2 ends here
 
@@ -82,15 +104,27 @@
    #:with-rabbit-send
    #:with-rabbit-recv
    #:emit-document
-   #:+injest-queue+
+   #:+ingest-queue+
    #:+updates-queue+
-   #:+injest-key+
+   #:+ingest-key+
    #:+update-key+
    #:+targets-key+
    #:transient-p
    #:test-make-doc
    #:test-send
-   #:start-consumers))
+   #:start-consumers
+   #:+documents-exchange+
+   #:+documents-exchange-type+
+   #:+ingest-updates-queue+
+   #:+ingest-fmt-key+
+   #:+new-documents-key+
+   #:+new-documents-fmt-key+
+   #:+updated-documents-key+
+   #:+updated-documents-fmt-key+
+   #:+new-targets-key+
+   #:+targets-fmt-key+
+   #:+ingest-topic-key+
+   #:+updates-topic-key+))
 ;; Namespace setup:3 ends here
 
 (uiop:define-package   :star.actors
