@@ -1,119 +1,207 @@
-#+title: Readme
+#+title: StarIntel Server
+#+options: toc:2
 
-* Star Server
-Starintel server is the new API server for interacting with the starintel system.
+* StarIntel Server
 
+StarIntel Server is the Common Lisp runtime for storing, routing, querying, and
+recursively enriching StarIntel documents.
 
+It combines:
 
-- Features:
-  - rabbitmq
-  - actor model
-  - hackable
+- CouchDB for durable documents, views, and full-text search.
+- RabbitMQ topic exchanges for document and actor traffic.
+- Sento actors for local concurrency, supervision boundaries, timers, and
+  message passing.
+- A Ningle/Clack/Hunchentoot HTTP API.
+- The =star-cl= document library and StarIntel specification adapters.
+- Nix-built binaries, tests, and container images.
 
+This repository is an experimental operator system, not a hardened public SaaS
+service.
 
-** *WARNINGS*
-*** Project status
-This repo is a mess!
-This project is experimental, DO NOT EXPOSE TO THE WEB.
+#+begin_quote
+*Do not expose the HTTP API or RabbitMQ directly to the public Internet.*
 
-*** Consumers and actors
+The HTTP API currently has no authentication or authorization and sends
+=Access-Control-Allow-Origin: *=. Put it behind an authenticated reverse proxy,
+restrict network access, and treat the Lisp init file as trusted executable
+code.
+#+end_quote
 
-In a future version the consumer that inserts will revert back to cl-gserver actor when I figure a good proto and learn more about sento.
+** What the server does
 
-Something along the lines of
+A document normally moves through this pipeline:
 
-#+begin_src lisp
-(tell *couchdb* (:db "starintel" :id "0HJY....." :document (as-json (spec:create-user :dataset "github" :name "lost-rob0t"))))
-#+end_src
-
-I will have to do more research to better utlize the sento system.
-
-** Documentation
-*** Containers
-See [[file:DOCKER.md][the Nix-built Compose stack guide]] for image builds,
-secret setup, migration, backup, and upgrades.
-*** HTTP
-For http documentation: [[file:./docs/http-api-docs.org][Api Documentation]]
-*** Setting up dev env
-star-server uses nixpkgs to managment the dev shell, which is like a venv for this project.
-
-it is not required
-
-First install the [[https://nixos.org/download/][Nix package manager]] and [[https://direnv.net/][Direnv]].
-
-Also Ensure you have [[https://www.quicklisp.org/beta/][Quicklisp]] installed also.
-
-#+Name: Setup dev env
-#+begin_src sh :async :results output replace
-git clone  --recurse-submodules https://github.com/lost-rob0t/starintel-gserver.git star-server && cd star-server;
-direnv allow .
-#+end_src
-
-Now nix should be pulling down everything and you will be placed inside a new shell with everything needed in $PATH.
-*** Compiling From Source without nix
-
-Ensure you have [[https://www.quicklisp.org/beta/][Quicklisp]].
-
-#+Name: Compile from source
-#+begin_src shell :async :results output replace
-git clone  --recurse-submodules https://github.com/lost-rob0t/starintel-gserver.git star-server && cd star-server;
-make build
-make install
-#+end_src
-*** Usage
-
-#+Name: Usage
-#+begin_src sh :async :results output replace
-./star-server
-#+end_src
-
-#+RESULTS: Usage
 #+begin_example
-NAME:
-  star-server - Starintel unified API and document consuming service.
-
-USAGE:
-  star-server [global-options] [<command>] [command-options] [arguments ...]
-
-OPTIONS:
-      --help     display usage information and exit
-      --version  display version and exit
-
-COMMANDS:
-  start  start the server
-
-AUTHORS:
-  nsaspy <nsaspy@airmail.cc>
-
-LICENSE:
-  GPL v3
-
+HTTP/client/actor
+      |
+      v
+documents.ingest.<dtype>
+      |
+      v
+CouchDB insert + _id/_rev enrichment
+      |
+      v
+documents.new.<dtype>
+      |
+      +--> local actor via TELL
+      +--> remote actor via RabbitMQ topic route
+      +--> derived documents and relations
+                 |
+                 +--> documents.ingest.<dtype>  (durable recursion)
+                 `--> documents.new.<dtype>     (event-only fan-out)
 #+end_example
 
+Actors can emit more StarIntel documents, relations, targets, and actor events.
+Those outputs can trigger more actors. This is *dataflow recursion*: the graph
+expands through messages rather than recursive function calls.
 
-#+Name: start
-#+begin_src shell :async :results output replace
-./star-server start --help
+** Quick start: Nix-built Compose stack
+
+Requirements: Nix with flakes, Docker Engine, Docker Compose v2, =curl=, =jq=,
+and =openssl=.
+
+#+begin_src sh
+cp .env.example .env
+install -d -m 0700 secrets
+openssl rand -base64 32 > secrets/couchdb_password
+openssl rand -base64 48 > secrets/couchdb_secret
+openssl rand -hex 24 | tr '[:lower:]' '[:upper:]' > secrets/erlang_cookie
+openssl rand -base64 32 > secrets/rabbitmq_password
+chmod 0600 secrets/*
+
+nix run .#load-images
+docker compose up --detach --wait
+curl --fail http://127.0.0.1:5000/health
 #+end_src
 
-#+RESULTS: start
+Default local endpoints:
+
+| Service             | Address                  |
+|---------------------+--------------------------|
+| StarIntel HTTP API  | http://127.0.0.1:5000    |
+| CouchDB             | http://127.0.0.1:5984    |
+| RabbitMQ AMQP       | 127.0.0.1:5672           |
+| RabbitMQ management | http://127.0.0.1:15672   |
+
+See [[file:DOCKER.md][DOCKER.md]] for image builds, secrets, persistence, migration, backup, FTS,
+and upgrades.
+
+** Submit a document
+
+The body must contain a =dtype=. The route chooses the RabbitMQ routing key but
+does not currently inject or validate the body dtype.
+
+#+begin_src sh
+curl --fail \
+  --header 'Content-Type: application/json' \
+  --request POST \
+  --data '{
+    "_id": "example-note",
+    "dataset": "demo",
+    "dtype": "note",
+    "sources": ["manual"],
+    "version": "0.8.0",
+    "dateAdded": 0,
+    "dateUpdated": 0,
+    "content": "first document"
+  }' \
+  http://127.0.0.1:5000/new/document/note
+#+end_src
+
+The API acknowledges queue publication, not CouchDB persistence. Read the
+document after the ingest consumer has processed it:
+
+#+begin_src sh
+curl --fail http://127.0.0.1:5000/document/example-note | jq
+#+end_src
+
+** Build and test
+
+#+begin_src sh
+nix build
+nix run .#star-unit-tests
+#+end_src
+
+With CouchDB and RabbitMQ available:
+
+#+begin_src sh
+nix run .#star-integration-tests
+#+end_src
+
+Full Nix image, health, FTS, restart, and persistence test:
+
+#+begin_src sh
+./scripts/stack-test.sh
+#+end_src
+
+See [[file:docs/testing.md][docs/testing.md]].
+
+** Run from Common Lisp
+
+The pinned Nix build is the supported reproducible path. For interactive
+development:
+
+#+begin_src sh
+nix develop
+sbcl --load run.lisp
+#+end_src
+
+Build the executable:
+
+#+begin_src sh
+nix build
+./result/bin/star-server start --init ./example_configs/init.lisp
+#+end_src
+
+The executable accepts:
+
 #+begin_example
-NAME:
-  star-server start - start the server
-
-USAGE:
-  star-server [global-options] start [options] [arguments ...]
-
-OPTIONS:
-      --help              display usage information and exit
-      --version           display version and exit
-  -d, --debugger <VALUE>  Enable Remote debugging
-  -i, --init <VALUE>      Path to init file [default: ./init.lisp] [env: $STAR_SERVER_INIT_FILE]
-
-AUTHORS:
-  nsaspy <nsaspy@airmail.cc>
-
-LICENSE:
-  GPL v3
-
+star-server start -i PATH
+star-server start --init PATH
 #+end_example
+
+The same path can be supplied through =STAR_SERVER_INIT_FILE=.
+
+** Documentation map
+
+| Document | Contents |
+|----------+----------|
+| [[file:docs/index.org][docs/index.org]] | Documentation index and implementation status |
+| [[file:docs/architecture.org][docs/architecture.org]] | Runtime structure, startup order, concurrency, and repository layout |
+| [[file:docs/actors.org][docs/actors.org]] | Creating, registering, targeting, scheduling, and operating actors |
+| [[file:docs/messaging.org][docs/messaging.org]] | RabbitMQ exchanges, queues, routing keys, recursion, delivery, and loop control |
+| [[file:docs/document-spec.org][docs/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
+| [[file:docs/configuration.org][docs/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
+| [[file:docs/http-api-docs.org][docs/http-api-docs.org]] | HTTP endpoint reference and examples |
+| [[file:DOCKER.md][DOCKER.md]] | Nix-built container stack and operations |
+| [[file:docs/testing.md][docs/testing.md]] | Unit, integration, and stack tests |
+
+** Runtime status
+
+The documentation distinguishes three states:
+
+- *Active*: loaded by =source/starintel-gserver.asd= and started by =star::main=.
+- *Present but not active*: code exists in the repository but is not loaded by
+  the ASDF system or is not started by the current startup path.
+- *Stub/experimental*: API or actor code exists but is incomplete.
+
+Important current limits:
+
+- HTTP ingestion does not enforce the strict StarIntel 0.9 schema.
+- The server still uses legacy flat 0.8 constructors in parts of the actor code.
+- =source/actor-systems/user-finder.lisp= and =user-hunt.lisp= are not loaded by
+  the ASDF system.
+- The matcher actor framework is experimental; the URL extractor is loaded, but
+  a complete global pattern-dispatch loop is not wired.
+- =/new/event/:id= is a stub.
+- =*http-api-base-path*= and the HTTP certificate/key variables are not applied
+  by =start-http-api=.
+- The second =/dataset-size= route definition replaces or shadows the first,
+  depending on Ningle route behavior.
+
+These are documented facts, not supported guarantees.
+
+** License
+
+See [[file:LICENSE][LICENSE]].
