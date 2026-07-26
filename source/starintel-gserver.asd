@@ -19,6 +19,7 @@
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
                  (:file "databases/couchdb-v09")
+                 (:file "databases/outbox")
                  (:file "init")
                  (:file "actors")
                  (:file "actors-v09")
@@ -47,4 +48,5 @@
                  #:cl-ppcre
                  #:cms-ulid
                  #:bordeaux-threads
-                 #:closer-mop))
+                 #:closer-mop
+                 #:ironclad))
