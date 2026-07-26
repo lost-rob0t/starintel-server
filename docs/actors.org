@@ -1,0 +1,307 @@
+#+title: Creating and operating actors
+#+options: toc:3
+
+* Actors
+
+StarIntel actors are message-driven transforms and operators. They consume
+targets or documents and may emit documents, relations, updates, targets, or
+actor events.
+
+** Actor kinds
+
+| Kind | Transport | Use |
+|------+-----------+-----|
+| Local Sento actor | In-process mailbox | Fast transforms, routing, timers, DB coordination |
+| Rabbit actor service | RabbitMQ queue | Independent process/language, isolation, horizontal scale |
+| Pattern subscriber | Local =tell= after a predicate match | Route selected documents to local actors |
+| Recurring target actor | Timer plus local/remote delivery | Periodic collection or refresh |
+| Actor-event receiver | Local or Rabbit event message | Append operational events to event DB |
+
+** Minimal local actor
+
+Create a file such as =actors/domain-enricher.lisp=:
+
+#+begin_src lisp
+(in-package :star.actors)
+
+(define-actor (*domain-enricher* *sys*)
+  (lambda (message)
+    (let* ((source-id (jsown:val message "_id"))
+           (dataset (or (jsown:val-safe message "dataset") "default"))
+           (domain (jsown:val-safe message "target")))
+      (when (and domain (not (string= domain "")))
+        (let ((document
+                (jsown:new-js
+                 ("_id" (format nil "domain:~a" (string-downcase domain)))
+                 ("dataset" dataset)
+                 ("dtype" "domain")
+                 ("sources" (list "domain-enricher"))
+                 ("version" "0.8.0")
+                 ("dateAdded" (spec:unix-now))
+                 ("dateUpdated" (spec:unix-now))
+                 ("recordType" "A")
+                 ("record" domain)
+                 ("resolvedAddresses" (list)))))
+          (publish
+           *producer-agent*
+           :body (jsown:to-json document)
+           :routing-key "documents.ingest.domain"
+           :properties (list (cons :type "domain")))
+          (log-actor-event
+           "domain-enricher"
+           :event-type "emitted"
+           :details (format nil "Emitted domain ~a" domain)
+           :source-id source-id))))))
+
+(nhooks:add-hook
+ star:*actors-start-hook*
+ (lambda ()
+   (register-actor "domain-enricher" *domain-enricher*)))
+#+end_src
+
+The =define-actor= macro:
+
+- defines the actor variable;
+- defines a =START-<NAME>= function;
+- creates the actor when the start hook runs;
+- adds that start function to =*actors-start-hook*=.
+
+The macro accepts a =:register= keyword, but the current implementation does not
+use it. Register the actor explicitly in a second hook as shown above.
+
+** Load a custom actor from the init file
+
+The init file runs before =start-actors=. It can load actor definitions whose
+start functions will later run on =*actors-start-hook*=:
+
+#+begin_src lisp
+(in-package :star)
+
+(load #P"/etc/starintel/actors/domain-enricher.lisp")
+#+end_src
+
+The file is trusted executable code. Never load actor files from an
+uncontrolled writable directory.
+
+For a built-in actor, add the file to the serial component order in
+=source/starintel-gserver.asd= before files that call its exported functions.
+
+** Register and resolve actor names
+
+Registration maps an operator-facing string name to a Sento actor reference:
+
+#+begin_src lisp
+(star.actors:register-actor "domain-enricher"
+                            star.actors::*domain-enricher*)
+
+(star.actors:get-dest-actor "domain-enricher")
+#+end_src
+
+Actor names in target documents must match the registered string exactly.
+
+** Target document
+
+Legacy target fields:
+
+| Field | Type | Meaning |
+|-------+------+---------|
+| =actor= | string | Registered local actor name or external actor name |
+| =target= | string | Target value or source document ID |
+| =delay= | integer | Recurrence interval in seconds |
+| =recurring= | boolean | Schedule repeated delivery |
+| =options= | array | Actor-defined options |
+| common metadata | object fields | =_id=, dataset, dtype, sources, version, timestamps |
+
+Submit a target through HTTP:
+
+#+begin_src sh
+curl --fail \
+  --header 'Content-Type: application/json' \
+  --request POST \
+  --data '{
+    "dataset": "demo",
+    "target": "example.org",
+    "delay": 3600,
+    "recurring": true,
+    "options": [{"record_types": ["A", "AAAA", "MX"]}]
+  }' \
+  http://127.0.0.1:5000/new/target/domain-enricher
+#+end_src
+
+The route sets =dtype= to =target= and =actor= from the URL.
+
+** Target routing
+
+When a persisted target arrives:
+
+1. the Rabbit target consumer tells the local target-router actor;
+2. the router looks up =actor= in the actor index;
+3. if found, it tells the local actor;
+4. if missing, it publishes to
+   =actors.<actor>.new.target= on the =documents= exchange;
+5. if =recurring= is true on the first delivery, the router schedules a timer
+   and later repeats the local/remote route.
+
+This allows the same target format to address in-process and external actors.
+
+** Actor communication
+
+*** Local actor to local actor
+
+#+begin_src lisp
+(tell destination message)
+#+end_src
+
+Use this when both actors share the process. It avoids serialization and
+RabbitMQ.
+
+*** Local actor to distributed pipeline
+
+#+begin_src lisp
+(publish *producer-agent*
+         :body json
+         :routing-key "documents.ingest.user"
+         :properties (list (cons :type "user")))
+#+end_src
+
+Use the =documents.ingest.*= path for durable derived documents.
+
+*** Local actor event
+
+#+begin_src lisp
+(log-actor-event
+ "domain-enricher"
+ :event-type "completed"
+ :details "Resolved target"
+ :source-id source-document-id)
+#+end_src
+
+*** External actor
+
+Bind a queue to =actors.<actor-name>.new.target=. Publish outputs back to the
+=documents= exchange. See [[file:messaging.org][messaging.org]].
+
+** Actor output contract
+
+An actor may return no documents. When it emits a document:
+
+- include a non-empty =dtype=;
+- preserve the source dataset unless intentionally crossing datasets;
+- generate a stable ID when the result is deterministic;
+- append provenance rather than replacing it;
+- publish to ingest for persistence;
+- emit relations as first-class documents;
+- make retries safe;
+- do not ACK an external Rabbit delivery before required writes/publications
+  complete.
+
+** Creating relations
+
+The current =star-cl= constructor uses keyword arguments:
+
+#+begin_src lisp
+(spec:new-relation
+ dataset
+ source-id
+ target-id
+ :predicate "derived-from"
+ :note "Created by domain-enricher")
+#+end_src
+
+Do not use an old positional fourth predicate argument. Some experimental actor
+files still contain calls written for an older signature.
+
+** Pattern subscribers
+
+A pattern contains:
+
+- a name;
+- a predicate function;
+- a list of actor references;
+- a transient flag intended to describe generated messages.
+
+#+begin_src lisp
+(add-pattern
+ (define-pattern
+     ("message-links" (list *domain-enricher*))
+   (lambda (document)
+     (string= (jsown:val document "dtype") "message"))))
+#+end_src
+
+When =notify-subs= is called and the predicate returns true, it tells each
+subscriber the document.
+
+The matcher framework is currently experimental. The URL extractor starts from
+a hook, but a complete actor that feeds every new document through
+=*document-patterns*= is not evident in the active runtime. Do not assume that
+adding a pattern alone creates a Rabbit subscription.
+
+** Recursive actor design
+
+A recursive actor should treat each invocation as one bounded graph expansion
+step.
+
+Recommended message contract:
+
+#+begin_src json
+{
+  "extensions": {
+    "star_server": {
+      "trace_id": "01J...",
+      "root_id": "root-id",
+      "parent_id": "source-id",
+      "actor_path": ["seed", "domain-enricher"],
+      "depth": 1,
+      "hop": 2,
+      "max_depth": 8,
+      "max_hops": 32,
+      "input_hash": "sha256:...",
+      "output_hash": "sha256:..."
+    }
+  }
+}
+#+end_src
+
+Before emitting more work:
+
+1. verify =depth < max_depth= and =hop < max_hops=;
+2. reject a non-repeatable actor already present in =actor_path=;
+3. compute a deterministic output ID;
+4. stop at a fixed point when output hash equals prior output hash;
+5. add a provenance relation;
+6. increment metadata;
+7. emit a terminal actor event when stopping.
+
+The server deep-merges nested update objects, so this extension object can be
+updated without deleting sibling metadata.
+
+** Error handling
+
+A local actor should catch errors it can classify, emit an actor event, and
+either:
+
+- drop a permanently invalid message;
+- emit an update marking the source failed;
+- create a retry target with delay;
+- let the actor runtime surface an unexpected failure.
+
+Do not create a zero-delay recursive retry loop.
+
+External actor services should use dead-letter exchanges or a retry queue with
+backoff. The core server does not declare those queues for you.
+
+** Testing an actor
+
+Unit-test the receive function as a pure transform where possible. Integration
+tests should verify:
+
+1. target publication;
+2. actor delivery;
+3. derived document publication;
+4. CouchDB persistence;
+5. relation/provenance creation;
+6. duplicate delivery idempotency;
+7. depth/hop termination;
+8. recurring target behavior.
+
+Run the repository test commands from [[file:testing.md][testing.md]].
