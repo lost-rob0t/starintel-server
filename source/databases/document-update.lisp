@@ -127,6 +127,21 @@ fields remain controlled by persistence."
 (defun document-update-wire-equal-p (left right)
   (string= (jsown:to-json left) (jsown:to-json right)))
 
+(defun prepare-validated-document-update
+    (document-id existing immutable-patch)
+  "Return validated candidate and NIL, or NIL and a validation condition."
+  (handler-case
+      (values
+       (validated-document-update
+        (if existing
+            (merge-document-update
+             document-id existing immutable-patch)
+            (prepare-document-insert
+             document-id immutable-patch)))
+       nil)
+    (document-update-validation-error (condition)
+      (values nil condition))))
+
 (defun upsert-document-update
     (load-fn save-fn document-id patch &key (max-attempts 8))
   "Create or update DOCUMENT-ID with immutable, bounded optimistic retries.
@@ -140,46 +155,42 @@ when its CouchDB revision loses a compare-and-swap race."
     (loop for attempt from 1 to max-attempts
           do
              (let ((existing (funcall load-fn document-id)))
-               (handler-case
-                   (let* ((candidate
-                            (if existing
-                                (merge-document-update
-                                 document-id existing immutable-patch)
-                                (prepare-document-insert
-                                 document-id immutable-patch)))
-                          (validated (validated-document-update candidate)))
-                     (when (and existing
-                                (document-update-wire-equal-p
-                                 existing validated))
-                       (return
-                         (make-document-update-outcome
-                          :duplicate
-                          :document existing
-                          :attempts attempt)))
-                     (handler-case
-                         (let ((saved (funcall save-fn validated)))
-                           (return
-                             (make-document-update-outcome
-                              (if existing :updated :created)
-                              :document saved
-                              :attempts attempt)))
-                       (document-update-store-conflict ()
-                         (when (= attempt max-attempts)
-                           (return
-                             (make-document-update-outcome
-                              :conflict-exhausted
-                              :document existing
-                              :attempts attempt
-                              :reason
-                              "optimistic concurrency retry budget exhausted")))))
-                 (document-update-validation-error (condition)
+               (multiple-value-bind (validated validation-error)
+                   (prepare-validated-document-update
+                    document-id existing immutable-patch)
+                 (when validation-error
                    (return
                      (make-document-update-outcome
                       :validation-failed
                       :document existing
                       :attempts attempt
                       :reason
-                      (document-update-validation-reason condition))))))))))
+                      (document-update-validation-reason
+                       validation-error))))
+                 (when (and existing
+                            (document-update-wire-equal-p
+                             existing validated))
+                   (return
+                     (make-document-update-outcome
+                      :duplicate
+                      :document existing
+                      :attempts attempt)))
+                 (handler-case
+                     (let ((saved (funcall save-fn validated)))
+                       (return
+                         (make-document-update-outcome
+                          (if existing :updated :created)
+                          :document saved
+                          :attempts attempt)))
+                   (document-update-store-conflict ()
+                     (when (= attempt max-attempts)
+                       (return
+                         (make-document-update-outcome
+                          :conflict-exhausted
+                          :document existing
+                          :attempts attempt
+                          :reason
+                          "optimistic concurrency retry budget exhausted"))))))))))
 
 (defun couchdb-upsert-document-update
     (client database document-id patch &key (max-attempts 8))
