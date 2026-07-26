@@ -141,15 +141,15 @@
   (when (oddp (length arguments))
     (error 'view-registry-error
            :reason (format nil "odd wrapper keyword list: ~s" arguments)))
-  (loop for (keyword value) on arguments by #'cddr
-        do (declare (ignore value))
-           (unless (member keyword
-                           (view-spec-accepted-keywords spec)
-                           :test #'eq)
-             (error 'view-registry-error
+  (loop for tail on arguments by #'cddr
+        for keyword = (first tail)
+        unless (member keyword
+                       (view-spec-accepted-keywords spec)
+                       :test #'eq)
+          do (error 'view-registry-error
                     :reason
                     (format nil "wrapper ~a does not accept ~s"
-                            (view-spec-name spec) keyword))))
+                            (view-spec-name spec) keyword)))
   t)
 
 (defun view-sequence-list (value)
@@ -172,7 +172,9 @@
   (when (and reduce include-docs)
     (error 'view-registry-error
            :reason "reduced view requests cannot include documents"))
-  (when (and (or group (plusp group-level)) (not reduce))
+  (when (and (or group
+                 (and group-level (plusp group-level)))
+             (not reduce))
     (error 'view-registry-error
            :reason "group/group-level requires reduce=true"))
   t)
@@ -191,7 +193,7 @@
    :skip (view-plist-value arguments :skip 0)
    :reduce reduce
    :group group
-   :group-level group-level))
+   :group-level (or group-level 0)))
 
 (defun view-row-documents (rows)
   (loop for row in rows
@@ -200,7 +202,7 @@
 
 (defun execute-registered-view (name client database &rest arguments)
   "Validate and execute one registered view, returning a typed result."
-  (let* ((spec (registered-view-spec name)))
+  (let ((spec (registered-view-spec name)))
     (validate-view-wrapper-arguments spec arguments)
     (let* ((reduce
              (view-plist-value
@@ -280,12 +282,11 @@
 
 (defun get-targets* (client database &rest actors)
   (let ((documents
-          (apply #'targets-by-actor
-                 client database
-                 :keys actors
-                 :include-docs t
-                 :reduce nil
-                 nil)))
+          (targets-by-actor
+           client database
+           :keys actors
+           :include-docs t
+           :reduce nil)))
     (loop for document in documents
           for actor = (star.documents:document-value document "actor")
           collect (cons actor document))))
@@ -337,7 +338,8 @@
   (let ((views (jsown:val-safe document "views")))
     (and views (outbox-object-has-key-p views view-name))))
 
-(defun validate-view-registry (&optional (documents (checked-in-design-document-map)))
+(defun validate-view-registry
+    (&optional (documents (checked-in-design-document-map)))
   "Fail before serving traffic when a registered design/view is absent."
   (dolist (name (registered-view-names) t)
     (let* ((spec (registered-view-spec name))
