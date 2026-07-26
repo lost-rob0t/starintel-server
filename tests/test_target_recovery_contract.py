@@ -34,11 +34,14 @@ class TargetRecoveryContractTests(unittest.TestCase):
         recovery = (ROOT / "source" / "target-recovery.lisp").read_text(
             encoding="utf-8"
         )
+        dispatch = (ROOT / "source" / "target-dispatch.lisp").read_text(
+            encoding="utf-8"
+        )
         rabbit = (ROOT / "source" / "rabbit.lisp").read_text(encoding="utf-8")
         self.assertIn("defstruct (target-record", recovery)
         self.assertIn("defstruct (target-command", recovery)
-        self.assertIn("submit-target", recovery)
-        self.assertIn("star.actors:submit-target", rabbit)
+        self.assertIn("submit-target", dispatch)
+        self.assertIn("star.actors:accept-target-delivery", rabbit)
         self.assertNotIn("tell star.actors:*targets* (cons", rabbit)
 
     def test_recovery_is_started_after_registry_hooks(self) -> None:
