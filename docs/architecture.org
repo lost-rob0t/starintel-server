@@ -1,0 +1,204 @@
+#+title: StarIntel Server architecture
+#+options: toc:3
+
+* Architecture
+
+StarIntel Server is an event-driven Common Lisp service. CouchDB is the durable
+corpus, RabbitMQ is the distributed message bus, and Sento actors are the local
+message-passing runtime.
+
+** Component map
+
+#+begin_example
+                        +----------------------+
+HTTP / CLI / services ->| HTTP API             |
+                        | Ningle + Clack        |
+                        +----------+-----------+
+                                   |
+                                   | publish
+                                   v
+                         +---------+----------+
+                         | RabbitMQ           |
+                         | topic: documents   |
+                         +----+----------+----+
+                              |          |
+                   ingest/update          | actor-specific target
+                              |          |
+                              v          v
+                    +---------+--+   +---+----------------+
+                    | Consumers  |   | External actors    |
+                    | lparallel  |   | Rabbit consumers   |
+                    +-----+------+   +--------------------+
+                          |
+                          v
+                    +-----+------+
+                    | CouchDB    |
+                    | documents  |
+                    | views/FTS  |
+                    +-----+------+
+                          |
+                          | post-insert documents.new.<dtype>
+                          v
+                    +-----+--------------------+
+                    | Sento actor system       |
+                    | local actors, timers,    |
+                    | index, DB agents, events |
+                    +--------------------------+
+#+end_example
+
+** Startup order
+
+=star::main= performs the following operations in order:
+
+1. Resolve and load the init file. The init file is executable Common Lisp.
+2. Create the global lparallel kernel with =*ingest-workers*= workers.
+3. Initialize CouchDB:
+   - create the main database if missing;
+   - upsert design documents loaded from =source/views/*.json=;
+   - create the actor-event database if missing.
+4. Start the Sento actor system.
+5. Connect the pinned RabbitMQ producer agent.
+6. Start internal CouchDB, actor-index, target, and timer actors.
+7. Run =*actors-start-hook*= to start and register application actors.
+8. Start the HTTP API and its RabbitMQ connection.
+9. Start RabbitMQ ingest, update, and target consumers.
+10. Start two actor-event RabbitMQ consumers.
+11. Join all threads so the process remains alive.
+
+Startup is fail-fast: an uncaught initialization error terminates the process.
+
+** Concurrency model
+
+*** Sento actors
+
+Actors receive one message at a time through their mailbox. Actor references are
+stored in an agent-backed name index. Local actor communication uses =tell= and
+does not serialize through RabbitMQ.
+
+The actor system uses a pinned dispatcher sized from =*ingest-workers*=. The
+producer and CouchDB agents are pinned so their mutable connection state is only
+touched by one actor thread.
+
+*** lparallel consumers
+
+Each Rabbit consumer worker owns a RabbitMQ connection and channel. A worker:
+
+1. reads one delivery;
+2. submits its handler to an lparallel channel;
+3. waits for the handler result;
+4. lets the handler ACK or NACK the delivery.
+
+Rabbit QoS prefetch is 200 per worker connection.
+
+*** HTTP threads
+
+Hunchentoot is started with:
+
+- maximum thread count: 50;
+- maximum accept count: 100;
+- request timeout: 300 seconds.
+
+CouchDB HTTP requests use a pool with 20 maximum open and 10 maximum idle
+connections.
+
+** Durable data
+
+*** Main database
+
+=*couchdb-default-database*= defaults to =starintel=. It stores StarIntel
+documents and CouchDB design documents.
+
+*** Actor-event database
+
+=*couchdb-event-log-database*= defaults to =starintel-event-source=. It stores
+actor-event records separately from the main corpus.
+
+*** RabbitMQ state
+
+The Compose stack persists RabbitMQ state in =rabbitmq_data=. Document messages
+are not a substitute for CouchDB backups.
+
+*** Full-text index
+
+Clouseau indexes are derived data. The Compose stack persists them in
+=clouseau_index= for faster restart, but they can be rebuilt from CouchDB.
+
+** Repository layout
+
+| Path | Purpose | Runtime status |
+|------+---------+----------------|
+| =source/starintel-gserver.asd= | Loaded systems and component order | Active source of truth |
+| =source/main.lisp= | CLI command, startup, REPL entry, debugger helper | Active |
+| =source/gserver-settings.lisp= | Global defaults and environment reads | Active |
+| =source/init-loader.lisp= | Init-file resolution, bootstrap, and load | Active |
+| =source/actors.lisp= | Actor system, index, DB actors, target router, producer | Active |
+| =source/rabbit.lisp= | Routing constants, ingest/update/target handlers | Active |
+| =source/consumers/= | Generic and Rabbit stream consumers | Active |
+| =source/producers/= | Persistent Rabbit producer abstraction | Active |
+| =source/databases/couchdb.lisp= | DB initialization, JSON conversion, views | Active |
+| =source/frontends/http-api.lisp= | HTTP routes and server startup | Active |
+| =source/actor-systems/event-actor.lisp= | Actor-event storage and consumer | Active |
+| =source/actor-systems/matcher-actor.lisp= | Pattern subscriptions and URL extractor | Experimental |
+| =source/actor-systems/user-finder.lisp= | WhatsMyName actor | Not loaded by ASDF |
+| =source/actor-systems/user-hunt.lisp= | Older WhatsMyName consumer | Not loaded by ASDF |
+| =source/views/= | CouchDB map/reduce and FTS design documents | Installed at startup |
+| =cli/= | API client and command-line client systems | Built separately |
+| =ui/= | Separate Common Lisp UI system | Built separately |
+| =source/migrations/= | Migration system | Built separately |
+| =t/= | Unit and integration test code | Test-only |
+| =nix/=, =flake.nix= | Reproducible packages, binaries, and OCI images | Build system |
+| =docker/=, =docker-compose.yml= | Runtime images, entrypoints, and local stack | Deployment |
+| =scripts/= | Stack acceptance test and utilities | Operations |
+| =example_configs/= | Init-file examples | Operator input |
+| =docs/= | Operator and developer documentation | Documentation |
+
+** Loaded actor systems
+
+The ASDF system loads only:
+
+- =event-actor.lisp=
+- =matcher-actor.lisp=
+
+The user-finder and user-hunt files are not loaded. Adding a file to the
+repository does not activate it. Add it to the ASDF component list or load it
+from a trusted init file, then register its startup hook.
+
+** CouchDB views
+
+At load time, =gserver-settings.lisp= reads every JSON file under
+=source/views/=. During startup, =init-db= creates or updates each design
+document using its =_id= and current =_rev=.
+
+The Lisp view wrapper supports:
+
+- =limit=, =skip=, =descending=;
+- =key=, =keys=, =start-key=, =end-key=;
+- =include-docs=;
+- =update=, including ="lazy"=;
+- =reduce=, =group=, and =group-level=.
+
+Passing conflicting key modes raises an error.
+
+View wrappers cover messages, social posts, datasets, timelines, organizations,
+people, relations, targets, users, events, hosts, emails, domains, networks,
+URLs, and breaches.
+
+** Failure boundaries
+
+- Rabbit handler success must ACK the delivery.
+- Unexpected ingest/update errors NACK and requeue.
+- CouchDB insert conflict during initial ingest is NACKed without requeue.
+- Update conflicts are refetched and retried up to two times before requeue.
+- Rabbit publish is bounded by =*publish-timeout-seconds*=, default 5 seconds.
+- Actor exceptions stay inside the Sento actor boundary according to Sento
+  behavior; actor-specific recovery policy is not centralized in this repo.
+- HTTP publication success means the message reached the producer call. It does
+  not prove downstream persistence.
+
+** Security boundaries
+
+The current server has no built-in HTTP authentication, authorization, rate
+limiting, tenant isolation, or request schema enforcement. The init file can run
+arbitrary code. SLYNK provides remote Lisp evaluation. Use network isolation,
+least-privilege Rabbit/Couch credentials, an authenticated reverse proxy, and
+loopback-only debugger binding.
