@@ -1,0 +1,29 @@
+name: Canonical StarIntel schema lock
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - dev
+      - "agent/**"
+    paths:
+      - "schema/starintel-schema.lock.json"
+      - "scripts/check-starintel-schema-lock.py"
+      - ".github/workflows/starintel-schema-lock.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-node-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Verify canonical research-node schema
+        run: python scripts/check-starintel-schema-lock.py
