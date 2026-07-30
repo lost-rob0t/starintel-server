@@ -1,0 +1,39 @@
+name: Normalize AGPL license metadata
+
+on:
+  push:
+    branches:
+      - agent/license-agplv3
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/license-agplv3
+      - name: Normalize remaining CLI declarations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("cli/star-cli.lisp")
+          content = path.read_text()
+          updated = content.replace(':license "GPL v3"', ':license "AGPL-3.0-only"')
+          if updated == content:
+              raise SystemExit("No stale CLI license declarations found")
+          path.write_text(updated)
+          PY
+      - name: Remove one-time workflow
+        run: rm .github/workflows/normalize-agpl-license.yml
+      - name: Commit normalized metadata
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add cli/star-cli.lisp .github/workflows/normalize-agpl-license.yml
+          git commit -m "Normalize remaining CLI license metadata"
+          git push origin HEAD:agent/license-agplv3
