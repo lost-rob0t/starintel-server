@@ -3,6 +3,6 @@
   :description  "Migrate documents to newer versions"
   :author       " <unseen@flake>"
   :serial       t
-  :license      "GNU GPL, version 3"
+  :license      "AGPL-3.0-only"
   :components   ((:file "migrations"))
   :depends-on   (#:lparallel #:dexador #:cl-couch))

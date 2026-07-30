@@ -43,7 +43,7 @@
    :name "start"
    :description "start the server"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :options (server/options)
    :handler #'server/handler))
 
@@ -62,7 +62,7 @@
                         :version *star-server-version*
                         :description "Starintel unified API and document consuming service."
                         :authors '("nsaspy <nsaspy@airmail.cc>")
-                        :license "GPL v3"
+                        :license "AGPL-3.0-only"
                         :handler #'main/handler
                         :sub-commands (main/commands)))
 
@@ -92,4 +92,3 @@
   (star.frontends.http-api::start-http-api)
   (star.rabbit:start-consumers)
   (star.actors:start-event-consumer 2))
-

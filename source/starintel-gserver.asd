@@ -2,7 +2,7 @@
   :version      "0.1.0"
   :description  "hackable/moddable starintel acess api."
   :author       "nsaspy@airmail.cc"
-  :license      "GPL v3"
+  :license      "AGPL-3.0-only"
   :serial t
   :build-operation program-op
   :build-pathname "star-server" ;; shell name
@@ -59,7 +59,6 @@
 ;;;; star-gserver. Gserver started in a org-mode notebook while i scketched things out.
 ;;;;
 ;;;;
-
 
 
 

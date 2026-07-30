@@ -2,7 +2,7 @@
   :version      "0.1.0"
   :description  "Command-line client for StarIntel Gserver API"
   :author       "nsaspy@airmail.cc"
-  :license      "GPL v3"
+  :license      "AGPL-3.0-only"
   :serial       t
   :build-operation program-op
   :build-pathname "star-cli"

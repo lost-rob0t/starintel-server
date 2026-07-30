@@ -2,7 +2,7 @@
   :version "0.1.0"
   :description "Service-backed integration tests for starintel-gserver"
   :author "nsaspy@airmail.cc"
-  :license "GPL v3"
+  :license "AGPL-3.0-only"
   :serial t
   :depends-on (#:starintel-gserver-tests)
   :components ((:module "t"

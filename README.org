@@ -86,7 +86,7 @@ AUTHORS:
   nsaspy <nsaspy@airmail.cc>
 
 LICENSE:
-  GPL v3
+  AGPL-3.0-only
 
 #+end_example
 
@@ -114,6 +114,6 @@ AUTHORS:
   nsaspy <nsaspy@airmail.cc>
 
 LICENSE:
-  GPL v3
+  AGPL-3.0-only
 
 #+end_example
