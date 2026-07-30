@@ -24,6 +24,7 @@
                                 (:file "system-load-test")
                                 (:file "couchdb-actor-test")
                                 (:file "event-actor-test")
+                                (:file "dataset-export-test")
                                 (:file "run-tests"))))
   :perform (test-op (o c)
                      (declare (ignore o c))
