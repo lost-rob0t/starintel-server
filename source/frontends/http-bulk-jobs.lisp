@@ -118,8 +118,16 @@
 
 (nhooks:add-hook star:*actors-start-hook* #'start-bulk-ingest-workers-hook)
 
-(defun submit-bulk-ingest-job (documents principal)
-  (unless (start-bulk-ingest-workers)
+(defun submit-bulk-ingest-job (documents principal
+                               &key
+                                 (tell-fn #'sento.actor:tell)
+                                 (ensure-workers-fn
+                                   #'start-bulk-ingest-workers))
+  "Reserve bounded queue capacity and enqueue one job without executing it.
+
+TELL-FN and ENSURE-WORKERS-FN are injectable so queue admission and latency can
+be tested independently from actor scheduling."
+  (unless (funcall ensure-workers-fn)
     (signal-http-input-error
      503
      "bulk_service_unavailable"
@@ -154,11 +162,11 @@
                    *bulk-ingest-workers*)))
         (incf *bulk-ingest-worker-index*)
         (handler-case
-            (sento.actor:tell worker job)
+            (funcall tell-fn worker job)
           (error (condition)
             (decf *bulk-pending-jobs*)
-            (let* ((current
-                     (gethash principal *bulk-pending-by-principal* 0)))
+            (let ((current
+                    (gethash principal *bulk-pending-by-principal* 0)))
               (if (> current 1)
                   (setf (gethash principal *bulk-pending-by-principal*)
                         (1- current))
