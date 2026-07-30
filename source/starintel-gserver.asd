@@ -37,6 +37,7 @@
                  #:cl-rabbit
                  #:sento
                  #:babel
+                 #:com.inuoe.jzon
                  #:uuid
                  #:anypool
                  #:clack
