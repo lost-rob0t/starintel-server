@@ -2,7 +2,7 @@
   :version      "0.1.0"
   :description  "Hermetic unit test suite for starintel-gserver"
   :author       "nsaspy@airmail.cc"
-  :license      "GPL v3"
+  :license      "AGPL-3.0-only"
   :serial t
   :depends-on   (#:starintel-gserver
                  #:starintel-gserver-client
