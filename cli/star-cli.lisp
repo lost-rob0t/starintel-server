@@ -329,7 +329,7 @@
    :name "document"
    :description "Manage documents"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :handler #'document/handler
    :sub-commands (list
                   (document/create-command)
@@ -570,7 +570,7 @@
    :name "target"
    :description "Manage targets"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :handler #'target/handler
    :sub-commands (list
                   (target/create-command)
@@ -683,7 +683,7 @@
    :name "query"
    :description "Query documents with various filters"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :handler #'query/handler
    :sub-commands (list
                   (query/messages-by-user-command)
@@ -826,7 +826,7 @@
    :name "bulk"
    :description "Bulk document operations"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :handler #'bulk/handler
    :sub-commands (list
                   (bulk/import-command))))
@@ -943,7 +943,7 @@
    :name "bbp"
    :description "Bug Bounty Program data management"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :handler #'bbp/handler
    :sub-commands (list
                   (bbp/import-command))))
@@ -1239,7 +1239,7 @@
    :version "0.1.0"
    :description "Command-line client for StarIntel Gserver API"
    :authors '("nsaspy <nsaspy@airmail.cc>")
-   :license "GPL v3"
+   :license "AGPL-3.0-only"
    :options (global-options)
    :handler #'main/handler
    :sub-commands (list
