@@ -18,6 +18,7 @@
                  (:file "databases/couchdb")
                  (:file "init-loader")
                  (:file "actors")
+                 (:file "actors/couchdb-service")
                  (:file "actor-systems/event-actor")
                  (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
@@ -59,7 +60,6 @@
 ;;;; star-gserver. Gserver started in a org-mode notebook while i scketched things out.
 ;;;;
 ;;;;
-
 
 
 
