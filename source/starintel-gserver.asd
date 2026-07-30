@@ -11,6 +11,7 @@
   :components   (
                  (:file "consumers/package")
                  (:file "consumers/consumers")
+                 (:file "consumers/rabbit-settlement")
                  (:file "producers/package")
                  (:file "producers/producers")
                  (:file "package")
