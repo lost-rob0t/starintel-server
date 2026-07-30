@@ -34,7 +34,7 @@
           (capture-http-input-error
            (lambda ()
              (star.frontends.http-api:parse-json-octets
-              (babel:string-to-octets "{broken" :encoding :utf-8)
+              (babel:string-to-octets "{" :encoding :utf-8)
               "application/json")))))
     (is condition)
     (is (= 400
@@ -147,17 +147,13 @@
           (star.frontends.http-api:bulk-request-mode 11))))
 
 (test asynchronous-bulk-submission-does-not-wait-for-worker
-  (let* ((system (sento.actor-system:make-actor-system))
-         (worker
-           (sento.actor-context:actor-of
-            system
-            :name "http-boundary-slow-worker"
-            :receive (lambda (job)
-                       (declare (ignore job))
-                       (sleep 1))))
-         (star.actors:*sys* system)
-         (star.frontends.http-api::*bulk-ingest-workers* (list worker))
-         (star.frontends.http-api::*bulk-ingest-worker-system* system)
+  (let* ((fake-system (list :test-system))
+         (sent-worker nil)
+         (sent-job nil)
+         (star.actors:*sys* fake-system)
+         (star.frontends.http-api::*bulk-ingest-workers*
+           (list :fake-worker))
+         (star.frontends.http-api::*bulk-ingest-worker-system* fake-system)
          (star.frontends.http-api::*bulk-ingest-worker-index* 0)
          (star.frontends.http-api::*bulk-ingest-jobs*
            (make-hash-table :test #'equal))
@@ -172,33 +168,34 @@
                  collect
                  (make-boundary-document
                   :id (format nil "async-doc-~d" index))))
-         (started (get-internal-real-time)))
-    (unwind-protect
-         (let* ((job
-                  (star.frontends.http-api:submit-bulk-ingest-job
-                   documents
-                   "principal-test"))
-                (elapsed
-                  (/ (- (get-internal-real-time) started)
-                     internal-time-units-per-second)))
-           (is job)
-           (is (< elapsed 0.5))
-           (is (eq :queued
-                   (star.frontends.http-api:bulk-ingest-job-status job))))
-      (sento.actor-context:shutdown system))))
+         (started (get-internal-real-time))
+         (job
+           (star.frontends.http-api:submit-bulk-ingest-job
+            documents
+            "principal-test"
+            :ensure-workers-fn
+            (lambda ()
+              star.frontends.http-api::*bulk-ingest-workers*)
+            :tell-fn
+            (lambda (worker queued-job)
+              (setf sent-worker worker
+                    sent-job queued-job))))
+         (elapsed
+           (/ (- (get-internal-real-time) started)
+              internal-time-units-per-second)))
+    (is job)
+    (is (< elapsed 0.5))
+    (is (eq :fake-worker sent-worker))
+    (is (eq job sent-job))
+    (is (eq :queued
+            (star.frontends.http-api:bulk-ingest-job-status job)))))
 
 (test per-principal-bulk-quota-is-enforced
-  (let* ((system (sento.actor-system:make-actor-system))
-         (worker
-           (sento.actor-context:actor-of
-            system
-            :name "http-boundary-quota-worker"
-            :receive (lambda (job)
-                       (declare (ignore job))
-                       (sleep 2))))
-         (star.actors:*sys* system)
-         (star.frontends.http-api::*bulk-ingest-workers* (list worker))
-         (star.frontends.http-api::*bulk-ingest-worker-system* system)
+  (let* ((fake-system (list :test-system))
+         (star.actors:*sys* fake-system)
+         (star.frontends.http-api::*bulk-ingest-workers*
+           (list :fake-worker))
+         (star.frontends.http-api::*bulk-ingest-worker-system* fake-system)
          (star.frontends.http-api::*bulk-ingest-worker-index* 0)
          (star.frontends.http-api::*bulk-ingest-jobs*
            (make-hash-table :test #'equal))
@@ -208,25 +205,30 @@
          (star.frontends.http-api::*bulk-ingest-lock*
            (bt:make-lock "http-boundary-quota-lock"))
          (star.frontends.http-api::*http-correlation-id* "corr-quota")
-         (documents (list (make-boundary-document))))
-    (unwind-protect
-         (progn
-           (dotimes (index 4)
-             (declare (ignore index))
-             (star.frontends.http-api:submit-bulk-ingest-job
-              documents
-              "quota-principal"))
-           (let ((condition
-                   (capture-http-input-error
-                    (lambda ()
-                      (star.frontends.http-api:submit-bulk-ingest-job
-                       documents
-                       "quota-principal")))))
-             (is (= 429
-                    (star.frontends.http-api:http-input-error-status
-                     condition)))
-             (is (string=
-                  "principal_bulk_quota_exceeded"
-                  (star.frontends.http-api:http-input-error-code
-                   condition)))))
-      (sento.actor-context:shutdown system))))
+         (documents (list (make-boundary-document)))
+         (ensure-workers
+           (lambda ()
+             star.frontends.http-api::*bulk-ingest-workers*))
+         (tell-noop
+           (lambda (worker job)
+             (declare (ignore worker job)))))
+    (dotimes (index 4)
+      (declare (ignore index))
+      (star.frontends.http-api:submit-bulk-ingest-job
+       documents
+       "quota-principal"
+       :ensure-workers-fn ensure-workers
+       :tell-fn tell-noop))
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:submit-bulk-ingest-job
+                documents
+                "quota-principal"
+                :ensure-workers-fn ensure-workers
+                :tell-fn tell-noop)))))
+      (is (= 429
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "principal_bulk_quota_exceeded"
+                   (star.frontends.http-api:http-input-error-code
+                    condition))))))
