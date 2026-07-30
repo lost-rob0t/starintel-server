@@ -16,6 +16,7 @@
                  (:file "package")
                  (:file "gserver-settings")
                  (:file "databases/couchdb")
+                 (:file "databases/export")
                  (:file "init-loader")
                  (:file "actors")
                  (:file "actors/couchdb-service")
