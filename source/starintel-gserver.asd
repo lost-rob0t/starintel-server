@@ -25,6 +25,9 @@
                  (:file "actor-systems/matcher-actor")
                  (:file "rabbit")
                  (:file "frontends/http-api")
+                 (:file "frontends/http-boundary-core")
+                 (:file "frontends/http-bulk-jobs")
+                 (:file "frontends/http-boundary-routes")
                  (:file "main"))
 
   :depends-on   (#:starintel
@@ -81,4 +84,3 @@
 ;;;; + [ ] ZMQ api for bulk use
 ;;;;
 ;;;; + [ ] A simpler to use "plugin" system
-;;;;
