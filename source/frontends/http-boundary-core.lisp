@@ -134,10 +134,9 @@
      (jsown:new-js ("maximum_bytes" max-bytes))))
   (handler-case
       (let ((text (babel:octets-to-string octets :encoding :utf-8)))
-        ;; JSOWN is retained as the internal representation, but it is not a
-        ;; standards-compliant validator. Jzon rejects malformed RFC 8259 input
-        ;; before JSOWN is allowed to decode the already validated text.
-        (com.inuoe.jzon:parse text)
+        ;; Validate with the packaged standards-oriented parser, then retain
+        ;; JSOWN as the service's existing internal document representation.
+        (yason:parse text)
         (jsown:parse text))
     (error ()
       (signal-http-input-error
