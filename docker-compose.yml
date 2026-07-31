@@ -99,9 +99,16 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER:-starintel}
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       HTTP_API_LISTEN_ADDRESS: 0.0.0.0
+      STAR_AUTH_MODE: api-key
+      STAR_AUTH_DATABASE: ${STAR_AUTH_DATABASE:-starintel-gserver-auth}
+      STAR_AUTH_PEPPER_FILE: /run/secrets/auth_pepper
+      STAR_AUTH_BOOTSTRAP_SECRET_FILE: /run/secrets/auth_bootstrap_secret
+      STAR_AUTH_ALLOWED_ORIGINS: ${STAR_AUTH_ALLOWED_ORIGINS:-}
     secrets:
       - couchdb_password
       - rabbitmq_password
+      - auth_pepper
+      - auth_bootstrap_secret
     ports:
       - "${STAR_SERVER_BIND_ADDRESS:-127.0.0.1}:${STAR_SERVER_PORT:-5000}:5000"
     networks:
@@ -127,6 +134,10 @@ secrets:
     file: ${CREDENTIALS_DIR:-./secrets}/erlang_cookie
   rabbitmq_password:
     file: ${CREDENTIALS_DIR:-./secrets}/rabbitmq_password
+  auth_pepper:
+    file: ${CREDENTIALS_DIR:-./secrets}/auth_pepper
+  auth_bootstrap_secret:
+    file: ${CREDENTIALS_DIR:-./secrets}/auth_bootstrap_secret
 
 volumes:
   clouseau_index:
