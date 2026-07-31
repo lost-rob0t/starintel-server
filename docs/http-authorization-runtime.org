@@ -1,0 +1,202 @@
+#+title: HTTP authorization runtime
+#+options: toc:3
+#+status: ACTIVE
+
+* Purpose
+
+This document describes the authorization behavior implemented by
+=starintel-gserver=. Authentication establishes a request principal. Authorization
+then decides whether that principal may perform one closed action against one
+canonical resource.
+
+The runtime is default deny. Missing principals, missing capabilities, unknown
+capabilities, unknown scope prefixes, unmapped HTTP routes, exhausted quotas, and
+resource-scope mismatches all deny.
+
+* Grant syntax
+
+API-key credential scopes contain both capabilities and resource restrictions.
+The accepted vocabulary is closed.
+
+Capabilities:
+
+- =identity:read=
+- =documents:read=, =documents:write=, =documents:delete=, =documents:bulk=
+- =search:read=, =views:read=
+- =targets:read=, =targets:dispatch=, =targets:lease=,
+  =targets:force-release=
+- =events:write=, =events:replay=
+- =credentials:read=, =credentials:create=, =credentials:rotate=,
+  =credentials:revoke=, =credentials:disable=
+- =principals:manage=, =audit:read=
+- =admin=
+
+Resource scopes:
+
+| Prefix | Restriction |
+|--------+-------------|
+| =tenant:= | Tenant security boundary |
+| =dataset:= | Dataset identifier |
+| =actor:= | Actor name |
+| =target:= | Target identifier |
+| =target-namespace:= | Target namespace |
+| =program:= | Program identifier |
+
+A scope value may be an explicit identifier or =*=. Empty resource scope means
+no matching resources, not unrestricted access. =admin= grants the closed
+capability set and wildcard resource dimensions, but it does not authorize an
+unmapped route.
+
+Example read-only credential for one dataset:
+
+#+begin_src json
+{
+  "owner": "dataset-a-reader",
+  "principal_type": "api_client",
+  "scopes": [
+    "documents:read",
+    "search:read",
+    "views:read",
+    "targets:read",
+    "tenant:default",
+    "dataset:dataset-a",
+    "actor:collector-a"
+  ]
+}
+#+end_src
+
+Unknown capabilities or resource prefixes are rejected when a credential is
+issued or rotated.
+
+* Decision protocol
+
+The policy protocol receives:
+
+1. an explicit request principal, service-call context, or deliberately bound
+   trusted internal context;
+2. one closed action string;
+3. a canonical resource containing any tenant, dataset, actor, target,
+   namespace, program, resource-id, or document-type dimensions;
+4. request metadata such as route, method, and correlation ID;
+5. current quota state.
+
+The default policy engine evaluates capability, every populated resource
+dimension, and quota state. A missing resource dimension is not invented from
+raw route text. Application boundaries resolve documents before authorizing
+reads and deletes so policy evaluates the stored tenant and dataset.
+
+Internal library callers do not inherit authority merely because they run in the
+server process. They must pass an explicit principal/service context or execute
+inside =with-trusted-authorization-context=. The trusted context must be
+configured deliberately and is still evaluated by the same closed policy.
+
+* HTTP route/action matrix
+
+| Route | Method | Action | Resource behavior |
+|-------+--------+--------+-------------------|
+| =/auth/context= | GET | =identity:read= | Authenticated principal |
+| =/auth/credentials= | GET | =credentials:read= | Credential metadata only |
+| =/auth/credentials= | POST | =credentials:create= | Administrative lifecycle operation |
+| =/auth/credentials/:id/rotate= | POST | =credentials:rotate= | Administrative lifecycle operation |
+| =/auth/credentials/:id/revoke= | POST | =credentials:revoke= | Administrative lifecycle operation |
+| =/auth/credentials/:id/disable= | POST | =credentials:disable= | Administrative lifecycle operation |
+| =/document/:id= | GET | =documents:read= | Stored document tenant and dataset |
+| =/document/:id= | DELETE | =documents:delete= | Stored document tenant and dataset |
+| =/new/document/:dtype= | POST | =documents:write= | Body tenant, dataset, and dtype |
+| =/documents/bulk= | POST | =documents:bulk= plus per-document action | Entire batch is authorized before publish side effects |
+| =/documents/bulk/:job-id= | GET | =documents:bulk= | Existing submitter/admin ownership check also applies |
+| =/search= | GET | =search:read= | Tenant/dataset clauses are inserted into the Clouseau query before execution |
+| =/views/:design/:view= | GET | =views:read= | Requested tenant/dataset plus per-row filtering and rewritten counts |
+| =/dataset-size= | GET | =views:read= | Tenant and dataset scoped count view |
+| legacy =/documents/...= view routes | GET | =views:read= | Require explicit =dataset:*= or =admin= because the legacy signatures are unscoped |
+| =/targets/:actor= | GET | =targets:read= | Actor gate plus per-target tenant/dataset/namespace/program filtering |
+| =/new/target/:actor= | POST | =targets:dispatch= | Body tenant/dataset/target scopes plus route actor |
+| =/targets/:actor/:target-id/lease= | POST | =targets:lease= | Actor, target, tenant, dataset, namespace, and program; returns =501= after allow until lease backend exists |
+| =/targets/:actor/:target-id/force-release= | POST | =targets:force-release= | Elevated target operation; returns =501= after allow until lease backend exists |
+| =/new/event/:id= | POST | =events:write= | Event endpoint remains a stub |
+| =/events/:event-id/replay= | POST | =events:replay= | Elevated operation; returns =501= after allow until replay backend exists |
+
+=OPTIONS= and the authentication public paths remain public. Any other protected
+route that has no explicit mapping returns =403 access_denied=, including for an
+administrator.
+
+* Search and view isolation
+
+Search authorization is enforced before backend execution. For restricted
+principals the server adds Lucene clauses for every permitted tenant and dataset.
+A requested tenant or dataset outside the grant denies. The search index stores a
+canonical =tenant_id= field, using document =tenant=, then =tenant_id=, then
+=default=.
+
+The scoped view endpoint requires an explicit dataset and optional tenant. It
+filters every returned row through policy and replaces =total_rows= and =offset=
+so unauthorized rows do not leak through counts. Legacy view routes that cannot
+express tenant/dataset scope are unavailable to restricted credentials.
+
+* Bulk and target behavior
+
+Bulk ingest first requires =documents:bulk=, then evaluates each document using
+=documents:write= or =targets:dispatch=. One denied document rejects the complete
+batch before Rabbit publication.
+
+Target listing first checks the actor and then filters each document using its
+stored tenant, dataset, target, namespace, and program fields. Dispatch performs
+the same resource evaluation before publication.
+
+* Rabbit provenance
+
+Rabbit publication re-authorizes at the internal publish boundary using the
+server-captured request/service context. Caller-supplied principal or decision
+fields are not trusted.
+
+The safe message projection contains only server-generated non-secret fields,
+including decision ID, action, tenant, dataset, actor, correlation ID, and the
+verified principal/credential identifiers already present in the service
+context. Bearer keys, verifier material, salts, and peppers are never copied.
+
+* Audit and errors
+
+Every decision emits a structured allow/deny event through
+=*authorization-audit-sink*=. Audit data is redacted and contains decision,
+action, canonical resource, principal identifier, and request metadata—not
+bearer credentials or verifier material.
+
+HTTP denial is uniform:
+
+#+begin_src json
+{
+  "status": "error",
+  "code": "access_denied",
+  "msg": "Access denied",
+  "correlation_id": "..."
+}
+#+end_src
+
+The response is =403= with =Cache-Control: no-store=. Policy internals and grant
+existence are not returned.
+
+* Quotas
+
+The authorization request may include current quota state. A quota marked
+=exhausted= or =denied=, or a numeric =remaining= value of zero or less, denies an
+otherwise valid action. Quota input is server-side decision context; request
+payloads do not grant or reset quota.
+
+* Verification
+
+The mandatory hermetic suite covers:
+
+- read-only denial for write, delete, dispatch, and lease;
+- cross-tenant and cross-dataset direct lookup, search, view, bulk, and target
+  isolation;
+- batch denial before publish side effects;
+- actor, target, namespace, and program restrictions;
+- explicit trusted internal contexts;
+- elevated force-release, replay, and credential administration;
+- quota exhaustion;
+- audit and Rabbit redaction;
+- unknown scope and unmapped-route denial.
+
+The authenticated container test mints a restricted credential and repeats the
+cross-dataset attacks against the Nix-built Compose stack, including restart and
+credential persistence checks.
