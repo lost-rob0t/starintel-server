@@ -19,6 +19,7 @@
    (:file "databases/couchdb")
    (:file "databases/export")
    (:file "auth/core")
+   (:file "auth/verification-hardening")
    (:file "auth/store")
    (:file "init-loader")
    (:file "actors")
