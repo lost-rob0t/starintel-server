@@ -49,6 +49,7 @@
    (:file "frontends/http-api")
    (:file "frontends/http-document-update")
    (:file "frontends/http-view-registry")
+   (:file "frontends/http-status-message")
    (:file "frontends/http-boundary-core")
    (:file "frontends/http-auth")
    (:file "frontends/http-authorization")
