@@ -1,0 +1,795 @@
+#+title: HTTP principal and capability contract
+#+options: toc:3
+#+status: DESIGN
+
+* Purpose
+
+This document defines the stable application contract for authenticated HTTP
+principals, credential records, capabilities, scopes, authorization decisions,
+and audit context.
+
+It does not implement authentication. Runtime code MUST conform to this contract
+when authentication is added. Security assumptions and attacker analysis are in
+[[file:http-auth-threat-model.org][the HTTP authentication threat model]].
+
+* Normative rules
+
+The words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative.
+
+The authorization model is:
+
+#+begin_example
+request
+  -> credential parser
+  -> credential verifier
+  -> principal resolver
+  -> capability + scope authorization
+  -> application operation
+  -> audit result
+#+end_example
+
+Every protected request MUST produce one immutable request security context.
+Missing or invalid context MUST deny. Authorization MUST be default deny.
+
+* Identifiers
+
+All identifiers are opaque strings at the API boundary. Runtime code MUST NOT
+derive authority from identifier shape, prefix, ordering, or embedded user input.
+
+| Field | Meaning | Secret |
+|-------+---------+--------|
+| =principal_id= | Stable identity record | No |
+| =credential_id= | Stable identifier for one issued credential | No |
+| =tenant_id= | Security and data isolation boundary | No |
+| =decision_id= | Identifier for one authorization decision | No |
+| =correlation_id= | Identifier for one request flow | No |
+| API key secret | Bearer secret used for verification | Yes |
+| verifier | Stored one-way credential verifier | Sensitive |
+| pepper | Server-side verifier secret | Yes |
+
+Identifiers MUST have bounded length and a canonical representation. Identifier
+comparison MUST use the canonical form defined by the implementing module.
+
+Deleted or revoked credential identifiers MUST NOT be reused.
+
+* Principal record
+
+A principal record represents an identity independent of any one credential.
+One principal MAY own multiple credentials. Revoking one credential does not
+necessarily disable the principal.
+
+Conceptual record:
+
+#+begin_src json
+{
+  "principal_id": "prn_01...",
+  "principal_type": "api_client",
+  "display_name": "quasar-ui-production",
+  "status": "active",
+  "tenant_ids": ["tenant-main"],
+  "attributes": {
+    "service": "quasar-ui"
+  },
+  "created_at": "2026-07-30T20:00:00Z",
+  "updated_at": "2026-07-30T20:00:00Z",
+  "disabled_at": null
+}
+#+end_src
+
+Required fields:
+
+| Field | Type | Rule |
+|-------+------+------|
+| =principal_id= | string | Stable and unique |
+| =principal_type= | enum | One recognized principal class |
+| =display_name= | string | Human-readable, not authoritative |
+| =status= | enum | =active=, =disabled=, or =deleted= |
+| =tenant_ids= | array | Explicit tenant memberships |
+| =created_at= | timestamp | Immutable |
+| =updated_at= | timestamp | Changes with record mutation |
+
+Attributes are descriptive metadata. Attributes MUST NOT grant capabilities
+unless a separately versioned policy explicitly maps them into grants.
+
+* Principal classes
+
+** Human user
+
+Value: =human_user=
+
+Represents an interactive operator, analyst, reviewer, or administrator.
+
+v0.1 credential:
+
+- API key, intended for CLI or trusted native use.
+
+Future credential:
+
+- OIDC identity mapped by issuer, subject, and tenant rules.
+
+A human user MUST NOT share a credential with another human or service. Human
+administrator access uses a separately issued administrator credential.
+
+** API client
+
+Value: =api_client=
+
+Represents a script, CLI integration, web backend, or application instance that
+calls HTTP endpoints.
+
+API clients SHOULD receive the minimum capability and scope needed for one
+integration purpose. Different deployments or environments SHOULD use separate
+principals and credentials.
+
+** Service instance
+
+Value: =service_instance=
+
+Represents a long-running external service, collector, scheduler, bridge, or
+backend.
+
+A service principal SHOULD be unique per service and environment. Horizontal
+replicas MAY share a credential initially, but unique workload credentials are
+preferred when lifecycle tooling supports them.
+
+Future mTLS identity MUST map certificate identity to an existing service
+principal rather than creating implicit authority from certificate fields.
+
+** Actor component
+
+Value: =actor_component=
+
+Represents an actor runtime component or external actor service.
+
+Actor principals MUST include explicit actor scope. An actor principal does not
+receive general document, search, target dispatch, or administrative authority
+unless those capabilities are separately granted.
+
+** Administrator
+
+Value: =administrator=
+
+Represents a principal authorized for security and deployment administration.
+
+Administrator principals:
+
+- MUST use separately issued credentials;
+- MUST be audited at high priority;
+- SHOULD use short-lived or frequently rotated credentials;
+- MUST NOT be created through general document APIs;
+- MUST NOT be inferred from operating-system username, source address, or local
+  process location;
+- MUST still satisfy tenant and operation invariants defined by administrative
+  APIs.
+
+* Credential types
+
+** v0.1 API key
+
+Credential type: =api_key_v1=
+
+External representation:
+
+#+begin_example
+star_sk_v1_<credential-id>_<secret>
+#+end_example
+
+Properties:
+
+- =star_sk= identifies a StarIntel secret key;
+- =v1= selects the parser and verifier contract;
+- =credential-id= is non-secret and supports record lookup;
+- =secret= is high-entropy random bearer material;
+- separators and alphabets MUST be unambiguous;
+- total length MUST be bounded;
+- malformed values deny before verifier work;
+- unsupported versions deny without fallback.
+
+The exact entropy and encoding parameters MUST be constants in the implementing
+module and covered by tests. Secret generation MUST use a cryptographically
+secure random source.
+
+The complete key is returned only once, at creation. It MUST NOT be retrievable
+later.
+
+Authorization header:
+
+#+begin_example
+Authorization: Bearer star_sk_v1_<credential-id>_<secret>
+#+end_example
+
+Only one credential is accepted per request. Multiple Authorization headers,
+multiple bearer values, or conflicting credential sources MUST reject.
+
+** Future OIDC adapter
+
+Credential type: =oidc_v1=
+
+OIDC is intended for human identity. The adapter MUST:
+
+- configure an explicit issuer allowlist;
+- validate signature, issuer, audience, expiration, and required claims;
+- map issuer and subject to one existing principal;
+- reject unprovisioned identities unless an explicit provisioning policy exists;
+- never map email address alone to administrator authority;
+- keep token claims descriptive unless policy explicitly consumes them;
+- produce the same principal and authorization context shape as API keys.
+
+** Future mTLS adapter
+
+Credential type: =mtls_v1=
+
+mTLS is intended for service and actor identity. The adapter MUST:
+
+- validate the chain against configured trust anchors;
+- validate validity period and intended usage;
+- apply revocation policy;
+- map a stable certificate identity to an existing principal;
+- reject certificates that match no explicit binding;
+- not infer capabilities directly from arbitrary subject fields;
+- produce the same principal and authorization context shape as API keys.
+
+* Credential record
+
+Conceptual stored record:
+
+#+begin_src json
+{
+  "credential_id": "key_01...",
+  "credential_type": "api_key_v1",
+  "principal_id": "prn_01...",
+  "status": "active",
+  "verifier": "encoded-memory-hard-verifier",
+  "salt": "encoded-random-salt",
+  "pepper_version": "pepper-2026-01",
+  "hash_parameters": {
+    "algorithm": "argon2id",
+    "memory": 0,
+    "iterations": 0,
+    "parallelism": 0
+  },
+  "not_before": null,
+  "expires_at": null,
+  "created_at": "2026-07-30T20:00:00Z",
+  "last_used_at": null,
+  "revoked_at": null,
+  "rotation_parent_id": null,
+  "description": "Quasar production write credential"
+}
+#+end_src
+
+The numeric hash parameters above are placeholders for implementation-selected
+values. They MUST be centrally configured, benchmarked for the deployment class,
+and stored with each verifier for migration.
+
+Credential status values:
+
+| Status | Authentication result |
+|--------+-----------------------|
+| =active= | Continue verification and policy checks |
+| =disabled= | Deny |
+| =revoked= | Deny permanently |
+| =expired= | Deny |
+| =deleted= | Deny; retain tombstone metadata |
+
+Credential records MUST be stored outside ordinary StarIntel datasets and MUST
+not be reachable through document, search, export, graph, or relation APIs.
+
+* Verification and hashing
+
+API key verification MUST:
+
+1. parse the prefix, version, identifier, and secret with strict bounds;
+2. look up the credential record by non-secret identifier;
+3. perform a constant-time verifier comparison;
+4. include the configured pepper version in verifier derivation;
+5. check credential and principal status;
+6. check =not_before= and =expires_at=;
+7. resolve grants only after successful verification;
+8. erase or release secret-bearing intermediate values as soon as practical;
+9. update last-used metadata asynchronously and without changing the decision;
+10. return a uniform external failure for unknown, invalid, expired, disabled,
+    and revoked credentials.
+
+Unknown credential identifiers SHOULD follow a bounded dummy-verifier path so
+identifier existence is not exposed by large timing differences.
+
+Pepper values MUST be loaded from a secret provider outside the authorization
+database. Credential records contain only a pepper version identifier.
+
+* Capabilities
+
+Capability names are closed, lowercase, colon-delimited strings. Unknown
+capabilities deny. Grants are additive, but an explicit deny overrides an allow.
+
+** Core capabilities
+
+| Capability | Permitted operation |
+|------------+---------------------|
+| =documents:read= | Read individual documents within scope |
+| =documents:write= | Create or update documents within scope |
+| =documents:delete= | Delete documents within scope |
+| =documents:bulk= | Submit bounded bulk document operations within scope |
+| =search:read= | Execute search constrained to readable scope |
+| =targets:read= | Read target definitions and status within scope |
+| =targets:dispatch= | Submit or dispatch targets to permitted actors |
+| =targets:lease= | Acquire, renew, or release actor target leases |
+| =datasets:read= | Read dataset metadata |
+| =datasets:manage= | Create or modify dataset metadata and policy within delegated scope |
+| =actors:read= | Read actor metadata and status |
+| =actors:invoke= | Invoke permitted actor operations |
+| =audit:read= | Read approved audit records |
+| =credentials:read= | Read non-secret credential metadata |
+| =credentials:create= | Issue credentials within delegated principal/scope rules |
+| =credentials:rotate= | Rotate credentials |
+| =credentials:revoke= | Revoke credentials |
+| =principals:manage= | Create, disable, and update principals and grants |
+| =admin= | Administrative superset, subject to explicit route mapping and audit |
+
+A route MUST map to one primary capability. Complex operations MAY require
+additional capabilities. Having =documents:write= does not imply
+=documents:delete=, =documents:bulk=, =targets:dispatch=, or =datasets:manage=.
+
+=admin= is not an escape hatch for unmapped routes. An unmapped route denies even
+for administrators.
+
+* Grants and explicit denies
+
+Conceptual grant record:
+
+#+begin_src json
+{
+  "grant_id": "grant_01...",
+  "principal_id": "prn_01...",
+  "effect": "allow",
+  "capability": "documents:write",
+  "scope": {
+    "tenant_ids": ["tenant-main"],
+    "dataset_ids": ["hunter-biden"],
+    "actor_names": [],
+    "target_ids": []
+  },
+  "conditions": {
+    "expires_at": null
+  },
+  "created_at": "2026-07-30T20:00:00Z",
+  "created_by": "prn_admin_01..."
+}
+#+end_src
+
+Effects:
+
+- =allow= grants a capability within the specified scope;
+- =deny= removes authority within the specified scope and overrides matching
+  allows.
+
+Grant evaluation MUST be deterministic and independently testable. The initial
+implementation SHOULD avoid a general-purpose policy language. Closed capability
+and scope records are easier to review and harder to misconfigure.
+
+* Scope model
+
+Scopes restrict where a capability applies. An empty list means no resources,
+not all resources. Wildcards MUST be explicit values and SHOULD be reserved for
+administrators or tightly controlled service principals.
+
+** Tenant scope
+
+Every protected resource belongs to one tenant security boundary, even if the
+initial deployment has one tenant.
+
+A principal MUST have membership in the tenant and a matching capability scope.
+Request-supplied tenant values do not create membership.
+
+** Dataset scope
+
+Dataset scope applies to document read, write, delete, bulk, search, export,
+graph, and relation operations.
+
+A document write MUST validate the document dataset against the authorized
+scope. The server MUST not authorize against a route dataset and then accept a
+conflicting dataset in the body.
+
+** Actor scope
+
+Actor scope applies to actor metadata, invocation, target dispatch, and target
+leases. Actor names MUST be canonicalized before policy evaluation.
+
+** Target scope
+
+Target scope can restrict individual target identifiers or target groups. Target
+scope does not imply actor scope, and actor scope does not imply target scope.
+Operations requiring both MUST satisfy both.
+
+** Resource scope
+
+Specific resources MAY be represented by canonical resource identifiers. The
+contract MUST avoid accepting raw CouchDB query fragments or arbitrary route
+strings as authorization scopes.
+
+* Authorization request
+
+The application boundary submits a normalized authorization request:
+
+#+begin_src json
+{
+  "principal_id": "prn_01...",
+  "principal_type": "api_client",
+  "credential_id": "key_01...",
+  "capability": "documents:write",
+  "resource": {
+    "tenant_id": "tenant-main",
+    "dataset_id": "hunter-biden",
+    "actor_name": null,
+    "target_id": null,
+    "resource_id": "doc_01..."
+  },
+  "operation": {
+    "route": "/new/document/:dtype",
+    "method": "POST",
+    "dtype": "person"
+  },
+  "correlation_id": "corr_01..."
+}
+#+end_src
+
+The route is descriptive audit context. Authorization MUST use the explicit
+capability and canonical resource fields, not string matching against the raw
+URL.
+
+* Authorization decision
+
+Conceptual decision:
+
+#+begin_src json
+{
+  "decision_id": "dec_01...",
+  "allowed": true,
+  "reason": "matching_allow_grant",
+  "principal_id": "prn_01...",
+  "credential_id": "key_01...",
+  "capability": "documents:write",
+  "matched_grant_ids": ["grant_01..."],
+  "evaluated_at": "2026-07-30T20:00:00Z"
+}
+#+end_src
+
+The external client receives only a stable error code on denial. Grant IDs,
+policy internals, principal existence, and credential state remain internal.
+
+Decision reasons are a closed internal enum, including:
+
+- =matching_allow_grant=;
+- =explicit_deny=;
+- =missing_capability=;
+- =scope_mismatch=;
+- =principal_disabled=;
+- =credential_invalid=;
+- =credential_expired=;
+- =credential_revoked=;
+- =policy_unavailable=;
+- =route_unmapped=.
+
+* Request security context
+
+After authentication, the HTTP layer creates one immutable context for the
+request:
+
+#+begin_src lisp
+(defstruct request-security-context
+  correlation-id
+  decision-id
+  principal-id
+  principal-type
+  credential-id
+  tenant-ids
+  capability
+  resource-scope
+  authenticated-at)
+#+end_src
+
+The exact Lisp representation may differ, but semantics MUST match.
+
+Rules:
+
+- the context contains no credential secret, verifier, salt, or pepper;
+- the context is established once and passed explicitly;
+- application functions MUST not recover authority from global mutable state;
+- asynchronous jobs copy only required non-secret fields;
+- RabbitMQ provenance uses a safe projection of this context;
+- missing context denies security-sensitive operations.
+
+* Route mapping
+
+Every protected route MUST register:
+
+1. route template;
+2. HTTP method;
+3. required capability;
+4. canonical resource extractor;
+5. whether body fields participate in scope;
+6. whether the operation requires high-priority audit;
+7. rate-limit class.
+
+Example conceptual mapping:
+
+| Route | Method | Capability | Scope source |
+|-------+--------+------------+--------------|
+| =/document/:id= | GET | =documents:read= | resolved document tenant/dataset |
+| =/document/:id= | DELETE | =documents:delete= | resolved document tenant/dataset |
+| =/new/document/:dtype= | POST | =documents:write= | body tenant/dataset and path dtype |
+| =/documents/bulk= | POST | =documents:bulk= and =documents:write= | every document tenant/dataset |
+| =/search= | GET | =search:read= and readable datasets | query scope |
+| =/targets/:actor= | GET | =targets:read= | actor and tenant scope |
+| =/new/target/:actor= | POST | =targets:dispatch= | actor, target, tenant, dataset |
+| =/bulk/jobs/:id= | GET | =documents:bulk= | job owner principal and dataset scope |
+
+Health endpoints MAY be public only when they expose no sensitive configuration.
+Root metadata and capability-discovery endpoints require a deliberate public or
+protected classification.
+
+A startup validation pass MUST fail if a registered protected route has no
+mapping.
+
+* Bulk authorization
+
+Bulk requests MUST be bounded before policy evaluation.
+
+Initial atomicity rule:
+
+- validate and authorize every document before enqueue or publish;
+- if any document fails authentication-independent validation or authorization,
+  reject the entire request;
+- do not partially enqueue unauthorized batches;
+- asynchronous jobs retain the submitting principal identifier, credential
+  identifier, decision identifier, and authorized dataset set;
+- job status is readable only by the submitting principal or a principal with an
+  explicit administrative/audit grant;
+- per-principal quotas use authenticated principal and credential identity, not
+  only source address.
+
+A future partial-success mode requires a separate capability and response
+contract.
+
+* Search authorization
+
+Search MUST execute within authorized tenant and dataset scope.
+
+The implementation MUST NOT:
+
+- search all records and merely redact unauthorized document bodies afterward;
+- expose unauthorized counts, facets, bookmarks, or sort behavior;
+- include the authentication database or audit store;
+- accept arbitrary index names or design documents from the client.
+
+The search request scope is intersected with the principal's readable scope.
+An empty intersection returns an access denial or an explicitly documented empty
+result behavior that does not leak resource existence.
+
+* Target and actor authorization
+
+Target dispatch requires:
+
+- =targets:dispatch=;
+- matching tenant and dataset scope;
+- matching actor scope;
+- matching target scope when target restrictions exist.
+
+Target leasing requires =targets:lease= and actor identity binding. The actor
+claim in the request body, URL, credential metadata, and resolved target MUST
+agree after canonicalization.
+
+Actor components SHOULD receive separate credentials for lease and document
+write behavior when operationally feasible.
+
+* Administrative operations
+
+Administrative routes MUST require explicitly mapped capabilities. =admin= MAY
+satisfy those mappings, but all of these still apply:
+
+- separate administrator credential;
+- high-priority audit before and after mutation;
+- no secret returned except once during credential creation;
+- reason or ticket metadata SHOULD be required for destructive actions;
+- self-grant and self-audit suppression are prohibited;
+- last-administrator removal MUST be prevented outside documented recovery;
+- bootstrap state cannot be re-enabled through an ordinary request.
+
+Credential metadata reads MUST redact verifier, salt, pepper version when not
+operationally required, hash parameters if sensitive to policy, and all secret
+material.
+
+* Rate-limit classes
+
+Rate limiting uses principal identity after successful authentication and source
+context before authentication.
+
+| Class | Examples | Relative cost |
+|-------+----------+---------------|
+| =public-light= | health | low |
+| =auth-verify= | failed credential checks | expensive |
+| =read= | document reads | low to medium |
+| =search= | full-text search | high |
+| =write= | document and target writes | medium |
+| =bulk= | bulk enqueue | high and quota-bound |
+| =admin= | principal and credential mutation | low volume, high sensitivity |
+
+Rate-limit decisions MUST not grant authority and MUST not reveal credential
+existence. Limits and queue capacities MUST be bounded configuration values.
+
+* Error contract
+
+Authentication errors:
+
+#+begin_src json
+{
+  "status": "error",
+  "code": "invalid_credential",
+  "msg": "Authentication failed",
+  "correlation_id": "corr_01..."
+}
+#+end_src
+
+Authorization errors:
+
+#+begin_src json
+{
+  "status": "error",
+  "code": "access_denied",
+  "msg": "Access denied",
+  "correlation_id": "corr_01..."
+}
+#+end_src
+
+Rules:
+
+- unknown, invalid, disabled, expired, and revoked credentials share the same
+  external authentication failure;
+- responses never include raw authorization headers, key identifiers unless
+  intentionally non-sensitive, verifier state, grant IDs, or policy internals;
+- status codes follow the threat model;
+- correlation identifiers are always present;
+- internal logs record the safe decision reason.
+
+* Audit contract
+
+The security context projects into an audit event:
+
+#+begin_src json
+{
+  "event_type": "authorization_decision",
+  "correlation_id": "corr_01...",
+  "decision_id": "dec_01...",
+  "principal_id": "prn_01...",
+  "principal_type": "api_client",
+  "credential_id": "key_01...",
+  "capability": "documents:write",
+  "tenant_id": "tenant-main",
+  "dataset_id": "hunter-biden",
+  "actor_name": null,
+  "target_id": null,
+  "route": "/new/document/:dtype",
+  "method": "POST",
+  "decision": "allow",
+  "result": "accepted",
+  "timestamp": "2026-07-30T20:00:00Z"
+}
+#+end_src
+
+Audit events MUST NOT contain credential secrets, authorization headers,
+verifiers, salts, peppers, full request bodies, or raw exception conditions.
+
+* Caching contract
+
+Authentication and authorization caching MAY be added with these constraints:
+
+- cache keys contain non-secret identifiers and version numbers;
+- secret material is never a cache key or value;
+- cached grants have a bounded lifetime;
+- principal disable, grant change, and credential revocation invalidate relevant
+  cache entries immediately;
+- authorization-store failure does not convert a stale cache miss into allow;
+- cache behavior is covered by concurrency and revocation tests.
+
+* Configuration contract
+
+Required security mode values:
+
+- =disabled=: only allowed for explicitly validated loopback development;
+- =api-key=: v0.1 production authentication;
+- future =oidc=, =mtls=, or composed modes only after implementation.
+
+Suggested configuration names:
+
+#+begin_example
+STAR_AUTH_MODE=api-key
+STAR_AUTH_STORE_DATABASE=starintel-auth
+STAR_AUTH_PEPPER_ACTIVE_VERSION=pepper-2026-01
+STAR_AUTH_PEPPER_FILE=/run/secrets/starintel-auth-pepper
+STAR_AUTH_ALLOWED_ORIGINS=https://quasar.example
+STAR_AUTH_DEV_BYPASS=false
+#+end_example
+
+Names are provisional until implementation, but validation semantics are not:
+
+- production mode with authentication disabled MUST abort startup;
+- API-key mode without an active pepper MUST abort startup;
+- development bypass on a non-loopback listener MUST abort startup;
+- wildcard browser origin with credential-bearing browser mode MUST abort startup
+  or be rejected as invalid configuration;
+- unknown configuration values MUST abort startup.
+
+* Migration and compatibility
+
+Authentication introduction is a breaking deployment change even if route paths
+remain stable.
+
+Migration plan:
+
+1. ship threat model and contract;
+2. implement credential store, verifier, and principal records;
+3. implement route mapping and default-deny middleware;
+4. add bootstrap tooling;
+5. add audit storage and redaction tests;
+6. add explicit development mode;
+7. update clients to send credentials;
+8. change deployment defaults to require authentication;
+9. remove or tightly constrain wildcard CORS;
+10. document credential rotation and recovery.
+
+There MUST be no silent fallback from invalid credentials to anonymous or
+development authority.
+
+* Required test matrix
+
+** Credential parsing and verification
+
+- valid API key authenticates;
+- missing credential denies;
+- malformed prefix denies;
+- unsupported version denies;
+- unknown identifier denies;
+- wrong secret denies;
+- disabled, revoked, expired, and not-yet-valid credentials deny;
+- principal disabled denies all credentials;
+- timing behavior does not trivially enumerate identifiers;
+- logs and errors contain no secret material;
+- pepper rotation and verifier rehash work;
+- revocation invalidates cache immediately.
+
+** Authorization
+
+- every protected route has a mapping;
+- unmapped route denies for ordinary and administrator principals;
+- each capability permits only its mapped operations;
+- explicit deny overrides allow;
+- tenant, dataset, actor, target, and resource scopes isolate correctly;
+- body and route scope mismatches deny;
+- search cannot reveal unauthorized counts or records;
+- bulk rejects the entire batch when one item is unauthorized;
+- bulk job status is owner-scoped;
+- internal callers without context deny.
+
+** Operational controls
+
+- rate limits are bounded and principal-aware;
+- authorization store outage fails closed;
+- audit write failure blocks high-risk administrative mutation;
+- development bypass cannot start on a non-loopback listener;
+- production mode cannot start with auth disabled;
+- wildcard CORS is rejected for credential-bearing browser configuration;
+- bootstrap cannot run twice;
+- last administrator cannot be removed normally.
+
+* Change control
+
+Adding or renaming a principal class, credential type, capability, scope field,
+decision reason, or security mode is a security-contract change. Such changes
+MUST update:
+
+- this document;
+- the threat model;
+- route mappings;
+- client capability discovery where applicable;
+- migration notes;
+- hermetic and integration tests.
