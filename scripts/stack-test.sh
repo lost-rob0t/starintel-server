@@ -165,7 +165,7 @@ reader_response="$(
     --request POST \
     --header "$auth_header" \
     --header "Content-Type: application/json" \
-    --data '{"owner":"dataset-a-reader","principal_type":"api_client","scopes":["identity:read","documents:read","search:read","views:read","targets:read","tenant:default","dataset:dataset-a","actor:actor-a","target:*"]}' \
+    --data '{"owner":"dataset-a-reader","principal_type":"api_client","scopes":["identity:read","documents:read","search:read","views:read","targets:read","tenant:default","dataset:dataset-a","actor:actor-a","target:*","target-namespace:people","program:program-a"]}' \
     "${server_url}/auth/credentials"
 )"
 reader_key="$(jq --exit-status --raw-output '.api_key' <<<"$reader_response")"
