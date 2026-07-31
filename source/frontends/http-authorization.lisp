@@ -129,6 +129,46 @@
         (star.authorization:authorization-error ()
           (authorization-error-response correlation-id))))))
 
+(defmacro couchdb-handler ((client pool) &body body)
+  `(handler-case
+       (anypool:with-connection (,client ,pool)
+         (handler-case
+             (progn ,@body)
+           (dex:http-request-not-found (condition)
+             (log:warn "CouchDB request not found: ~a" condition)
+             (setf (lack.response:response-status *response*) 404)
+             (status-msg "Not Found" 'error))
+           (dex:http-request-conflict (condition)
+             (log:warn "CouchDB request conflict: ~a" condition)
+             (setf (lack.response:response-status *response*) 409)
+             (status-msg "Conflict" 'error))
+           (usocket:timeout-error (condition)
+             (log:error "Socket timeout connecting to database: ~a" condition)
+             (setf (lack.response:response-status *response*) 504)
+             (status-msg "Time out Connecting to database" 'error))
+           (dex:http-request-gateway-timeout (condition)
+             (log:error "Gateway timeout connecting to couchdb: ~a" condition)
+             (setf (lack.response:response-status *response*) 504)
+             (status-msg "Timeout connecting to couchdb" 'error))
+           (dex:http-request-bad-request (condition)
+             (log:error "CouchDB bad request: ~a" condition)
+             (setf (lack.response:response-status *response*) 400)
+             (status-msg "Bad Request"
+                         'error
+                         :traceback (format nil "~a" condition)))))
+     (star.authorization:authorization-error (condition)
+       (error condition))
+     (usocket:timeout-error (condition)
+       (log:error "Socket timeout getting connection from pool: ~a" condition)
+       (setf (lack.response:response-status *response*) 504)
+       (status-msg "Timeout getting database connection" 'error))
+     (error (condition)
+       (log:error "Unexpected error in couchdb-handler: ~a" condition)
+       (setf (lack.response:response-status *response*) 500)
+       (status-msg "Internal Server Error"
+                   'error
+                   :traceback (format nil "~a" condition)))))
+
 (defmacro with-http-boundary (() &body body)
   `(let ((*http-correlation-id*
            (or *http-correlation-id* (new-correlation-id))))
