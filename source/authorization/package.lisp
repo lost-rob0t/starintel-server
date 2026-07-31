@@ -49,4 +49,14 @@
    #:authorize!
    #:with-trusted-authorization-context
    #:decision-rabbit-headers
-   #:authorization-audit-json))
+   #:authorization-audit-json
+   #:authorize-document!
+   #:authorized-fetch-document
+   #:authorized-delete-document
+   #:authorized-publish-document
+   #:authorize-bulk-documents!
+   #:authorized-target-documents
+   #:authorized-search-query
+   #:authorized-view-response
+   #:principal-has-wildcard-dataset-p
+   #:principal-has-capability-p))
