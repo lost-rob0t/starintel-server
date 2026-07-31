@@ -198,17 +198,18 @@
       (let ((threads
               (loop for index below (length results)
                     collect
-                    (bt:make-thread
-                     (lambda ()
-                       (loop until
-                         (bt:with-lock-held (gate-lock) start)
-                         do (sleep 0.001))
-                       (setf (aref results index)
-                             (if (captured-authentication-code
-                                  (lambda ()
-                                    (authenticate-test-key raw-key store)))
-                                 :rejected
-                                 :accepted)))))))
+                    (let ((slot index))
+                      (bt:make-thread
+                       (lambda ()
+                         (loop until
+                           (bt:with-lock-held (gate-lock) start)
+                           do (sleep 0.001))
+                         (setf (aref results slot)
+                               (if (captured-authentication-code
+                                    (lambda ()
+                                      (authenticate-test-key raw-key store)))
+                                   :rejected
+                                   :accepted))))))))
         (star.auth:revoke-api-key
          (star.auth:api-key-record-id record)
          :store store)
