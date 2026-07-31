@@ -1,0 +1,327 @@
+#+title: HTTP authentication threat model — KV lease boundary
+#+options: toc:3
+#+status: DESIGN
+
+* Normative status
+
+This document is a normative part of the StarIntel Server HTTP authentication
+threat model. It defines the trust boundary between authenticated HTTP callers,
+actor components, target-lease operations, and the key-value lease store.
+
+It is design only. It does not claim that the current runtime implements these
+controls.
+
+* Protected lease assets
+
+The lease subsystem protects:
+
+- target ownership and assignment state;
+- lease identifiers;
+- tenant, dataset, actor, and target bindings;
+- lease holder principal and actor identity;
+- expiration and renewal state;
+- fencing tokens or monotonically increasing lease generations;
+- compare-and-swap versions;
+- retry, release, and revocation state;
+- KV namespace layout and service credentials;
+- lease audit records and correlation identifiers.
+
+Lease records MUST NOT contain API-key secrets, bearer tokens, credential
+verifiers, salts, peppers, raw Authorization headers, or reusable CouchDB or
+RabbitMQ credentials.
+
+* Actors and attacker profiles
+
+Relevant attacker profiles include:
+
+- an unauthenticated remote caller attempting to acquire or renew leases;
+- an authenticated principal with =targets:read= but not =targets:lease=;
+- an actor credential scoped to another actor, tenant, dataset, or target;
+- a compromised actor replaying a stale lease or renewal request;
+- two actor instances attempting to hold the same target concurrently;
+- an internal-network attacker with direct KV connectivity;
+- an imported library caller invoking lease functions without an HTTP security
+  context;
+- an administrator or service with over-broad KV credentials;
+- a denial-of-service attacker exhausting lease keys, renewal work, or storage.
+
+* Trust boundary and flow
+
+The required flow is:
+
+#+begin_example
+HTTP request or trusted actor call
+  -> credential verification
+  -> principal resolution
+  -> targets:lease capability decision
+  -> tenant/dataset/actor/target scope checks
+  -> canonical lease request
+  -> KV lease adapter using service credentials
+  -> atomic acquire/renew/release operation
+  -> non-secret result and audit event
+#+end_example
+
+The KV lease store is an infrastructure service boundary. It MUST NOT authenticate
+StarIntel end users or actors directly from request-supplied fields. The
+StarIntel authorization layer decides whether the operation is allowed before
+calling the KV adapter.
+
+The KV adapter uses a dedicated service credential with access only to the lease
+namespace required by this deployment. HTTP API keys, actor API keys, OIDC
+tokens, and mTLS certificates MUST NOT be forwarded into KV values, keys, logs,
+or connection metadata.
+
+Direct KV clients bypass the HTTP authorization boundary. Production network and
+KV access controls MUST prevent unapproved direct clients. Approved internal
+clients require their own service identity, namespace restriction, operation
+restriction, and audit policy.
+
+* Principal and scope binding
+
+Lease acquisition, renewal, and release require =targets:lease=.
+
+The authorization decision MUST bind all applicable values before the KV call:
+
+- authenticated =principal_id=;
+- non-secret =credential_id=;
+- =tenant_id=;
+- =dataset_id=;
+- canonical =actor_name=;
+- canonical =target_id=;
+- requested operation: acquire, renew, or release;
+- request =correlation_id=;
+- authorization =decision_id=.
+
+The actor value in the route, request body, credential binding, target record,
+and existing lease MUST agree after canonicalization. A mismatch denies.
+
+An actor-scoped credential cannot acquire, renew, inspect, or release another
+actor's lease. Tenant and dataset boundaries are mandatory even when target IDs
+are globally unique.
+
+Request-supplied identifiers do not create authority. The server resolves and
+canonicalizes the target and actor before authorization and before generating a
+KV key.
+
+* Lease record contract
+
+A conceptual lease record contains only non-secret state:
+
+#+begin_src json
+{
+  "lease_id": "lease_01...",
+  "tenant_id": "tenant-main",
+  "dataset_id": "dataset-a",
+  "actor_name": "usernamegen",
+  "target_id": "target_01...",
+  "holder_principal_id": "prn_actor_01...",
+  "holder_credential_id": "key_01...",
+  "generation": 42,
+  "acquired_at": "2026-07-30T20:00:00Z",
+  "expires_at": "2026-07-30T20:01:00Z",
+  "decision_id": "dec_01...",
+  "correlation_id": "corr_01..."
+}
+#+end_src
+
+The KV key MUST be generated from canonical, bounded identifiers through one
+closed function. Clients MUST NOT provide arbitrary KV keys, prefixes, queries,
+or namespaces.
+
+The lease value MUST be validated on every read and mutation. Unknown fields may
+be preserved only under a versioned migration contract; malformed or
+unsupported lease versions fail closed.
+
+* Atomicity and fencing
+
+Lease acquisition MUST be atomic. A read followed by an unconditional write is
+not sufficient.
+
+The adapter MUST use the strongest primitive supported by the selected KV store,
+such as compare-and-swap, create-if-absent with TTL, a transaction, or a lease
+primitive.
+
+Every successful acquisition MUST produce a monotonically increasing generation
+or fencing token. Downstream work that can mutate authoritative state SHOULD
+carry and validate this token so an expired or partitioned former holder cannot
+continue writing after another actor acquires the target.
+
+Renewal MUST succeed only when all of these match the current record:
+
+- lease identifier;
+- holder principal;
+- actor name;
+- target identity;
+- current generation or compare-and-swap version;
+- unexpired lease state according to server-side policy.
+
+Release MUST use the same ownership checks. A caller cannot release a lease by
+knowing only a target ID or lease ID.
+
+* Time and expiration
+
+The service controls lease duration. Clients may request a duration only within a
+bounded server policy.
+
+Expiration calculations MUST use the KV service's atomic TTL semantics or a
+server-controlled time source. Client clocks are not authoritative.
+
+Clock skew, delayed requests, retries, process suspension, and network partitions
+MUST NOT allow two valid holders. When certainty is unavailable, acquisition or
+renewal fails closed and the caller retries under bounded backoff.
+
+A renewal response received after local timeout MUST not be assumed successful.
+The actor must read or reacquire using the lease contract before continuing
+exclusive work.
+
+* Replay and stale-holder threats
+
+Threats:
+
+- replaying a previous acquire or renewal request;
+- continuing work after lease expiration;
+- renewing with a stale generation;
+- reusing a lease identifier after release;
+- delivering delayed RabbitMQ work to a former lease holder;
+- restoring an old KV snapshot that resurrects stale leases.
+
+Controls:
+
+- unique opaque lease identifiers;
+- generation or fencing tokens;
+- bounded TTL;
+- compare-and-swap renewal;
+- explicit holder and actor binding;
+- idempotency keys for retried API operations where required;
+- downstream generation validation for authoritative writes;
+- snapshot and recovery procedures that invalidate or safely re-establish leases;
+- audit correlation across lease and RabbitMQ events.
+
+RabbitMQ delivery is not proof of lease ownership. Consumers performing leased
+work MUST validate current lease state or a trustworthy fencing token before
+committing authoritative results.
+
+* Direct KV access and service credentials
+
+The KV service account MUST have least-privilege access to the lease namespace.
+It SHOULD NOT have access to unrelated application data.
+
+Service credentials MUST be stored through the deployment secret mechanism, not
+inside StarIntel documents, lease records, source files, logs, or error bodies.
+
+KV credentials require independent creation, rotation, revocation, recovery, and
+audit procedures. Rotating an HTTP or actor API key does not rotate the KV
+service credential, and rotating the KV credential does not alter principal
+grants.
+
+Network policy SHOULD restrict KV connectivity to approved StarIntel service
+instances. Direct administrative access must be separately authenticated and
+audited.
+
+* Imported library callers
+
+Imported Common Lisp callers do not gain lease authority because they execute in
+the StarIntel process.
+
+Security-sensitive lease functions MUST accept an explicit request security
+context or a separately defined trusted-internal context. A missing context,
+=nil= context, caller package, stack location, or local process address MUST NOT
+imply =targets:lease= or administrator authority.
+
+Trusted internal callers still provide canonical tenant, dataset, actor, and
+target bindings and produce audit events.
+
+* Failure behavior
+
+| Condition | Result |
+|-----------+--------|
+| Missing or invalid credential | 401 authentication failure before KV access |
+| Valid principal without =targets:lease= | 403 access denial before KV access |
+| Tenant, dataset, actor, or target mismatch | 403 access denial |
+| Existing unexpired lease held elsewhere | 409 lease conflict or stable equivalent |
+| Stale generation or compare-and-swap failure | 409 lease conflict |
+| Malformed lease request | 400 or 422 stable client error |
+| KV unavailable or inconsistent | 503 and fail closed |
+| Per-principal or global lease rate limit | 429 |
+| Internal malformed lease record | fail closed, alert, and quarantine according to recovery policy |
+
+External errors MUST not reveal KV keys, namespace layout, service credentials,
+raw backend errors, connection strings, stack traces, or another principal's
+private metadata.
+
+* Abuse and availability controls
+
+The lease boundary MUST enforce:
+
+- bounded identifier and request sizes;
+- bounded lease durations;
+- bounded acquire and renewal rates per principal, credential, actor, target, and
+  source context;
+- bounded concurrent KV operations;
+- bounded retries with jitter;
+- no unbounded lease queues;
+- quotas on active leases per actor and principal;
+- rejection before KV work when authentication or authorization fails;
+- circuit breaking and explicit degraded health when KV is unavailable;
+- audit aggregation that does not allow failure floods to exhaust storage.
+
+Rate limiting MUST not convert a denied caller into an allowed one, and lockout
+policy MUST not permit permanent denial of service through spoofed failures.
+
+* Audit requirements
+
+Every acquire, renew, release, conflict, stale-generation rejection, scope denial,
+backend failure, administrative override, and recovery action records:
+
+- timestamp;
+- correlation and decision identifiers;
+- principal class and identifier;
+- non-secret credential identifier;
+- tenant, dataset, actor, and target scope;
+- operation;
+- lease identifier where safe;
+- generation or fencing token where safe;
+- decision and result class;
+- latency and backend health state.
+
+Audit records MUST NOT contain bearer material, verifier data, peppers, KV
+service secrets, raw Authorization headers, or full arbitrary request bodies.
+
+Administrative force-release or recovery requires a separately authenticated
+administrator credential, high-priority audit, and a reason or incident
+identifier.
+
+* Residual risks
+
+Residual risks include:
+
+- a compromised authorized actor can abuse every lease in its granted scope;
+- KV or host compromise can mutate lease state outside application policy;
+- network partitions and delayed work require correct fencing enforcement in
+  downstream writers;
+- a backend without strong atomic primitives may not be suitable for exclusive
+  leases;
+- incorrectly canonicalized target or actor identifiers can split one logical
+  lease into multiple keys;
+- restore procedures can resurrect stale state if generations are not handled;
+- administrator abuse cannot be fully prevented, only constrained and audited;
+- availability attacks can still deny lease progress within configured bounds.
+
+* Required verification
+
+Implementation is not complete until tests prove:
+
+- every acquire, renew, and release path requires =targets:lease=;
+- tenant, dataset, actor, and target scope isolation;
+- route/body/credential/target actor mismatch denial;
+- atomic single-holder acquisition under concurrency;
+- generation or fencing-token monotonicity;
+- stale renewal and stale release denial;
+- expired holder cannot commit authoritative work when fencing is enforced;
+- duplicate and replayed requests are safe;
+- KV failure and malformed records fail closed;
+- no end-user credential reaches KV storage or logs;
+- direct library callers without context deny;
+- rate limits, quotas, retry bounds, and TTL bounds hold;
+- administrative override is separately authenticated and audited;
+- snapshot/restore behavior cannot silently resurrect valid stale leases.

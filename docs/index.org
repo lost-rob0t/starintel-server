@@ -7,6 +7,9 @@ This directory documents the implemented StarIntel Server runtime. It is written
 from the code in =source/starintel-gserver.asd=, not from an aspirational
 architecture.
 
+Security design documents are explicitly marked =DESIGN= and do not claim that
+the corresponding controls are implemented.
+
 ** Start here
 
 1. [[file:../README.org][README]] — install, run, submit a document, and find the main entry points.
@@ -17,6 +20,9 @@ architecture.
 6. [[file:configuration.org][Configuration]] — configure local, container, remote, and tuned deployments.
 7. [[file:http-api-docs.org][HTTP API]] — call the service.
 8. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
+9. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design only.
+10. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative threat-model section; design only.
+11. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design only.
 
 ** Implementation status
 
@@ -28,6 +34,7 @@ architecture.
 | Target routing | Active | Local Sento actor or =actors.<name>.new.target= |
 | Actor event storage | Active | Local receiver and separate =events= exchange consumer |
 | HTTP API | Active | No authentication; CORS allows every origin |
+| HTTP authentication threat model | Design | Contract, principal/capability model, and KV lease boundary are checked in; runtime enforcement is not implemented |
 | Clouseau full-text search | Active in Compose | Search endpoint uses CouchDB FTS design document |
 | URL extractor pattern | Experimental | Actor starts; complete global pattern dispatcher is not evident |
 | User-finder/user-hunt actors | Present, inactive | Files are not in the ASDF component list |
