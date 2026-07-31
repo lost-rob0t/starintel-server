@@ -1,0 +1,362 @@
+#+title: HTTP API-key authentication runtime
+#+options: toc:3
+
+* Status
+
+StarIntel Server protects every HTTP route by default except:
+
+- =GET /health=;
+- =GET /=;
+- =POST /auth/bootstrap=.
+
+The runtime uses opaque API keys, an immutable request security context, a
+separate CouchDB authentication database, exact-origin CORS configuration, and
+uniform authentication failures.
+
+The broader security model is defined in:
+
+- [[file:http-auth-threat-model.org][HTTP authentication threat model]];
+- [[file:http-principal-capability-contract.org][principal and capability contract]];
+- [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]].
+
+This implementation establishes identity and administrator lifecycle controls.
+Fine-grained route capability and resource-scope enforcement remains follow-on
+work. Until that enforcement lands, any valid non-administrator key can reach
+ordinary protected routes; lifecycle mutation routes require an administrator
+principal or =admin= scope.
+
+* Credential format
+
+The v0.1 API key has this shape:
+
+#+begin_example
+star_sk_v1_<credential-id>_<secret>
+#+end_example
+
+- =credential-id= is a non-secret ULID used for record lookup;
+- =secret= is 32 random bytes represented as 64 hexadecimal characters;
+- the full key is bearer material and must be protected like a password;
+- unsupported prefixes, versions, malformed fields, unknown identifiers, and
+  incorrect secrets all return the same external authentication failure.
+
+The server stores no recoverable API-key secret. A credential record contains:
+
+- credential identifier;
+- owner and principal type;
+- scope strings;
+- status;
+- random salt;
+- salted and peppered verifier;
+- creation and optional expiry timestamps;
+- disable and revocation timestamps;
+- rotation parent, successor, and overlap expiration metadata;
+- CouchDB revision metadata.
+
+Credential records live in =STAR_AUTH_DATABASE=, not in the intelligence
+document database. General document, search, export, and graph routes do not read
+the authentication database.
+
+* Hashing and comparison
+
+The verifier is derived from:
+
+#+begin_example
+SHA-256(server-pepper || credential-salt || random-secret)
+#+end_example
+
+The implementation uses a constant-time comparison function at the verifier
+boundary. The server pepper is loaded separately from CouchDB and is never stored
+in a credential record.
+
+This SHA-256 construction is the implemented v0.1 verifier, not the final
+memory-hard Argon2id design described by the threat model. Migrating verifier
+algorithms requires a versioned credential-record format and rehash/rotation
+path.
+
+* Request authentication
+
+Send the key as a bearer token:
+
+#+begin_example
+Authorization: Bearer star_sk_v1_<credential-id>_<secret>
+#+end_example
+
+A valid request creates one immutable security context containing:
+
+- principal identifier;
+- principal type;
+- non-secret credential identifier;
+- scope strings;
+- correlation identifier;
+- request deadline;
+- authentication timestamp.
+
+The context is propagated into asynchronous bulk jobs. RabbitMQ publication
+receives only non-secret provenance fields: principal identifier and type,
+credential identifier, scopes, correlation identifier, and deadline. Raw bearer
+material, verifier data, salts, and the server pepper are never propagated.
+
+Clients may provide a bounded =X-Correlation-ID=. The server generates one when
+it is missing or invalid.
+
+Clients may provide =X-Request-Timeout-Ms=. Values outside the configured bound
+fall back to the server default rather than creating an unbounded deadline.
+
+* Uniform authentication failure
+
+Every missing, malformed, unknown, incorrect, expired, disabled, revoked, or
+rotation-expired credential returns:
+
+#+begin_src json
+{
+  "status": "error",
+  "code": "invalid_credential",
+  "msg": "Authentication failed",
+  "correlation_id": "..."
+}
+#+end_src
+
+The status is =401=. The response includes =WWW-Authenticate= and
+=Cache-Control: no-store=. It does not reveal whether the credential identifier
+exists or which internal check failed.
+
+* Bootstrap
+
+Bootstrap creates the first administrator credential and is allowed only while
+the authentication store is empty.
+
+Request:
+
+#+begin_example
+POST /auth/bootstrap
+Content-Type: application/json
+X-Star-Bootstrap-Secret: <one-time deployment secret>
+
+{"owner":"initial-administrator"}
+#+end_example
+
+The bootstrap secret is configured through =STAR_AUTH_BOOTSTRAP_SECRET= or
+=STAR_AUTH_BOOTSTRAP_SECRET_FILE=. A constant-time digest comparison checks the
+presented value.
+
+A successful response has status =201= and returns the API key exactly once:
+
+#+begin_src json
+{
+  "api_key": "star_sk_v1_...",
+  "credential": {
+    "credential_id": "...",
+    "owner": "initial-administrator",
+    "principal_type": "administrator",
+    "scopes": ["admin"],
+    "status": "active"
+  },
+  "correlation_id": "..."
+}
+#+end_src
+
+The response is marked =Cache-Control: no-store= and =Pragma: no-cache=.
+
+A second bootstrap attempt returns =409 bootstrap_complete=. An invalid
+bootstrap secret returns =403 bootstrap_denied=. Neither response returns secret
+or verifier material.
+
+* Credential lifecycle routes
+
+All lifecycle routes below require an authenticated administrator principal or a
+credential with =admin= scope.
+
+** Create
+
+#+begin_example
+POST /auth/credentials
+Authorization: Bearer <administrator-key>
+Content-Type: application/json
+
+{
+  "owner": "quasar-production",
+  "principal_type": "api_client",
+  "scopes": ["documents:read", "documents:write", "search:read"],
+  "expires_in_seconds": 2592000
+}
+#+end_example
+
+The successful =201= response returns the new API key exactly once and includes
+redacted metadata.
+
+** List metadata
+
+#+begin_example
+GET /auth/credentials
+Authorization: Bearer <administrator-key>
+#+end_example
+
+The response contains metadata only. It never contains raw keys, verifier bytes,
+salts, or the pepper.
+
+** Rotate
+
+#+begin_example
+POST /auth/credentials/<credential-id>/rotate
+Authorization: Bearer <administrator-key>
+Content-Type: application/json
+
+{"overlap_seconds":300}
+#+end_example
+
+Rotation creates a distinct credential and returns its secret exactly once. The
+old credential remains valid until the overlap expiration, then fails with the
+same uniform =401 invalid_credential= response. The maximum overlap is bounded by
+=STAR_AUTH_MAX_ROTATION_OVERLAP_SECONDS=.
+
+An overlap of zero invalidates the old credential immediately after the rotation
+record is committed.
+
+** Revoke
+
+#+begin_example
+POST /auth/credentials/<credential-id>/revoke
+Authorization: Bearer <administrator-key>
+#+end_example
+
+Revocation is permanent for the credential identifier.
+
+** Disable
+
+#+begin_example
+POST /auth/credentials/<credential-id>/disable
+Authorization: Bearer <administrator-key>
+#+end_example
+
+Disabled credentials cannot authenticate. Re-enable is intentionally not
+implemented in this lifecycle surface.
+
+** Inspect current context
+
+#+begin_example
+GET /auth/context
+Authorization: Bearer <api-key>
+#+end_example
+
+The response returns the current non-secret principal, credential, scopes,
+correlation identifier, and deadline. It is intended for client verification and
+diagnostics.
+
+* Revocation cache bound
+
+The v0.1 implementation has no successful-credential or authorization cache.
+Every authenticated request reads the current credential record from the
+configured store.
+
+Therefore the documented cache bound is:
+
+#+begin_example
+0 seconds
+#+end_example
+
+Once a revocation or disable update commits, the next verifier lookup observes
+it. An already-running request that authenticated before the update retains its
+immutable request context for that request only. Concurrent tests verify that
+requests released after the revocation commit are rejected.
+
+Adding a cache later is a security-contract change. It requires a bounded TTL,
+immediate invalidation, concurrency tests, and an updated documented revocation
+bound.
+
+* Bulk jobs and service calls
+
+Large bulk requests capture the authenticated service context when the job is
+accepted. Worker execution uses that captured context rather than ambient
+unauthenticated state.
+
+Bulk-job status is visible only to:
+
+- the principal that submitted the job; or
+- an administrator.
+
+Other principals receive =404 bulk_job_not_found= so job existence is not
+exposed.
+
+The repository does not yet contain a KV lease adapter. The same service-call
+context is the required input projection for future target-lease operations; a
+future adapter must not infer authority from process location or a missing
+context.
+
+* CORS
+
+Wildcard CORS is removed. Configure exact browser origins with a comma-separated
+list:
+
+#+begin_example
+STAR_AUTH_ALLOWED_ORIGINS=https://quasar.example,https://admin.example
+#+end_example
+
+For an allowed origin, the server returns that exact origin and =Vary: Origin=.
+Credential-bearing wildcard origins are never emitted.
+
+A preflight from an unconfigured origin returns =403 cors_origin_denied=. Requests
+without an =Origin= header, such as normal CLI or service clients, are unaffected
+by browser CORS policy and still require authentication.
+
+* Configuration
+
+| Environment variable | Default | Purpose |
+|----------------------+---------+---------|
+| =STAR_AUTH_MODE= | =api-key= | Authentication mode. Supported: =api-key= and constrained development =disabled=. |
+| =STAR_AUTH_DATABASE= | =starintel-gserver-auth= | Separate CouchDB credential database. |
+| =STAR_AUTH_PEPPER= | none | Server-side verifier pepper. |
+| =STAR_AUTH_PEPPER_FILE= | none | File containing the verifier pepper. |
+| =STAR_AUTH_BOOTSTRAP_SECRET= | none | One-time bootstrap secret. |
+| =STAR_AUTH_BOOTSTRAP_SECRET_FILE= | none | File containing the bootstrap secret. |
+| =STAR_AUTH_ALLOWED_ORIGINS= | empty | Comma-separated exact browser origins. |
+| =STAR_AUTH_DEV_BYPASS= | false | Explicit development bypass flag. |
+| =STAR_AUTH_MAX_ROTATION_OVERLAP_SECONDS= | =86400= | Maximum old/new key overlap. |
+| =STAR_AUTH_DEFAULT_REQUEST_TIMEOUT_MS= | =30000= | Default propagated request deadline. |
+| =STAR_AUTH_MAX_REQUEST_TIMEOUT_MS= | =600000= | Maximum accepted client timeout. |
+| =COUCHDB_PASSWORD_FILE= | none | Runtime-readable CouchDB password file. |
+| =RABBITMQ_PASSWORD_FILE= | none | Runtime-readable RabbitMQ password file. |
+
+Production =api-key= mode refuses to initialize without a non-empty pepper.
+Unknown modes refuse startup.
+
+Authentication may be disabled only when all implemented checks pass:
+
+- =STAR_AUTH_MODE=disabled=;
+- =STAR_AUTH_DEV_BYPASS=true=;
+- the HTTP listener is loopback (=localhost=, =127.0.0.1=, or =::1=).
+
+A disabled-auth configuration on =0.0.0.0= fails startup.
+
+* Container deployment
+
+The Compose stack mounts these additional secrets into the server:
+
+- =auth_pepper=;
+- =auth_bootstrap_secret=.
+
+The stack test proves:
+
+- public health remains available;
+- unauthenticated protected access returns =401=;
+- bootstrap returns one administrator key;
+- bootstrap cannot run twice;
+- authenticated context resolves the expected administrator;
+- authenticated full-text search works;
+- the intelligence document persists across restart;
+- the administrator credential persists in the separate auth database and still
+  authenticates after restart.
+
+* Operational rules
+
+- Never commit, log, paste into issue comments, or store complete API keys in
+  StarIntel documents.
+- Capture the one-time key response into a secret manager immediately.
+- Use distinct principals and credentials per service and environment.
+- Prefer narrow scopes even though fine-grained route authorization is not yet
+  enforced; the stored grants are the migration basis for that enforcement.
+- Rotate a suspected credential, use the shortest safe overlap, then revoke the
+  old identifier.
+- Treat a lost key as unrecoverable; create or rotate instead of attempting to
+  read the secret from storage.
+- Protect CouchDB and the auth database from direct untrusted network access.
+- Protect the server pepper independently from CouchDB backups.

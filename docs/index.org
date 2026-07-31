@@ -19,27 +19,30 @@ the corresponding controls are implemented.
 5. [[file:messaging.org][Messaging]] — understand routing, delivery, recursion, and loop control.
 6. [[file:configuration.org][Configuration]] — configure local, container, remote, and tuned deployments.
 7. [[file:http-api-docs.org][HTTP API]] — call the service.
-8. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
-9. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design only.
-10. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative threat-model section; design only.
-11. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design only.
+8. [[file:http-authentication-runtime.org][HTTP authentication runtime]] — bootstrap, API-key lifecycle, CORS, request context, revocation behavior, and deployment.
+9. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
+10. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design contract.
+11. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative design contract.
+12. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
 
 ** Implementation status
 
 | Area | Status | Notes |
 |------+--------+-------|
-| CouchDB database initialization | Active | Creates main and actor-event databases; upserts design documents |
+| CouchDB database initialization | Active | Creates main, actor-event, and separate authentication databases; upserts required design documents |
 | RabbitMQ document ingest | Active | =documents.ingest.#= |
 | RabbitMQ update ingest | Active | =documents.updated.#=; partial deep merge and conflict retry |
 | Target routing | Active | Local Sento actor or =actors.<name>.new.target= |
 | Actor event storage | Active | Local receiver and separate =events= exchange consumer |
-| HTTP API | Active | No authentication; CORS allows every origin |
-| HTTP authentication threat model | Design | Contract, principal/capability model, and KV lease boundary are checked in; runtime enforcement is not implemented |
-| Clouseau full-text search | Active in Compose | Search endpoint uses CouchDB FTS design document |
+| HTTP API-key authentication | Active | Default-deny bearer authentication, immutable request context, lifecycle routes, exact-origin CORS, and separate credential storage |
+| Fine-grained route authorization | Not implemented | Stored scopes exist, but ordinary protected routes do not yet enforce capability/resource policy beyond administrator lifecycle routes and bulk-job ownership |
+| Authentication revocation cache | Active | No credential cache; committed revoke/disable is visible to the next verifier lookup |
+| KV target leases | Design only | No KV lease adapter exists; authenticated service context is propagated for future integration |
+| Clouseau full-text search | Active in Compose | Search endpoint uses CouchDB FTS design document and now requires authentication |
 | URL extractor pattern | Experimental | Actor starts; complete global pattern dispatcher is not evident |
 | User-finder/user-hunt actors | Present, inactive | Files are not in the ASDF component list |
 | HTTP event endpoint | Stub | =/new/event/:id= has no implementation |
-| Strict StarIntel 0.9 ingest validation | Not wired | Validators exist in =star-cl=, but HTTP/Rabbit ingest accepts raw JSON |
+| Strict StarIntel 0.9 ingest validation | Partially wired | HTTP boundary validates required envelope fields and schema version; Rabbit ingest remains a separate boundary |
 
 ** Source-of-truth rule
 

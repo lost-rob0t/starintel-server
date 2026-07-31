@@ -13,15 +13,18 @@
 (defvar *bulk-pending-jobs* 0)
 (defvar *bulk-pending-by-principal* (make-hash-table :test #'equal))
 (defvar *bulk-ingest-lock* (bt:make-lock "bulk-ingest-state"))
+(defvar *service-call-context* nil)
 
 (defstruct (bulk-ingest-job
             (:constructor make-bulk-ingest-job
-                (&key id principal documents correlation-id submitted-at
-                      (status :queued) (succeeded 0) (failed 0) error-code)))
+                (&key id principal documents correlation-id service-context
+                      submitted-at (status :queued) (succeeded 0) (failed 0)
+                      error-code)))
   id
   principal
   documents
   correlation-id
+  service-context
   submitted-at
   status
   succeeded
@@ -44,44 +47,79 @@
     (let* ((principal (bulk-ingest-job-principal job))
            (count (gethash principal *bulk-pending-by-principal* 0)))
       (if (> count 1)
-          (setf (gethash principal *bulk-pending-by-principal*) (1- count))
+          (setf (gethash principal *bulk-pending-by-principal*)
+                (1- count))
           (remhash principal *bulk-pending-by-principal*)))))
+
+(defun comma-separated-scopes (scopes)
+  (format nil "~{~a~^,~}" scopes))
+
+(defun service-context-properties (dtype context)
+  (let ((properties (list (cons :type dtype))))
+    (when context
+      (push (cons :correlation-id
+                  (star.auth:service-call-context-correlation-id context))
+            properties)
+      (push
+       (cons :headers
+             (list
+              (cons "x-star-principal-id"
+                    (star.auth:service-call-context-principal-id context))
+              (cons "x-star-principal-type"
+                    (star.auth:service-call-context-principal-type context))
+              (cons "x-star-credential-id"
+                    (star.auth:service-call-context-credential-id context))
+              (cons "x-star-scopes"
+                    (comma-separated-scopes
+                     (star.auth:service-call-context-scopes context)))
+              (cons "x-star-deadline"
+                    (princ-to-string
+                     (star.auth:service-call-context-deadline context)))))
+       properties))
+    (nreverse properties)))
+
+(defun current-publish-service-context ()
+  (or *service-call-context*
+      (star.auth:current-service-call-context)))
 
 (defun publish-document (document)
   (let* ((dtype (jsown:val document "dtype"))
-         (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype)))
-    (star.actors:publish star.actors:*producer-agent*
-                         :body (jsown:to-json document)
-                         :routing-key routing-key
-                         :properties (list (cons :type dtype)))))
+         (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype))
+         (context (current-publish-service-context)))
+    (star.actors:publish
+     star.actors:*producer-agent*
+     :body (jsown:to-json document)
+     :routing-key routing-key
+     :properties (service-context-properties dtype context))))
 
 (defun execute-bulk-job (job &key (publish-fn #'publish-document))
   (setf (bulk-ingest-job-status job) :running)
-  (handler-case
-      (progn
-        (loop for document in (bulk-ingest-job-documents job)
-              do (handler-case
-                     (progn
-                       (funcall publish-fn document)
-                       (incf (bulk-ingest-job-succeeded job)))
-                   (error (condition)
-                     (log:error
-                      "Bulk publish failed job=~a correlation=~a: ~a"
-                      (bulk-ingest-job-id job)
-                      (bulk-ingest-job-correlation-id job)
-                      condition)
-                     (incf (bulk-ingest-job-failed job)))))
-        (setf (bulk-ingest-job-status job)
-              (if (zerop (bulk-ingest-job-failed job))
-                  :completed
-                  :completed-with-errors)))
-    (error (condition)
-      (log:error "Bulk job failed job=~a correlation=~a: ~a"
-                 (bulk-ingest-job-id job)
-                 (bulk-ingest-job-correlation-id job)
-                 condition)
-      (setf (bulk-ingest-job-status job) :failed
-            (bulk-ingest-job-error-code job) "bulk_job_failed")))
+  (let ((*service-call-context* (bulk-ingest-job-service-context job)))
+    (handler-case
+        (progn
+          (loop for document in (bulk-ingest-job-documents job)
+                do (handler-case
+                       (progn
+                         (funcall publish-fn document)
+                         (incf (bulk-ingest-job-succeeded job)))
+                     (error (condition)
+                       (log:error
+                        "Bulk publish failed job=~a correlation=~a: ~a"
+                        (bulk-ingest-job-id job)
+                        (bulk-ingest-job-correlation-id job)
+                        condition)
+                       (incf (bulk-ingest-job-failed job)))))
+          (setf (bulk-ingest-job-status job)
+                (if (zerop (bulk-ingest-job-failed job))
+                    :completed
+                    :completed-with-errors)))
+      (error (condition)
+        (log:error "Bulk job failed job=~a correlation=~a: ~a"
+                   (bulk-ingest-job-id job)
+                   (bulk-ingest-job-correlation-id job)
+                   condition)
+        (setf (bulk-ingest-job-status job) :failed
+              (bulk-ingest-job-error-code job) "bulk_job_failed"))))
   job)
 
 (defun bulk-worker-handler (job)
@@ -123,10 +161,7 @@
                                  (tell-fn #'sento.actor:tell)
                                  (ensure-workers-fn
                                    #'start-bulk-ingest-workers))
-  "Reserve bounded queue capacity and enqueue one job without executing it.
-
-TELL-FN and ENSURE-WORKERS-FN are injectable so queue admission and latency can
-be tested independently from actor scheduling."
+  "Reserve bounded queue capacity and enqueue one authenticated job."
   (unless (funcall ensure-workers-fn)
     (signal-http-input-error
      503
@@ -138,6 +173,7 @@ be tested independently from actor scheduling."
            :principal principal
            :documents documents
            :correlation-id (current-correlation-id)
+           :service-context (star.auth:current-service-call-context)
            :submitted-at (get-universal-time))))
     (bt:with-lock-held (*bulk-ingest-lock*)
       (when (>= *bulk-pending-jobs* +bulk-max-pending-jobs+)
@@ -212,7 +248,10 @@ be tested independently from actor scheduling."
             execute-bulk-job
             submit-bulk-ingest-job
             bulk-ingest-job
+            bulk-ingest-job-principal
+            bulk-ingest-job-service-context
             bulk-ingest-job-status
             bulk-ingest-job-succeeded
-            bulk-ingest-job-failed)
+            bulk-ingest-job-failed
+            service-context-properties)
           :star.frontends.http-api))
