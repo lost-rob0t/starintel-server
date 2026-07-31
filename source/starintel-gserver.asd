@@ -32,6 +32,7 @@
    (:file "frontends/http-bulk-jobs")
    (:file "frontends/http-boundary-routes")
    (:file "frontends/http-auth-routes")
+   (:file "frontends/http-auth-job-routes")
    (:file "main"))
   :depends-on
   (#:starintel
