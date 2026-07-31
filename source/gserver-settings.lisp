@@ -1,49 +1,126 @@
 (in-package :star)
-;;;  Version info
+
+(defun read-secret-file (path)
+  (when (and path (probe-file path))
+    (string-trim '(#\Space #\Tab #\Newline #\Return)
+                 (uiop:read-file-string path))))
+
+(defun environment-secret (value-variable file-variable)
+  (or (uiop:getenv value-variable)
+      (read-secret-file (uiop:getenv file-variable))))
+
+(defun environment-boolean (name &optional default)
+  (let ((value (uiop:getenv name)))
+    (if value
+        (member (string-downcase value)
+                '("1" "true" "yes" "on")
+                :test #'string=)
+        default)))
+
+(defun environment-integer (name default)
+  (let ((value (uiop:getenv name)))
+    (if value
+        (parse-integer value :junk-allowed nil)
+        default)))
+
+(defun split-comma-setting (value)
+  (when value
+    (loop with start = 0
+          for position = (position #\, value :start start)
+          for item = (string-trim '(#\Space #\Tab)
+                                  (subseq value start position))
+          when (plusp (length item))
+            collect item
+          while position
+          do (setf start (1+ position)))))
+
+;;; Version info
 (defparameter *star-server-version* "0.0.1")
-;;;; ** Gserver Settings
-;;;; *** Couchdb
-(defparameter *couchdb-host* (or (uiop:getenv "COUCHDB_HOST") "127.0.0.1") "The Couchdb host to use.
-Defaults to using ENV var $COUCHDB_HOST if set, or localhost ")
-(defparameter *couchdb-port* 5984 "The Couchdb port to use. Defaults to 5984")
-(defparameter *couchdb-default-database* (or (uiop:getenv "COUCHDB_DATABASE") "starintel") "the default database name to use.")
 
-(defparameter *couchdb-auth-database* "starintel-gserver-auth")
-(defparameter *couchdb-scheme* "http" "what http scheme to use. set to http or https")
-(defparameter *couchdb-user* (or (uiop:getenv "COUCHDB_USER") "admin") "couchdb user")
-(defparameter *couchdb-password* (uiop:getenv "COUCHDB_PASSWORD") "couchdb user password")
-;;;; By Default the views in starintel-gserver/views will be installed, but you can append your own to this setting to have it created at startup.
-(defparameter *couchdb-views* (let ((files (uiop:directory-files (uiop:merge-pathnames* "views/" (asdf:system-source-directory :starintel-gserver)))))
-                                (loop for file in files
-                                      collect (with-open-file (str file)
-                                                (let ((content (make-string (file-length str))))
-                                                  (read-sequence content str)
-                                                  content))))
-  "List of views to install into couchdb.")
+;;;; CouchDB
+(defparameter *couchdb-host*
+  (or (uiop:getenv "COUCHDB_HOST") "127.0.0.1"))
+(defparameter *couchdb-port*
+  (environment-integer "COUCHDB_PORT" 5984))
+(defparameter *couchdb-default-database*
+  (or (uiop:getenv "COUCHDB_DATABASE") "starintel"))
+(defparameter *couchdb-auth-database*
+  (or (uiop:getenv "STAR_AUTH_DATABASE") "starintel-gserver-auth"))
+(defparameter *couchdb-scheme*
+  (or (uiop:getenv "COUCHDB_SCHEME") "http"))
+(defparameter *couchdb-user*
+  (or (uiop:getenv "COUCHDB_USER") "admin"))
+(defparameter *couchdb-password*
+  (environment-secret "COUCHDB_PASSWORD" "COUCHDB_PASSWORD_FILE"))
 
-;;;; *** HTTP API
-(defparameter *http-api-address* (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") "localhost") "the listen address")
-(defparameter *http-api-port* 5000  "the port the api server listen on")
-(defparameter *http-api-base-path* "/api" "the base url to use for the api endpoint")
-(defparameter *http-cert-file* nil "path to the http api cert providing https")
-(defparameter *http-key-file* nil "path to the http cert providing https")
-(defparameter *http-scheme* 'http "use https or not.")
+(defparameter *couchdb-views*
+  (let ((files
+          (uiop:directory-files
+           (uiop:merge-pathnames*
+            "views/"
+            (asdf:system-source-directory :starintel-gserver)))))
+    (loop for file in files
+          collect
+          (with-open-file (stream file)
+            (let ((content (make-string (file-length stream))))
+              (read-sequence content stream)
+              content))))
+  "View documents installed into the intelligence database at startup.")
 
-;;;; *** RabbitMQ
-(defparameter *rabbit-address* (or (uiop:getenv "RABBITMQ_ADDRESS") "localhost") "The address rabbitmq is running on.")
-(defparameter *rabbit-port* 5672 "The port that rabbitmq is listening on.")
-(defparameter *rabbit-user* (or (uiop:getenv "RABBITMQ_USER") "guest") "the username for rabbitmq")
-(defparameter *rabbit-password* (uiop:getenv "RABBITMQ_PASSWORD") "the password for the rabbitmq user.")
-(defparameter *slynk-port* 4009 "Port to use for SLYNK remote debugging")
+;;;; HTTP API
+(defparameter *http-api-address*
+  (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") "localhost"))
+(defparameter *http-api-port*
+  (environment-integer "HTTP_API_PORT" 5000))
+(defparameter *http-api-base-path* "/api")
+(defparameter *http-cert-file* nil)
+(defparameter *http-key-file* nil)
+(defparameter *http-scheme* 'http)
+(defparameter *http-cors-allowed-origins*
+  (split-comma-setting (uiop:getenv "STAR_AUTH_ALLOWED_ORIGINS")))
+(defparameter *http-cors-allowed-methods*
+  "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+(defparameter *http-cors-allowed-headers*
+  "Content-Type, Authorization, X-Correlation-ID, X-Request-Timeout-Ms, X-Star-Bootstrap-Secret")
 
-;;;; *** Actors
-;;;; Hooks are implemented Via nhooks you can read documentation here for how to add hooks. https://github.com/atlas-engineer/nhooks
-(defparameter *actors-start-hook* (make-instance 'nhooks:hook-void) "Actor startup hook.")
-;;;; *** Patterns
-;;;; Patterns are
-(defparameter *document-patterns* () "A List of document patterns created by defpattern")
-(defparameter *ingest-workers* 4 "Number of workers for handling documents, set to 4 by default.")
-;;;; *** actor event log
-(defparameter *couchdb-event-log-database* "starintel-event-source" "The name of the database to be used for event logs.")
-;;;; *** Bulk operations
-(defparameter *bulk-max-documents* 500 "Maximum number of documents allowed in a single bulk operation.")
+;;;; HTTP authentication
+(defparameter *auth-mode*
+  (or (uiop:getenv "STAR_AUTH_MODE") "api-key"))
+(defparameter *auth-pepper*
+  (environment-secret "STAR_AUTH_PEPPER" "STAR_AUTH_PEPPER_FILE"))
+(defparameter *auth-bootstrap-secret*
+  (environment-secret
+   "STAR_AUTH_BOOTSTRAP_SECRET"
+   "STAR_AUTH_BOOTSTRAP_SECRET_FILE"))
+(defparameter *auth-dev-bypass*
+  (not (null (environment-boolean "STAR_AUTH_DEV_BYPASS" nil))))
+(defparameter *auth-key-secret-bytes* 32)
+(defparameter *auth-salt-bytes* 16)
+(defparameter *auth-rotation-overlap-max-seconds*
+  (environment-integer "STAR_AUTH_MAX_ROTATION_OVERLAP_SECONDS" 86400))
+(defparameter *auth-default-request-timeout-ms*
+  (environment-integer "STAR_AUTH_DEFAULT_REQUEST_TIMEOUT_MS" 30000))
+(defparameter *auth-max-request-timeout-ms*
+  (environment-integer "STAR_AUTH_MAX_REQUEST_TIMEOUT_MS" 600000))
+(defparameter *auth-public-paths*
+  '("/health" "/" "/auth/bootstrap"))
+
+;;;; RabbitMQ
+(defparameter *rabbit-address*
+  (or (uiop:getenv "RABBITMQ_ADDRESS") "localhost"))
+(defparameter *rabbit-port*
+  (environment-integer "RABBITMQ_PORT" 5672))
+(defparameter *rabbit-user*
+  (or (uiop:getenv "RABBITMQ_USER") "guest"))
+(defparameter *rabbit-password*
+  (environment-secret "RABBITMQ_PASSWORD" "RABBITMQ_PASSWORD_FILE"))
+(defparameter *slynk-port* 4009)
+
+;;;; Actors and patterns
+(defparameter *actors-start-hook* (make-instance 'nhooks:hook-void))
+(defparameter *document-patterns* nil)
+(defparameter *ingest-workers* 4)
+
+;;;; Event log and bulk operations
+(defparameter *couchdb-event-log-database* "starintel-event-source")
+(defparameter *bulk-max-documents* 500)
