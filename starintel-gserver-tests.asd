@@ -32,6 +32,7 @@
      (:file "http-auth-test")
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
+     (:file "authorization-policy-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
