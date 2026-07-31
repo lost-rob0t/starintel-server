@@ -1,0 +1,596 @@
+#+title: HTTP authentication threat model
+#+options: toc:3
+#+status: DESIGN
+
+* Status and scope
+
+This document defines the security model that MUST exist before StarIntel Server
+HTTP authentication is considered implemented. It is a design contract, not a
+claim about current runtime behavior.
+
+Current runtime status:
+
+- the HTTP API has no authentication or authorization enforcement;
+- CORS permits every origin;
+- callers are not represented as principals;
+- RabbitMQ and CouchDB trust boundaries are not derived from HTTP identity;
+- =*couchdb-auth-database*= is configuration residue, not an authentication
+  design.
+
+Until the implementation satisfies this document, deployments MUST place the
+HTTP API behind a trusted private boundary and MUST NOT expose it as a public
+multi-tenant service.
+
+* Security objectives
+
+The HTTP authentication system MUST:
+
+1. authenticate every protected request to one explicit principal;
+2. authorize every operation by capability and scope using default deny;
+3. prevent credentials, bearer material, hashes, and peppers from entering logs,
+   traces, metrics labels, error bodies, or StarIntel documents;
+4. bind audit records to a stable principal, credential identifier, request
+   correlation identifier, decision, resource scope, and result;
+5. support credential rotation and revocation without restarting the service;
+6. keep HTTP identity from becoming implicit RabbitMQ or CouchDB authority;
+7. reject ambiguous or partially configured security modes;
+8. make local-development bypass explicit, narrow, observable, and impossible to
+   enable accidentally in non-development operation.
+
+Availability is a security objective. Authentication and authorization controls
+MUST resist resource exhaustion and MUST fail closed when their backing state is
+unavailable or inconsistent.
+
+* Protected assets
+
+** Credentials and cryptographic material
+
+- API key secret material;
+- non-secret API key identifiers;
+- password-derived or key-derived verifier records;
+- server-side peppers and pepper version metadata;
+- OIDC client secrets and issuer metadata when OIDC is added;
+- mTLS private keys, trust anchors, and revocation state when mTLS is added;
+- bootstrap credentials and recovery material;
+- session or exchange tokens if introduced later.
+
+** Authorization state
+
+- principal records;
+- principal status and tenant membership;
+- capability grants and denials;
+- dataset, actor, target, and tenant scopes;
+- credential-to-principal bindings;
+- rotation, revocation, and expiration state;
+- development bypass configuration;
+- administrator and break-glass assignments.
+
+** Operational data
+
+- StarIntel documents and relations;
+- target definitions, leases, and dispatch state;
+- search results and query history;
+- actor manifests and actor control operations;
+- dataset metadata and cross-dataset links;
+- audit records and security-event records;
+- RabbitMQ routing topology and message bodies;
+- CouchDB documents, revisions, design documents, and credentials;
+- configuration, environment variables, crash dumps, and diagnostic output.
+
+* Principal classes
+
+The authentication layer recognizes these principal classes. Their detailed
+contract is defined in [[file:http-principal-capability-contract.org][the principal and capability contract]].
+
+| Principal class | Purpose | Typical credential |
+|-----------------+---------+--------------------|
+| Human user | Interactive operator or analyst | API key in v0.1; OIDC later |
+| API client | Script, CLI, integration, or application | API key |
+| Service instance | Long-running external service | API key in v0.1; mTLS later |
+| Actor component | Actor-specific service or runtime component | scoped API key in v0.1; mTLS later |
+| Administrator | Security and deployment administration | separately issued administrator credential |
+
+Administrator is a security role with a dedicated credential and audit policy,
+not merely a boolean field added to an ordinary credential.
+
+Anonymous is not a principal class for protected routes. Public routes, if any,
+MUST be explicitly enumerated and MUST not inherit protected-route behavior.
+
+* Attacker profiles
+
+** Unauthenticated remote attacker
+
+Capabilities:
+
+- send arbitrary HTTP requests;
+- vary headers, methods, encodings, bodies, origins, and request rates;
+- replay observed requests;
+- probe error behavior and timing;
+- attempt credential guessing, identifier enumeration, and resource exhaustion.
+
+** Authenticated low-privilege principal
+
+Capabilities:
+
+- use a valid credential within a narrow grant;
+- submit malicious documents and query parameters;
+- attempt horizontal access across tenants, datasets, actors, or targets;
+- attempt vertical privilege escalation;
+- exploit differences between HTTP, RabbitMQ, CouchDB, and library callers.
+
+** Compromised API client or actor
+
+Capabilities:
+
+- use stolen credential material until expiration or revocation;
+- generate high-rate validly authenticated requests;
+- exploit broad scopes or reusable credentials;
+- attempt to turn one actor credential into general document or administrative
+  access.
+
+** Malicious or compromised administrator
+
+Capabilities:
+
+- create, rotate, revoke, and broaden credentials;
+- modify authorization state;
+- access security telemetry and configuration;
+- attempt to suppress or alter audit evidence.
+
+The design cannot fully prevent an authorized administrator from abusing granted
+power. It MUST make such actions explicit, separately authenticated, narrowly
+scoped where possible, and auditable.
+
+** Internal-network attacker
+
+Capabilities:
+
+- reach RabbitMQ, CouchDB, or the HTTP listener from a trusted network segment;
+- exploit weak service credentials or permissive bind addresses;
+- publish messages directly, bypassing HTTP authorization;
+- read or mutate backing stores if infrastructure credentials are compromised.
+
+** Dependency or supply-chain attacker
+
+Capabilities:
+
+- influence Common Lisp dependencies, container images, Nix inputs, build
+  artifacts, or CI behavior;
+- introduce logging or serialization behavior that exposes credentials;
+- weaken cryptographic verification or authorization decisions.
+
+** Local host attacker
+
+Capabilities depend on host privileges and may include reading process
+environments, memory, files, sockets, crash dumps, and container runtime state.
+Root or equivalent host compromise is outside the boundary of guarantees, but
+the service MUST minimize unnecessary secret exposure.
+
+* Trust boundaries and data flows
+
+** Boundary A: client to HTTP listener
+
+The client presents a credential over an authenticated transport. The HTTP
+listener terminates transport security, parses the request, establishes a
+correlation identifier, authenticates the credential, resolves the principal,
+and performs authorization before executing protected behavior.
+
+Required properties:
+
+- production credentials MUST only be accepted over HTTPS or an equivalently
+  protected local transport;
+- authentication occurs before request-specific data access or message publish;
+- request body parsing limits apply before expensive processing;
+- credential material is removed from diagnostic context immediately after
+  verification;
+- all protected routes share one enforcement boundary.
+
+** Boundary B: HTTP authorization to application operation
+
+The authorization decision consumes:
+
+- principal identifier and class;
+- credential identifier and status;
+- requested capability;
+- tenant, dataset, actor, target, and resource identifiers;
+- route and HTTP method;
+- relevant request context.
+
+The decision returns allow or deny plus a machine-readable reason. Missing,
+ambiguous, unsupported, or stale authorization state MUST deny.
+
+** Boundary C: HTTP process to RabbitMQ
+
+RabbitMQ publication is an internal service action. A successful HTTP decision
+MUST be recorded before publication. HTTP credentials MUST NOT be copied into
+message bodies, routing keys, or RabbitMQ headers.
+
+Messages originating from HTTP SHOULD carry only non-secret provenance:
+
+- request correlation identifier;
+- authenticated principal identifier;
+- credential identifier;
+- authorization decision identifier;
+- originating tenant and dataset scope.
+
+RabbitMQ consumers MUST NOT treat these fields as self-authenticating. The broker
+connection and publisher identity establish transport trust; provenance fields
+support policy checks and audit correlation.
+
+Direct RabbitMQ publishers bypass the HTTP boundary. They require their own
+service identity, broker authorization, message validation, and audit policy.
+
+** Boundary D: HTTP process to CouchDB
+
+The server uses a service credential to access CouchDB. End-user credentials MUST
+NOT be forwarded to CouchDB. Application authorization MUST be completed before
+CouchDB reads or writes.
+
+CouchDB documents containing principal, credential, or authorization state MUST
+be isolated from ordinary StarIntel document APIs. General document read/search
+capabilities MUST NOT imply access to authentication records.
+
+** Boundary E: imported library callers
+
+Code may call internal Common Lisp functions without HTTP. Such callers do not
+inherit HTTP authorization automatically. Security-sensitive operations MUST
+accept an explicit security context or use a separate trusted-internal API with
+a documented caller boundary.
+
+No function may infer administrator authority from =nil= context, local process
+location, package membership, or caller stack.
+
+** Boundary F: configuration and secret providers
+
+Environment variables, mounted secret files, process supervisors, container
+secrets, and future external secret managers feed security configuration into
+the process.
+
+Configuration parsing MUST reject:
+
+- unknown security modes;
+- missing required secrets;
+- empty peppers or bootstrap secrets;
+- development bypass combined with a non-loopback listener or production mode;
+- duplicate credential identifiers;
+- unsupported hash or key versions.
+
+* Authentication threats and controls
+
+** Credential guessing and enumeration
+
+Threats:
+
+- brute-force secret guessing;
+- discovery of valid key identifiers through timing or error differences;
+- high-rate distributed attempts;
+- account or principal enumeration.
+
+Controls:
+
+- opaque high-entropy secret material;
+- constant-time verifier comparison after identifier lookup;
+- uniform external failure response for unknown, revoked, expired, and invalid
+  credentials;
+- per-source and per-key-identifier rate limits;
+- progressive abuse throttling without permanent denial-of-service lockout;
+- audit events with redacted identifiers and correlation IDs;
+- no distinction between nonexistent principal and invalid credential in client
+  responses.
+
+** Credential replay
+
+API keys are bearer credentials and can be replayed while valid. Controls:
+
+- mandatory protected transport;
+- narrow capabilities and scopes;
+- short operational rotation intervals for automated clients;
+- immediate revocation support;
+- optional expiration;
+- anomaly detection based on source, rate, and operation profile;
+- future mTLS for service and actor identities where replay resistance is
+  required.
+
+** Credential disclosure
+
+Threat sources include logs, exception messages, tracing, shell history,
+configuration dumps, process listings, crash dumps, browser storage, copied curl
+commands, and audit records.
+
+Controls:
+
+- authorization headers and credential fields are always redacted;
+- error envelopes never echo credentials or verifier data;
+- structured logging uses allow-listed security fields;
+- metrics labels never contain principal-provided secrets;
+- API responses return secret material only once at credential creation;
+- stored records contain only key identifier, verifier, salt, pepper version,
+  metadata, and authorization bindings;
+- documentation and examples use unmistakably fake credentials.
+
+** Verifier compromise
+
+Stored API key secrets MUST NOT be reversible. Each credential record stores a
+salted password-hash-style verifier using a memory-hard algorithm such as
+Argon2id. A server-side pepper, versioned independently from records, is included
+in verification.
+
+Controls:
+
+- unique salt per credential;
+- parameters recorded with the verifier;
+- pepper stored outside CouchDB;
+- pepper version recorded, not pepper value;
+- rehash on successful authentication when parameters or active pepper version
+  change;
+- staged pepper rotation with bounded overlap;
+- revocation of all affected credentials if verifier and pepper material are both
+  compromised.
+
+** Confused credential type
+
+An OIDC token, API key, bootstrap token, actor credential, or internal service
+credential MUST not be accepted by the wrong verifier path.
+
+Credential parsing MUST use explicit prefixes and version fields. Unsupported
+prefixes or versions deny without fallback.
+
+* Authorization threats and controls
+
+** Default-allow and missing-policy behavior
+
+Every protected route maps to an explicit capability and resource extractor.
+Missing mapping, missing principal, missing scope, malformed scope, policy load
+failure, or unknown capability MUST deny.
+
+There is no wildcard grant except the explicitly audited =admin= capability.
+Even =admin= does not bypass authentication, audit, tenant invariants, or secret
+redaction.
+
+** Horizontal privilege escalation
+
+Controls:
+
+- tenant is resolved from authenticated authorization state, not only request
+  input;
+- requested dataset, actor, and target identifiers are checked against grants;
+- object lookup and authorization use the same canonical identifiers;
+- cross-dataset and cross-tenant relations require an explicit capability and
+  both endpoint scopes;
+- bulk operations authorize every document or reject the entire batch according
+  to a documented atomicity rule.
+
+** Vertical privilege escalation
+
+Controls:
+
+- capability names are closed and versioned;
+- credential-management operations require administrator or narrowly delegated
+  security capabilities;
+- principals cannot edit their own grants through general document APIs;
+- administrator credentials are separately issued and SHOULD not be used for
+  routine data access;
+- capability changes emit immutable audit events.
+
+** Actor and target confusion
+
+Actor credentials MUST be scoped to named actor identities and permitted target
+operations. A credential with =targets:lease= for one actor does not receive
+=targets:dispatch=, general document write, or access to another actor.
+
+Target ownership, lease holder, and actor name MUST be canonicalized before the
+authorization decision.
+
+** Search as a data-exfiltration path
+
+Search authorization is not satisfied solely by =search:read=. Results MUST be
+filtered to datasets and tenants the principal may read. Search indexes MUST not
+expose authentication databases, audit secrets, or deleted/revoked credential
+material.
+
+Timing, counts, facets, bookmarks, and error differences can leak existence.
+Where strict tenant isolation is required, queries MUST execute against a scope
+that cannot include unauthorized records rather than filtering only after
+retrieval.
+
+* Availability and abuse threats
+
+** Authentication endpoint exhaustion
+
+Controls:
+
+- bounded request body and header sizes;
+- bounded credential identifier length;
+- rate limits before expensive verifier computation;
+- bounded concurrent expensive verifications;
+- negative-result caching keyed by a non-secret digest where safe;
+- circuit breaking for unavailable authorization storage;
+- no unbounded queues.
+
+** Intentional lockout
+
+Permanent lockout based only on failed attempts enables denial of service.
+Instead use temporary progressive throttling, source-aware controls, credential
+revocation for confirmed compromise, and administrator-visible abuse events.
+
+** Bulk operation amplification
+
+Authentication does not replace existing bulk backpressure. The principal and
+credential identifier MUST participate in per-principal quotas. Authentication
+failures MUST not enqueue work.
+
+** Audit flooding
+
+Security-event generation MUST be bounded and aggregated where necessary, while
+preserving enough detail to investigate distributed attacks. Audit storage
+failure MUST be visible. For high-risk administrative writes, inability to write
+the required audit event MUST fail the operation closed.
+
+* Failure behavior
+
+| Condition | External status | External code | Internal action |
+|-----------+-----------------+---------------+-----------------|
+| Missing credential | 401 | =authentication_required= | audit sampled failure |
+| Invalid, unknown, revoked, or expired credential | 401 | =invalid_credential= | full security audit with safe identifiers |
+| Valid credential, missing capability or scope | 403 | =access_denied= | authorization-denial audit |
+| Authentication rate limit | 429 | =authentication_rate_limited= | abuse event and retry metadata |
+| Authorization state unavailable | 503 | =authorization_unavailable= | fail closed and alert |
+| Malformed authorization header | 400 or 401 by parser contract | stable non-secret code | no parser details returned |
+
+Responses MUST include a correlation identifier. They MUST NOT include principal
+existence, credential status, verifier details, policy internals, stack traces,
+or raw conditions.
+
+* Audit requirements
+
+Every successful protected request records:
+
+- event timestamp;
+- request correlation identifier;
+- decision identifier;
+- principal identifier and class;
+- non-secret credential identifier;
+- capability requested;
+- canonical tenant, dataset, actor, target, and resource scopes;
+- route template and method;
+- allow decision;
+- result class and latency;
+- source context according to privacy and retention policy.
+
+Every authentication failure records only safe evidence:
+
+- correlation identifier;
+- presented key identifier when syntactically valid, otherwise a bounded digest;
+- source context;
+- failure class internal to security telemetry;
+- throttling state.
+
+Credential create, rotate, revoke, expire, grant, deny, bootstrap, recovery, and
+development-bypass events are mandatory and high-priority.
+
+Audit records MUST be append-oriented, access-controlled separately from general
+documents, retained under an explicit policy, and protected against silent
+modification or deletion.
+
+* Secret lifecycle
+
+** Bootstrap
+
+The first administrator credential MUST be created through an explicit bootstrap
+operation requiring:
+
+- an empty security store;
+- a one-time bootstrap secret supplied out of band;
+- a loopback or explicitly trusted administrative channel;
+- immediate invalidation of the bootstrap secret;
+- mandatory audit output;
+- refusal to bootstrap when any administrator already exists unless a documented
+  recovery procedure is invoked.
+
+The service MUST NOT ship a default administrator credential.
+
+** Creation
+
+API key creation generates secret material with a cryptographically secure random
+source. The complete credential is returned exactly once. Subsequent reads return
+only metadata and the non-secret key identifier.
+
+** Rotation
+
+Rotation creates a new credential record and supports a bounded overlap period.
+The old and new credential have independent identifiers, verifiers, expiration,
+and audit history. Rotation MUST NOT mutate secret material in place.
+
+** Revocation
+
+Revocation is immediate at the authorization store and invalidates relevant
+caches. Revoked credentials remain represented as tombstoned metadata for audit
+and identifier non-reuse.
+
+** Recovery
+
+Recovery uses a separately documented break-glass process. It MUST not weaken
+normal authentication, reuse ordinary API keys, or silently recreate prior
+secret material.
+
+* Local-development bypass
+
+A development bypass MAY exist only if all of these conditions are enforced:
+
+- security mode is explicitly =development=;
+- an explicit bypass flag is set;
+- listener address is loopback or a Unix-domain socket;
+- no forwarded-client or proxy trust is enabled;
+- environment is not marked production, staging, CI release, or container
+  publication mode;
+- startup emits a high-severity warning and persistent health status;
+- every bypassed request is assigned a fixed development principal and audited;
+- bypass cannot grant administrator credential-management operations;
+- configuration validation aborts startup if any condition is violated.
+
+A single environment variable MUST NOT be sufficient to enable bypass in a
+network-accessible deployment.
+
+* CORS and browser boundary
+
+CORS is not authentication. Once authentication is implemented:
+
+- wildcard origins MUST not be used for credential-bearing browser requests;
+- allowed origins MUST be explicit configuration;
+- browser clients MUST not store long-lived API keys in insecure web storage;
+- preflight responses MUST expose only required methods and headers;
+- future cookie or browser-session authentication requires separate CSRF and
+  session threat modeling.
+
+Non-browser API clients are unaffected by CORS enforcement and still require
+normal authentication.
+
+* Residual risks
+
+The v0.1 API-key design retains these risks:
+
+- bearer credentials can be replayed after theft;
+- compromised authorized clients can perform all operations within their grants;
+- host compromise can expose in-memory secrets and peppers;
+- direct RabbitMQ or CouchDB compromise bypasses HTTP policy;
+- administrator abuse cannot be fully prevented;
+- traffic analysis can reveal request timing and size even with transport
+  encryption;
+- authorization mistakes in route-to-capability mapping remain possible and
+  require exhaustive tests.
+
+Future mTLS can reduce service credential replay risk. Future OIDC can improve
+human identity lifecycle. Neither replaces capability and scope authorization.
+
+* Verification requirements
+
+Implementation is not complete until tests demonstrate:
+
+- every protected route has an explicit capability mapping;
+- unmapped routes deny;
+- missing, invalid, revoked, expired, and wrong-type credentials deny uniformly;
+- credentials and bearer material never appear in logs or errors;
+- tenant, dataset, actor, and target scope isolation;
+- administrator operations require separately authenticated authority;
+- rate limits and queue bounds hold under concurrency;
+- verifier and pepper rotation behavior;
+- revocation invalidates caches immediately;
+- authorization-store failure denies;
+- development bypass startup constraints;
+- direct internal callers cannot gain authority from missing context;
+- audit events exist for security-sensitive allow and deny decisions.
+
+* Security review triggers
+
+This threat model MUST be reviewed when any of these change:
+
+- a new credential type is introduced;
+- OIDC, mTLS, cookies, or sessions are added;
+- a new principal class or capability is added;
+- multi-tenancy or cross-tenant relations change;
+- RabbitMQ or CouchDB trust boundaries change;
+- the HTTP listener becomes publicly exposed by default;
+- authorization state moves to another database or cache;
+- browser credential handling is introduced;
+- audit retention or storage changes;
+- imported library callers gain security-sensitive operations.
