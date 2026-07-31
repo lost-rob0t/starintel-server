@@ -56,6 +56,7 @@
    (:file "frontends/http-auth-routes")
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
+   (:file "frontends/http-authorization-view-routes")
    (:file "main")
    (:file "databases/export-final")
    (:file "databases/view-registry-final"))
