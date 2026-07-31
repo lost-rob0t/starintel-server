@@ -167,8 +167,8 @@
             (star.authorization:authorized-search-query
              "content:fixture"
              :principal principal)))
-      (is (search "dataset:\\"dataset-a\\"" query))
-      (is (search "tenant_id:\\"default\\"" query))
+      (is (search "dataset:\"dataset-a\"" query))
+      (is (search "tenant_id:\"default\"" query))
       (is (null (search "dataset-b" query))))
     (signals star.authorization:authorization-error
       (star.authorization:authorized-search-query
