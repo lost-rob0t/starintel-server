@@ -36,7 +36,7 @@
              (star.frontends.http-api:parse-json-octets
               (babel:string-to-octets "{" :encoding :utf-8)
               "application/json")))))
-    (is condition)
+    (is-true condition)
     (is (= 400
            (star.frontends.http-api:http-input-error-status condition)))
     (is (string= "malformed_json"
@@ -183,7 +183,7 @@
          (elapsed
            (/ (- (get-internal-real-time) started)
               internal-time-units-per-second)))
-    (is job)
+    (is-true job)
     (is (< elapsed 0.5))
     (is (eq :fake-worker sent-worker))
     (is (eq job sent-job))
