@@ -30,6 +30,7 @@
      (:file "dataset-export-test")
      (:file "http-boundary-test")
      (:file "http-auth-test")
+     (:file "http-auth-oracle-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
