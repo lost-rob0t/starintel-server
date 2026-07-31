@@ -129,20 +129,21 @@
   (with-http-boundary ()
     (let ((document-id (require-path-string params "id")))
       (couchdb-handler (client *couchdb-pool*)
-        (star.authorization:authorized-delete-document
-         document-id
-         (lambda (id)
-           (cl-couch:get-document
-            client star:*couchdb-default-database* id))
-         (lambda (id revision)
-           (cl-couch:delete-document
-            client star:*couchdb-default-database* id revision))
-         :principal (current-policy-principal)
-         :metadata
-         (route-policy-metadata "/document/:id" "DELETE"))
-        (status-msg
-         (format nil "Document ~a deleted" document-id)
-         'success)))))
+        (progn
+          (star.authorization:authorized-delete-document
+           document-id
+           (lambda (id)
+             (cl-couch:get-document
+              client star:*couchdb-default-database* id))
+           (lambda (id revision)
+             (cl-couch:delete-document
+              client star:*couchdb-default-database* id revision))
+           :principal (current-policy-principal)
+           :metadata
+           (route-policy-metadata "/document/:id" "DELETE"))
+          (status-msg
+           (format nil "Document ~a deleted" document-id)
+           'success))))))
 
 (defun handle-authorized-targets-route (params)
   (with-http-boundary ()
