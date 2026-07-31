@@ -20,6 +20,7 @@
    (:file "databases/export")
    (:file "auth/core")
    (:file "auth/verification-hardening")
+   (:file "auth/immutability")
    (:file "auth/store")
    (:file "init-loader")
    (:file "actors")
