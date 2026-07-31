@@ -8,7 +8,8 @@
     system-load-tests
     couchdb-actor-tests
     event-actor-tests
-    dataset-export-tests))
+    dataset-export-tests
+    http-boundary-tests))
 
 (defun run-all-gserver-tests ()
   "Run every hermetic unit suite and fail on empty, skipped, or failed tests."

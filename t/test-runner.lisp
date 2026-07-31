@@ -95,18 +95,19 @@
 
 (defun run-required-suite (suite-name &key setup teardown)
   (let ((discovered (suite-test-names suite-name))
-        (summary nil))
+        (summary nil)
+        (results nil))
     (when (zerop (length discovered))
       (error "Required suite ~a discovered zero tests." suite-name))
     (unwind-protect
          (progn
            (when setup
              (funcall setup))
-           (setf summary
-                 (summarize-suite suite-name
-                                  discovered
-                                  (fiveam:run suite-name)))
+           (setf results (fiveam:run suite-name)
+                 summary (summarize-suite suite-name discovered results))
            (print-suite-summary summary)
+           (when (plusp (suite-summary-failed summary))
+             (fiveam:explain! results))
            (validate-required-suite summary))
       (when teardown
         (funcall teardown)))

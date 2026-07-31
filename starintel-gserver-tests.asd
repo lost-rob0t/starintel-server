@@ -25,6 +25,7 @@
                                 (:file "couchdb-actor-test")
                                 (:file "event-actor-test")
                                 (:file "dataset-export-test")
+                                (:file "http-boundary-test")
                                 (:file "run-tests"))))
   :perform (test-op (o c)
                      (declare (ignore o c))
