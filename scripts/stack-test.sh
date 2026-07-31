@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 credentials_dir="$(mktemp -d)"
-project_name="starintel-issue55-$$"
+project_name="starintel-auth-stack-$$"
 port_base=$((20000 + $$ % 20000))
 
 export CREDENTIALS_DIR="$credentials_dir"
@@ -13,8 +13,10 @@ export COUCHDB_PORT="$((port_base + 1))"
 export RABBITMQ_PORT="$((port_base + 2))"
 export RABBITMQ_MANAGEMENT_PORT="$((port_base + 3))"
 
-couchdb_password="issue55-couchdb-$$"
-rabbitmq_password="issue55-rabbitmq-$$"
+couchdb_password="stack-couchdb-$$"
+rabbitmq_password="stack-rabbitmq-$$"
+auth_pepper="stack-auth-pepper-$$-$(date +%s%N)"
+auth_bootstrap_secret="stack-bootstrap-$$-$(date +%s%N)"
 
 cleanup() {
   status=$?
@@ -30,9 +32,11 @@ cleanup() {
 trap cleanup EXIT
 
 printf '%s\n' "$couchdb_password" > "$credentials_dir/couchdb_password"
-printf '%s\n' "issue55-couchdb-secret-$$" > "$credentials_dir/couchdb_secret"
-printf '%s\n' "ISSUE55ERLANGCOOKIE$$" > "$credentials_dir/erlang_cookie"
+printf '%s\n' "stack-couchdb-secret-$$" > "$credentials_dir/couchdb_secret"
+printf '%s\n' "STACKERLANGCOOKIE$$" > "$credentials_dir/erlang_cookie"
 printf '%s\n' "$rabbitmq_password" > "$credentials_dir/rabbitmq_password"
+printf '%s\n' "$auth_pepper" > "$credentials_dir/auth_pepper"
+printf '%s\n' "$auth_bootstrap_secret" > "$credentials_dir/auth_bootstrap_secret"
 chmod 0600 "$credentials_dir"/*
 
 cd "$repo_root"
@@ -41,10 +45,46 @@ nix run .#load-images
 docker compose config --quiet
 docker compose up --detach --wait --wait-timeout 300
 
-fixture_id="issue-55-fixture"
-fixture_term="issue55searchfixture"
+fixture_id="auth-stack-fixture"
+fixture_term="authstacksearchfixture"
 couchdb_url="http://127.0.0.1:${COUCHDB_PORT}"
 server_url="http://127.0.0.1:${STAR_SERVER_PORT}"
+
+bootstrap_response="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --header "X-Star-Bootstrap-Secret: ${auth_bootstrap_secret}" \
+    --data '{"owner":"stack-administrator"}' \
+    "${server_url}/auth/bootstrap"
+)"
+api_key="$(jq --exit-status --raw-output '.api_key' <<<"$bootstrap_response")"
+[[ "$api_key" == star_sk_v1_* ]]
+auth_header="Authorization: Bearer ${api_key}"
+
+unauthenticated_status="$(
+  curl --silent --output /dev/null --write-out '%{http_code}' \
+    --get --data-urlencode "q=content:${fixture_term}" \
+    "${server_url}/search"
+)"
+[[ "$unauthenticated_status" == "401" ]]
+
+second_bootstrap_status="$(
+  curl --silent --output /dev/null --write-out '%{http_code}' \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --header "X-Star-Bootstrap-Secret: ${auth_bootstrap_secret}" \
+    --data '{"owner":"second-administrator"}' \
+    "${server_url}/auth/bootstrap"
+)"
+[[ "$second_bootstrap_status" == "409" ]]
+
+curl --fail --silent --show-error \
+  --header "$auth_header" \
+  "${server_url}/auth/context" |
+  jq --exit-status \
+    '.principal_id == "stack-administrator" and .principal_type == "administrator"' \
+    >/dev/null
 
 curl --fail --silent --show-error \
   --user "${COUCHDB_USER:-admin}:${couchdb_password}" \
@@ -58,6 +98,7 @@ wait_for_search() {
   for _ in $(seq 1 60); do
     response="$(
       curl --fail --silent --show-error \
+        --header "$auth_header" \
         --get --data-urlencode "q=content:${fixture_term}" \
         "${server_url}/search" || true
     )"
@@ -67,7 +108,7 @@ wait_for_search() {
     fi
     sleep 2
   done
-  printf 'fixture did not appear in full-text search\n' >&2
+  printf 'fixture did not appear in authenticated full-text search\n' >&2
   return 1
 }
 
@@ -110,6 +151,11 @@ curl --fail --silent --show-error \
   "${couchdb_url}/${COUCHDB_DATABASE:-starintel}/${fixture_id}" |
   jq --exit-status --arg term "$fixture_term" '.content == $term' >/dev/null
 
+curl --fail --silent --show-error \
+  --header "$auth_header" \
+  "${server_url}/auth/context" |
+  jq --exit-status '.principal_id == "stack-administrator"' >/dev/null
+
 wait_for_search
 
-printf 'Nix-built Compose stack passed health, FTS, and restart persistence checks.\n'
+printf 'Authenticated Nix-built stack passed bootstrap, denial, FTS, and restart persistence checks.\n'
