@@ -19,8 +19,8 @@ Malformed stored material fails closed through the same dummy verifier path."
       (values (decode-hex +dummy-verifier+)
               +dummy-verifier-salt+))))
 
-(defun authenticate-api-key (api-key correlation-id deadline
-                              &key (store *credential-store*))
+(defun hardened-authenticate-api-key (api-key correlation-id deadline
+                                      &key (store *credential-store*))
   "Authenticate through one verifier-comparison path for known and unknown ids."
   (unless store
     (signal-authentication-failure))
@@ -47,3 +47,7 @@ Malformed stored material fails closed through the same dummy verifier path."
        :correlation-id correlation-id
        :deadline deadline
        :authenticated-at now))))
+
+(eval-when (:load-toplevel :execute)
+  (setf (symbol-function 'authenticate-api-key)
+        #'hardened-authenticate-api-key))
