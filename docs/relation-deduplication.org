@@ -1,0 +1,74 @@
+#+title: Relation database deduplication
+
+* Scope
+
+This migration repairs CouchDB relation documents before any graph/UI changes.
+It treats a relation as the directed identity:
+
+#+begin_example
+(dataset, source, predicate, target)
+#+end_example
+
+The canonical CouchDB document ID is =relation:= followed by the SHA-256 digest
+of a length-prefixed encoding of those four fields. Notes and sources are
+merged. Legacy relation documents are tombstoned only after the canonical
+upserts succeed.
+
+Both legacy flat 0.8 relations and 0.9 relations with fields under =data= are
+supported.
+
+* Dry run
+
+The script reads the normal CouchDB environment variables used by star-server:
+
+#+begin_src sh
+python3 scripts/dedupe_relations.py
+#+end_src
+
+This only prints the plan. It does not write anything.
+
+Useful explicit invocation:
+
+#+begin_src sh
+python3 scripts/dedupe_relations.py \
+  --url http://127.0.0.1:5984 \
+  --database starintel \
+  --user admin \
+  --password-file /run/secrets/couchdb_password
+#+end_src
+
+* Apply
+
+Stop relation-producing actors or pause the RabbitMQ ingest queue first. Then:
+
+#+begin_src sh
+python3 scripts/dedupe_relations.py --apply
+#+end_src
+
+An automatic JSONL backup of every original relation document is written before
+mutation. Use =--backup PATH= to choose the path. Do not use =--no-backup= unless
+there is already a verified CouchDB snapshot.
+
+The write is two-phase:
+
+1. create or update canonical relation documents;
+2. tombstone the superseded legacy IDs.
+
+If canonical upserts fail, deletion does not begin.
+
+* Verification
+
+Run the dry-run again after applying:
+
+#+begin_src sh
+python3 scripts/dedupe_relations.py
+#+end_src
+
+Expected values:
+
+- =duplicate_documents=: 0
+- =canonical_upserts=: 0
+- =legacy_deletions=: 0
+- =invalid_relations=: 0, unless malformed relations already existed
+
+Malformed relations are reported and never deleted automatically.
