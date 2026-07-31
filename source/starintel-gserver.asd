@@ -34,6 +34,7 @@
    (:file "auth/store")
    (:file "authorization/package")
    (:file "authorization/policy")
+   (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "init-loader")
    (:file "actors")
