@@ -34,26 +34,18 @@
         "quota_exceeded"
         base-reason)))
 
-(defmethod evaluate-authorization
+(defmethod evaluate-authorization :around
     ((engine default-deny-policy-engine) request)
-  (declare (ignore engine))
-  (let* ((principal (candidate-principal
-                     (authorization-request-principal request)))
-         (scopes (principal-scopes principal))
-         (action (authorization-request-action request))
-         (resource (authorization-request-resource request))
-         (reason
-           (policy-decision-reason
-            principal
-            scopes
-            action
-            resource
-            (authorization-request-quotas request)))
-         (allowed-p (string= reason "matching_grant")))
-    (make-authorization-decision
-     :id (cms-ulid:ulid)
-     :allowed-p allowed-p
-     :reason reason
-     :action action
-     :resource resource
-     :principal-id (principal-id principal))))
+  "Apply quota denial without replacing the policy engine's primary method."
+  (let ((decision (call-next-method)))
+    (if (and (authorization-decision-allowed-p decision)
+             (not (quotas-granted-p
+                   (authorization-request-quotas request))))
+        (make-authorization-decision
+         :id (authorization-decision-id decision)
+         :allowed-p nil
+         :reason "quota_exceeded"
+         :action (authorization-decision-action decision)
+         :resource (authorization-decision-resource decision)
+         :principal-id (authorization-decision-principal-id decision))
+        decision)))
