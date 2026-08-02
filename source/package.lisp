@@ -18,12 +18,26 @@
    #:*http-api-base-path*
    #:*http-api-port*
    #:*http-api-address*
+   #:*http-cors-allowed-origins*
+   #:*http-cors-allowed-methods*
+   #:*http-cors-allowed-headers*
    #:*couchdb-default-database*
+   #:*couchdb-auth-database*
    #:*couchdb-host*
    #:*couchdb-port*
    #:*couchdb-user*
    #:*couchdb-password*
    #:*couchdb-scheme*
+   #:*auth-mode*
+   #:*auth-pepper*
+   #:*auth-bootstrap-secret*
+   #:*auth-dev-bypass*
+   #:*auth-key-secret-bytes*
+   #:*auth-salt-bytes*
+   #:*auth-rotation-overlap-max-seconds*
+   #:*auth-default-request-timeout-ms*
+   #:*auth-max-request-timeout-ms*
+   #:*auth-public-paths*
    #:main
    #:reload
    #:start-debugger
@@ -126,16 +140,101 @@
    #:couchdb-load-target-acceptance
    #:couchdb-save-target-acceptance
    #:couchdb-update-target-acceptance
-   #:couchdb-persist-target-acceptance))
+   #:couchdb-persist-target-acceptance)
+  (:documentation "CouchDB persistence and query helpers."))
+
+(uiop:define-package :star.auth
+  (:use :cl)
+  (:export
+   #:+api-key-prefix+
+   #:authentication-error
+   #:authentication-error-code
+   #:authentication-error-message
+   #:credential-lifecycle-error
+   #:credential-lifecycle-error-code
+   #:credential-lifecycle-error-message
+   #:request-principal
+   #:request-principal-id
+   #:request-principal-type
+   #:request-principal-scopes
+   #:request-principal-credential-id
+   #:request-security-context
+   #:request-security-context-principal
+   #:request-security-context-correlation-id
+   #:request-security-context-deadline
+   #:request-security-context-authenticated-at
+   #:service-call-context
+   #:service-call-context-principal-id
+   #:service-call-context-principal-type
+   #:service-call-context-credential-id
+   #:service-call-context-scopes
+   #:service-call-context-correlation-id
+   #:service-call-context-deadline
+   #:api-key-record
+   #:api-key-record-id
+   #:api-key-record-owner
+   #:api-key-record-principal-type
+   #:api-key-record-scopes
+   #:api-key-record-status
+   #:api-key-record-salt
+   #:api-key-record-verifier
+   #:api-key-record-created-at
+   #:api-key-record-expires-at
+   #:api-key-record-disabled-at
+   #:api-key-record-revoked-at
+   #:api-key-record-rotation-parent-id
+   #:api-key-record-superseded-by
+   #:api-key-record-overlap-expires-at
+   #:api-key-record-revision
+   #:credential-store
+   #:memory-credential-store
+   #:couchdb-credential-store
+   #:make-memory-credential-store
+   #:make-couchdb-credential-store
+   #:credential-store-get
+   #:credential-store-put
+   #:credential-store-update
+   #:credential-store-list
+   #:credential-store-count
+   #:*credential-store*
+   #:*request-security-context*
+   #:*auth-clock*
+   #:*verifier-compare-function*
+   #:auth-now
+   #:constant-time-octets=
+   #:constant-time-secret=
+   #:parse-api-key
+   #:bearer-token
+   #:signal-authentication-failure
+   #:authenticate-api-key
+   #:authenticate-authorization-header
+   #:current-request-principal
+   #:current-principal-id
+   #:current-service-call-context
+   #:scope-granted-p
+   #:administrator-principal-p
+   #:create-api-key
+   #:bootstrap-api-key
+   #:rotate-api-key
+   #:revoke-api-key
+   #:disable-api-key
+   #:api-key-metadata-json
+   #:list-api-key-metadata
+   #:validate-auth-configuration
+   #:initialize-auth-store))
 
 (uiop:define-package :star.rabbit
   (:use :cl :star.consumers :sento.actor)
+  (:documentation "RabbitMQ namespace")
   (:export
+   #:with-rabbit-send
+   #:with-rabbit-recv
    #:emit-document
    #:publish-raw-message
    #:+documents-exchange+
    #:+documents-exchange-type+
    #:+ingest-queue+
+   #:+ingest-updates-queue+
    #:+updates-queue+
    #:+targets-queue+
    #:+ingest-key+
@@ -146,7 +245,13 @@
    #:+new-documents-fmt-key+
    #:+updated-documents-key+
    #:+updated-documents-fmt-key+
+   #:+new-targets-key+
+   #:+targets-fmt-key+
+   #:+ingest-topic-key+
+   #:+updates-topic-key+
    #:transient-p
+   #:test-make-doc
+   #:test-send
    #:decode-rabbit-document
    #:handle-document
    #:handle-update-document
@@ -160,6 +265,7 @@
 
 (uiop:define-package :star.actors
   (:use :cl :star.databases.couchdb :sento.agent :sento.actor :sento.actor-system :sento.actor-context)
+  (:documentation "Actor runtime namespace")
   (:export
    #:register-actor
    #:get-dest-actor
@@ -270,4 +376,7 @@
 (uiop:define-package :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)
   (:use :cl :ningle :anypool :star.databases.couchdb :star)
-  (:export #:*default-headers*))
+  (:documentation "StarIntel HTTP API.")
+  (:export
+   #:*app*
+   #:*default-headers*))

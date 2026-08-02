@@ -1,6 +1,6 @@
 (asdf:defsystem :starintel-gserver
   :version "0.2.0"
-  :description "Hackable StarIntel processing and access server."
+  :description "Hackable StarIntel processing, authorization, and access server."
   :author "nsaspy@airmail.cc"
   :license "GPL-3.0-or-later"
   :serial t
@@ -20,6 +20,7 @@
    (:file "package")
    (:file "gserver-settings")
    (:file "databases/couchdb")
+   (:file "databases/export")
    (:file "databases/outbox")
    (:file "databases/view-registry-package")
    (:file "databases/view-registry")
@@ -27,8 +28,13 @@
    (:file "databases/document-update")
    (:file "databases/quarantine")
    (:file "databases/target-acceptance")
+   (:file "auth/core")
+   (:file "auth/verification-hardening")
+   (:file "auth/immutability")
+   (:file "auth/store")
    (:file "init-loader")
    (:file "actors")
+   (:file "actors/couchdb-service")
    (:file "target-repository")
    (:file "target-recovery")
    (:file "target-dispatch")
@@ -39,7 +45,15 @@
    (:file "frontends/http-api")
    (:file "frontends/http-document-update")
    (:file "frontends/http-view-registry")
-   (:file "main"))
+   (:file "frontends/http-boundary-core")
+   (:file "frontends/http-auth")
+   (:file "frontends/http-bulk-jobs")
+   (:file "frontends/http-boundary-routes")
+   (:file "frontends/http-auth-routes")
+   (:file "frontends/http-auth-job-routes")
+   (:file "main")
+   (:file "databases/export-final")
+   (:file "databases/view-registry-final"))
   :depends-on
   (#:starintel
    #:cl-couch
@@ -48,6 +62,9 @@
    #:cl-rabbit
    #:sento
    #:babel
+   #:yason
+   #:ironclad
+   #:dexador
    #:uuid
    #:anypool
    #:clack
@@ -63,5 +80,7 @@
    #:cms-ulid
    #:bordeaux-threads
    #:jsown
-   #:closer-mop
-   #:ironclad))
+   #:closer-mop))
+
+;;;; StarIntel Gserver is a processing framework for StarIntel documents.
+;;;; Runtime documentation lives in ../docs and must track behavior changes.

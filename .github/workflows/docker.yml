@@ -23,8 +23,17 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Run image, health, FTS, and persistence tests
+      - name: Run image, health, authentication, FTS, and persistence tests
         run: ./scripts/stack-test.sh
+
+      - name: Upload sanitized stack diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-test-diagnostics
+          path: stack-test-artifacts/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Publish images
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'

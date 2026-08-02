@@ -1,0 +1,390 @@
+#+title: StarIntel document specification in star-server
+#+options: toc:3
+
+* Document specification
+
+StarIntel Server currently sits between two document generations:
+
+1. *StarIntel 0.9.0*: the strict, schema-driven format implemented by the
+   validators in =lost-rob0t/star-cl= and =lost-rob0t/starintel-doc=.
+2. *Legacy flat 0.8.0*: Common Lisp classes and constructors still used by parts
+   of this server and its actor examples.
+
+The server reports the =star-cl= document version from =GET /=, but the HTTP and
+RabbitMQ ingest handlers do not currently call the strict 0.9 validator. A
+=document= with a non-empty =dtype= can reach CouchDB even when it does not
+conform to 0.9.
+
+** StarIntel 0.9 envelope
+
+The 0.9 adapters require:
+
+- a JSON object;
+- =schema_version= exactly ="0.9.0"=;
+- a canonical =dtype= from the schema;
+- fields and data types defined by the schema;
+- RFC 3339 date-time strings where the schema requires =date-time=;
+- no undeclared fields in closed schema sections.
+
+The adapters preserve unknown extension data and missing optional fields when
+the schema permits them.
+
+Conceptual envelope:
+
+#+begin_src json
+{
+  "schema_version": "0.9.0",
+  "dtype": "person",
+  "_id": "01J...",
+  "dataset": "investigation-a",
+  "sources": ["manual"],
+  "data": {
+    "fname": "Ada",
+    "lname": "Lovelace"
+  },
+  "extensions": {
+    "star_server": {
+      "trace_id": "01J...",
+      "root_id": "01J...",
+      "parent_id": null,
+      "actor_path": []
+    }
+  }
+}
+#+end_src
+
+Use the canonical schema distributed by the StarIntel conformance/spec
+repository. The adapters locate it through:
+
+| Variable | Meaning |
+|----------+---------|
+| =STARINTEL_SCHEMA= | Explicit path to =starintel-doc-v0.9.0.schema.json= |
+| =STARINTEL_CONFORMANCE_ROOT= | Root containing =schemas/starintel-doc-v0.9.0.schema.json= |
+
+The current server does not consume either variable directly; =star-cl='s
+validator does.
+
+** Rejected 0.9 aliases
+
+The 0.9 adapters explicitly reject these dtype aliases rather than silently
+normalizing them:
+
+#+begin_example
+organization
+organisation
+investigation_target
+social_media_post
+email_message
+financial_observation
+research_pass
+dataset_manifest
+actor_manifest
+legal_case
+lobbying_filing
+campaign_finance
+#+end_example
+
+Use the canonical dtype from the schema inventory.
+
+** Legacy flat 0.8 common fields
+
+The legacy Common Lisp =document= class serializes Lisp slot names to camelCase,
+while preserving leading underscore keys.
+
+| JSON field | Type | Meaning |
+|------------+------+---------|
+| =_id= | string | Document identity; ULID or deterministic hash |
+| =_rev= | string, optional | CouchDB revision; emitted only when syntactically valid |
+| =dataset= | string | Logical corpus/dataset |
+| =dtype= | string | Object type |
+| =sources= | array | Provenance labels/URIs/actor names |
+| =version= | string | Legacy document version, normally ="0.8.0"= |
+| =dateAdded= | integer | Unix timestamp |
+| =dateUpdated= | integer | Unix timestamp |
+
+When encoding legacy classes, missing strings become =""=, integers become =0=,
+lists become =[]=, booleans become =false=, and unknown values may become JSON
+=null=.
+
+** Legacy object types
+
+These are the concrete classes currently exported by =star-cl=. They are not a
+substitute for the canonical 0.9 schema.
+
+*** person
+
+| Field | Type |
+|-------+------|
+| =fname= | string |
+| =mname= | string |
+| =lname= | string |
+| =bio= | string |
+| =dob= | string |
+| =region= | string |
+| =misc= | array |
+| =etype= | string, default =person= |
+| =eid= | string |
+
+ID strategy: ULID.
+
+*** org
+
+| Field | Type |
+|-------+------|
+| =reg= | string |
+| =name= | string |
+| =bio= | string |
+| =country= | string |
+| =website= | string |
+| =etype= | string, default =org= |
+| =eid= | string |
+
+ID strategy: hash of name, registration, and country.
+
+*** relation
+
+| Field | Type | Meaning |
+|-------+------+---------|
+| =source= | string | Source document ID |
+| =target= | string | Target document ID |
+| =predicate= | string | Directed edge label |
+| =note= | string | Human/actor note |
+
+ID strategy: ULID. Relations are directed.
+
+*** target
+
+| Field | Type |
+|-------+------|
+| =actor= | string | Local registered actor or external actor name |
+| =target= | string | Target value/document ID |
+| =delay= | integer | Recurrence interval in seconds |
+| =recurring= | boolean | Re-deliver on timer |
+| =options= | array | Actor-defined values |
+
+ID strategy: hash of dataset, target, and actor.
+
+*** domain
+
+| Field | Type |
+|-------+------|
+| =recordType= | string |
+| =record= | string |
+| =resolvedAddresses= | array |
+
+ID strategy: hash of record and record type.
+
+*** host
+
+| Field | Type |
+|-------+------|
+| =hostname= | string |
+| =ip= | string |
+| =os= | string |
+| =ports= | array of service-like values |
+
+ID strategy: hash of IP.
+
+*** service
+
+Embedded object fields: =port= integer, =name= string, =ver= string.
+
+*** network
+
+Fields: =org= string, =subnet= string, =asn= integer. ID is derived from ASN and
+organization.
+
+*** url
+
+Fields: =url= string, =path= string, =query= string, =content= string. ID is
+derived from URL and content.
+
+*** email
+
+Fields: =user= string, =domain= string, =password= string. ID includes password
+only when non-empty.
+
+#+begin_quote
+Do not store credential material unless the collection and storage are lawful,
+authorized, necessary, and access-controlled. The current server has no
+field-level encryption or authorization.
+#+end_quote
+
+*** emailmessage
+
+Fields: =body=, =subject=, =to=, =from=, =headers= strings; =cc= and =bcc=
+arrays.
+
+*** user
+
+Fields: =url=, =name=, =platform=, =bio= strings and =misc= array.
+
+*** breach
+
+Fields: =total= integer, =description= string, =url= string.
+
+*** message
+
+Fields:
+
+- =content= string
+- =platform= string
+- =user= string
+- =isReply= boolean
+- =media= array
+- =messageId= string
+- =replyTo= string
+- =group= string
+- =channel= string
+- =mentions= array
+
+*** socialmpost
+
+Fields:
+
+- =content=, =user=, =url=, =title=, =group=, =replyTo= strings
+- =replies=, =media=, =links=, =tags= arrays
+- =replyCount=, =repostCount= integers
+
+*** phone
+
+Fields: =number=, =carrier=, =status=, =phoneType= strings.
+
+*** geo and address
+
+=geo=: =lat=, =long=, =alt= numbers.
+
+=address= extends geo with =city=, =state=, =postal=, =country=, =street=, and
+=street2=.
+
+** Relation predicates
+
+The current =star-cl= relation constructor validates predicates against an
+allowlist. Groups include:
+
+- identity: =same-as=, =duplicate-of=, =aka=, =alias-of=, =username-of=,
+  =email-of=, =phone-of=, =account-of=;
+- people/org: =member-of=, =employed-by=, =contractor-for=, =works-with=,
+  =manages=, =reports-to=;
+- ownership/control: =owns=, =owned-by=, =controls=, =controlled-by=,
+  =operates=, =operated-by=, =administers=, =administered-by=;
+- registration: =registered-to=, =registrant-of=, =whois-registrant-of=,
+  =whois-admin-of=, =whois-tech-of=;
+- location: =located-at=, =geolocated-at=, =seen-at=;
+- communication: =communicates-with=, =contacted=, =contacted-by=, =mentions=,
+  =replies-to=, =follows=;
+- web: =links-to=, =redirects-to=, =canonical-url-of=, =hosts=, =hosted-by=,
+  =served-by=;
+- DNS/network: =resolves-to=, =ptr-to=, =has-a=, =has-aaaa=, =has-cname=,
+  =has-ns=, =has-mx=, =has-txt=, =has-spf=, =has-dkim=, =has-dmarc=,
+  =has-soa=, =behind-cdn=, =belongs-to-asn=, =served-from=,
+  =shares-ip-with=, =shares-asn-with=;
+- services: =hosts-service=, =listens-on=, =exposes-port=, =runs=, =runs-on=;
+- credential/breach: =leaked-in=, =credential-for=, =compromised-by=;
+- provenance/evidence: =observed-on=, =observed-by=, =collected-from=,
+  =extracted-from=, =derived-from=, =downloaded-from=, =uploaded-to=,
+  =created-by=, =modified-by=, =hashes-to=, =matches-hash=, =evidence-of=,
+  =indicates=;
+- security/research: =attributed-to=, =uses=, =targets=, =exploits=,
+  =mitigates=, =c2-for=, =in-scope-of=, =out-of-scope-of=,
+  =discovered-by=, =scanned-by=, =has-finding=, =vulnerable-to=;
+- generic: =related-to=.
+
+Constructor:
+
+#+begin_src lisp
+(spec:new-relation
+ "dataset"
+ "source-id"
+ "target-id"
+ :predicate "derived-from"
+ :note "Generated by actor")
+#+end_src
+
+** ID strategies
+
+The legacy constructors mix two identity models:
+
+- *ULID*: person, relation, default document when the server normalizes a
+  missing ID.
+- *Deterministic hash*: org, domain, network, host, URL, email, user, message,
+  social post, phone, target, geo/address.
+
+Deterministic IDs support idempotent recursive actors, but the current default
+hash algorithm in =star-cl= is MD5. Treat it as a deduplication key, not a
+cryptographic integrity proof. Use SHA-256 in provenance extensions when
+integrity matters.
+
+** CouchDB fields
+
+The ingest handler:
+
+1. generates a ULID when =_id= is missing or empty;
+2. writes the JSON document;
+3. replaces/sets =_id= from CouchDB's response;
+4. adds =_rev=;
+5. republishes the enriched document as =documents.new.<dtype>=.
+
+The update handler requires =_id= and =dtype=. It fetches the current document,
+deep-merges the patch, applies the latest =_rev=, retries conflicts, and emits
+the new revision.
+
+** Actor event document
+
+Current actor-event fields:
+
+| Field | Type |
+|-------+------|
+| =_id= | ULID string |
+| =timestamp= | Unix integer |
+| =dtype= | intended =actorevent= |
+| =actorName= | string |
+| =eventType= | string |
+| =details= | string |
+| =sourceId= | string |
+
+Actor events are stored in the separate event database.
+
+** Recursive provenance convention
+
+No server component automatically adds recursive provenance. Use a stable
+extension contract across actors:
+
+#+begin_src json
+{
+  "extensions": {
+    "star_server": {
+      "trace_id": "01J...",
+      "root_id": "root-document-id",
+      "parent_id": "source-document-id",
+      "actor": "dns-resolver",
+      "actor_path": ["seed", "domain-enricher", "dns-resolver"],
+      "depth": 2,
+      "hop": 3,
+      "max_depth": 8,
+      "max_hops": 32,
+      "derivation": "dns-resolution",
+      "input_hash": "sha256:...",
+      "output_hash": "sha256:...",
+      "emitted_at": "2026-07-26T20:00:00Z"
+    }
+  }
+}
+#+end_src
+
+Also emit a relation from source to derived output. Metadata alone does not
+replace graph edges.
+
+** Migration guidance
+
+For new producers:
+
+1. emit strict 0.9 when the deployed server path validates it;
+2. keep one canonical dtype and field spelling;
+3. put actor/runtime-specific data under =extensions=;
+4. do not silently convert aliases;
+5. test round-trip preservation against every language adapter;
+6. document any legacy 0.8 bridge at the boundary.
+
+For the current server, verify downstream consumers before switching an active
+pipeline from flat 0.8 fields to nested 0.9 =data=.

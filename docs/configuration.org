@@ -1,0 +1,271 @@
+#+title: StarIntel Server configuration
+#+options: toc:3
+
+* Configuration
+
+StarIntel Server has three effective configuration layers:
+
+1. compiled defaults and environment reads in =source/gserver-settings.lisp=;
+2. an executable Common Lisp init file loaded before startup;
+3. container environment and secret-file expansion in
+   =docker/star-server-entrypoint.sh=.
+
+The init file runs last and can override global variables.
+
+** Init file selection
+
+Resolution order:
+
+1. =--init PATH= or =-i PATH=;
+2. =STAR_SERVER_INIT_FILE=;
+3. =./init.lisp=.
+
+When the selected file does not exist, the loader copies
+=example_configs/init.lisp= to that path, then loads it.
+
+The init file is arbitrary Common Lisp and has the same privileges as the
+server process.
+
+** Environment variables read by the Lisp runtime
+
+| Variable | Default | Runtime variable |
+|----------+---------+------------------|
+| =COUCHDB_HOST= | =127.0.0.1= | =star:*couchdb-host*= |
+| =COUCHDB_DATABASE= | =starintel= | =star:*couchdb-default-database*= |
+| =COUCHDB_USER= | =admin= | =star:*couchdb-user*= |
+| =COUCHDB_PASSWORD= | empty | =star:*couchdb-password*= |
+| =HTTP_API_LISTEN_ADDRESS= | =localhost= | =star:*http-api-address*= |
+| =RABBITMQ_ADDRESS= | =localhost= | =star:*rabbit-address*= |
+| =RABBITMQ_USER= | =guest= | =star:*rabbit-user*= |
+| =RABBITMQ_PASSWORD= | empty | =star:*rabbit-password*= |
+| =STAR_SERVER_INIT_FILE= | =./init.lisp= | init path |
+
+Current fixed defaults unless overridden in Lisp:
+
+| Runtime variable | Default |
+|------------------+---------|
+| =*couchdb-port*= | 5984 |
+| =*couchdb-scheme*= | ="http"= |
+| =*http-api-port*= | 5000 |
+| =*rabbit-port*= | 5672 |
+| =*ingest-workers*= | 4 |
+| =*bulk-max-documents*= | 500 |
+| =*couchdb-event-log-database*= | ="starintel-event-source"= |
+| =*slynk-port*= | 4009 |
+| =*publish-timeout-seconds*= | 5 |
+
+The Compose variables =STAR_SERVER_PORT=, =COUCHDB_PORT=, and =RABBITMQ_PORT=
+control host-side port mappings. They do not change the internal Lisp ports.
+
+** Secret files in containers
+
+The container entrypoint reads:
+
+- =COUCHDB_PASSWORD_FILE= and exports =COUCHDB_PASSWORD=;
+- =RABBITMQ_PASSWORD_FILE= and exports =RABBITMQ_PASSWORD=.
+
+It then drops to UID/GID 65532 and starts:
+
+#+begin_example
+/bin/star-server start -i /etc/starintel/init.lisp
+#+end_example
+
+Outside that image, =*_FILE= variables are not read by the Lisp code.
+
+** Complete init-file example
+
+#+begin_src lisp
+(in-package :star)
+
+;;; CouchDB
+(setf *couchdb-host* "127.0.0.1"
+      *couchdb-port* 5984
+      *couchdb-scheme* "http"
+      *couchdb-user* "admin"
+      *couchdb-password* (or (uiop:getenv "COUCHDB_PASSWORD") "")
+      *couchdb-default-database* "starintel"
+      *couchdb-event-log-database* "starintel-event-source")
+
+;;; RabbitMQ
+(setf *rabbit-address* "127.0.0.1"
+      *rabbit-port* 5672
+      *rabbit-user* "starintel"
+      *rabbit-password* (or (uiop:getenv "RABBITMQ_PASSWORD") ""))
+
+;;; HTTP
+(setf *http-api-address* "127.0.0.1"
+      *http-api-port* 5000
+      *bulk-max-documents* 500)
+
+;;; Concurrency
+(setf *ingest-workers* 8
+      star.actors:*publish-timeout-seconds* 5)
+
+;;; Logging
+(ensure-directories-exist #P"logs/")
+(log:config :daily "logs/star-server.log" :file2 :sane)
+
+;;; Custom actors are loaded now and started later by hooks.
+(load #P"/absolute/path/to/actors/domain-enricher.lisp")
+#+end_src
+
+** Local development
+
+#+begin_src lisp
+(in-package :star)
+
+(setf *couchdb-host* "127.0.0.1"
+      *rabbit-address* "127.0.0.1"
+      *http-api-address* "127.0.0.1"
+      *ingest-workers* 4)
+
+(log:config :sane)
+#+end_src
+
+Keep the API, Rabbit management UI, CouchDB, and SLYNK on loopback.
+
+** Docker internal networking
+
+The Compose image receives service DNS names from =docker-compose.yml=. The
+mounted init file should not replace them with host-loopback values:
+
+#+begin_src lisp
+(in-package :star)
+
+(setf *couchdb-host* (or (uiop:getenv "COUCHDB_HOST") "couchdb")
+      *rabbit-address* (or (uiop:getenv "RABBITMQ_ADDRESS") "rabbitmq")
+      *http-api-address* (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") "0.0.0.0"))
+#+end_src
+
+** Remote CouchDB and RabbitMQ
+
+#+begin_src lisp
+(in-package :star)
+
+(setf *couchdb-host* "couch.internal.example"
+      *couchdb-port* 6984
+      *couchdb-scheme* "https"
+      *couchdb-user* "starintel-writer"
+      *couchdb-password* (uiop:getenv "COUCHDB_PASSWORD")
+      *rabbit-address* "rabbit.internal.example"
+      *rabbit-port* 5671
+      *rabbit-user* "starintel"
+      *rabbit-password* (uiop:getenv "RABBITMQ_PASSWORD"))
+#+end_src
+
+Caveat: this repository's Rabbit client setup does not visibly configure TLS
+parameters. Changing the port to 5671 alone does not establish a verified TLS
+connection. Terminate through a trusted private tunnel/proxy or add explicit
+TLS support to the client before relying on it.
+
+CouchDB's scheme is configurable, but certificate verification behavior depends
+on =cl-couch=/Dexador configuration.
+
+** High-throughput ingest
+
+#+begin_src lisp
+(in-package :star)
+
+(setf *ingest-workers* 16
+      *bulk-max-documents* 2000
+      star.actors:*publish-timeout-seconds* 10)
+#+end_src
+
+Tune carefully:
+
+- each Rabbit consumer worker opens its own connection/channel;
+- each worker uses prefetch 200;
+- the actor pinned dispatcher size follows =*ingest-workers*=;
+- the HTTP CouchDB pool remains 20 open connections unless code is changed;
+- larger bulk limits increase HTTP handler time and partial-failure volume;
+- the producer remains serialized through one pinned producer agent.
+
+Scale external actors horizontally before turning one server into an
+unbounded fan-out engine.
+
+** Low-memory deployment
+
+#+begin_src lisp
+(in-package :star)
+
+(setf *ingest-workers* 2
+      *bulk-max-documents* 100)
+#+end_src
+
+Compose example:
+
+#+begin_example
+CLOUSEAU_JAVA_OPTS=-Xms128m -Xmx512m
+#+end_example
+
+The server schedules a full SBCL garbage collection once per hour.
+
+** Enable SLYNK deliberately
+
+#+begin_src lisp
+(in-package :star)
+
+(setf *slynk-port* 4009)
+(start-debugger)
+#+end_src
+
+SLYNK is remote code execution. Bind it through SSH/Unix forwarding or a
+loopback-only environment. The helper does not implement authentication.
+
+** Custom CouchDB view
+
+Add a JSON design document under =source/views/=. It is read when the Lisp
+system loads and upserted at database initialization.
+
+Example:
+
+#+begin_src json
+{
+  "_id": "_design/custom",
+  "views": {
+    "by_actor": {
+      "map": "function(doc) { if (doc.extensions && doc.extensions.star_server) emit(doc.extensions.star_server.actor, null); }"
+    }
+  }
+}
+#+end_src
+
+Because view files are collected at Lisp load time, rebuild/reload the system
+after adding a file.
+
+** Reverse proxy
+
+The server's built-in HTTP TLS variables and =*http-api-base-path*= are not
+currently applied by =start-http-api=. Terminate TLS and authentication at a
+reverse proxy.
+
+Minimum proxy controls:
+
+- authenticated access;
+- request body limit;
+- rate limiting;
+- timeout shorter than or aligned with the 300-second backend timeout;
+- explicit allowed origins instead of forwarding wildcard CORS;
+- network denial for direct backend access;
+- audit logs without sensitive document bodies.
+
+** Multi-dataset operation
+
+=dataset= is a document field, not a separate CouchDB database. The current
+server stores all datasets in =*couchdb-default-database*= and exposes views that
+filter/count by dataset.
+
+Use separate server/database deployments when you need hard isolation. Dataset
+strings alone provide no authorization boundary.
+
+** Configuration traps
+
+- =*star-server-version*= currently says =0.0.1= while ASDF and container
+  packages use =0.1.0=.
+- HTTP =POST /new/document/:dtype= does not set the body =dtype=.
+- The init template can overwrite environment-derived values.
+- =*http-api-cert*= and =*http-api-key*= are unused by the server startup.
+- =*http-api-base-path*= is unused; routes are mounted at root.
+- A missing init file is created automatically, which can hide a wrong path.
+- =COUCHDB_PASSWORD_FILE= and =RABBITMQ_PASSWORD_FILE= work only through the
+  container entrypoint.
