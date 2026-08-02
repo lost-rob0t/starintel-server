@@ -33,6 +33,7 @@
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")
+     (:file "authorization-services-final-test")
      (:file "authorization-quota-test")
      (:file "run-tests"))))
   :perform
