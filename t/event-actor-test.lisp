@@ -1,7 +1,7 @@
 (in-package :star-server-tests)
 
 (def-suite event-actor-tests
-  :description "Actor-event codec, idempotency, and Rabbit settlement tests")
+  :description "Actor-event codec, idempotency, and owner-thread settlement tests")
 
 (in-suite event-actor-tests)
 
@@ -68,9 +68,9 @@
       (is (= 1 persist-count))
       (is (string= "event-1" persisted-id))
       (is (eq :ack
-              (star.consumers:rabbit-settlement-action settlement)))
+              (star.consumers:consumer-settlement-action settlement)))
       (is (eq :persisted
-              (star.consumers:rabbit-settlement-reason settlement))))))
+              (star.consumers:consumer-settlement-reason settlement))))))
 
 (test duplicate-event-delivery-is-idempotently-acked
   (let ((persist-count 0))
@@ -87,11 +87,11 @@
                 :document-id "duplicate-1")))))
       (is (= 1 persist-count))
       (is (eq :ack
-              (star.consumers:rabbit-settlement-action settlement)))
+              (star.consumers:consumer-settlement-action settlement)))
       (is (eq :duplicate
-              (star.consumers:rabbit-settlement-reason settlement))))))
+              (star.consumers:consumer-settlement-reason settlement))))))
 
-(test invalid-event-is-quarantined-and-settled
+(test invalid-event-is-dead-lettered-without-persistence
   (let ((persist-called-p nil))
     (let ((settlement
             (star.actors:process-event-delivery
@@ -102,14 +102,14 @@
                (setf persist-called-p t)
                (error "Invalid events must not persist.")))))
       (is-false persist-called-p)
-      (is (eq :nack
-              (star.consumers:rabbit-settlement-action settlement)))
-      (is-false
-       (star.consumers:rabbit-settlement-requeue settlement))
+      (is (eq :dead-letter
+              (star.consumers:consumer-settlement-action settlement)))
       (is (eq :invalid-event
-              (star.consumers:rabbit-settlement-reason settlement))))))
+              (star.consumers:consumer-settlement-reason settlement)))
+      (is (typep (star.consumers:consumer-settlement-condition settlement)
+                 'star.actors:invalid-actor-event)))))
 
-(test persistence-failure-is-requeued
+(test persistence-failure-is-retried
   (let ((settlement
           (star.actors:process-event-delivery
            (valid-event-payload :id "retry-1")
@@ -121,59 +121,12 @@
               :operation :insert
               :document-id "retry-1"
               :error-message "CouchDB unavailable")))))
-    (is (eq :nack
-            (star.consumers:rabbit-settlement-action settlement)))
-    (is-true
-     (star.consumers:rabbit-settlement-requeue settlement))
+    (is (eq :retry
+            (star.consumers:consumer-settlement-action settlement)))
     (is (eq :persistence-failed
-            (star.consumers:rabbit-settlement-reason settlement)))))
+            (star.consumers:consumer-settlement-reason settlement)))))
 
-(test rabbit-settlement-uses-owning-connection-and-delivery-tag
-  (let* ((stream
-           (make-instance
-            'star.consumers:settled-rabbit-queue-stream
-            :queue-name "events"
-            :exchange-name "events"
-            :routing-key "event.#"
-            :rabbit-connection :owning-connection))
-         (consumer
-           (make-instance
-            'star.consumers:rabbit-consumer
-            :name "settlement-test"
-            :workers 1
-            :stream stream))
-         (ack-arguments nil)
-         (nack-arguments nil))
-    (star.consumers:settle-rabbit-delivery
-     consumer
-     (cons "{}" 41)
-     (star.consumers:rabbit-ack :reason :persisted)
-     :ack-fn
-     (lambda (connection channel delivery-tag &key multiple)
-       (setf ack-arguments
-             (list connection channel delivery-tag multiple)))
-     :nack-fn
-     (lambda (&rest arguments)
-       (setf nack-arguments arguments)))
-    (is (equal '(:owning-connection 1 41 nil) ack-arguments))
-    (is (null nack-arguments))
-    (star.consumers:settle-rabbit-delivery
-     consumer
-     (cons "{}" 42)
-     (star.consumers:rabbit-nack
-      :reason :invalid-event
-      :requeue nil)
-     :ack-fn
-     (lambda (&rest arguments)
-       (setf ack-arguments arguments))
-     :nack-fn
-     (lambda (connection channel delivery-tag &key multiple requeue)
-       (setf nack-arguments
-             (list connection channel delivery-tag multiple requeue))))
-    (is (equal '(:owning-connection 1 42 nil nil)
-               nack-arguments))))
-
-(test event-consumer-declares-durable-dead-letter-policy
+(test event-consumer-builds-bounded-retry-runtime
   (let* ((consumer
            (star.consumers:create-rabbit-consumer
             :name "events-test"
@@ -182,17 +135,15 @@
             :routing-key "event.#"
             :queue-durable t
             :exchange-durable t
-            :dead-letter-exchange "events.dead-letter"
-            :dead-letter-routing-key "events.invalid"
-            :dead-letter-queue "events.quarantine"
+            :max-retries 4
+            :quarantine-exchange "events.quarantine"
+            :quarantine-queue "events.quarantine.queue"
             :handler-fn #'identity))
          (stream (star.consumers:consumer-stream consumer)))
-    (is (typep stream 'star.consumers:settled-rabbit-queue-stream))
+    (is (typep consumer 'star.consumers:retrying-rabbit-consumer))
+    (is (typep stream 'star.consumers:retrying-rabbit-queue-stream))
     (is-true (star.consumers:rabbit-stream-queue-durable-p stream))
     (is-true (star.consumers:rabbit-exchange-durable-p stream))
-    (is (string= "events.dead-letter"
-                 (star.consumers:rabbit-stream-dead-letter-exchange stream)))
-    (is (string= "events.invalid"
-                 (star.consumers:rabbit-stream-dead-letter-routing-key stream)))
-    (is (string= "events.quarantine"
-                 (star.consumers:rabbit-stream-dead-letter-queue stream)))))
+    (is (= 4
+           (star.consumers:retry-policy-max-retries
+            (star.consumers:retry-stream-policy stream))))))
