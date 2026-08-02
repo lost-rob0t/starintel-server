@@ -28,16 +28,28 @@ never invokes the Common Lisp reader."
 
 (defun decode-view-key (key)
   "Decode CouchDB composite keys without invoking the Lisp reader."
-  (typecase key
-    (list
-     (normalize-view-key-sequence key))
-    (string
+  (cond
+    ((stringp key)
      (or
       (handler-case
           (normalize-view-key-sequence (jsown:parse key))
         (error () nil))
       (split-printed-view-key key)
       (error "Failed to decode view key ~s" key)))
-    (vector
+    ((listp key)
+     (normalize-view-key-sequence key))
+    ((vectorp key)
      (normalize-view-key-sequence key))
     (t key)))
+
+(defun lucene-quoted-escape (value)
+  "Escape only syntax that is special inside a quoted Lucene term."
+  (with-output-to-string (stream)
+    (loop for character across value
+          do (when (or (char= character #\\)
+                       (char= character #\"))
+               (write-char #\\ stream))
+             (write-char character stream))))
+
+(defun lucene-term (field value)
+  (format nil "~a:\"~a\"" field (lucene-quoted-escape value)))
