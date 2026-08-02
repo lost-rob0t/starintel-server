@@ -52,7 +52,8 @@
    (:file "frontends/http-auth-routes")
    (:file "frontends/http-auth-job-routes")
    (:file "main")
-   (:file "databases/export-final"))
+   (:file "databases/export-final")
+   (:file "databases/view-registry-final"))
   :depends-on
   (#:starintel
    #:cl-couch
