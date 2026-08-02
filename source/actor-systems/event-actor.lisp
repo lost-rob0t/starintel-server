@@ -118,7 +118,6 @@
           (etypecase payload
             (string (jsown:parse payload))
             (list payload))))
-    ;; Migration defaults for pre-contract event documents.
     (unless (jsown:val-safe json "dtype")
       (setf (jsown:val json "dtype") "actorevent"))
     (unless (jsown:val-safe json "generation")
@@ -163,43 +162,36 @@
    :time-out +event-persistence-timeout-seconds+))
 
 (defun actor-event-settlement (event persistence-result)
+  (declare (ignore event))
   (cond
     ((not (typep persistence-result 'couchdb-result))
-     (star.consumers:rabbit-nack
-      :reason :persistence-protocol-error
-      :requeue t
-      :value event
-      :error persistence-result))
+     (star.consumers:settlement-retry
+      :persistence-protocol-error
+      persistence-result))
     ((member (couchdb-result-status persistence-result)
              '(:success :exists :conflict))
-     (star.consumers:rabbit-ack
-      :reason
+     (star.consumers:settlement-ack
       (if (eq :success (couchdb-result-status persistence-result))
           :persisted
-          :duplicate)
-      :value event))
+          :duplicate)))
     (t
-     (star.consumers:rabbit-nack
-      :reason :persistence-failed
-      :requeue t
-      :value event
-      :error (couchdb-result-error-message persistence-result)))))
+     (star.consumers:settlement-retry
+      :persistence-failed
+      (couchdb-result-error-message persistence-result)))))
 
 (defun process-event-delivery (payload &key (persist-fn #'persist-actor-event))
-  "Decode, validate, persist idempotently, and return a settlement decision."
+  "Decode, validate, persist idempotently, and return an owner-thread settlement."
   (handler-case
       (let ((event (decode-actor-event payload)))
         (actor-event-settlement event (funcall persist-fn event)))
     (invalid-actor-event (condition)
-      (star.consumers:rabbit-nack
-       :reason :invalid-event
-       :requeue nil
-       :error (invalid-actor-event-reason condition)))
+      (star.consumers:settlement-dead-letter
+       :invalid-event
+       condition))
     (error (condition)
-      (star.consumers:rabbit-nack
-       :reason :event-handler-error
-       :requeue t
-       :error condition))))
+      (star.consumers:settlement-retry
+       :event-handler-error
+       condition))))
 
 (define-actor (*actor-event-receiver* *sys*)
   (lambda (event)
@@ -210,11 +202,7 @@
   (process-event-delivery (car message)))
 
 (defun start-event-consumer (n)
-  "Start the durable event consumer with retry and dead-letter policy.
-
-Valid and duplicate events are ACKed. Invalid events are NACKed without requeue
-and routed to the quarantine queue. Transient persistence failures are NACKed
-with requeue so RabbitMQ can retry them."
+  "Start durable owner-thread event consumers with bounded retry and quarantine."
   (let ((consumer
           (star.consumers:create-rabbit-consumer
            :name "event-consumers"
@@ -229,11 +217,17 @@ with requeue so RabbitMQ can retry them."
            :exchange-type "topic"
            :exchange-durable t
            :routing-key +event-routing-key+
-           :dead-letter-exchange +event-dead-letter-exchange+
-           :dead-letter-routing-key +event-dead-letter-routing-key+
-           :dead-letter-queue +event-dead-letter-queue+
            :test-fn #'identity
-           :handler-fn #'handle-event-message)))
+           :handler-fn #'handle-event-message
+           :on-error :retry
+           :on-filter :filtered-ack
+           :max-retries star:*rabbit-max-retries*
+           :retry-base-delay-ms star:*rabbit-retry-base-delay-ms*
+           :retry-max-delay-ms star:*rabbit-retry-max-delay-ms*
+           :retry-jitter-ratio star:*rabbit-retry-jitter-ratio*
+           :quarantine-fn #'star.rabbit:persist-quarantine-record
+           :quarantine-exchange star:*rabbit-quarantine-exchange*
+           :quarantine-queue star:*rabbit-quarantine-queue*)))
     (star.consumers:start-consumer consumer)))
 
 (defun log-actor-event (actor-name &key event-type details source-id trace-id
