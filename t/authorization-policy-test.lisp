@@ -245,7 +245,7 @@
              "target:target-a"
              "target-namespace:people"
              "program:program-a")
-           "actor_component"))
+           "actor_component")))
     (is-true
      (star.authorization:authorize!
       "targets:dispatch"
