@@ -1,469 +1,242 @@
 (in-package :star.rabbit)
 
-;;; ----------------------------------------------------------------------
-;;; constants
-
-(defparameter +documents-exchange+ "documents"
-  "RabbitMQ exchange name for document traffic (ingest/new/updated).")
-
-
-(defparameter +documents-exchange-type+ "topic"
-  "Exchange type for +documents-exchange+. Must be \"topic\" so routing keys like
-documents.ingest.#, documents.new.#, and documents.updated.# work.")
-
-;; routing keys (canonical)
-(defparameter +ingest-key+ "documents.ingest.#"
-  "Wildcard routing key for ALL ingest messages (initial insert path).")
-
-(defparameter +ingest-queue+ "documents.ingest"
-  "RabbitMQ Queue name for document ingest")
-
-
-(defparameter +ingest-fmt-key+ "documents.ingest.~a"
-  "Format string for ingest routing keys by dtype. Example: (format nil +ingest-fmt-key+ \"target\")
-=> \"documents.ingest.target\"")
-
-
-(defparameter +new-documents-key+ "documents.new.#"
-  "Wildcard routing key for post-ingest 'new document' messages (after CouchDB insert/_rev enrichment).")
-
-
-(defparameter +new-documents-fmt-key+ "documents.new.~a"
-  "Format string for documents.new routing keys by dtype. Example: \"documents.new.url\".")
-
-
-(defparameter +updated-documents-key+ "documents.updated.#"
-  "Wildcard routing key for document update messages emitted by actors/services.")
-
-(defparameter +updates-queue+ "documents.updates.ingest"
-  "RabbitMQ Queue name for document update ingest")
-
-
-(defparameter +updated-documents-fmt-key+ "documents.updated.~a"
-  "Format string for documents.updated routing keys by dtype. Example: \"documents.updated.host\".")
-
-
-(defparameter +targets-key+ "documents.new.target.#"
-  "Wildcard routing key for post-ingest target messages (targets after CouchDB insert/_rev enrichment).")
-
-
+(defparameter +documents-exchange+ "documents")
+(defparameter +documents-exchange-type+ "topic")
+(defparameter +ingest-key+ "documents.ingest.#")
+(defparameter +update-key+ "documents.update.#")
+(defparameter +ingest-queue+ "documents.ingest")
+(defparameter +updates-queue+ "documents.update")
+(defparameter +targets-key+ "documents.new.target.#")
 (defparameter +targets-queue+ "documents.targets")
+(defparameter +ingest-fmt-key+ "documents.ingest.~a")
+(defparameter +new-documents-key+ "documents.new.#")
+(defparameter +new-documents-fmt-key+ "documents.new.~a")
+(defparameter +updated-documents-key+ "documents.updated.#")
+(defparameter +updated-documents-fmt-key+ "documents.updated.~a")
 
-(defparameter +targets-fmt-key+ "documents.new.target.#"
-  "Alias for +targets-key+. Name is historical; value is intentionally the same wildcard.");;; ----------------------------------------------------------------------
-;;; rabbit helpers
-
-(defmacro with-rabbit-recv ((queue-name exchange-name exchange-type routing-key
-                             &key (port star:*rabbit-port*)
-                               (host star:*rabbit-address*)
-                               (username star:*rabbit-user*)
-                               (password star:*rabbit-password*)
-                               (vhost "/")
-                               (durable nil)
-                               (exclusive nil)
-                               (auto-delete nil))
-                            &body body)
-  "Open a RabbitMQ connection and continuously consume messages from a bound queue.
-
-Binds/declares:
-- Exchange: EXCHANGE-NAME of type EXCHANGE-TYPE (typically +documents-exchange+ / +documents-exchange-type+).
-- Queue: QUEUE-NAME with durability/exclusive/auto-delete options.
-- Binding: queue -> exchange with ROUTING-KEY (wildcards allowed for topic exchanges).
-
-Consume loop:
-- Starts a consumer via BASIC-CONSUME, then repeatedly calls CONSUME-MESSAGE.
-- For each message:
-  - Evaluates BODY with `msg` bound to the message payload (via cl-rabbit:envelope/message).
-  - On success: ACKs by delivery-tag.
-  - On error: logs, NACKs, and requeues the message (requeue t).
-
-Notes:
-- This macro owns the connection lifecycle; it does not return until the loop exits.
-- Authentication uses SASL PLAIN when USERNAME and PASSWORD are non-nil.
-- Uses channel 1 (single channel)."
-  `(cl-rabbit:with-connection (conn)
-     (log:info "Creating RabbitMQ connection to ~a:~a" ,host ,port)
-     (let ((socket (cl-rabbit:tcp-socket-new conn)))
-       (log:debug "Opening socket to ~a:~a" ,host ,port)
-       (cl-rabbit:socket-open socket ,host ,port)
-       (when (and ,username ,password)
-         (log:debug "Authenticating with user: ~a vhost: ~a" ,username ,vhost)
-         (cl-rabbit:login-sasl-plain conn ,vhost ,username ,password))
-       (log:info "RabbitMQ connection established")
-       (cl-rabbit:with-channel (conn 1)
-         (log:info "Declaring exchange: ~a type: ~a" ,exchange-name ,exchange-type)
-         (cl-rabbit:exchange-declare conn 1 ,exchange-name ,exchange-type)
-
-         (log:info "Declaring queue: ~a (durable: ~a, exclusive: ~a, auto-delete: ~a)"
-                   ,queue-name ,durable ,exclusive ,auto-delete)
-         (cl-rabbit:queue-declare conn 1
-                                  :queue ,queue-name
-                                  :durable ,durable
-                                  :auto-delete ,auto-delete
-                                  :exclusive ,exclusive)
-
-         (log:info "Binding queue ~a to exchange ~a with routing-key: ~a"
-                   ,queue-name ,exchange-name ,routing-key)
-         (cl-rabbit:queue-bind conn 1
-                               :queue ,queue-name
-                               :exchange ,exchange-name
-                               :routing-key ,routing-key)
-
-         (log:info "Starting consumer on queue: ~a" ,queue-name)
-         (cl-rabbit:basic-consume conn 1 ,queue-name)
-
-         (loop
-           for result = (cl-rabbit:consume-message conn)
-           for msg = (cl-rabbit:envelope/message result)
-           do (handler-case
-                  (progn
-                    (log:debug "Received message with delivery-tag: ~a"
-                               (cl-rabbit:envelope/delivery-tag result))
-                    ,@body
-                    (log:debug "Acknowledging message with delivery-tag: ~a"
-                               (cl-rabbit:envelope/delivery-tag result))
-                    (cl-rabbit:basic-ack conn 1 (cl-rabbit:envelope/delivery-tag result)))
-                (error (e)
-                  (log:error "Error processing message with delivery-tag ~a: ~a"
-                             (cl-rabbit:envelope/delivery-tag result) e)
-                  (cl-rabbit:basic-nack conn 1 (cl-rabbit:envelope/delivery-tag result) :requeue t)
-                  (log:warn "Message with delivery-tag ~a requeued"
-                            (cl-rabbit:envelope/delivery-tag result)))))))))
-
-(defun emit-document (exchange routing-key body &key (properties nil)
-                                                  (immediate nil)
-                                                  (mandatory nil)
-                                                  (port star:*rabbit-port*)
-                                                  (host star:*rabbit-address*)
-                                                  (username star:*rabbit-user*)
-                                                  (password star:*rabbit-password*)
-                                                  (vhost "/"))
-  "Publish a document message to RabbitMQ.
-
-Arguments:
-- EXCHANGE: exchange name (typically +documents-exchange+).
-- ROUTING-KEY: topic routing key (e.g. \"documents.ingest.target\", \"documents.new.url\").
-- BODY: message payload string/bytes (commonly a JSON string).
-
-Keyword args:
-- PROPERTIES: AMQP message properties alist/plist as expected by cl-rabbit.
-- MANDATORY: if true, broker returns unroutable messages (requires return handler on the channel).
-- IMMEDIATE: if true, broker requires immediate delivery to a consumer (often unsupported/ignored by brokers).
-- HOST/PORT/USERNAME/PASSWORD/VHOST: connection parameters.
-
-Behavior:
-- Opens a fresh connection and channel per call, publishes once, then closes.
-- Uses SASL PLAIN auth when USERNAME and PASSWORD are non-nil.
-- Logs publish intent and basic payload metadata (body length)."
-  (log:info "Publishing document to exchange: ~a routing-key: ~a" exchange routing-key)
-  (log:debug "Publish properties: ~a body-length: ~a" properties (length body))
-  (cl-rabbit:with-connection (conn)
-    (let ((socket (cl-rabbit:tcp-socket-new conn)))
-      (log:debug "Opening socket for publish to ~a:~a" host port)
+(defun publish-raw-message
+    (exchange routing-key body properties
+     &key
+       (port star:*rabbit-port*)
+       (host star:*rabbit-address*)
+       (username star:*rabbit-user*)
+       (password star:*rabbit-password*)
+       (vhost "/"))
+  "Publish raw Rabbit content with caller-supplied provenance properties."
+  (cl-rabbit:with-connection (connection)
+    (let ((socket (cl-rabbit:tcp-socket-new connection)))
       (cl-rabbit:socket-open socket host port)
       (when (and username password)
-        (log:debug "Authenticating publish connection user: ~a vhost: ~a" username vhost)
-        (cl-rabbit:login-sasl-plain conn vhost username password))
-      (cl-rabbit:with-channel (conn 1)
-        (cl-rabbit:basic-publish conn 1
-                                 :routing-key routing-key
-                                 :exchange exchange
-                                 :mandatory mandatory
-                                 :immediate immediate
-                                 :properties properties
-                                 :body body)
-        (log:info "Document published successfully to ~a with routing-key: ~a"
-                  exchange routing-key)))))
+        (cl-rabbit:login-sasl-plain
+         connection vhost username password))
+      (cl-rabbit:with-channel (connection 1)
+        (cl-rabbit:exchange-declare
+         connection 1 exchange +documents-exchange-type+ :durable t)
+        (cl-rabbit:basic-publish
+         connection 1
+         :routing-key routing-key
+         :exchange exchange
+         :properties properties
+         :body body))))
+  t)
 
-(defun message->string (msg &key (encoding :utf-8))
-  "Take a RabbitMQ message and return the body as a string."
-  (babel:octets-to-string (cl-rabbit:message/body msg) :encoding encoding))
+(defun emit-document
+    (exchange routing-key body
+     &key
+       properties
+       (port star:*rabbit-port*)
+       (host star:*rabbit-address*)
+       (username star:*rabbit-user*)
+       (password star:*rabbit-password*)
+       (vhost "/"))
+  "Publish one StarIntel document after transport-level normalization."
+  (publish-raw-message
+   exchange
+   routing-key
+   (star.documents:document-json body)
+   (or properties
+       (list (cons :content-type "application/json")
+             (cons :delivery-mode 2)))
+   :port port
+   :host host
+   :username username
+   :password password
+   :vhost vhost))
 
-(defun message->object (msg)
-  "TODO: Parse a RabbitMQ message into an object based on message properties."
-  (declare (ignore msg))
-  nil)
-
-;;; ----------------------------------------------------------------------
-;;; couch helpers
-
-(defun normalize-id (document)
-  "Ensure document has a usable _id. Returns the (possibly updated) document."
-  (assert document () "normalize-id: document is NIL")
-  (let ((id (jsown:val-safe document "_id")))
-    (cond
-      ((and (stringp id) (not (string= id "")))
-       document)
-      (t
-       (jsown:extend-js document ("_id" (cms-ulid:ulid)))))))
-
-(defun insert-document (client document &key (database star:*couchdb-default-database*))
-  "Normalize _id, insert to CouchDB, then return document with _rev set."
-  (assert client () "insert-document: client is NIL")
-  (assert document () "insert-document: document is NIL")
-
-  ;; Why? (setf document (remove-jsown-key document "_rev"))
-
-  (log:info "Creating document in database: ~a" database)
-  (let* ((resp (cl-couch:create-document client database (jsown:to-json document)))
-         (obj  (jsown:parse resp))
-         (rev (jsown:val-safe obj "rev"))
-         (id (jsown:val-safe obj "id")))
-    (when id
-      (setf document (jsown:extend-js document ("_id" id))))
-    (when rev
-      (setf document (jsown:extend-js document ("_rev" rev))))
-    (log:info "Document created successfully (_id=~a _rev=~a)" id rev)
-    document))
-
-(defun jsown-object-p (obj)
-  (and (consp obj) (eq (car obj) :obj)))
-
-(defun remove-jsown-key (obj key)
-  "Remove KEY from JSOWN object OBJ (mutates OBJ)."
-  (when (jsown-object-p obj)
-    (setf (cdr obj)
-          (remove key (cdr obj) :key #'car :test #'string=)))
-  obj)
-
-(defun merge-jsown (base patch &key (skip-keys nil) (deep t))
-  "Merge PATCH into BASE (mutating BASE).
-
-Rules:
-- keys in PATCH overwrite BASE
-- keys in SKIP-KEYS are ignored
-- when DEEP and both values are objects, merge recursively"
-  (unless (and (jsown-object-p base) (jsown-object-p patch))
-    (return-from merge-jsown base))
-
-  (dolist (pair (cdr patch) base)
-    (destructuring-bind (key . value) pair
-      (unless (member key skip-keys :test #'string=)
-        (let ((existing (jsown:val-safe base key)))
-          (cond
-            ((and deep (jsown-object-p existing) (jsown-object-p value))
-             (setf (jsown:val base key)
-                   (merge-jsown existing value :skip-keys skip-keys :deep deep)))
-            (t
-             (setf (jsown:val base key) value))))))))
-
-(defun get-document* (client database id)
-  "Fetch a document as a JSOWN object or NIL if not found."
+(defun decode-rabbit-document (message &key route-dtype)
+  "Parse one Rabbit delivery and convert malformed payloads to permanent errors."
   (handler-case
-      (cl-couch:get-document* client database id)
-    (dex:http-request-not-found () nil)))
+      (star.documents:ensure-document
+       (car message)
+       :route-dtype route-dtype)
+    (star.consumers:delivery-processing-error (condition)
+      (error condition))
+    (error (condition)
+      (error 'star.consumers:schema-invalid-delivery-error
+             :cause condition
+             :reason (princ-to-string condition)))))
 
-(defun upsert-document-update (client patch &key (database star:*couchdb-default-database*) (max-retries 2))
-  "Upsert-style update.
+(defun publish-outbox-event (routing-key payload event-id)
+  "Publish one physical delivery carrying a stable logical EVENT-ID."
+  (emit-document
+   +documents-exchange+
+   routing-key
+   payload
+   :properties
+   (list (cons :content-type "application/json")
+         (cons :delivery-mode 2)
+         (cons :message-id event-id)))
+  t)
 
-- If PATCH has no _rev, fetch it from CouchDB.
-- Merge PATCH into existing doc so partial updates don't drop fields.
-- On conflict, refetch latest rev/doc and retry up to MAX-RETRIES times.
+(defun persist-quarantine-record (record)
+  "Persist RECORD before its original Rabbit delivery is acknowledged."
+  (anypool:with-connection
+      (client star.databases.couchdb:*couchdb-pool*)
+    (star.databases.couchdb:couchdb-save-quarantine-record
+     client
+     star:*couchdb-default-database*
+     record)))
 
-Returns the document (JSOWN) with the latest _rev."
-  (let ((id (jsown:val-safe patch "_id")))
-    (assert (and id (stringp id) (not (string= id ""))) ()
-            "upsert-document-update: missing/invalid _id")
+(defun inspect-quarantine (&key (status "quarantined") (limit 100))
+  (anypool:with-connection
+      (client star.databases.couchdb:*couchdb-pool*)
+    (star.databases.couchdb:couchdb-list-quarantine-records
+     client
+     star:*couchdb-default-database*
+     :status status
+     :limit limit)))
 
-    (loop for attempt from 0 to max-retries
-          do (let* ((existing (get-document* client database id))
-                    (doc (if existing
-                             (merge-jsown existing patch)
-                             patch))
-                    (rev (or (jsown:val-safe existing "_rev")
-                             (jsown:val-safe doc "_rev"))))
-               (cond
-                 ((null existing)
-                  (setf doc (normalize-id doc))
-                  (return (insert-document client doc :database database)))
+(defun replay-quarantined-message (quarantine-id &key corrected-body)
+  (anypool:with-connection
+      (client star.databases.couchdb:*couchdb-pool*)
+    (star.databases.couchdb:replay-quarantine-record
+     client
+     star:*couchdb-default-database*
+     quarantine-id
+     #'publish-raw-message
+     :corrected-body corrected-body)))
 
-                 (t
-                  (when rev
-                    (setf doc (jsown:extend-js doc ("_rev" rev))))
+(defun process-rabbit-document-mutation (message operation)
+  (let ((document (decode-rabbit-document message)))
+    (if (star.documents:document-transient-p document)
+        (settlement-filtered-ack
+         "transient document intentionally not persisted")
+        (progn
+          (anypool:with-connection
+              (client star.databases.couchdb:*couchdb-pool*)
+            (star.databases.couchdb:couchdb-process-outbox-mutation
+             client
+             star:*couchdb-default-database*
+             #'publish-outbox-event
+             document
+             operation))
+          (settlement-ack
+           "durable mutation and publication completed")))))
 
-                  (handler-case
-                      (let* ((resp (cl-couch:update-document* client database (jsown:to-json doc) id rev))
-                             (new-rev (jsown:val-safe resp "rev")))
-                        (when (and new-rev (stringp new-rev) (not (string= new-rev "")))
-                          (setf doc (jsown:extend-js doc ("_rev" new-rev))))
-                        (return doc))
+(defun handle-document (consumer message)
+  (declare (ignore consumer))
+  (process-rabbit-document-mutation message :new))
 
-                    (dex:http-request-conflict (e)
-                      (when (>= attempt max-retries)
-                        (signal e))
-                      (log:warn "Update conflict => retrying (attempt=~a _id=~a): ~a" attempt id e)))))))))
+(defun handle-update-document (consumer message)
+  (declare (ignore consumer))
+  (process-rabbit-document-mutation message :updated))
+
+(defun recover-pending-publications ()
+  (anypool:with-connection
+      (client star.databases.couchdb:*couchdb-pool*)
+    (star.databases.couchdb:recover-couchdb-outbox
+     client
+     star:*couchdb-default-database*
+     #'publish-outbox-event)))
 
 (defun transient-p (message)
-  (let ((result (jsown:val-safe (jsown:parse (car message)) "transient")))
-    (log:debug "Message transient check: ~a" result)
-    result))
+  (star.documents:document-transient-p
+   (decode-rabbit-document message)))
 
-(defun insertp (message)
-  (let ((result (null (transient-p message))))
-    (log:debug "Message insert check: ~a" result)
-    result))
+(defun target-outcome-settlement (outcome)
+  (case (star.actors:target-dispatch-outcome-status outcome)
+    ((:accepted :duplicate)
+     (settlement-ack
+      (or (star.actors:target-dispatch-outcome-reason outcome)
+          "target dispatch durably accepted")))
+    (:invalid
+     (settlement-dead-letter
+      (star.actors:target-dispatch-outcome-reason outcome)
+      (make-condition
+       'star.consumers:permanent-delivery-error
+       :reason (star.actors:target-dispatch-outcome-reason outcome))))
+    ((:overloaded :unavailable :failed)
+     (settlement-retry
+      (star.actors:target-dispatch-outcome-reason outcome)
+      (make-condition
+       'star.consumers:transient-delivery-error
+       :reason (star.actors:target-dispatch-outcome-reason outcome))))
+    (otherwise
+     (settlement-reject
+      "unknown target dispatch outcome"
+      (make-condition
+       'star.consumers:permanent-delivery-error
+       :reason "unknown target dispatch outcome")))))
 
-(defun target-p (message)
-  "Test if message dtype is 'target'."
-  (let* ((body (jsown:parse (car message)))
-         (dtype (jsown:val-safe body "dtype"))
-         (result (string= dtype "target")))
-    (log:debug "Message target-p check: dtype=~a result=~a" dtype result)
-    result))
+(defun handle-target (consumer message)
+  (target-outcome-settlement
+   (star.actors:accept-target-delivery
+    consumer
+    (decode-rabbit-document message :route-dtype "target"))))
 
+(defun consumer-retry-options ()
+  (list
+   :max-retries star:*rabbit-max-retries*
+   :retry-base-delay-ms star:*rabbit-retry-base-delay-ms*
+   :retry-max-delay-ms star:*rabbit-retry-max-delay-ms*
+   :retry-jitter-ratio star:*rabbit-retry-jitter-ratio*
+   :quarantine-fn #'persist-quarantine-record
+   :quarantine-exchange star:*rabbit-quarantine-exchange*
+   :quarantine-queue star:*rabbit-quarantine-queue*))
 
-
-(defun handle-new-document (self message)
-  "Handle an ingested document: insert to CouchDB, then republish as documents.new.<dtype>."
-  (log:debug "handle-new-document called with message-key: ~a" (cdr message))
-  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
-         (doc        (jsown:parse (car message)))
-         (msg-key    (cdr message))
-         (dtype       (jsown:val-safe doc "dtype")))
-    (assert (and dtype (stringp dtype) (not (string= dtype ""))) ()
-            "handle-new-document: missing/invalid dtype (msg-key=~S)" msg-key)
-
-    (setf doc (normalize-id doc))
-
-    (handler-case
-        (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-          (setf doc (insert-document client doc))
-          (let ((routing-key (format nil +new-documents-fmt-key+ dtype)))
-            (log:trace "Publishing Document: ~a" (jsown:to-json doc))
-            (star.actors:publish star.actors:*producer-agent*
-                                 :body (jsown:to-json doc)
-                                 :routing-key routing-key
-                                 :properties (list (cons :type dtype))))
-          (cl-rabbit:basic-ack connection 1 msg-key))
-
-      (dex:http-request-bad-request (e)
-        (log:error "Bad request creating document (msg-key=~a): ~a"
-                   msg-key (dexador.error:response-body e))
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
-
-      (dex:http-request-conflict (e)
-        (log:warn "Document conflict (msg-key=~a): ~a" msg-key e)
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue nil))
-
-      (error (e)
-        (log:error "Unexpected error creating document (msg-key=~a): ~a" msg-key e)
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue t)))))
-
-(defun handle-new-target (self message)
-  "Handle target doc: route post-ingest targets (expects _rev)."
-  (log:debug "handle-new-target called with message-key: ~a" (cdr message))
-  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
-         (body       (jsown:parse (car message)))
-         (msg-key    (cdr message))
-         (dtype      (jsown:val-safe body "dtype")))
-    (log:trace "Got Target: ~a for ~a" (jsown:val body "target") (jsown:val-safe body "actor"))
-    (setf body (normalize-id body))
-    ;;  Set the Dtype if it is not present
-    (when (or (null dtype) (not (stringp dtype)) (string= dtype ""))
-      (setf body (jsown:extend-js body ("dtype" "target"))))
-    (tell star.actors:*targets* (cons 1 body))
-    (cl-rabbit:basic-ack connection 1 msg-key)))
-
-
-
-(defun handle-update (self message)
-  "Persist document updates to CouchDB.
-
-Upsert behavior:
-- Requires _id and dtype
-- If _rev is missing, fetch it from CouchDB
-- Merge PATCH into existing doc so partial updates don't drop fields"
-  (let* ((connection (rabbit-stream-connection (consumer-stream self)))
-         (body       (jsown:parse (car message)))
-         (msg-key    (cdr message))
-         (id         (jsown:val-safe body "_id"))
-         (dtype      (jsown:val-safe body "dtype")))
-    (assert (and id dtype) ()
-            "handle-update: missing required fields:~@[ _id~]~@[ dtype~] (msg-key=~S)"
-            (null id) (null dtype) msg-key)
-
-    (handler-case
-        (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
-          (setf body (upsert-document-update client body :database star:*couchdb-default-database*))
-          (log:info "Update persisted (dtype=~a _id=~a _rev=~a)"
-                    dtype id (jsown:val-safe body "_rev"))
-          (let ((routing-key (format nil +updated-documents-fmt-key+ dtype)))
-            (log:trace "Publishing updated document: ~a" (jsown:to-json body))
-            (star.actors:publish star.actors:*producer-agent*
-                                 :body (jsown:to-json body)
-                                 :routing-key routing-key
-                                 :properties (list (cons :type dtype))))
-          (cl-rabbit:basic-ack connection 1 msg-key))
-
-      (dex:http-request-conflict (e)
-        ;; Upsert already retries, but still may fail if we hit max retries.
-        (log:warn "Update conflict (dtype=~a _id=~a): ~a" dtype id e)
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
-
-      (dex:http-request-bad-request (e)
-        (log:error "Bad request updating doc (dtype=~a _id=~a): ~a"
-                   dtype id (dexador.error:response-body e))
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue t))
-
-      (error (e)
-        (log:error "Unexpected error updating doc (dtype=~a _id=~a): ~a" dtype id e)
-        (cl-rabbit:basic-nack connection 1 msg-key :requeue t)))))
-
-;;; ----------------------------------------------------------------------
-;;; consumer wiring
+(defun make-document-consumer
+    (&key name queue-name routing-key handler-fn)
+  (apply
+   #'create-rabbit-consumer
+   :name name
+   :n star:*ingest-workers*
+   :queue-name queue-name
+   :exchange-name +documents-exchange+
+   :exchange-type +documents-exchange-type+
+   :exchange-durable t
+   :routing-key routing-key
+   :username star:*rabbit-user*
+   :password star:*rabbit-password*
+   :host star:*rabbit-address*
+   :port star:*rabbit-port*
+   :handler-fn handler-fn
+   :test-fn #'identity
+   :on-error :retry
+   :on-filter :filtered-ack
+   (consumer-retry-options)))
 
 (defun start-consumers ()
-  (log:info "Starting Consumers.")
-
-  (log:info "Creating ingest consumer - workers: ~a queue: ~a exchange: documents routing-key: ~a"
-            star:*ingest-workers* +ingest-queue+ +ingest-key+)
-
-  (let ((document-consumers
-          (create-rabbit-consumer :name "ingest"
-                                  :n star:*ingest-workers*
-                                  :queue-name +ingest-queue+
-                                  :exchange-name +documents-exchange+
-                                  :routing-key +ingest-key+
-                                  :username star:*rabbit-user*
-                                  :password star:*rabbit-password*
-                                  :host star:*rabbit-address*
-                                  :port star:*rabbit-port*
-                                  :handler-fn #'handle-new-document
-                                  :test-fn #'insertp))
-
-        (updates-consumers
-          (create-rabbit-consumer :name "documents-updates"
-                                  :n star:*ingest-workers*
-                                  :queue-name +updates-queue+
-                                  :exchange-name +documents-exchange+
-                                  :routing-key +updated-documents-key+
-                                  :username star:*rabbit-user*
-                                  :password star:*rabbit-password*
-                                  :host star:*rabbit-address*
-                                  :port star:*rabbit-port*
-                                  :handler-fn #'handle-update
-                                  :test-fn #'insertp))
-
-        (target-consumers
-          (create-rabbit-consumer :name "documents-targets"
-                                  :n star:*ingest-workers*
-                                  :queue-name +targets-queue+
-                                  :exchange-name +documents-exchange+
-                                  :routing-key +targets-key+
-                                  :username star:*rabbit-user*
-                                  :password star:*rabbit-password*
-                                  :host star:*rabbit-address*
-                                  :port star:*rabbit-port*
-                                  :handler-fn #'handle-new-target
-                                  :test-fn #'target-p)))
-
-    (log:info "Starting ingest consumers")
-    (start-consumer document-consumers)
-
-    (log:info "Starting updates consumers")
-    (start-consumer updates-consumers)
-
-    (log:info "Starting target consumers")
-    (start-consumer target-consumers)
-
-    (log:info "All consumers started successfully")))
+  "Start owner-thread Rabbit consumers and recover pending outbox events."
+  (let ((ingest
+          (make-document-consumer
+           :name "documents-ingest"
+           :queue-name +ingest-queue+
+           :routing-key +ingest-key+
+           :handler-fn #'handle-document))
+        (updates
+          (make-document-consumer
+           :name "documents-update"
+           :queue-name +updates-queue+
+           :routing-key +update-key+
+           :handler-fn #'handle-update-document))
+        (targets
+          (make-document-consumer
+           :name "documents-targets"
+           :queue-name +targets-queue+
+           :routing-key +targets-key+
+           :handler-fn #'handle-target)))
+    (start-consumer ingest)
+    (start-consumer updates)
+    (start-consumer targets)
+    (recover-pending-publications)
+    (list ingest updates targets)))

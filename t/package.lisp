@@ -9,12 +9,16 @@
   (:import-from #:star.consumers
                 #:consumer
                 #:consumer-name
-                #:consumer-channel
+                #:consumer-worker-count
                 #:consumer-take
                 #:consumer-lock
                 #:consumer-filter
                 #:consumer-fn
                 #:consumer-stream
+                #:consumer-state
+                #:consumer-in-flight
+                #:consumer-unsettled
+                #:consumer-failures
                 #:consume
                 #:with-consumer-lock
                 #:rabbit-consumer
