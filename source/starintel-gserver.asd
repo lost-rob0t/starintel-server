@@ -51,7 +51,8 @@
    (:file "frontends/http-boundary-routes")
    (:file "frontends/http-auth-routes")
    (:file "frontends/http-auth-job-routes")
-   (:file "main"))
+   (:file "main")
+   (:file "databases/export-final"))
   :depends-on
   (#:starintel
    #:cl-couch
