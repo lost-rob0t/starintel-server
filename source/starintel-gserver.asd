@@ -61,7 +61,8 @@
    (:file "frontends/http-authorization-view-routes")
    (:file "main")
    (:file "databases/export-final")
-   (:file "databases/view-registry-final"))
+   (:file "databases/view-registry-final")
+   (:file "authorization/services-final"))
   :depends-on
   (#:starintel
    #:cl-couch
