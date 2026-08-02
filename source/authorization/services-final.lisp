@@ -31,8 +31,6 @@ never invokes the Common Lisp reader."
   (typecase key
     (list
      (normalize-view-key-sequence key))
-    (vector
-     (normalize-view-key-sequence key))
     (string
      (or
       (handler-case
@@ -40,4 +38,6 @@ never invokes the Common Lisp reader."
         (error () nil))
       (split-printed-view-key key)
       (error "Failed to decode view key ~s" key)))
+    (vector
+     (normalize-view-key-sequence key))
     (t key)))
