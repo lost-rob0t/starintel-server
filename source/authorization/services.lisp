@@ -112,7 +112,7 @@
 (defun lucene-escape (value)
   (with-output-to-string (stream)
     (loop for character across value
-          do (when (find character "+-&|!(){}[]^\"~*?:\\/")
+          do (when (find character "+&|!(){}[]^\"~*?:\\/")
                (write-char #\\ stream))
              (write-char character stream))))
 
