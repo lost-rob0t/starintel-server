@@ -26,16 +26,38 @@ never invokes the Common Lisp reader."
      (map 'list #'princ-to-string value))
     (t value)))
 
+(defun json-encoded-view-key-p (key)
+  "Return true when KEY looks like a JSON-encoded array/object of quoted
+values rather than CouchDB's bare printed composite-key form
+(e.g. [dataset-1 tenant-1]).
+
+jsown's reader treats a bare leading ``t`` as JSON ``true`` and a bare
+leading ``f``/``n`` as ``false``/``null``, so feeding it the printed form
+yields spurious tokens (e.g. ``[dataset-1 tenant-1]`` -> ``(T)``).  Only
+strings whose first value starts with a JSON string quote are safe to hand
+to jsown."
+  (declare (type string key))
+  (let* ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) key))
+         (length (length trimmed)))
+    (and (>= length 2)
+         (find (char trimmed 0) "[{")
+         (loop for index from 1 below length
+               for char = (char trimmed index)
+               while (find char " " :test #'char=)
+               finally (return (and char (char= char #\")))))))
+
 (defun decode-view-key (key)
   "Decode CouchDB composite keys without invoking the Lisp reader."
   (cond
     ((stringp key)
-     (or
-      (handler-case
-          (normalize-view-key-sequence (jsown:parse key))
-        (error () nil))
-      (split-printed-view-key key)
-      (error "Failed to decode view key ~s" key)))
+     (if (json-encoded-view-key-p key)
+         (handler-case
+             (normalize-view-key-sequence (jsown:parse key))
+           (error ()
+             (or (split-printed-view-key key)
+                 (error "Failed to decode view key ~s" key))))
+         (or (split-printed-view-key key)
+             (error "Failed to decode view key ~s" key))))
     ((listp key)
      (normalize-view-key-sequence key))
     ((vectorp key)
