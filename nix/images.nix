@@ -3,6 +3,7 @@
 let
   couchdbVersion = "3.5.2";
   clouseauVersion = "3.3.0";
+  rabbitmqVersion = "4.3.4-management";
 
   couchdbBase = pkgs.dockerTools.pullImage {
     imageName = "couchdb";
@@ -10,6 +11,14 @@ let
     hash = "sha256-9ZAkDiaUE1xBwjn48KUkQqxDjEQyuhv/ghJzyVEXR7U=";
     finalImageName = "couchdb";
     finalImageTag = couchdbVersion;
+  };
+
+  rabbitmqBase = pkgs.dockerTools.pullImage {
+    imageName = "rabbitmq";
+    imageDigest = "sha256:36703420d34df0701f441730ef0ee5a28efc27611ca5b4b48a2bf6571c9b2854";
+    hash = "sha256-CkNRzzUJNiBd9eH68PUdGxu5hjHtjK9LS3GZcTXaMxI=";
+    finalImageName = "rabbitmq";
+    finalImageTag = rabbitmqVersion;
   };
 
   clouseauDist = pkgs.stdenvNoCC.mkDerivation {
@@ -146,14 +155,18 @@ let
         "XDG_CONFIG_HOME=/tmp/.config"
       ];
       ExposedPorts."5000/tcp" = { };
+      Volumes."/etc/starintel" = { };
       WorkingDir = "/tmp";
     };
   };
+
+  rabbitmqImage = rabbitmqBase;
 
   allImages = pkgs.dockerTools.mergeImages [
     serverImage
     couchdbImage
     clouseauImage
+    rabbitmqImage
   ];
 
   loadImages = pkgs.writeShellApplication {
@@ -170,6 +183,7 @@ in
     clouseauImage
     couchdbImage
     loadImages
+    rabbitmqImage
     serverImage
     ;
 }
