@@ -24,7 +24,7 @@ a project-owned image.
 Build every project-owned image without loading it:
 
 ```bash
-nix build .#star-server-image .#couchdb-image .#clouseau-image
+nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
 ```
 
 Build the images, merge their archives, and load them into Docker:
@@ -34,7 +34,8 @@ nix run .#load-images
 ```
 
 The loaded tags are `starintel/server:0.1.0`,
-`starintel/couchdb:3.5.2`, and `starintel/clouseau:3.3.0`.
+`starintel/couchdb:3.5.2`, `starintel/clouseau:3.3.0`, and
+`rabbitmq:4.3.4-management`.
 
 ## Configure secrets
 
@@ -165,7 +166,8 @@ backup because its indexes can be rebuilt from CouchDB.
 
 1. Read the CouchDB and Clouseau release notes and compatibility requirements.
 2. Export every CouchDB database.
-3. Update the pinned versions, digest, and hashes in `nix/images.nix`.
+3. Update the pinned versions, digest, and hashes in `nix/images.nix`
+   (CouchDB, Clouseau, and RabbitMQ).
 4. Update the matching image tags in `docker-compose.yml`.
 5. Run `nix build` for all three images and `./scripts/stack-test.sh`.
 6. Load the new images and recreate the stack with

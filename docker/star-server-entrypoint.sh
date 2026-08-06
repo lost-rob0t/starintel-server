@@ -25,5 +25,7 @@ load_secret RABBITMQ_PASSWORD
 load_secret STAR_AUTH_PEPPER
 load_secret STAR_AUTH_BOOTSTRAP_SECRET
 
+STAR_SERVER_INIT_FILE="${STAR_SERVER_INIT_FILE:-/etc/starintel/init.lisp}"
+
 exec su-exec 65532:65532 \
-  /bin/star-server start -i /etc/starintel/init.lisp
+  /bin/star-server start -i "$STAR_SERVER_INIT_FILE"

@@ -18,7 +18,7 @@ integration-test:
 	nix run .#star-integration-tests
 
 images:
-	nix build .#star-server-image .#couchdb-image .#clouseau-image
+	nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
 
 load-images:
 	nix run .#load-images

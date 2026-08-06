@@ -349,6 +349,7 @@ EOF
         star-server-image = containerImages.serverImage;
         couchdb-image = containerImages.couchdbImage;
         clouseau-image = containerImages.clouseauImage;
+        rabbitmq-image = containerImages.rabbitmqImage;
         container-images = containerImages.allImages;
         load-images = containerImages.loadImages;
 
