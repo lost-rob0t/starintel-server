@@ -79,6 +79,55 @@
      (when routing-key
        (list (cons "x-dead-letter-routing-key" routing-key))))))
 
+(defun declare-queue-with-retry (stream connection)
+  "Declare the queue with its configured arguments.
+
+  RabbitMQ rejects queue-declare when an existing queue has inequivalent
+  arguments (PRECONDITION_FAILED, reply code 406). This commonly happens
+  when a durable queue was created without dead-letter policy and the
+  code is later upgraded to use one.
+
+  When that occurs and the stale queue is empty, we delete it and
+  redeclare with the correct arguments. If the queue still holds
+  messages we refuse to drop them and surface a clear, actionable
+  error so an operator can drain or explicitly delete the queue."
+  (flet ((declare-queue ()
+           (cl-rabbit:queue-declare
+            connection
+            1
+            :queue (rabbit-stream-queue-name stream)
+            :durable (rabbit-stream-queue-durable-p stream)
+            :arguments (rabbit-dead-letter-arguments stream))))
+    (handler-case
+        (declare-queue)
+      (cl-rabbit:rabbitmq-server-error (condition)
+        (unless (= cl-rabbit:+amqp-precondition-failed+
+                   (cl-rabbit:rabbitmq-server-error/reply-code condition))
+          (error condition))
+        (log:warn (format nil
+                          "Queue ~a has inequivalent arguments (PRECONDITION_FAILED); ~
+                           attempting to recreate empty queue"
+                          (rabbit-stream-queue-name stream)))
+        ;; The failed declare closes the channel; reopen it before retrying.
+        (cl-rabbit:channel-open connection 1)
+        (handler-case
+            (cl-rabbit:queue-delete
+             connection
+             1
+             (rabbit-stream-queue-name stream)
+             :if-empty t
+             :if-unused t)
+          (cl-rabbit:rabbitmq-server-error (delete-condition)
+            (error "Cannot recreate queue ~a: it is not empty. ~
+                    Drain or delete the stale queue (and its bindings) ~
+                    before restarting. Server message: ~a"
+                   (rabbit-stream-queue-name stream)
+                   (cl-rabbit:rabbitmq-server-error/message delete-condition))))
+        (log:info (format nil
+                          "Recreated queue ~a with current dead-letter policy"
+                          (rabbit-stream-queue-name stream)))
+        (declare-queue)))))
+
 (defmethod open-stream ((stream settled-rabbit-queue-stream))
   (let* ((connection (cl-rabbit:new-connection))
          (socket (cl-rabbit:tcp-socket-new connection))
@@ -116,12 +165,7 @@
        dead-letter-exchange
        "topic"
        :durable t))
-    (cl-rabbit:queue-declare
-     connection
-     1
-     :queue (rabbit-stream-queue-name stream)
-     :durable (rabbit-stream-queue-durable-p stream)
-     :arguments (rabbit-dead-letter-arguments stream))
+    (declare-queue-with-retry stream connection)
     (cl-rabbit:queue-bind
      connection
      1
