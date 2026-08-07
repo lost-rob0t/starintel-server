@@ -68,6 +68,7 @@ openssl rand -base64 32 > secrets/couchdb_password
 openssl rand -base64 48 > secrets/couchdb_secret
 openssl rand -hex 24 | tr '[:lower:]' '[:upper:]' > secrets/erlang_cookie
 openssl rand -base64 32 > secrets/rabbitmq_password
+openssl rand -base64 32 > secrets/valkey_password
 chmod 0600 secrets/*
 
 nix run .#load-images
@@ -83,6 +84,7 @@ Default local endpoints:
 | CouchDB             | http://127.0.0.1:5984    |
 | RabbitMQ AMQP       | 127.0.0.1:5672           |
 | RabbitMQ management | http://127.0.0.1:15672   |
+| Valkey               | 127.0.0.1:6379          |
 
 See [[file:DOCKER.md][DOCKER.md]] for image builds, secrets, persistence, migration, backup, FTS,
 and upgrades.

@@ -46,6 +46,8 @@
    #:lease-store
    #:memory-lease-store
    #:make-memory-lease-store
+   #:valkey-lease-store
+   #:make-valkey-lease-store
    #:acquire-lease
    #:renew-lease
    #:release-lease

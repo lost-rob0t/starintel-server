@@ -63,6 +63,9 @@ The container entrypoint reads:
 
 - =COUCHDB_PASSWORD_FILE= and exports =COUCHDB_PASSWORD=;
 - =RABBITMQ_PASSWORD_FILE= and exports =RABBITMQ_PASSWORD=.
+- =VALKEY_PASSWORD_FILE= identifies the mounted secret that the composition
+  root passes to the lease-store constructor; its value is never exported as
+  an environment variable.
 
 It then drops to UID/GID 65532 and starts:
 
