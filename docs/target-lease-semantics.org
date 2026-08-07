@@ -1,0 +1,466 @@
+#+title: Distributed target lease and fencing semantics
+#+options: toc:3
+#+status: DESIGN
+
+* Normative scope and vocabulary
+
+This document is the backend-neutral contract for StarIntel target leases. It
+defines behavior that the lease-store protocol, Valkey adapter, HTTP API, target
+executor, authoritative writers, recovery logic, and tests MUST share. It does
+not claim that those components are implemented.
+
+The security boundary, credential handling, and authorization rules remain
+normative in [[file:http-auth-kv-lease-boundary.org][the KV lease authentication boundary]]. This document owns lease
+identity, records, transitions, operations, time, idempotency, fencing, failures,
+wire results, and audit event semantics. Backend-specific behavior MUST NOT
+weaken these rules.
+
+Terms:
+
+- /lock identity/ is the canonical tuple identifying mutually exclusive work.
+- /lock key/ is the opaque backend key derived from that identity.
+- /lease/ is a time-bounded grant to one owner and service instance.
+- /fencing token/ is a positive integer that strictly increases for every new
+  successful acquisition of the same lock identity.
+- /owner/ is the authenticated principal or internal security context that
+  acquired the lease; a process address is not an owner.
+- /commit/ is any authoritative mutation or externally visible effect produced
+  by leased work.
+- /backend time/ is the time used by the atomic lease operation. Caller clocks
+  are advisory only.
+
+RFC 2119-style MUST, MUST NOT, SHOULD, and MAY terms are normative.
+
+* Canonical lease identity and key
+
+The canonical lock identity is the ordered tuple:
+
+#+begin_example
+(tenant_id,
+ program_id,
+ target_namespace,
+ target_id,
+ actor_name,
+ workflow_name,
+ operation_class)
+#+end_example
+
+=tenant_id= and =program_id= establish the ownership boundary. =target_namespace=
+and =target_id= identify the resolved target. =actor_name= and =workflow_name=
+separate actors or workflows that may legitimately act on one target.
+=operation_class= is a closed optional enum; its canonical absent value is
+=default=, never an omitted tuple component.
+
+Every component MUST be resolved from trusted records and normalized before key
+derivation. At minimum normalization validates UTF-8, applies the component's
+documented case rule, rejects control characters and path syntax, and enforces a
+bounded length. Raw route text, arbitrary user input, display names, CouchDB
+fragments, and caller-provided backend keys MUST NOT participate directly.
+
+One closed =canonical-target-lock-key= function MUST:
+
+1. validate and normalize all seven fields;
+2. encode a versioned JSON array in the exact order above with no optional
+   fields or implementation-dependent map ordering;
+3. hash its UTF-8 bytes with SHA-256;
+4. encode the digest as unpadded base64url; and
+5. prefix it with =starintel:target-lease:v1:=.
+
+The resulting =lock_key= is opaque outside the adapter. The full canonical tuple
+is stored in the lease record and compared on every read or mutation. A key whose
+stored tuple does not match the requested tuple is corrupt and fails closed.
+
+The same identity also owns a durable fencing counter. Expiring or deleting the
+active lease MUST NOT delete, reset, wrap, or reuse that counter.
+
+* Lease record contract
+
+The versioned logical record is:
+
+#+begin_src json
+{
+  "record_version": 1,
+  "lock_key": "starintel:target-lease:v1:...",
+  "tenant_id": "tenant-main",
+  "program_id": "program-a",
+  "target_namespace": "starintel-target",
+  "target_id": "target_01...",
+  "actor_name": "usernamegen",
+  "workflow_name": "default",
+  "operation_class": "default",
+  "lease_id": "lease_01...",
+  "owner_principal_id": "prn_actor_01...",
+  "owner_client_id": "client_01...",
+  "owner_credential_id": "key_01...",
+  "service_instance_id": "instance_01...",
+  "fencing_token": 42,
+  "acquired_at": "2026-08-05T12:00:00.000Z",
+  "renewed_at": "2026-08-05T12:00:20.000Z",
+  "expires_at": "2026-08-05T12:00:50.000Z",
+  "ttl_ms": 30000,
+  "maximum_lifetime_ms": 300000,
+  "execution_id": "execution_01...",
+  "job_id": "job_01...",
+  "trace_id": "trace_01...",
+  "request_id": "request_01...",
+  "metadata": {},
+  "state": "active"
+}
+#+end_src
+
+All identifiers and metadata are bounded. =metadata= accepts only a documented,
+non-secret, size-limited JSON object; unknown top-level fields fail closed until
+a versioned migration defines them. Credential secrets, bearer material,
+connection strings, raw request bodies, and arbitrary backend data are forbidden.
+
+=renewed_at= initially equals =acquired_at=. =ttl_ms= records the effective TTL
+chosen by server policy, not an unchecked client request. =expires_at= MUST NOT
+exceed =acquired_at + maximum_lifetime_ms=. =fencing_token= is immutable for the
+lifetime of one lease and changes only on a new acquisition.
+
+The active record is authoritative only while its =state= is =active= and backend
+time is before =expires_at=. Terminal =expired=, =released=, and =revoked= records
+MAY live in a separate bounded history/audit store; they MUST NOT be treated as
+active locks. Absence of an active backend key does not authorize a former
+holder.
+
+* State machine
+
+Valid externally observable states are =active=, =expired=, =released=, and
+=revoked=. There is no permanent mutex state.
+
+| From | Event | To | Required atomic effect |
+|------+-------+----+------------------------|
+| no active record | acquire-if-free | active | increment durable counter, create lease with TTL, store idempotency result |
+| active, exact owner tuple | renew-if-owner | active | update renewed/expires timestamps without changing fencing token |
+| active, exact owner tuple | release-if-owner | released | compare-and-delete active record, retain terminal evidence |
+| active | backend time reaches expires_at | expired | active record becomes unusable even if physical deletion is delayed |
+| active | privileged force-release | released | invalidate active record and record administrator reason |
+| active | privileged revoke | revoked | invalidate active record and record incident/reason |
+| terminal or no active record | new acquire-if-free | active | allocate a strictly greater fencing token and a new lease_id |
+
+No operation transitions a terminal record back to =active=. Renewal cannot
+change owner, identity, execution, job, or maximum lifetime. Release and revoke
+cannot reset the fencing counter. A delayed expiry notification cannot delete a
+newer lease because all cleanup is conditional on =lease_id= and
+=fencing_token=.
+
+If the backend retains an active-shaped value after its expiry time, every
+operation treats it as expired before making a decision. Physical TTL cleanup is
+storage reclamation, not the state transition's source of truth.
+
+* Operation contract
+
+Every mutating operation accepts a canonical identity, =request_id=,
+=deadline_at=, safe security/audit context, and expected fields listed below. It
+returns a typed result; backend-specific booleans, NIL ambiguity, and raw errors
+do not cross the adapter boundary.
+
+** acquire-if-free
+
+Required input includes owner principal, credential identifier, service instance,
+requested TTL, configured maximum lifetime, execution/job/trace identifiers,
+operation class, and bounded metadata.
+
+At one backend linearization point, acquisition MUST use backend time, determine
+that no unexpired active record exists, increment the durable per-lock fencing
+counter, create a new opaque =lease_id= and active record, attach its TTL, and
+persist the idempotency result. A conflicting active lease returns
+=lease-conflict= without changing either lease or counter.
+
+** renew-if-owner
+
+Renewal requires exact =lock_key= identity, =lease_id=, =owner_principal_id=,
+=service_instance_id=, and =fencing_token=. The record must still be active and
+unexpired at the backend linearization point. Renewal sets =renewed_at= to
+backend time and computes a new =expires_at= bounded by both policy TTL and the
+original maximum lifetime. It never increments or replaces the fencing token.
+
+A late, stale, wrong-owner, wrong-instance, or wrong-token renewal returns
+=lease-lost= and performs no mutation. Reacquisition is a distinct operation with
+a new =request_id= and lease identifier.
+
+** release-if-owner
+
+Ordinary release uses the same exact ownership tuple as renewal and performs a
+compare-and-delete. It is successful only for the matching active lease. It
+records terminal =released= evidence before returning. A stale release cannot
+delete a successor lease.
+
+** inspect and list
+
+=inspect= accepts only a canonical identity or an opaque =lease_id= resolved
+within authorized scope. =list-by-owner=, =list-by-target=, and =list-by-program=
+use trusted canonical filters, stable ordering, opaque bounded pagination, and a
+server maximum page size. They never accept raw backend patterns or prefixes.
+
+Ordinary callers see only leases within their authorized tenant/program/actor/
+target scope. Terminal history is separate and subject to audit capability and
+retention policy.
+
+** force-release and revoke
+
+=force-release= and =revoke= require =targets:force-release= or the separately
+defined administrator capability, a distinct administrator credential, and a
+bounded reason or incident identifier. Both compare against the observed active
+lease so they cannot remove an unseen successor. =revoke= records the security
+terminal state; =force-release= records the operational terminal state.
+
+Before either operation reports success, the fenced-write boundary MUST reject
+the invalidated lease. Administrative invalidation is never a silent raw key
+deletion.
+
+* Idempotency
+
+Every mutating request carries a globally unique =request_id=. The idempotency
+key is scoped by operation, canonical lock key, owner principal, and request id.
+The stored request digest covers every behavior-affecting input.
+
+The first attempt atomically stores its typed result with the mutation. A retry
+with the same key and digest returns the original result, including the same
+=lease_id= and =fencing_token= for acquisition. It MUST NOT renew, reacquire,
+release a successor, or allocate another token. Reuse with a different digest
+returns =idempotency-conflict=.
+
+Idempotency records outlive the maximum client retry window and maximum lease
+lifetime according to bounded policy. If a replayed acquire's original lease is
+now terminal, the replay returns the original result plus current terminal state;
+the caller must use a new request id to acquire again.
+
+Read retries are naturally idempotent but still use a correlation identifier and
+deadline. Backend timeouts are =outcome-unknown= unless a subsequent idempotency
+lookup proves the committed result.
+
+* Time, TTL, and acquisition deadlines
+
+Backend/server time is authoritative for acquisition, renewal, expiry, and
+linearization. Client timestamps never extend a lease. The service validates
+=minimum_ttl_ms <= ttl_ms <= maximum_ttl_ms= and a separately configured positive
+=maximum_lifetime_ms=.
+
+Every call has a finite =deadline_at=. =acquire-if-free= is non-blocking by
+default and returns conflict immediately. A caller MAY request bounded retry,
+but the service must enforce a configured maximum wait, bounded jitter/backoff,
+and the earlier of client and server deadlines. There is no indefinite blocking
+acquisition, unbounded waiter queue, or backend lock wait.
+
+An operation that has not begun its backend atomic section before the deadline
+returns =deadline-exceeded=. If a network timeout occurs after submission, the
+result is =outcome-unknown= until resolved by =request_id=. A renewal response
+received after the local deadline does not grant authority; the worker must
+inspect the current lease before continuing.
+
+Local lease-loss detection schedules renewal before expiry with safety margin
+and jitter. Expiry, renewal rejection, backend-unavailable beyond the safety
+margin, explicit release, force-release, or revoke signals cancellation to the
+actor/job immediately. Cancellation is advisory for stopping work; fencing is
+the authority for rejecting commits.
+
+* Fencing enforcement points
+
+Possessing a =lease_id= is insufficient. Every authoritative commit carries
+=lock_key=, =lease_id=, =fencing_token=, =expires_at=, =execution_id=, and
+=trace_id= through the target dispatch envelope and into a fenced-write adapter.
+
+The fenced-write adapter defines the commit linearization point. It MUST:
+
+1. validate the canonical identity against the mutation target;
+2. validate with authoritative backend time that the exact lease id, owner, and
+   fencing token are still active and unexpired;
+3. reject a token lower than the durable high-water mark already observed for
+   that identity;
+4. condition the authoritative write on the document revision/idempotency key
+   and fencing guard; and
+5. record the accepted token, lease, execution, and trace with the write.
+
+A commit is authorized only if lease validation linearizes before expiry. Work
+submitted after expiry is rejected as =lease-lost=. A commit already linearized
+while the lease was valid may finish afterward; its acceptance point is the
+lease validation, not response delivery.
+
+If a datastore cannot provide an atomic or serializable fencing guard, leased
+mutations MUST pass through a commit coordinator that can. A check followed by
+an unconditional write is not fencing. Implementations MUST NOT claim stale
+holder exclusion for a path that only compares local time or trusts RabbitMQ
+delivery metadata.
+
+Fencing is mandatory at:
+
+- CouchDB target acceptance and target state mutations;
+- document/result writes attributed to exclusive target execution;
+- Rabbit publication that makes an exclusive result externally visible;
+- scheduler completion/reschedule state;
+- job checkpoint and terminal-state writes; and
+- administrative release/revoke acknowledgement.
+
+Read-only calculations may continue after lease loss, but their outputs cannot
+commit or publish without a current fenced authorization.
+
+* Races and failure modes
+
+| Race or failure | Required result |
+|-----------------+-----------------|
+| two concurrent acquires | exactly one active lease; loser gets conflict; one token allocated for the winner |
+| acquire response lost | retry by request_id returns the original lease and token |
+| renew races expiry | backend linearization decides; expired renewal cannot revive the lease |
+| renew races release/revoke | one terminal/renew result wins atomically; loser gets lease-lost |
+| stale release arrives after reacquire | compare-and-delete mismatch; successor remains active |
+| delayed expiry cleanup sees successor | lease/token mismatch; successor remains active |
+| former holder commits after expiry | fenced-write validation rejects lease-lost |
+| former holder commits after new acquisition | lower fencing token is rejected |
+| duplicate request_id with changed body | idempotency-conflict; no mutation |
+| service crashes after backend commit | retry resolves from idempotency record |
+| service crashes before backend commit | retry may perform the operation once |
+| backend unavailable before submission | backend-unavailable; no local success assumption |
+| timeout after submission | outcome-unknown; resolve by request_id before more work |
+| malformed/corrupt record | fail closed, quarantine/alert, no acquisition over ambiguity |
+| network partition isolates worker | renewal/commit fails closed; worker receives lease-loss cancellation |
+| counter approaches numeric limit | refuse acquisition and alert; never wrap or reuse |
+
+Acquisition fairness is not guaranteed. Starvation control, if added, must use a
+bounded explicit queue with deadlines and cannot weaken acquire-if-free.
+
+* HTTP response contract
+
+HTTP is an adapter over typed service results. Every response includes a
+=correlation_id=. Success returns only authorized non-secret fields:
+
+#+begin_src json
+{
+  "status": "success",
+  "code": "lease_acquired",
+  "correlation_id": "corr_01...",
+  "lease": {
+    "lock_identity": {
+      "tenant_id": "tenant-main",
+      "program_id": "program-a",
+      "target_namespace": "starintel-target",
+      "target_id": "target_01...",
+      "actor_name": "usernamegen",
+      "workflow_name": "default",
+      "operation_class": "default"
+    },
+    "lease_id": "lease_01...",
+    "fencing_token": 42,
+    "acquired_at": "2026-08-05T12:00:00.000Z",
+    "renewed_at": "2026-08-05T12:00:00.000Z",
+    "expires_at": "2026-08-05T12:00:30.000Z",
+    "ttl_ms": 30000,
+    "state": "active"
+  }
+}
+#+end_src
+
+Error envelopes are stable and do not expose another owner's identity, raw lock
+key, backend namespace, connection details, stack trace, or backend error:
+
+#+begin_src json
+{
+  "status": "error",
+  "code": "lease_conflict",
+  "msg": "Target lease is unavailable",
+  "correlation_id": "corr_01...",
+  "retryable": true,
+  "retry_after_ms": 250
+}
+#+end_src
+
+| HTTP | Typed code | Meaning |
+|------+------------+---------|
+| 200 | lease_acquired, lease_renewed, lease_released, lease_inspected, lease_listed, lease_revoked | completed operation |
+| 400 | invalid_lease_request | malformed identity, TTL, deadline, page, or metadata |
+| 401 | invalid_credential | authentication failed before lease access |
+| 403 | access_denied | capability or canonical scope mismatch |
+| 409 | lease_conflict | another unexpired lease owns the identity |
+| 409 | lease_lost | stale, expired, wrong-owner, wrong-instance, or wrong-token mutation |
+| 409 | idempotency_conflict | request id was reused with different inputs |
+| 408 | deadline_exceeded | bounded operation deadline elapsed before submission |
+| 429 | lease_rate_limited | bounded quota or admission control rejected work |
+| 503 | lease_backend_unavailable | backend cannot provide a safe answer |
+| 503 | lease_outcome_unknown | submission may have committed; resolve by request id |
+
+Inspect/list MAY return =404 lease_not_found= only when authorization policy says
+absence does not disclose protected existence. Mutation paths prefer
+=lease_lost= so stale clients cannot enumerate current ownership.
+
+* Audit contract
+
+Every request emits an audit event for accepted, denied, conflicted, stale,
+expired, rate-limited, backend-failed, and outcome-unknown results. Events use a
+closed =event_type= such as =target_lease_acquire=, =target_lease_renew=,
+=target_lease_release=, =target_lease_force_release=, =target_lease_revoke=,
+=target_lease_inspect=, =target_lease_list=, or =target_lease_commit_rejected=.
+
+Each event records:
+
+- backend/server timestamp and latency;
+- request, correlation, decision, trace, execution, and job identifiers;
+- principal class/id, non-secret credential id, and service instance id;
+- canonical tenant/program/target/actor/workflow/operation scope;
+- lease id and fencing token when disclosure is safe;
+- requested/effective TTL and deadline class;
+- previous and resulting state;
+- stable result code, retryability, and backend health class; and
+- administrator reason/incident id for force-release or revoke.
+
+Audit events never contain credential material, arbitrary metadata, raw request
+bodies, raw lock keys, backend commands, or another owner's private fields.
+High-risk force-release and revoke require durable high-priority audit before
+the operation reports success.
+
+* Split-brain and recovery assumptions
+
+The contract assumes a linearizable atomic lease operation and a durable,
+strictly increasing per-identity counter. A backend or topology that cannot
+provide both is unsuitable. Availability is sacrificed when ownership is
+uncertain.
+
+Network partitions may leave a worker running, but cannot grant it renewal or
+commit authority. Multiple service instances may believe they own work locally;
+only the backend-active lease and fenced-write linearization authorize a commit.
+Rabbit delivery, scheduler state, process liveness, and local clocks are never
+proof of ownership.
+
+Backup/restore MUST preserve fencing counters and idempotency evidence. Before a
+restored namespace accepts work, recovery proves each counter is greater than or
+equal to every token accepted by authoritative downstream stores. If that proof
+is unavailable, recovery allocates a documented higher epoch/range, invalidates
+all restored active leases, and requires new acquisition. Rolling a counter
+back, resurrecting active TTL values, or reusing a lease id is forbidden.
+
+Failover to another region or backend uses one authoritative writer at a time or
+a consensus system providing the same linearization. Independent active-active
+counters do not satisfy this contract. Disaster recovery and administrator
+repair are audited and fail closed until fencing monotonicity is established.
+
+* Verification matrix
+
+Issues implementing the protocol, backend, HTTP API, executor, and race suite
+MUST collectively prove:
+
+- canonical equivalent inputs produce one lock key and raw/noncanonical inputs
+  are rejected;
+- different tenant, program, actor/workflow, target, or operation class values
+  cannot collide;
+- concurrent acquire-if-free has exactly one winner;
+- every new acquisition receives a strictly greater fencing token;
+- TTL, maximum lifetime, backend time, and finite deadlines are enforced;
+- renew-if-owner and release-if-owner require every matching field;
+- stale renew, release, expiry cleanup, and administrative operations cannot
+  mutate a successor lease;
+- acquire, renew, release, force-release, and revoke retries are idempotent by
+  request id;
+- inspect and bounded list filters cannot cross authorization scope or expose
+  backend key patterns;
+- lease loss reaches the actor/job cancellation path;
+- expired and lower-token holders cannot commit at every fencing enforcement
+  point;
+- malformed records, backend partitions, timeouts, and outcome-unknown cases
+  fail closed with stable typed results;
+- force-release/revoke require elevated authority, reason, and durable audit;
+- restore/failover cannot regress the fencing high-water mark; and
+- real backend race tests observe results, not merely command success.
+
+Any implementation that executes zero tests for its required matrix is a
+failure. Deviations require a versioned contract change in this document before
+code or deployment changes.

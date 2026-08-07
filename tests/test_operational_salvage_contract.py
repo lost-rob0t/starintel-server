@@ -144,6 +144,61 @@ class OperationalSalvageContractTests(unittest.TestCase):
         self.assertIn("couchdb-persist-target-acceptance", acceptance)
         self.assertIn("couchdb-update-target-acceptance", acceptance)
 
+    def test_target_lease_semantics_design_is_complete(self) -> None:
+        design = self.text("docs/target-lease-semantics.org")
+        index = self.text("docs/index.org")
+        for section in (
+            "* Canonical lease identity and key",
+            "* Lease record contract",
+            "* State machine",
+            "* Operation contract",
+            "* Idempotency",
+            "* Time, TTL, and acquisition deadlines",
+            "* Fencing enforcement points",
+            "* Races and failure modes",
+            "* HTTP response contract",
+            "* Audit contract",
+            "* Split-brain and recovery assumptions",
+            "* Verification matrix",
+        ):
+            self.assertIn(section, design)
+        for field in (
+            "lock_key",
+            "operation_class",
+            "lease_id",
+            "owner_principal_id",
+            "owner_client_id",
+            "service_instance_id",
+            "fencing_token",
+            "acquired_at",
+            "renewed_at",
+            "expires_at",
+            "ttl_ms",
+            "maximum_lifetime_ms",
+            "execution_id",
+            "job_id",
+            "trace_id",
+            "request_id",
+            "active",
+            "expired",
+            "released",
+            "revoked",
+        ):
+            self.assertIn(field, design)
+        for operation in (
+            "acquire-if-free",
+            "renew-if-owner",
+            "release-if-owner",
+            "inspect",
+            "list-by-owner",
+            "list-by-target",
+            "list-by-program",
+            "force-release",
+            "revoke",
+        ):
+            self.assertIn(operation, design)
+        self.assertIn("target-lease-semantics.org", index)
+
     def test_view_registry_targets_checked_in_design_documents(self) -> None:
         registry = self.text("source/databases/view-registry.lisp")
         designs = {
