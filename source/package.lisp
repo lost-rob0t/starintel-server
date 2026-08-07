@@ -62,6 +62,14 @@
    #:init-event-db
    #:get-targets*
    #:get-view-docs
+   #:couchdb-view-request
+   #:couchdb-view-request-method
+   #:couchdb-view-request-uri
+   #:couchdb-view-request-body
+   #:view-query-error
+   #:view-query-error-reason
+   #:build-couchdb-view-request
+   #:*couchdb-view-transport*
    #:query-view
    #:map-view-results
    #:get-neighbors

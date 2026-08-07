@@ -9,6 +9,7 @@
     couchdb-actor-tests
     event-actor-tests
     dataset-export-tests
+    couchdb-view-request-tests
     http-boundary-tests
     http-auth-tests
     authorization-policy-tests))

@@ -28,6 +28,7 @@
      (:file "couchdb-actor-test")
      (:file "event-actor-test")
      (:file "dataset-export-test")
+     (:file "couchdb-view-request-test")
      (:file "http-boundary-test")
      (:file "http-auth-test")
      (:file "http-auth-oracle-test")
