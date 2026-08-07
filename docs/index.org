@@ -24,7 +24,8 @@ the corresponding controls are implemented.
 10. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
 11. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design contract.
 12. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative design contract.
-13. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
+13. [[file:target-lease-semantics.org][Distributed target lease semantics]] — canonical lock identity, records, state transitions, operations, idempotency, deadlines, fencing enforcement, races, errors, audit, and recovery. Normative design contract.
+14. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
 
 ** Implementation status
 
