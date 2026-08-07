@@ -20,6 +20,7 @@
    (:file "package")
    (:file "gserver-settings")
    (:file "databases/couchdb")
+   (:file "databases/view-request")
    (:file "databases/export")
    (:file "databases/outbox")
    (:file "databases/view-registry-package")
@@ -60,8 +61,6 @@
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
    (:file "main")
-   (:file "databases/export-final")
-   (:file "databases/view-registry-final")
    (:file "authorization/services-final"))
   :depends-on
   (#:starintel
@@ -74,6 +73,7 @@
    #:yason
    #:ironclad
    #:dexador
+   #:quri
    #:uuid
    #:anypool
    #:clack

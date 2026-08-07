@@ -149,115 +149,9 @@
         (log:info "Event source database ~a created successfully" event-database)))
     (log:info "Event source database ~a initialization completed" event-database)))
 
-;; TODO use query view
-(defun get-targets* (client database &rest actors)
-  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "by_actor" (jsown:to-json (jsown:new-js
-                                                                                                                                            ("keys" actors) ("include_docs" "true"))))) "rows")))
-    (when (> 0 (length jdata))
-      (loop for row in jdata
-            for doc = (jsown:val row "doc")
-            for actor = (jsown:val doc "actor")
-            collect (cons actor doc)))))
-
-
 (defun get-view-docs (jobj)
-  "Gets the doc key from view results, either pass in a json containingthe rows or the view response."
+  "Return included documents from view rows or a complete view response."
   (loop for row in (or (jsown:val-safe jobj "rows") jobj) collect (jsown:val row "doc")))
-
-
-;;; TODO make this a macro
-;;; (define-view ddoc view-name)
-;;; Would return a function like below but also has the sort-fn from the other functions calling this
-;;;
-
-
-(defun query-view (client database ddoc view-name &key (limit 50)
-                                                    (start-key nil)
-                                                    (end-key nil)
-                                                    (keys nil)
-                                                    (key nil)
-                                                    (descending nil)
-                                                    (group nil)
-                                                    (group-level 0)
-                                                    (include-docs nil)
-                                                    (update t)
-                                                    (skip 0)
-                                                    (reduce nil))
-
-
-  (let ((query-obj (jsown:new-js
-                     ("limit" limit)
-                     ("descending" (if descending :true :false))
-                     ("include_docs" (if include-docs :true :false))
-                     ("update" (case update
-                                 ("lazy" "lazy")
-                                 (nil :false)
-                                 (t :true)))
-                     ("skip" skip)
-                     ("reduce" (if reduce :true :false)))))
-    (cond
-      ((and (or start-key end-key))
-       (jsown:parse
-        (couch:get-view client database ddoc view-name
-                        (jsown:to-json (jsown:extend-js query-obj
-                                         ("start_key" start-key)
-                                         ("end_key" end-key)))
-                        :group group :group-level group-level)))
-      ((and (not start-key) (not end-key) (not keys) key)
-       (jsown:parse
-        (couch:get-view client database ddoc view-name
-                        (jsown:to-json (jsown:extend-js query-obj
-                                         ("key" key)))
-                        :group group :group-level group-level)))
-      ((and (not start-key) (not end-key) (not key) keys)
-       (jsown:parse
-        (couch:get-view client database ddoc view-name
-                        (jsown:to-json (jsown:extend-js query-obj
-                                         ("keys" keys)))
-                        :group group :group-level group-level)))
-      ((and (not start-key) (not end-key) (not key) (not keys))
-       (jsown:parse
-        (couch:get-view client database ddoc view-name
-                        (jsown:to-json query-obj)
-                        :group group :group-level group-level)))
-      (t
-       (error "Conflicting arguments were passed")))))
-
-
-(defun map-view-results (fn client database ddoc view-name &key (limit 50)
-                                                             (start-key nil)
-                                                             (end-key nil)
-                                                             (keys nil)
-                                                             (key nil)
-                                                             (descending :false)
-                                                             (group nil)
-                                                             (group-level 0)
-                                                             (include-docs :false)
-                                                             (update t)
-                                                             (skip 0)
-                                                             (reduce :false))
-  (let* ((view-results (query-view client database ddoc view-name
-                                   :limit limit
-                                   :start-key start-key
-                                   :end-key end-key
-                                   :keys keys
-                                   :key key
-                                   :descending descending
-                                   :group group
-                                   :group-level group-level
-                                   :include-docs include-docs
-                                   :update update
-                                   :skip skip
-                                   :reduce reduce))
-         (rows (jsown:val view-results "rows")))
-    (mapcar (lambda (row)
-              (let ((key (jsown:val row "key"))
-                    (value (jsown:val row "value")))
-                (if include-docs
-                    (let ((doc (jsown:val row "doc")))
-                      (funcall fn key value doc))
-                    (funcall fn key value))))
-            rows)))
 
 
 (defun get-neighbors (client database ddoc view-name n &rest keys)
@@ -267,7 +161,7 @@
           do (let ((view-results (query-view client database ddoc view-name
                                              :reduce t
                                              :group-level 4
-                                             :group :true
+                                             :group t
                                              :keys current-keys)))
                (loop for row in (jsown:val view-results "rows")
                      for key = (jsown:val row "key")
@@ -453,29 +347,6 @@
     (if include-docs
         (funcall sort-fn (get-view-docs rows))
         rows)))
-
-
-
-(defun export-by-dataset* (client database dataset path)
-  "Export all documents from CouchDB by dataset and write them to a file."
-  (let* (
-         (total-rows (reduce #'+  (loop for row in (jsown:val (query-view client database "data" "dataset_size"
-                                                                          :key dataset :reduce t :update nil) "rows")
-                                        collect (jsown:val row "value"))))
-
-         (num-pages (floor total-rows 100))
-         (total-exported 0))
-    (with-open-file (out path :direction :output :if-exists :supersede)
-      (loop for page from 1 to num-pages
-            do (let* ((skip (* page 100))
-                      (result (query-view client database "data" "dataset_size"
-                                          :key dataset :skip skip :limit 100 :include-docs t :update nil))
-                      (rows (jsown:val result "rows")))
-                 (loop for row in rows
-                       do (write-string (jsown:to-json (jsown:val row "doc")) out)
-                          (terpri out))
-                 (incf total-exported (length rows)))))
-    total-exported))
 
 ;;; dataset view
 (defun count-by-dtype (client database &key (limit 50)

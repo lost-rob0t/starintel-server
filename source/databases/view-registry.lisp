@@ -172,8 +172,7 @@
   (when (and reduce include-docs)
     (error 'view-registry-error
            :reason "reduced view requests cannot include documents"))
-  (when (and (or group
-                 (and group-level (plusp group-level)))
+  (when (and (or group group-level)
              (not reduce))
     (error 'view-registry-error
            :reason "group/group-level requires reduce=true"))
@@ -181,19 +180,20 @@
 
 (defun view-query-arguments
     (arguments reduce include-docs group group-level)
-  (list
-   :limit (view-plist-value arguments :limit 50)
-   :start-key (view-plist-value arguments :start-key nil)
-   :end-key (view-plist-value arguments :end-key nil)
-   :keys (view-plist-value arguments :keys nil)
-   :key (view-plist-value arguments :key nil)
-   :descending (view-plist-value arguments :descending nil)
-   :include-docs include-docs
-   :update (view-plist-value arguments :update t)
-   :skip (view-plist-value arguments :skip 0)
-   :reduce reduce
-   :group group
-   :group-level (or group-level 0)))
+  (append
+   (list
+    :limit (view-plist-value arguments :limit 50)
+    :start-key (view-plist-value arguments :start-key nil)
+    :end-key (view-plist-value arguments :end-key nil)
+    :keys (view-plist-value arguments :keys nil)
+    :key (view-plist-value arguments :key nil)
+    :descending (view-plist-value arguments :descending nil)
+    :include-docs include-docs
+    :update (view-plist-value arguments :update t)
+    :skip (view-plist-value arguments :skip 0)
+    :reduce reduce
+    :group group)
+   (when group-level (list :group-level group-level))))
 
 (defun view-row-documents (rows)
   (loop for row in rows
@@ -214,7 +214,7 @@
            (group
              (view-plist-value arguments :group (and reduce t)))
            (group-level
-             (view-plist-value arguments :group-level 0)))
+             (view-plist-value arguments :group-level nil)))
       (validate-view-result-shape
        spec reduce include-docs group group-level)
       (let* ((response
@@ -291,48 +291,21 @@
           for actor = (star.documents:document-value document "actor")
           collect (cons actor document))))
 
-(defun export-by-dataset* (client database dataset path)
-  "Export map rows from data/by_dataset; never mix reduced and document rows."
-  (let ((total-exported 0)
-        (skip 0)
-        (page-size 100))
-    (with-open-file
-        (stream path :direction :output :if-exists :supersede)
-      (loop
-        for documents =
-          (documents-by-dataset
-           client database
-           :key dataset
-           :limit page-size
-           :skip skip
-           :include-docs t
-           :reduce nil)
-        while documents
-        do
-           (dolist (document documents)
-             (write-string (jsown:to-json document) stream)
-             (terpri stream)
-             (incf total-exported))
-           (incf skip page-size)))
-    total-exported))
-
-(defun read-view-registry-document (path)
-  (jsown:with-injective-reader
-    (jsown:parse
-     (uiop:read-file-string path))))
-
 (defun checked-in-design-document-map ()
-  (let ((documents (make-hash-table :test #'equal))
-        (directory
-          (uiop:merge-pathnames*
-           "views/"
-           (asdf:system-source-directory :starintel-gserver))))
-    (dolist (path (uiop:directory-files directory) documents)
-      (when (string-equal "json" (pathname-type path))
-        (let* ((document (read-view-registry-document path))
-               (id (jsown:val document "_id"))
-               (name (subseq id (length "_design/"))))
-          (setf (gethash name documents) document))))))
+  "Return the design documents embedded in the runtime image."
+  (let ((documents (make-hash-table :test #'equal)))
+    (dolist (json star:*couchdb-views* documents)
+      (let* ((document
+               (jsown:with-injective-reader
+                 (jsown:parse json)))
+             (id (jsown:val-safe document "_id")))
+        (unless (and (stringp id)
+                     (uiop:string-prefix-p "_design/" id))
+          (error 'view-registry-error
+                 :reason
+                 (format nil "embedded view document has invalid _id: ~s" id)))
+        (setf (gethash (subseq id (length "_design/")) documents)
+              document)))))
 
 (defun design-document-has-view-p (document view-name)
   (let ((views (jsown:val-safe document "views")))
