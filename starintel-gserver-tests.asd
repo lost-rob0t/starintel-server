@@ -29,6 +29,7 @@
      (:file "event-actor-test")
      (:file "dataset-export-test")
      (:file "couchdb-view-request-test")
+     (:file "lease-store-contract-test")
      (:file "http-boundary-test")
      (:file "http-auth-test")
      (:file "http-auth-oracle-test")
