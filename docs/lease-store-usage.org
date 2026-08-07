@@ -1,0 +1,235 @@
+#+title: Using the target lease-store protocol
+#+options: toc:2
+#+status: IMPLEMENTED
+
+* Current availability
+
+The =star.leases= package provides the backend-neutral protocol merged by issue
+#30.  Its in-memory implementation is intended for tests, examples, and local
+contract development.  It does not coordinate separate processes and must not
+be used as a production distributed lock.
+
+Issue #31 is adding the first production adapter backed by Valkey.  Until that
+adapter lands, the HTTP lease routes still return =501= and there is no supported
+production lease-store constructor.
+
+* Load the package
+
+The package is part of the main ASDF system.
+
+#+begin_src lisp
+(asdf:load-system :starintel-gserver)
+#+end_src
+
+Deadlines use Unix milliseconds.  Every operation requires a finite deadline
+and a non-empty request identifier.
+
+#+begin_src lisp
+(defun unix-milliseconds ()
+  (* 1000 (- (get-universal-time) 2208988800)))
+
+(defun deadline-after (milliseconds)
+  (+ (unix-milliseconds) milliseconds))
+#+end_src
+
+In production, request identifiers must be unique for the logical operation.
+Reusing one identifier with different inputs produces
+=:idempotency-conflict=.
+
+* Build the canonical lease identity
+
+Callers provide the seven logical identity fields, never a raw backend key.
+Components are normalized and validated before the deterministic key is
+derived.
+
+#+begin_src lisp
+(defparameter *target-identity*
+  (star.leases:make-lease-identity
+   :tenant-id "tenant-main"
+   :program-id "continuous-research"
+   :target-namespace "domain"
+   :target-id "example.org"
+   :actor-name "subfinder"
+   :workflow-name "default"
+   :operation-class "default"))
+
+(star.leases:canonical-target-lock-key *target-identity*)
+;; => "starintel:target-lease:v1:..."
+#+end_src
+
+Equivalent normalized identities produce the same opaque key.  Do not persist
+or construct a second form of this key in actor, HTTP, or application code.
+
+* Exercise the protocol with the test backend
+
+Create a store and place it under a runtime so ownership and shutdown are
+explicit.
+
+#+begin_src lisp
+(defparameter *lease-store*
+  (star.leases:make-memory-lease-store))
+
+(defparameter *lease-runtime*
+  (star.leases:make-lease-runtime *lease-store*))
+#+end_src
+
+Acquire is non-blocking.  A successful result contains a typed lease record;
+contention returns =:conflict= rather than a backend boolean.
+
+#+begin_src lisp
+(defparameter *acquire-result*
+  (star.leases:acquire-lease
+   *lease-store*
+   *target-identity*
+   :owner-principal-id "service:research-worker"
+   :owner-client-id "worker-client-01"
+   :owner-credential-id "credential-01"
+   :service-instance-id "worker-instance-01"
+   :ttl-ms 30000
+   :maximum-lifetime-ms 300000
+   :execution-id "execution-01"
+   :job-id "job-01"
+   :trace-id "trace-01"
+   :metadata (jsown:new-js ("purpose" "domain-enrichment"))
+   :deadline (deadline-after 5000)
+   :request-id "acquire-request-01"))
+
+(case (star.leases:lease-outcome-code *acquire-result*)
+  (:acquired
+   (star.leases:lease-outcome-lease *acquire-result*))
+  (:conflict
+   :already-owned)
+  (:timeout
+   :deadline-exceeded)
+  ((:backend-unavailable :outcome-unknown)
+   :retry-or-resolve-by-request-id)
+  (otherwise
+   *acquire-result*))
+#+end_src
+
+The outcome code is a closed keyword enum, so =case= is appropriate here.  Do
+not convert arbitrary external strings to symbols and dispatch on them.
+
+* Renew the exact lease
+
+Renewal needs the lease identifier, principal, service instance, and fencing
+token returned by acquisition.  It cannot change ownership or revive an expired
+lease.
+
+#+begin_src lisp
+(let* ((record (star.leases:lease-outcome-lease *acquire-result*))
+       (result
+         (star.leases:renew-lease
+          *lease-store*
+          *target-identity*
+          :lease-id (star.leases:lease-record-lease-id record)
+          :owner-principal-id "service:research-worker"
+          :service-instance-id "worker-instance-01"
+          :fencing-token (star.leases:lease-record-fencing-token record)
+          :ttl-ms 30000
+          :deadline (deadline-after 5000)
+          :request-id "renew-request-01")))
+  (star.leases:lease-outcome-code result))
+;; => :renewed
+#+end_src
+
+Treat =:stale-token=, =:not-owner=, and =:expired= as lease loss.  The worker
+must stop producing authoritative effects; a later issue wires the same fence
+into target execution and commits.
+
+* Inspect and list active leases
+
+Reads still carry a finite deadline and correlation/request identifier.
+
+#+begin_src lisp
+(star.leases:get-lease
+ *lease-store*
+ *target-identity*
+ :deadline (deadline-after 5000)
+ :request-id "inspect-request-01")
+
+(star.leases:list-leases
+ *lease-store*
+ :owner-principal-id "service:research-worker"
+ :program-id "continuous-research"
+ :deadline (deadline-after 5000)
+ :request-id "list-request-01")
+#+end_src
+
+=get-lease= returns the record in =lease-outcome-lease=.  =list-leases= returns
+records in =lease-outcome-leases=.  Always check =lease-outcome-code= before
+reading either slot.
+
+* Release without deleting a successor
+
+Release uses the same exact ownership tuple as renewal.  A delayed release from
+an old holder returns a stale outcome and cannot delete a newer lease.
+
+#+begin_src lisp
+(let ((record (star.leases:lease-outcome-lease *acquire-result*)))
+  (star.leases:release-lease
+   *lease-store*
+   *target-identity*
+   :lease-id (star.leases:lease-record-lease-id record)
+   :owner-principal-id "service:research-worker"
+   :service-instance-id "worker-instance-01"
+   :fencing-token (star.leases:lease-record-fencing-token record)
+   :deadline (deadline-after 5000)
+   :request-id "release-request-01"))
+#+end_src
+
+* Serialize a record at a persistence boundary
+
+The JSON representation is explicitly versioned and validates that its lock key
+matches its canonical identity when decoded.
+
+#+begin_src lisp
+(let* ((record (star.leases:lease-outcome-lease *acquire-result*))
+       (json (star.leases:serialize-lease-record record)))
+  (star.leases:deserialize-lease-record json))
+#+end_src
+
+Do not log serialized records indiscriminately: they contain credential
+identifiers and lease metadata even though they must never contain credential
+secrets.
+
+* Close the owned runtime
+
+Applications that create a lease runtime must close it during shutdown.  New
+backend operations are rejected after closure.
+
+#+begin_src lisp
+(star.leases:close-lease-runtime
+ *lease-runtime*
+ :deadline (deadline-after 5000)
+ :request-id "close-runtime-01")
+#+end_src
+
+For scoped use, close in =unwind-protect= so errors do not leak owned backend
+resources.
+
+#+begin_src lisp
+(let* ((store (star.leases:make-memory-lease-store))
+       (runtime (star.leases:make-lease-runtime store)))
+  (unwind-protect
+       ;; Use STORE only through the STAR.LEASES protocol here.
+       (star.leases:backend-health
+        store
+        :deadline (deadline-after 5000)
+        :request-id "health-request-01")
+    (star.leases:close-lease-runtime
+     runtime
+     :deadline (deadline-after 5000)
+     :request-id "close-request-01")))
+#+end_src
+
+* Production integration boundary
+
+Application code should depend only on =lease-store= operations and accept the
+store or =lease-runtime= as an owned dependency.  It should not import the
+in-memory class or a future Valkey class.  The service composition root chooses
+the concrete backend, while actors, HTTP routes, and target execution retain the
+same protocol calls and typed outcomes.
+
+See [[file:target-lease-semantics.org][Distributed target lease semantics]] for the normative identity, fencing,
+deadline, recovery, and commit rules.

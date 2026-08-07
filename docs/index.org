@@ -25,7 +25,12 @@ the corresponding controls are implemented.
 11. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design contract.
 12. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative design contract.
 13. [[file:target-lease-semantics.org][Distributed target lease semantics]] — canonical lock identity, records, state transitions, operations, idempotency, deadlines, fencing enforcement, races, errors, audit, and recovery. Normative design contract.
-14. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
+14. [[file:lease-store-usage.org][Lease-store protocol usage]] — Common Lisp examples for canonical identity, acquire, renew, inspect, list, release, serialization, typed outcomes, and owned shutdown.
+15. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
+
+** Development workflow
+
+- [[file:next-implementation-loop-prompt.org][Next ordered implementation-loop prompt]] — copy-ready continuation prompt for issue #31 and the transition to #32.
 
 ** Implementation status
 
