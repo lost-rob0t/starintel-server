@@ -199,6 +199,41 @@ class OperationalSalvageContractTests(unittest.TestCase):
             self.assertIn(operation, design)
         self.assertIn("target-lease-semantics.org", index)
 
+    def test_lease_protocol_is_backend_neutral(self) -> None:
+        protocol = self.text("source/leases/protocol.lisp")
+        memory = self.text("source/leases/memory-store.lisp")
+        for operation in (
+            "acquire-lease",
+            "renew-lease",
+            "release-lease",
+            "get-lease",
+            "list-leases",
+            "revoke-lease",
+            "backend-health",
+            "close-lease-store",
+        ):
+            self.assertIn(f"defgeneric {operation}", protocol)
+            self.assertIn(f"defmethod {operation}", memory)
+        for outcome in (
+            ":backend-unavailable",
+            ":timeout",
+            ":conflict",
+            ":stale-token",
+            ":not-owner",
+            ":expired",
+            ":outcome-unknown",
+        ):
+            self.assertIn(outcome, protocol)
+        for relative in (
+            "source/actors.lisp",
+            "source/target-dispatch.lisp",
+            "source/frontends/http-authorization-routes.lisp",
+        ):
+            source = self.text(relative).lower()
+            self.assertNotIn("memory-lease-store", source)
+            self.assertNotIn("valkey", source)
+            self.assertNotIn("redis", source)
+
     def test_view_registry_targets_checked_in_design_documents(self) -> None:
         registry = self.text("source/databases/view-registry.lisp")
         designs = {

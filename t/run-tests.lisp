@@ -10,6 +10,7 @@
     event-actor-tests
     dataset-export-tests
     couchdb-view-request-tests
+    lease-store-contract-tests
     http-boundary-tests
     http-auth-tests
     authorization-policy-tests))
