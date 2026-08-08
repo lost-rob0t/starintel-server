@@ -580,17 +580,32 @@
     (finish-valkey-operation store :get request-id response failure)))
 
 (defun valkey-record-matches-p (record owner-principal-id target-id program-id)
+  "Filters are already normalized (or nil for omitted). Compare directly."
   (and (or (null owner-principal-id)
            (string= owner-principal-id
                     (lease-record-owner-principal-id record)))
        (or (null target-id)
-           (string= (normalize-identity-component "target-id" target-id)
+           (string= target-id
                     (lease-identity-target-id
                      (lease-record-identity record))))
        (or (null program-id)
-           (string= (normalize-identity-component "program-id" program-id)
+           (string= program-id
                     (lease-identity-program-id
                      (lease-record-identity record))))))
+
+(defun record-currently-active-p (record server-time)
+  "True when SERVER-TIME (a TIME response: list of (seconds microseconds)
+strings, or integer ms) is before the record's logical expires_at. Used by
+list-leases to exclude logically expired surviving keys, consistent with
+get-lease."
+  (let* ((now-ms
+           (cond
+             ((and (consp server-time) (rest server-time))
+              (+ (* (parse-integer (first server-time)) 1000)
+                 (floor (parse-integer (second server-time)) 1000)))
+             ((integerp server-time) server-time)
+             (t 0))))
+    (< now-ms (lease-record-expires-at record))))
 
 (defun valkey-test-command (store deadline &rest arguments)
   (multiple-value-bind (response failure)
@@ -606,43 +621,54 @@
                (valid-lease-component-filter-p target-id)
                (valid-lease-component-filter-p program-id))
     (return-from list-leases (valkey-outcome :invalid-request)))
-  (let ((normalized-owner (or owner-principal-id ""))
+  (let ((normalized-owner owner-principal-id)
         (normalized-target
           (if target-id
               (normalize-identity-component "target-id" target-id)
-              ""))
+              nil))
         (normalized-program
           (if program-id
               (normalize-identity-component "program-id" program-id)
-              ""))
-        (pattern (format nil "~a:*:lease" (valkey-store-key-prefix store))))
+              nil)))
     (handler-case
         (let ((cursor "0")
-              (records nil))
+              (records nil)
+              (pattern (format nil "~a:*:lease" (valkey-store-key-prefix store))))
           (loop
-            (multiple-value-bind (response failure)
-                (call-valkey-request
-                 store deadline nil
-                 (list "EVAL" +valkey-list-active-script+ 0
-                       cursor pattern "100"
-                       normalized-owner normalized-target normalized-program))
-              (when failure
-                (return-from list-leases
-                  (emit-valkey-hooks store :list request-id
-                                     (valkey-outcome failure))))
-              (let ((next-cursor (first response))
-                    (encoded-records (second response)))
-                (dolist (encoded encoded-records)
+            (let ((page
+                    (valkey-test-command
+                     store deadline "SCAN" cursor "MATCH" pattern "COUNT" 100)))
+              (setf cursor (first page))
+              (dolist (key (second page))
+                (let ((encoded (valkey-test-command store deadline "GET" key)))
                   (when (and (stringp encoded) (plusp (length encoded)))
+                    ;; Corrupt-JSON defense: a malformed record is skipped,
+                    ;; not signaled.
                     (let ((record
                             (handler-case
                                 (deserialize-lease-record encoded)
                               (error () nil))))
                       (when record
-                        (push record records)))))
-                (setf cursor next-cursor))
-              (when (string= cursor "0")
-                (return))))
+                        ;; Corrupt-state guards, cluster-safe: each command
+                        ;; targets one key. A no-TTL key (corrupt) or a
+                        ;; logically expired surviving key (now >= expires_at)
+                        ;; is excluded from the active list, consistent with
+                        ;; get-lease.
+                        (let ((ttl
+                                (valkey-test-command
+                                 store deadline "PTTL" key))
+                              (server-time
+                                (valkey-test-command
+                                 store deadline "TIME")))
+                          (when (and (integerp ttl)
+                                     (/= ttl -1)
+                                     (record-currently-active-p
+                                      record server-time))
+                            (when (valkey-record-matches-p
+                                   record normalized-owner
+                                   normalized-target normalized-program)
+                              (push record records))))))))))
+            (when (string= cursor "0") (return)))
           (emit-valkey-hooks
            store :list request-id
            (valkey-outcome

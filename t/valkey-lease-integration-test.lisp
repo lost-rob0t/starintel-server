@@ -488,6 +488,43 @@ leases. The list script applies the same corrupt-state rules as get-lease."
         (is (eq :listed (star.leases:lease-outcome-code corrupt-list)))
         (is (= 0 (length (star.leases:lease-outcome-leases corrupt-list))))))))
 
+(test corrupt-backend-record-returns-typed-outcome-not-raw-error
+  "A syntactically valid but contract-invalid record (canonical identity
+mismatch) must return :backend-unavailable from the public API, not signal a
+raw Lisp error. Exercises valkey-script-outcome's handler-case."
+  (with-real-valkey-store (store :label "corrupt-record")
+    (let* ((identity (real-valkey-identity "corrupt-record-target"))
+           (first
+             (acquire-real-valkey-lease store identity "cr-a" "owner-a"))
+           (record (star.leases:lease-outcome-lease first))
+           (active-key (star.leases::valkey-active-key store identity))
+           (original-json
+             (star.leases::valkey-test-command
+              store (real-deadline) "GET" active-key)))
+      (is (eq :acquired (star.leases:lease-outcome-code first)))
+      ;; Tamper: replace the stored lock_key so the record's canonical identity
+      ;; no longer matches. The JSON is syntactically valid but contract-invalid.
+      (let ((tampered (jsown:parse original-json)))
+        (setf (jsown:val tampered "lock_key")
+              "starintel:target-lease:v1:tampereddeadbeef")
+        (star.leases::valkey-test-command
+         store (real-deadline) "SET" active-key
+         (jsown:to-json tampered) "PX" 5000))
+      ;; get-lease must return :backend-unavailable, not signal.
+      (let ((result
+              (star.leases:get-lease
+               store identity :deadline (real-deadline)
+               :request-id "cr-get")))
+        (is (eq :backend-unavailable
+                (star.leases:lease-outcome-code result)))
+        (is-false (star.leases:lease-outcome-lease result)))
+      ;; list-leases must also skip the corrupt record without signaling.
+      (let ((listed
+              (star.leases:list-leases
+               store :deadline (real-deadline) :request-id "cr-list")))
+        (is (eq :listed (star.leases:lease-outcome-code listed)))
+        (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
+
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
   (with-real-valkey-store (store :label "concurrency" :pool-size 16)
     (let ((identity (real-valkey-identity "concurrent-target"))
