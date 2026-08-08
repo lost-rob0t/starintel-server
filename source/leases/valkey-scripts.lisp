@@ -254,3 +254,47 @@ local now = (tonumber(clock[1]) * 1000) + math.floor(tonumber(clock[2]) / 1000)
 if now >= tonumber(record.expires_at) then return 'expired' end
 redis.call('SET', KEYS[2], ARGV[5])
 return 'committed'")
+
+(defparameter +valkey-list-active-script+
+  "local cursor = ARGV[1]
+local pattern = ARGV[2]
+local count = tonumber(ARGV[3])
+local owner_filter = ARGV[4]
+local target_filter = ARGV[5]
+local program_filter = ARGV[6]
+local page = redis.call('SCAN', cursor, 'MATCH', pattern, 'COUNT', count)
+local next_cursor = page[1]
+local keys = page[2]
+local clock = redis.call('TIME')
+local now = (tonumber(clock[1]) * 1000) + math.floor(tonumber(clock[2]) / 1000)
+local results = {}
+for i, key in ipairs(keys) do
+  local encoded = redis.call('GET', key)
+  if encoded then
+    local ok, record = pcall(cjson.decode, encoded)
+    if ok and type(record) == 'table' then
+      local expires_at = tonumber(record.expires_at)
+      if expires_at then
+        local ttl = redis.call('PTTL', key)
+        if ttl ~= -1 and now < expires_at then
+          local matches = true
+          if owner_filter ~= '' and record.owner_principal_id ~= owner_filter then
+            matches = false
+          end
+          if matches and target_filter ~= '' then
+            local id = record.identity
+            if not id or id.target_id ~= target_filter then matches = false end
+          end
+          if matches and program_filter ~= '' then
+            local id = record.identity
+            if not id or id.program_id ~= program_filter then matches = false end
+          end
+          if matches then
+            table.insert(results, encoded)
+          end
+        end
+      end
+    end
+  end
+end
+return {next_cursor, results}")

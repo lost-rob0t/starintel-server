@@ -450,6 +450,44 @@ The no-TTL guard does not break the normal path."
                    (star.leases::valkey-test-command
                     store (real-deadline) "GET" commit-key))))))
 
+(test list-leases-excludes-corrupt-and-expired-state
+  "list-leases must not return no-TTL or logically expired keys as active
+leases. The list script applies the same corrupt-state rules as get-lease."
+  (with-real-valkey-store (store :label "list-corrupt")
+    (let* ((identity-a (real-valkey-identity "list-corrupt-a"))
+           (identity-b (real-valkey-identity "list-corrupt-b"))
+           (active-key-a (star.leases::valkey-active-key store identity-a))
+           (active-key-b (star.leases::valkey-active-key store identity-b)))
+      ;; Acquire two valid leases.
+      (acquire-real-valkey-lease store identity-a "lc-a" "owner-a"
+                                 :ttl-ms 5000 :maximum-lifetime-ms 10000)
+      (acquire-real-valkey-lease store identity-b "lc-b" "owner-b"
+                                 :ttl-ms 200 :maximum-lifetime-ms 1000)
+      ;; list-leases returns both while active.
+      (let ((valid-list
+              (star.leases:list-leases
+               store :deadline (real-deadline) :request-id "lc-list-valid")))
+        (is (eq :listed (star.leases:lease-outcome-code valid-list)))
+        (is (= 2 (length (star.leases:lease-outcome-leases valid-list)))))
+      ;; Corrupt lease A: remove TTL.
+      (let ((json-a
+              (star.leases::valkey-test-command
+               store (real-deadline) "GET" active-key-a)))
+        (star.leases::valkey-test-command
+         store (real-deadline) "SET" active-key-a json-a))
+      (is (= -1
+             (star.leases::valkey-test-command
+              store (real-deadline) "PTTL" active-key-a)))
+      ;; Wait for lease B to logically expire.
+      (sleep 0.3)
+      ;; list-leases must return zero active leases: A is no-TTL (corrupt),
+      ;; B is logically expired.
+      (let ((corrupt-list
+              (star.leases:list-leases
+               store :deadline (real-deadline) :request-id "lc-list-corrupt")))
+        (is (eq :listed (star.leases:lease-outcome-code corrupt-list)))
+        (is (= 0 (length (star.leases:lease-outcome-leases corrupt-list))))))))
+
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
   (with-real-valkey-store (store :label "concurrency" :pool-size 16)
     (let ((identity (real-valkey-identity "concurrent-target"))

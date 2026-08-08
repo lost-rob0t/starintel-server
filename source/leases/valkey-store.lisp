@@ -440,12 +440,16 @@
 (defun valkey-script-outcome (response)
   (let* ((code (and response (valkey-code (first response))))
          (encoded (and (second response) (second response)))
+         (has-encoded (and (stringp encoded) (plusp (length encoded))))
          (record
-           (when (and (stringp encoded) (plusp (length encoded)))
-             (deserialize-lease-record encoded))))
-    (if code
-        (valkey-outcome code :lease record)
-        (valkey-outcome :backend-unavailable))))
+           (when has-encoded
+             (handler-case
+                 (deserialize-lease-record encoded)
+               (error () nil)))))
+    (cond
+      ((not code) (valkey-outcome :backend-unavailable))
+      ((and has-encoded (not record)) (valkey-outcome :backend-unavailable))
+      (t (valkey-outcome code :lease record)))))
 
 (defun valkey-eval (store deadline script keys arguments)
   (call-valkey-request
@@ -602,30 +606,50 @@
                (valid-lease-component-filter-p target-id)
                (valid-lease-component-filter-p program-id))
     (return-from list-leases (valkey-outcome :invalid-request)))
-  (handler-case
-      (let ((cursor "0")
-            (records nil)
-            (pattern (format nil "~a:*:lease" (valkey-store-key-prefix store))))
-        (loop
-          (let ((page
-                  (valkey-test-command
-                   store deadline "SCAN" cursor "MATCH" pattern "COUNT" 100)))
-            (setf cursor (first page))
-            (dolist (key (second page))
-              (let ((encoded (valkey-test-command store deadline "GET" key)))
-                (when encoded
-                  (let ((record (deserialize-lease-record encoded)))
-                    (when (valkey-record-matches-p
-                           record owner-principal-id target-id program-id)
-                      (push record records)))))))
-          (when (string= cursor "0") (return)))
-        (emit-valkey-hooks
-         store :list request-id
-         (valkey-outcome
-          :listed :leases (sort records #'string< :key #'lease-record-lock-key))))
-    (error ()
-      (emit-valkey-hooks store :list request-id
-                         (valkey-outcome :backend-unavailable)))))
+  (let ((normalized-owner (or owner-principal-id ""))
+        (normalized-target
+          (if target-id
+              (normalize-identity-component "target-id" target-id)
+              ""))
+        (normalized-program
+          (if program-id
+              (normalize-identity-component "program-id" program-id)
+              ""))
+        (pattern (format nil "~a:*:lease" (valkey-store-key-prefix store))))
+    (handler-case
+        (let ((cursor "0")
+              (records nil))
+          (loop
+            (multiple-value-bind (response failure)
+                (call-valkey-request
+                 store deadline nil
+                 (list "EVAL" +valkey-list-active-script+ 0
+                       cursor pattern "100"
+                       normalized-owner normalized-target normalized-program))
+              (when failure
+                (return-from list-leases
+                  (emit-valkey-hooks store :list request-id
+                                     (valkey-outcome failure))))
+              (let ((next-cursor (first response))
+                    (encoded-records (second response)))
+                (dolist (encoded encoded-records)
+                  (when (and (stringp encoded) (plusp (length encoded)))
+                    (let ((record
+                            (handler-case
+                                (deserialize-lease-record encoded)
+                              (error () nil))))
+                      (when record
+                        (push record records)))))
+                (setf cursor next-cursor))
+              (when (string= cursor "0")
+                (return))))
+          (emit-valkey-hooks
+           store :list request-id
+           (valkey-outcome
+            :listed :leases (sort records #'string< :key #'lease-record-lock-key))))
+      (error ()
+        (emit-valkey-hooks store :list request-id
+                           (valkey-outcome :backend-unavailable))))))
 
 (defmethod revoke-lease
     ((store valkey-lease-store) identity

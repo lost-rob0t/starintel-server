@@ -8,8 +8,8 @@
   (let ((normalized
           (string-downcase
            (string-trim '(#\Space #\Tab #\Newline #\Return) value))))
-    (unless (and (<= (length normalized) 256)
-                 (plusp (length normalized))
+    (unless (and (plusp (length normalized))
+                 (<= (utf-8-byte-length normalized) +lease-identifier-max-bytes+)
                  (alphanumericp (char normalized 0))
                  (every (lambda (character)
                           (or (alphanumericp character)

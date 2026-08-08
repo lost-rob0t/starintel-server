@@ -548,4 +548,16 @@ malformed filters return :invalid-request. Both backends behave equivalently."
             (star.leases:lease-outcome-code
              (star.leases:list-leases
               store :program-id oversized
-              :deadline 2000 :request-id "list-oversized-program"))))))
+              :deadline 2000 :request-id "list-oversized-program"))))
+    ;; Multibyte target-id filter is rejected (byte bound, not character bound).
+    (is (eq :invalid-request
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :target-id multibyte-over
+              :deadline 2000 :request-id "list-multibyte-target"))))
+    ;; Multibyte program-id filter is rejected (byte bound, not character bound).
+    (is (eq :invalid-request
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :program-id multibyte-over
+              :deadline 2000 :request-id "list-multibyte-program"))))))
