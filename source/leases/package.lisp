@@ -43,6 +43,17 @@
    #:lease-outcome-leases
    #:lease-outcome-retryable-p
    #:lease-outcome-detail
+   #:+retryable-lease-outcome-codes+
+   #:retryable-lease-outcome-code-p
+   #:+lease-identifier-max-bytes+
+   #:+lease-reason-max-bytes+
+   #:+lease-metadata-max-bytes+
+   #:+lease-metadata-max-keys+
+   #:utf-8-byte-length
+   #:valid-lease-identifier-p
+   #:valid-lease-reason-p
+   #:lease-metadata-object-p
+   #:valid-lease-metadata-p
    #:lease-store
    #:memory-lease-store
    #:make-memory-lease-store

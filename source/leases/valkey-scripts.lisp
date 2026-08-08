@@ -21,10 +21,19 @@ local current = redis.call('GET', KEYS[1])
 if current then
   if cjson.decode(current).lock_key ~= ARGV[3] then error('lease identity mismatch') end
   local ttl = redis.call('PTTL', KEYS[1])
+  if ttl == -1 then
+    -- An active key with no TTL is corrupt/inconsistent state, not an expired
+    -- lease. Fail closed: do not delete, do not increment the fencing counter,
+    -- and do not replace the existing record. The stable backend error result
+    -- is returned so raw Valkey state never crosses the adapter boundary.
+    redis.call('SET', KEYS[3], cjson.encode({digest=ARGV[1], code='backend-unavailable'}), 'PX', ARGV[2])
+    return {'backend-unavailable', '', '-1'}
+  end
   if ttl > 0 then
     redis.call('SET', KEYS[3], cjson.encode({digest=ARGV[1], code='conflict', record=current}), 'PX', ARGV[2])
     return {'conflict', current, tostring(ttl)}
   end
+  -- ttl == 0 (expired) or ttl == -2 (key removed concurrently): reclaimable.
   redis.call('DEL', KEYS[1])
 end
 local clock = redis.call('TIME')

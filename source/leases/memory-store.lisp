@@ -48,7 +48,7 @@
    :code code
    :lease lease
    :leases leases
-   :retryable-p retryable-p
+   :retryable-p (if retryable-p t (retryable-lease-outcome-code-p code))
    :detail detail))
 
 (defun snapshot-record (record)
@@ -81,8 +81,7 @@
 
 (defun valid-request-shape-p (deadline request-id)
   (and (integerp deadline)
-       (stringp request-id)
-       (plusp (length request-id))))
+       (valid-lease-identifier-p request-id)))
 
 (defun call-memory-operation (store operation deadline request-id function)
   (let ((result
@@ -143,18 +142,18 @@
                     ttl-ms maximum-lifetime-ms execution-id job-id trace-id
                     metadata))
             (prior (idempotent-result store id-key digest)))
-       (cond
-         (prior prior)
-         ((not
-           (and (every (lambda (value)
-                         (and (stringp value) (plusp (length value))))
-                       (list owner-principal-id owner-client-id
-                             owner-credential-id service-instance-id
-                             execution-id job-id trace-id))
-                (valid-positive-integer-p ttl-ms)
-                (valid-positive-integer-p maximum-lifetime-ms)
-                (<= ttl-ms maximum-lifetime-ms)))
-          (outcome :invalid-request))
+        (cond
+          (prior prior)
+          ((not
+            (and (every #'valid-lease-identifier-p
+                        (list owner-principal-id owner-client-id
+                              owner-credential-id service-instance-id
+                              execution-id job-id trace-id))
+                 (valid-lease-metadata-p metadata)
+                 (valid-positive-integer-p ttl-ms)
+                 (valid-positive-integer-p maximum-lifetime-ms)
+                 (<= ttl-ms maximum-lifetime-ms)))
+           (outcome :invalid-request))
          (t
           (multiple-value-bind (active expired)
               (record-for-key store key now)
@@ -219,41 +218,40 @@
             (digest
               (list lease-id service-instance-id fencing-token ttl-ms))
             (prior (idempotent-result store id-key digest)))
-       (cond
-         (prior prior)
-         ((not
-           (and (every (lambda (value)
-                         (and (stringp value) (plusp (length value))))
-                       (list lease-id owner-principal-id service-instance-id))
-                (valid-positive-integer-p fencing-token)
-                (valid-positive-integer-p ttl-ms)))
-          (outcome :invalid-request))
-         (t
-          (multiple-value-bind (record expired)
-              (record-for-key store key now)
-            (let ((result
-                    (cond
-                      (expired (outcome :expired :lease expired))
-                      ((null record) (outcome :expired))
-                      ((ownership-outcome
-                        record lease-id owner-principal-id service-instance-id
-                        fencing-token))
-                      (t
-                       (let ((new-expiry
-                               (min (+ now ttl-ms)
-                                    (+ (lease-record-acquired-at record)
-                                       (lease-record-maximum-lifetime-ms
-                                        record)))))
-                         (if (<= new-expiry now)
-                             (outcome :expired)
-                             (progn
-                               (setf (lease-record-renewed-at record) now
-                                     (lease-record-expires-at record) new-expiry
-                                     (lease-record-ttl-ms record) ttl-ms)
-                               (outcome
-                                :renewed
-                                :lease (snapshot-record record)))))))))
-              (remember-result store id-key digest result)))))))))
+        (cond
+          (prior prior)
+          ((not
+            (and (every #'valid-lease-identifier-p
+                        (list lease-id owner-principal-id service-instance-id))
+                 (valid-positive-integer-p fencing-token)
+                 (valid-positive-integer-p ttl-ms)))
+           (outcome :invalid-request))
+          (t
+           (multiple-value-bind (record expired)
+               (record-for-key store key now)
+             (let ((result
+                     (cond
+                       (expired (outcome :expired :lease expired))
+                       ((null record) (outcome :expired))
+                       ((ownership-outcome
+                         record lease-id owner-principal-id service-instance-id
+                         fencing-token))
+                       (t
+                        (let ((new-expiry
+                                (min (+ now ttl-ms)
+                                     (+ (lease-record-acquired-at record)
+                                        (lease-record-maximum-lifetime-ms
+                                         record)))))
+                          (if (<= new-expiry now)
+                              (outcome :expired)
+                              (progn
+                                (setf (lease-record-renewed-at record) now
+                                      (lease-record-expires-at record) new-expiry
+                                      (lease-record-ttl-ms record) ttl-ms)
+                                (outcome
+                                 :renewed
+                                 :lease (snapshot-record record)))))))))
+               (remember-result store id-key digest result)))))))))
 
 (defmethod release-lease
     ((store memory-lease-store) identity
@@ -267,30 +265,29 @@
               (idempotency-key :release key owner-principal-id request-id))
             (digest (list lease-id service-instance-id fencing-token))
             (prior (idempotent-result store id-key digest)))
-       (cond
-         (prior prior)
-         ((not
-           (and (every (lambda (value)
-                         (and (stringp value) (plusp (length value))))
-                       (list lease-id owner-principal-id service-instance-id))
-                (valid-positive-integer-p fencing-token)))
-          (outcome :invalid-request))
-         (t
-          (multiple-value-bind (record expired)
-              (record-for-key store key now)
-            (let ((result
-                    (cond
-                      (expired (outcome :expired :lease expired))
-                      ((null record) (outcome :expired))
-                      ((ownership-outcome
-                        record lease-id owner-principal-id service-instance-id
-                        fencing-token))
-                      (t
-                       (remhash key (memory-store-records store))
-                       (let ((released (snapshot-record record)))
-                         (setf (lease-record-state released) :released)
-                         (outcome :released :lease released))))))
-              (remember-result store id-key digest result)))))))))
+        (cond
+          (prior prior)
+          ((not
+            (and (every #'valid-lease-identifier-p
+                        (list lease-id owner-principal-id service-instance-id))
+                 (valid-positive-integer-p fencing-token)))
+           (outcome :invalid-request))
+          (t
+           (multiple-value-bind (record expired)
+               (record-for-key store key now)
+             (let ((result
+                     (cond
+                       (expired (outcome :expired :lease expired))
+                       ((null record) (outcome :expired))
+                       ((ownership-outcome
+                         record lease-id owner-principal-id service-instance-id
+                         fencing-token))
+                       (t
+                        (remhash key (memory-store-records store))
+                        (let ((released (snapshot-record record)))
+                          (setf (lease-record-state released) :released)
+                          (outcome :released :lease released))))))
+               (remember-result store id-key digest result)))))))))
 
 (defmethod get-lease
     ((store memory-lease-store) identity &key deadline request-id)
@@ -351,15 +348,13 @@
             (id-key (idempotency-key :revoke key "administrator" request-id))
             (digest (list lease-id fencing-token reason))
             (prior (idempotent-result store id-key digest)))
-       (cond
-         (prior prior)
-         ((not
-           (and (stringp lease-id)
-                (plusp (length lease-id))
-                (valid-positive-integer-p fencing-token)
-                (stringp reason)
-                (plusp (length reason))))
-          (outcome :invalid-request))
+        (cond
+          (prior prior)
+          ((not
+            (and (valid-lease-identifier-p lease-id)
+                 (valid-positive-integer-p fencing-token)
+                 (valid-lease-reason-p reason)))
+           (outcome :invalid-request))
          (t
           (multiple-value-bind (record expired)
               (record-for-key store key now)

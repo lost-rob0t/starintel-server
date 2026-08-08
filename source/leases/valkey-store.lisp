@@ -362,12 +362,12 @@
 (defun valkey-outcome (code &key lease leases)
   (make-lease-outcome
    :code code :lease lease :leases leases
-   :retryable-p (member code '(:timeout :backend-unavailable :outcome-unknown))
+   :retryable-p (retryable-lease-outcome-code-p code)
    :detail (case code
-             (:timeout "Valkey operation deadline exceeded")
-             (:backend-unavailable "Valkey backend unavailable")
-             (:outcome-unknown "Valkey mutation outcome requires request-id retry")
-             (otherwise nil))))
+              (:timeout "Valkey operation deadline exceeded")
+              (:backend-unavailable "Valkey backend unavailable")
+              (:outcome-unknown "Valkey mutation outcome requires request-id retry")
+              (otherwise nil))))
 
 (defun emit-valkey-hooks (store operation request-id result)
   (let ((event (list :operation operation
@@ -427,14 +427,15 @@
 
 (defun valkey-code (name)
   (cdr (assoc name
-              '(("acquired" . :acquired) ("renewed" . :renewed)
-                ("released" . :released) ("found" . :found)
-                ("revoked" . :revoked) ("not-found" . :not-found)
-                ("conflict" . :conflict) ("stale-token" . :stale-token)
-                ("not-owner" . :not-owner) ("expired" . :expired)
-                ("committed" . :committed)
-                ("idempotency-conflict" . :idempotency-conflict))
-              :test #'string=)))
+               '(("acquired" . :acquired) ("renewed" . :renewed)
+                 ("released" . :released) ("found" . :found)
+                 ("revoked" . :revoked) ("not-found" . :not-found)
+                 ("conflict" . :conflict) ("stale-token" . :stale-token)
+                 ("not-owner" . :not-owner) ("expired" . :expired)
+                 ("committed" . :committed)
+                 ("idempotency-conflict" . :idempotency-conflict)
+                 ("backend-unavailable" . :backend-unavailable))
+               :test #'string=)))
 
 (defun valkey-script-outcome (response)
   (let* ((code (and response (valkey-code (first response))))
@@ -452,10 +453,13 @@
    (append (list "EVAL" script (length keys)) keys arguments)))
 
 (defun valid-valkey-operation-p (deadline request-id strings)
+  ;; Validate request shape only. A deadline that is an integer but already in
+  ;; the past is an expired deadline, not a malformed request; it is handled by
+  ;; call-valkey-request as :timeout so the outcome matches the memory backend
+  ;; and the normative deadline-exceeded contract.
   (and (integerp deadline)
-       (> deadline (valkey-unix-milliseconds))
-       (non-empty-string-p request-id)
-       (every #'non-empty-string-p strings)))
+       (valid-lease-identifier-p request-id)
+       (every #'valid-lease-identifier-p strings)))
 
 (defun finish-valkey-operation (store operation request-id response failure)
   (emit-valkey-hooks
@@ -478,7 +482,8 @@
                  (positive-integer-p maximum-lifetime-ms)
                  (<= ttl-ms maximum-lifetime-ms)
                  (> (valkey-store-idempotency-ttl-ms store)
-                    maximum-lifetime-ms))
+                    maximum-lifetime-ms)
+                 (valid-lease-metadata-p metadata))
       (return-from acquire-lease
         (emit-valkey-hooks store :acquire request-id
                            (valkey-outcome :invalid-request))))
@@ -494,20 +499,17 @@
                    (valkey-fence-key store identity)
                    (valkey-idempotency-key
                     store identity "acquire" owner-principal-id request-id))))
-      (if (> (length metadata-json) 4096)
-          (emit-valkey-hooks store :acquire request-id
-                             (valkey-outcome :invalid-request))
-          (multiple-value-bind (response failure)
-              (valkey-eval
-               store deadline +valkey-acquire-script+ keys
-               (list digest (valkey-store-idempotency-ttl-ms store)
-                     (canonical-target-lock-key identity) identity-json
-                     (cms-ulid:ulid) owner-principal-id owner-client-id
-                     ttl-ms maximum-lifetime-ms owner-credential-id
-                     service-instance-id execution-id job-id trace-id request-id
-                     metadata-json))
-            (finish-valkey-operation
-             store :acquire request-id response failure))))))
+      (multiple-value-bind (response failure)
+          (valkey-eval
+           store deadline +valkey-acquire-script+ keys
+           (list digest (valkey-store-idempotency-ttl-ms store)
+                 (canonical-target-lock-key identity) identity-json
+                 (cms-ulid:ulid) owner-principal-id owner-client-id
+                 ttl-ms maximum-lifetime-ms owner-credential-id
+                 service-instance-id execution-id job-id trace-id request-id
+                 metadata-json))
+        (finish-valkey-operation
+         store :acquire request-id response failure)))))
 
 (defmethod renew-lease
     ((store valkey-lease-store) identity
@@ -626,9 +628,9 @@
     ((store valkey-lease-store) identity
      &key lease-id fencing-token reason deadline request-id)
   (unless (and (typep identity 'lease-identity)
-               (valid-valkey-operation-p deadline request-id
-                                          (list lease-id reason))
-               (positive-integer-p fencing-token))
+               (valid-valkey-operation-p deadline request-id (list lease-id))
+               (positive-integer-p fencing-token)
+               (valid-lease-reason-p reason))
     (return-from revoke-lease (valkey-outcome :invalid-request)))
   (let* ((digest (behavior-digest lease-id fencing-token reason))
          (keys
@@ -658,7 +660,7 @@
 
 (defmethod close-lease-store
     ((store valkey-lease-store) &key deadline request-id)
-  (unless (and (integerp deadline) (non-empty-string-p request-id))
+  (unless (and (integerp deadline) (valid-lease-identifier-p request-id))
     (return-from close-lease-store (valkey-outcome :invalid-request)))
   (when (<= deadline (valkey-unix-milliseconds))
     (return-from close-lease-store (valkey-outcome :timeout)))

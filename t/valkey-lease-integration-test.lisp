@@ -94,69 +94,129 @@
        (close-real-valkey-store ,name
                                 (format nil "close-~a" (gensym))))))
 
-(defun assert-real-backend-contract (store)
-  "Reusable backend-neutral contract exercised by the real Valkey adapter."
-  (let* ((identity (real-valkey-identity "contract-target"))
-         (acquired
-           (acquire-real-valkey-lease
-            store identity "contract-acquire" "contract-owner"))
-         (record (star.leases:lease-outcome-lease acquired)))
-    (is (eq :acquired (star.leases:lease-outcome-code acquired)))
-    (is (typep record 'star.leases:lease-record))
-    (let ((observed
-            (star.leases:get-lease
-             store identity :deadline (real-deadline)
-             :request-id "contract-get")))
-      (is (eq :found (star.leases:lease-outcome-code observed)))
-      (is (string= (star.leases:lease-record-lease-id record)
-                   (star.leases:lease-record-lease-id
-                    (star.leases:lease-outcome-lease observed)))))
-    (let ((renewed
-            (star.leases:renew-lease
-             store identity
-             :lease-id (star.leases:lease-record-lease-id record)
-             :owner-principal-id "contract-owner"
-             :service-instance-id "instance-contract-owner"
-             :fencing-token (star.leases:lease-record-fencing-token record)
-             :ttl-ms 1500
-             :deadline (real-deadline)
-             :request-id "contract-renew")))
-      (is (eq :renewed (star.leases:lease-outcome-code renewed)))
-      (is (plusp (- (star.leases:lease-record-expires-at
-                     (star.leases:lease-outcome-lease renewed))
-                    (real-unix-milliseconds)))))
-    (let ((listed
-            (star.leases:list-leases
-             store :owner-principal-id "contract-owner"
-             :program-id "program-a"
-             :deadline (real-deadline)
-             :request-id "contract-list")))
-      (is (eq :listed (star.leases:lease-outcome-code listed)))
-      (is (= 1 (length (star.leases:lease-outcome-leases listed)))))
-    (is (eq :healthy
-            (star.leases:lease-outcome-code
-             (star.leases:backend-health
-              store :deadline (real-deadline)
-              :request-id "contract-health"))))
-    (let ((released
-            (star.leases:release-lease
-             store identity
-             :lease-id (star.leases:lease-record-lease-id record)
-             :owner-principal-id "contract-owner"
-             :service-instance-id "instance-contract-owner"
-             :fencing-token (star.leases:lease-record-fencing-token record)
-             :deadline (real-deadline)
-             :request-id "contract-release")))
-      (is (eq :released (star.leases:lease-outcome-code released))))
-    (is (eq :not-found
-            (star.leases:lease-outcome-code
-             (star.leases:get-lease
-              store identity :deadline (real-deadline)
-              :request-id "contract-get-released"))))))
+(defun make-valkey-lease-contract-fixture (&key (label "contract"))
+  "Build the shared contract fixture around a real Valkey adapter.
 
-(test reusable-backend-contract-passes-against-real-valkey
-  (with-real-valkey-store (store :label "contract")
-    (assert-real-backend-contract store)))
+   The fixture wires the same backend-neutral assertions used by the memory
+   store to a live Valkey instance, so the two backends cannot drift."
+  (let ((audit-box (cons nil nil))
+        (metrics-box (cons nil nil)))
+    (let ((store
+            (make-real-valkey-store
+             :label label
+             :audit-hook (lambda (event) (push event (car audit-box)))
+             :metrics-hook (lambda (event) (push event (car metrics-box))))))
+      (make-lease-contract-fixture
+       :store store
+       :make-identity (lambda (target-id) (real-valkey-identity target-id))
+       :acquire
+       (lambda (identity request-id owner &key ttl-ms maximum-lifetime-ms)
+         (star.leases:acquire-lease
+          store identity
+          :owner-principal-id owner
+          :owner-client-id (format nil "client-~a" owner)
+          :owner-credential-id (format nil "credential-~a" owner)
+          :service-instance-id (contract-instance-of owner)
+          :ttl-ms (or ttl-ms 2000)
+          :maximum-lifetime-ms (or maximum-lifetime-ms 10000)
+          :execution-id (format nil "execution-~a" owner)
+          :job-id (format nil "job-~a" owner)
+          :trace-id (format nil "trace-~a" owner)
+          :metadata (jsown:new-js ("safe_label" "contract"))
+          :deadline (real-deadline)
+          :request-id request-id))
+       :now-ms #'real-unix-milliseconds
+       :deadline (lambda (&optional (ms 3000))
+                   (+ (real-unix-milliseconds) ms))
+       :advance-time
+       (lambda (ms) (sleep (/ (max (+ ms 100) 50) 1000.0)))
+       :default-ttl-ms 2000
+       :default-maximum-lifetime-ms 10000
+       :short-ttl-ms 200
+       :short-maximum-lifetime-ms 10000
+       :audit-events audit-box
+       :metrics-events metrics-box))))
+
+(test valkey-backend-satisfies-backend-neutral-lease-contract
+  "The identical backend-neutral contract suite runs against real Valkey."
+  (let ((fx (make-valkey-lease-contract-fixture :label "contract")))
+    (unwind-protect
+         (assert-backend-neutral-lease-contract fx)
+      (close-real-valkey-store
+       (lease-contract-fixture-store fx)
+       (format nil "close-contract-~a" (gensym))))))
+
+(test acl-restricts-unrelated-keys-and-dangerous-commands
+  "Least-privilege ACL: lease ops still work, unrelated keys and out-of-surface
+   commands are rejected."
+  (with-real-valkey-store (store :label "acl")
+    (let* ((identity (real-valkey-identity "acl-target"))
+           (acquired
+             (acquire-real-valkey-lease store identity "acl-acquire" "acl-owner"))
+           (active-key (star.leases::valkey-active-key store identity)))
+      (is (eq :acquired (star.leases:lease-outcome-code acquired)))
+      (is (eq :found
+              (star.leases:lease-outcome-code
+               (star.leases:get-lease store identity
+                                      :deadline (real-deadline)
+                                      :request-id "acl-get"))))
+      ;; Unrelated key access is rejected by the key namespace restriction.
+      (signals error
+        (star.leases::valkey-test-command
+         store (real-deadline) "SET" "unrelated:key" "rejected"))
+      ;; A command outside the allowed operational surface is rejected.
+      (signals error
+        (star.leases::valkey-test-command
+         store (real-deadline) "FLUSHDB"))
+      ;; The active lease key is still present and intact after the denials.
+      (is (plusp
+           (length
+            (star.leases::valkey-test-command
+             store (real-deadline) "GET" active-key)))))))
+
+(test no-ttl-active-key-fails-closed-without-replacement
+  "An active lease key with no TTL is corrupt state: acquisition fails closed
+   without deleting/replacing the record or allocating a new fencing token."
+  (with-real-valkey-store (store :label "no-ttl")
+    (let* ((identity (real-valkey-identity "no-ttl-target"))
+           (first
+             (acquire-real-valkey-lease store identity "no-ttl-acquire" "owner-a"))
+           (record (star.leases:lease-outcome-lease first))
+           (active-key (star.leases::valkey-active-key store identity))
+           (fence-key (star.leases::valkey-fence-key store identity))
+           (original-json
+             (star.leases::valkey-test-command
+              store (real-deadline) "GET" active-key)))
+      (is (eq :acquired (star.leases:lease-outcome-code first)))
+      (is (= 1 (star.leases:lease-record-fencing-token record)))
+      ;; Corrupt the active key: overwrite without PX so it has no TTL.
+      (star.leases::valkey-test-command
+       store (real-deadline) "SET" active-key original-json)
+      (is (= -1
+             (star.leases::valkey-test-command
+              store (real-deadline) "PTTL" active-key)))
+      (let ((fence-before
+              (star.leases::valkey-test-command
+               store (real-deadline) "GET" fence-key)))
+        (is (string= "1" fence-before))
+        (let ((second
+                (acquire-real-valkey-lease
+                 store identity "no-ttl-acquire-b" "owner-b")))
+          ;; Acquisition fails closed with the stable backend error result.
+          (is (eq :backend-unavailable
+                  (star.leases:lease-outcome-code second)))
+          (is-false (star.leases:lease-outcome-lease second)))
+        ;; The original record was not deleted or replaced.
+        (is (string= original-json
+                     (star.leases::valkey-test-command
+                      store (real-deadline) "GET" active-key)))
+        (is (= -1
+               (star.leases::valkey-test-command
+                store (real-deadline) "PTTL" active-key)))
+        ;; No new fencing token was allocated; the counter is unchanged.
+        (is (string= fence-before
+                     (star.leases::valkey-test-command
+                      store (real-deadline) "GET" fence-key)))))))
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
   (with-real-valkey-store (store :label "concurrency" :pool-size 16)

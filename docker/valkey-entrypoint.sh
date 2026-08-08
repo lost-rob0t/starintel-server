@@ -18,7 +18,14 @@ acl_file="$runtime_dir/users.acl"
 mkdir -p "$runtime_dir"
 password_hash="$(printf %s "$password" | sha256sum | cut -d ' ' -f 1)"
 unset password
-printf 'user default on #%s ~* &* +@all\n' "$password_hash" > "$acl_file"
+# Least-privilege service credential: deny everything by default, then grant
+# only the commands the lease adapter invokes directly or from Lua scripts, and
+# restrict keys to the StarIntel lease namespace owned by this deployment.
+#   Direct adapter commands: AUTH, PING, EVAL, SCAN, GET (list/inspect helpers).
+#   Lua script commands:      GET, SET, DEL, INCR, PTTL, TIME.
+# Administrative, dangerous, pub/sub, and unrelated-key access stays denied.
+printf 'user default on #%s ~starintel:target-lease:v1:* -@all +auth +ping +eval +get +set +del +incr +pttl +time +scan\n' \
+  "$password_hash" > "$acl_file"
 unset password_hash
 chown -R 65532:65532 "$runtime_dir"
 chmod 0700 "$runtime_dir"

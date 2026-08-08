@@ -355,9 +355,14 @@ PY
 
           mkdir -p "$service_root/plain" "$service_root/tls"
           password_hash="$(printf %s "$(cat "$password_file")" | sha256sum | cut -d ' ' -f 1)"
-          printf 'user default on #%s ~* &* +@all\n' "$password_hash" \
+          # Least-privilege test ACL mirroring the production entrypoint: keys are
+          # restricted to the ephemeral StarIntel test namespace, dangerous and
+          # administrative commands are denied, and only the adapter/script
+          # commands are granted. The ACL regression test proves unrelated keys
+          # and out-of-surface commands are rejected.
+          printf 'user default on #%s ~starintel:* -@all +auth +ping +eval +get +set +del +incr +pttl +time +scan\n' "$password_hash" \
             > "$service_root/plain/users.acl"
-          printf 'user default on #%s ~* &* +@all\n' "$password_hash" \
+          printf 'user default on #%s ~starintel:* -@all +auth +ping +eval +get +set +del +incr +pttl +time +scan\n' "$password_hash" \
             > "$service_root/tls/users.acl"
           unset password_hash
           chmod 600 "$service_root/plain/users.acl" "$service_root/tls/users.acl"

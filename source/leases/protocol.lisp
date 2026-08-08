@@ -125,6 +125,61 @@
    :retryable-p retryable-p
    :detail detail))
 
+;;; Backend-neutral retryability. Both adapters MUST derive the retryable flag
+;;; from this single mapping so equivalent outcomes cannot drift between
+;;; backends. Per the normative lease contract, lease contention is retryable:
+;;; the caller may retry acquisition under bounded backoff.
+
+(defparameter +retryable-lease-outcome-codes+
+  '(:conflict :timeout :rate-limited :backend-unavailable :outcome-unknown))
+
+(defun retryable-lease-outcome-code-p (code)
+  (and (member code +retryable-lease-outcome-codes+) t))
+
+;;; Bounded externally supplied identifiers. The KV lease threat model requires
+;;; bounded identifier and request sizes before any backend work. Limits are
+;;; measured in UTF-8 bytes, not Lisp character count, so multibyte payloads
+;;; cannot bypass them. Identifiers and metadata are validated once here; the
+;;; adapters consult these predicates instead of redefining local bounds.
+
+(defparameter +lease-identifier-max-bytes+ 256)
+(defparameter +lease-reason-max-bytes+ 512)
+(defparameter +lease-metadata-max-bytes+ 4096)
+(defparameter +lease-metadata-max-keys+ 64)
+
+(defun utf-8-byte-length (string)
+  (declare (type string string))
+  (length (babel:string-to-octets string :encoding :utf-8)))
+
+(defun valid-lease-identifier-p (value)
+  "Non-empty string whose UTF-8 byte size fits the protocol identifier limit."
+  (and (stringp value)
+       (plusp (length value))
+       (<= (utf-8-byte-length value) +lease-identifier-max-bytes+)))
+
+(defun valid-lease-reason-p (value)
+  "Non-empty reason/incident identifier bounded by the reason limit."
+  (and (stringp value)
+       (plusp (length value))
+       (<= (utf-8-byte-length value) +lease-reason-max-bytes+)))
+
+(defun lease-metadata-object-p (metadata)
+  "True for NIL (empty metadata) or a parsed JSON object (jsown object)."
+  (or (null metadata)
+      (and (consp metadata) (eq (car metadata) :obj))))
+
+(defun valid-lease-metadata-p (metadata)
+  "Metadata must be a bounded JSON object: object shape, bounded key count,
+and bounded serialized UTF-8 byte size. Non-object JSON shapes (arrays,
+scalars, strings) and oversized payloads are rejected before backend work."
+  (cond
+    ((null metadata) t)
+    ((not (lease-metadata-object-p metadata)) nil)
+    (t
+     (and (<= (length (jsown:keywords metadata)) +lease-metadata-max-keys+)
+          (<= (utf-8-byte-length (jsown:to-json metadata))
+              +lease-metadata-max-bytes+)))))
+
 (defclass lease-store () ())
 
 (defgeneric acquire-lease
