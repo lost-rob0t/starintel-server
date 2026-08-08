@@ -8,6 +8,8 @@
   :components ((:module "t"
                 :serial t
                 :components ((:file "couchdb-view-integration-test")
+                             (:file "valkey-lease-integration-test")
+                             (:file "valkey-lease-review-regression-test")
                              (:file "http-api-test")
                              (:file "run-integration-tests"))))
   :perform (test-op (o c)

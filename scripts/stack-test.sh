@@ -16,6 +16,7 @@ export STAR_SERVER_PORT="$port_base"
 export COUCHDB_PORT="$((port_base + 1))"
 export RABBITMQ_PORT="$((port_base + 2))"
 export RABBITMQ_MANAGEMENT_PORT="$((port_base + 3))"
+export VALKEY_PORT="$((port_base + 4))"
 
 mkdir -p "$artifact_dir"
 rm -f "$artifact_dir"/*
@@ -47,6 +48,8 @@ capture_diagnostics() {
     > "$artifact_dir/star-server.log" 2>&1 || true
   docker compose --project-directory "$repo_root" logs --no-color couchdb \
     > "$artifact_dir/couchdb.log" 2>&1 || true
+  docker compose --project-directory "$repo_root" logs --no-color valkey \
+    > "$artifact_dir/valkey.log" 2>&1 || true
 }
 
 cleanup() {
@@ -86,6 +89,7 @@ couch_put() {
 
 couchdb_password="stack-couchdb-$$"
 rabbitmq_password="stack-rabbitmq-$$"
+valkey_password="stack-valkey-$$"
 auth_pepper="stack-auth-pepper-$$-$(date +%s%N)"
 auth_bootstrap_secret="stack-bootstrap-$$-$(date +%s%N)"
 
@@ -94,6 +98,7 @@ printf '%s\n' "$couchdb_password" > "$credentials_dir/couchdb_password"
 printf '%s\n' "stack-couchdb-secret-$$" > "$credentials_dir/couchdb_secret"
 printf '%s\n' "STACKERLANGCOOKIE$$" > "$credentials_dir/erlang_cookie"
 printf '%s\n' "$rabbitmq_password" > "$credentials_dir/rabbitmq_password"
+printf '%s\n' "$valkey_password" > "$credentials_dir/valkey_password"
 printf '%s\n' "$auth_pepper" > "$credentials_dir/auth_pepper"
 printf '%s\n' "$auth_bootstrap_secret" > "$credentials_dir/auth_bootstrap_secret"
 chmod 0600 "$credentials_dir"/*
@@ -207,14 +212,15 @@ wait_for_search_id() {
 }
 
 wait_for_healthy_stack() {
-  local container_id health status
+  local container_id expected_services health status
   local -a container_ids
+  expected_services="$(docker compose config --services | wc -l)"
 
   for _ in $(seq 1 150); do
     mapfile -t container_ids < <(docker compose ps --all --quiet)
     status=1
 
-    if ((${#container_ids[@]} == 4)); then
+    if ((${#container_ids[@]} == expected_services)); then
       status=0
       for container_id in "${container_ids[@]}"; do
         health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"

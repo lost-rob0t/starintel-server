@@ -21,6 +21,9 @@
    (:file "leases/package")
    (:file "leases/protocol")
    (:file "leases/memory-store")
+   (:file "leases/valkey-scripts")
+   (:file "leases/valkey-store")
+   (:file "leases/valkey-list-store")
    (:file "gserver-settings")
    (:file "databases/couchdb")
    (:file "databases/view-request")
@@ -91,6 +94,8 @@
    #:cl-ppcre
    #:cms-ulid
    #:bordeaux-threads
+   #:usocket
+   #:cl+ssl
    #:jsown
    #:closer-mop))
 

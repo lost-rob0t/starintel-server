@@ -1,0 +1,327 @@
+#+title: Using the target lease-store protocol
+#+options: toc:2
+#+status: IMPLEMENTED
+
+* Current availability
+
+The =star.leases= package provides the backend-neutral protocol and a production
+Valkey adapter.  The in-memory implementation remains limited to deterministic
+unit tests.  Application code uses the same protocol operations with either
+backend; only the composition root selects =make-valkey-lease-store=.
+
+The authenticated HTTP lease routes remain a separate issue and continue to
+return =501= until issue #32 wires this store into request and target execution.
+
+* Load the package
+
+The package is part of the main ASDF system.
+
+#+begin_src lisp
+(asdf:load-system :starintel-gserver)
+#+end_src
+
+Deadlines use Unix milliseconds.  Every operation requires a finite deadline
+and a non-empty request identifier.
+
+#+begin_src lisp
+(defun unix-milliseconds ()
+  (* 1000 (- (get-universal-time) 2208988800)))
+
+(defun deadline-after (milliseconds)
+  (+ (unix-milliseconds) milliseconds))
+#+end_src
+
+In production, request identifiers must be unique for the logical operation.
+Reusing one identifier with different inputs produces
+=:idempotency-conflict=.
+
+* Build the canonical lease identity
+
+Callers provide the seven logical identity fields, never a raw backend key.
+Components are normalized and validated before the deterministic key is
+derived.
+
+#+begin_src lisp
+(defparameter *target-identity*
+  (star.leases:make-lease-identity
+   :tenant-id "tenant-main"
+   :program-id "continuous-research"
+   :target-namespace "domain"
+   :target-id "example.org"
+   :actor-name "subfinder"
+   :workflow-name "default"
+   :operation-class "default"))
+
+(star.leases:canonical-target-lock-key *target-identity*)
+;; => "starintel:target-lease:v1:..."
+#+end_src
+
+Equivalent normalized identities produce the same opaque key.  Do not persist
+or construct a second form of this key in actor, HTTP, or application code.
+
+* Construct the Valkey backend
+
+The constructor reads the password once from a file and never accepts it in a
+connection URI.  Pool size, pool wait, operation timeout, reconnect attempts,
+backoff, and idempotency retention are finite.
+
+#+begin_src lisp
+(defun environment-integer (name default)
+  (let ((value (uiop:getenv name)))
+    (if value (parse-integer value) default)))
+
+(defun make-example-valkey-store
+    (&key (key-prefix "starintel:target-lease:v1"))
+  (star.leases:make-valkey-lease-store
+   :host (or (uiop:getenv "VALKEY_HOST") "valkey")
+   :port (environment-integer "VALKEY_PORT" 6379)
+   :password-file
+   (or (uiop:getenv "VALKEY_PASSWORD_FILE")
+       "/run/secrets/valkey_password")
+   :tls-p nil
+   :tls-verify-p t
+   :pool-size 8
+   :pool-wait-timeout-ms 500
+   :operation-timeout-ms 1000
+   :reconnect-attempts 2
+   :reconnect-backoff-ms 25
+   :idempotency-ttl-ms 86400000
+   :key-prefix key-prefix))
+
+(defparameter *lease-store* (make-example-valkey-store))
+
+(defparameter *lease-runtime*
+  (star.leases:make-lease-runtime *lease-store*))
+#+end_src
+
+For remote or cross-host traffic, enable TLS with mandatory certificate and
+hostname verification.  The adapter rejects =:tls-p t= with
+=:tls-verify-p nil= rather than silently weakening the connection.
+
+#+begin_src lisp
+(defun make-production-tls-valkey-store ()
+  (star.leases:make-valkey-lease-store
+   :host "valkey.internal.example"
+   :port 6379
+   :password-file "/run/secrets/valkey_password"
+   :tls-p t
+   :tls-verify-p t
+   :tls-ca-file "/run/secrets/valkey_ca.pem"
+   :pool-size 16
+   :pool-wait-timeout-ms 500
+   :operation-timeout-ms 1500
+   :reconnect-attempts 2
+   :reconnect-backoff-ms 50
+   :idempotency-ttl-ms 86400000))
+#+end_src
+
+The CA must validate both the certificate chain and the configured host name.
+Mount the password and CA files read-only with permissions limited to the
+service identity.  Plain TCP is suitable only on a trusted local/container
+network whose access is separately enforced.
+
+Acquire is non-blocking.  A successful result contains a typed lease record;
+contention returns =:conflict= rather than a backend boolean.
+
+#+begin_src lisp
+(defparameter *acquire-result*
+  (star.leases:acquire-lease
+   *lease-store*
+   *target-identity*
+   :owner-principal-id "service:research-worker"
+   :owner-client-id "worker-client-01"
+   :owner-credential-id "credential-01"
+   :service-instance-id "worker-instance-01"
+   :ttl-ms 30000
+   :maximum-lifetime-ms 300000
+   :execution-id "execution-01"
+   :job-id "job-01"
+   :trace-id "trace-01"
+   :metadata (jsown:new-js ("purpose" "domain-enrichment"))
+   :deadline (deadline-after 5000)
+   :request-id "acquire-request-01"))
+
+(case (star.leases:lease-outcome-code *acquire-result*)
+  (:acquired
+   (star.leases:lease-outcome-lease *acquire-result*))
+  (:conflict
+   :already-owned)
+  (:timeout
+   :deadline-exceeded)
+  ((:backend-unavailable :outcome-unknown)
+   :retry-or-resolve-by-request-id)
+  (otherwise
+   *acquire-result*))
+#+end_src
+
+The outcome code is a closed keyword enum, so =case= is appropriate here.  Do
+not convert arbitrary external strings to symbols and dispatch on them.
+
+* Renew the exact lease
+
+Renewal needs the lease identifier, principal, service instance, and fencing
+token returned by acquisition.  It cannot change ownership or revive an expired
+lease.
+
+#+begin_src lisp
+(let* ((record (star.leases:lease-outcome-lease *acquire-result*))
+       (result
+         (star.leases:renew-lease
+          *lease-store*
+          *target-identity*
+          :lease-id (star.leases:lease-record-lease-id record)
+          :owner-principal-id "service:research-worker"
+          :service-instance-id "worker-instance-01"
+          :fencing-token (star.leases:lease-record-fencing-token record)
+          :ttl-ms 30000
+          :deadline (deadline-after 5000)
+          :request-id "renew-request-01")))
+  (star.leases:lease-outcome-code result))
+;; => :renewed
+#+end_src
+
+Treat =:stale-token=, =:not-owner=, and =:expired= as lease loss.  The worker
+must stop producing authoritative effects; a later issue wires the same fence
+into target execution and commits.
+
+* Inspect and list active leases
+
+Reads still carry a finite deadline and correlation/request identifier.
+
+#+begin_src lisp
+(star.leases:get-lease
+ *lease-store*
+ *target-identity*
+ :deadline (deadline-after 5000)
+ :request-id "inspect-request-01")
+
+(star.leases:list-leases
+ *lease-store*
+ :owner-principal-id "service:research-worker"
+ :program-id "continuous-research"
+ :deadline (deadline-after 5000)
+ :request-id "list-request-01")
+#+end_src
+
+=get-lease= returns the record in =lease-outcome-lease=.  =list-leases= returns
+records in =lease-outcome-leases=.  Always check =lease-outcome-code= before
+reading either slot.
+
+* Release without deleting a successor
+
+Release uses the same exact ownership tuple as renewal.  A delayed release from
+an old holder returns a stale outcome and cannot delete a newer lease.
+
+#+begin_src lisp
+(let ((record (star.leases:lease-outcome-lease *acquire-result*)))
+  (star.leases:release-lease
+   *lease-store*
+   *target-identity*
+   :lease-id (star.leases:lease-record-lease-id record)
+   :owner-principal-id "service:research-worker"
+   :service-instance-id "worker-instance-01"
+   :fencing-token (star.leases:lease-record-fencing-token record)
+   :deadline (deadline-after 5000)
+   :request-id "release-request-01"))
+#+end_src
+
+* Serialize a record at a persistence boundary
+
+The JSON representation is explicitly versioned and validates that its lock key
+matches its canonical identity when decoded.
+
+#+begin_src lisp
+(let* ((record (star.leases:lease-outcome-lease *acquire-result*))
+       (json (star.leases:serialize-lease-record record)))
+  (star.leases:deserialize-lease-record json))
+#+end_src
+
+Do not log serialized records indiscriminately: they contain credential
+identifiers and lease metadata even though they must never contain credential
+secrets.
+
+* Close the owned runtime
+
+Applications that create a lease runtime must close it during shutdown.  New
+backend operations are rejected after closure.
+
+#+begin_src lisp
+(star.leases:close-lease-runtime
+ *lease-runtime*
+ :deadline (deadline-after 5000)
+ :request-id "close-runtime-01")
+#+end_src
+
+For scoped use, close in =unwind-protect= so errors do not leak owned backend
+resources.
+
+#+begin_src lisp
+(let* ((store
+          (make-example-valkey-store))
+        (runtime (star.leases:make-lease-runtime store)))
+  (unwind-protect
+       ;; Use STORE only through the STAR.LEASES protocol here.
+       (star.leases:backend-health
+        store
+        :deadline (deadline-after 5000)
+        :request-id "health-request-01")
+    (star.leases:close-lease-runtime
+     runtime
+     :deadline (deadline-after 5000)
+     :request-id "close-request-01")))
+#+end_src
+
+* Bundled Valkey image namespace
+
+The bundled Valkey image generated by =docker/valkey-entrypoint.sh= restricts
+the service credential to the default lease namespace:
+
+: user default on #<hash> ~starintel:target-lease:v1:* -@all +auth +ping +eval +get +set +del +incr +pttl +time +scan
+
+The =make-valkey-lease-store= =:key-prefix= parameter defaults to
+=starintel:target-lease:v1=, which matches this ACL. A custom =:key-prefix=
+requires a **separately configured** Valkey ACL that permits the custom
+namespace. The bundled image does not support a custom prefix directly;
+deployments that need a different namespace must provision their own ACL
+file or Valkey user with the appropriate key pattern. Do not broaden the
+bundled ACL to =~= or =~starintel:*~= to work around this — instead, configure
+the Valkey ACL and the adapter prefix to match.
+
+* Production integration boundary
+
+Application code should depend only on =lease-store= operations and accept the
+store or =lease-runtime= as an owned dependency.  It should not import the
+in-memory class or a future Valkey class.  The service composition root chooses
+the concrete backend, while actors, HTTP routes, and target execution retain the
+same protocol calls and typed outcomes.
+
+See [[file:target-lease-semantics.org][Distributed target lease semantics]] for the normative identity, fencing,
+deadline, recovery, and commit rules.
+
+* Persistence, replication, and failover assumptions
+
+The active lease has a backend TTL; its separate fencing counter has no TTL and
+must survive lease expiry, release, process restart, and failover.  The supplied
+Compose service enables AOF persistence with =appendfsync everysec=.  Operators
+must back up and restore fencing counters with the lease namespace and must
+never restore an older counter over a newer authoritative deployment.
+
+The Lua operations are linearizable on one Valkey primary.  Valkey replication
+is asynchronous unless the deployment adds an acknowledged durability policy,
+so a promoted replica can lose the latest lease mutation or fencing increment.
+For deployments where that loss is unacceptable, use synchronous replication
+controls or a stronger-consistency backend behind the same protocol.  A client
+timeout after script submission is =:outcome-unknown=; retry the identical
+request ID to recover the stored result instead of issuing a new acquisition.
+
+All keys for one lock use the same ={SHA-256-digest}= hash tag, allowing every
+multi-key Lua operation to remain in one cluster slot.  Different locks can
+occupy different slots.  Key scans used for administrative lists are not an
+authorization boundary and may require cluster-node fan-out in a clustered
+deployment.
+
+Fencing remains mandatory downstream.  Valkey granting a lease does not make a
+stale worker safe: every authoritative writer must atomically reject a lease ID
+and token older than the current accepted fence.  Issue #32 wires that guard
+into target execution; until then the adapter is available for direct protocol
+consumers but the HTTP lease surface stays unavailable.

@@ -25,7 +25,12 @@ the corresponding controls are implemented.
 11. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design contract.
 12. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative design contract.
 13. [[file:target-lease-semantics.org][Distributed target lease semantics]] — canonical lock identity, records, state transitions, operations, idempotency, deadlines, fencing enforcement, races, errors, audit, and recovery. Normative design contract.
-14. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
+14. [[file:lease-store-usage.org][Lease-store protocol usage]] — Common Lisp examples for canonical identity, acquire, renew, inspect, list, release, serialization, typed outcomes, and owned shutdown.
+15. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
+
+** Development workflow
+
+- [[file:next-implementation-loop-prompt.org][Next ordered implementation-loop prompt]] — copy-ready continuation prompt for issue #31 and the transition to #32.
 
 ** Implementation status
 
@@ -39,7 +44,7 @@ the corresponding controls are implemented.
 | HTTP API-key authentication | Active | Default-deny bearer authentication, immutable request context, lifecycle routes, exact-origin CORS, and separate credential storage |
 | Fine-grained route authorization | Active | Closed capabilities and tenant/dataset/actor/target scopes enforced at HTTP and embedded service boundaries; unmapped routes deny |
 | Authentication revocation cache | Active | No credential cache; committed revoke/disable is visible to the next verifier lookup |
-| KV target leases | Protocol/test backend | Backend-neutral typed protocol and deterministic unit-test backend are active; no production KV adapter exists and allowed HTTP operations return =501= |
+| KV target leases | Protocol/Valkey backend | Backend-neutral typed protocol, deterministic unit-test backend, and atomic production Valkey adapter are active; HTTP operations remain =501= until issue #32 wires them into execution |
 | Clouseau full-text search | Active in Compose | Search is authenticated and authorization clauses constrain tenant/dataset scope before backend execution |
 | URL extractor pattern | Experimental | Actor starts; complete global pattern dispatcher is not evident |
 | User-finder/user-hunt actors | Present, inactive | Files are not in the ASDF component list |

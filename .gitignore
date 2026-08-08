@@ -18,6 +18,8 @@ init.lisp
 # Build artifacts
 result
 result-*
+__pycache__/
+stack-test-artifacts/
 
 # Local deployment configuration and secrets
 .env

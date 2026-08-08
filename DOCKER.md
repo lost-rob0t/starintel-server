@@ -7,6 +7,7 @@ Nix flake:
 - Apache CouchDB 3.5.2
 - Clouseau 3.3.0 on Java 21
 - RabbitMQ 4.3.4 with the management plugin
+- Valkey 9.0.1 with authenticated AOF persistence
 
 CouchDB is pinned by its linux/amd64 manifest digest and Nix content hash.
 Clouseau is pinned by its release artifact hash. Compose never builds or pulls
@@ -24,7 +25,7 @@ a project-owned image.
 Build every project-owned image without loading it:
 
 ```bash
-nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
+nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image .#valkey-image
 ```
 
 Build the images, merge their archives, and load them into Docker:
@@ -34,8 +35,8 @@ nix run .#load-images
 ```
 
 The loaded tags are `starintel/server:0.1.0`,
-`starintel/couchdb:3.5.2`, `starintel/clouseau:3.3.0`, and
-`rabbitmq:4.3.4-management`.
+`starintel/couchdb:3.5.2`, `starintel/clouseau:3.3.0`,
+`rabbitmq:4.3.4-management`, and `starintel/valkey:9.0.1`.
 
 ## Configure secrets
 
@@ -49,6 +50,7 @@ openssl rand -base64 32 > secrets/couchdb_password
 openssl rand -base64 48 > secrets/couchdb_secret
 openssl rand -hex 24 | tr '[:lower:]' '[:upper:]' > secrets/erlang_cookie
 openssl rand -base64 32 > secrets/rabbitmq_password
+openssl rand -base64 32 > secrets/valkey_password
 chmod 0600 secrets/*
 ```
 
@@ -77,6 +79,7 @@ The default host bindings are:
 - CouchDB: `http://127.0.0.1:5984`
 - RabbitMQ AMQP: `127.0.0.1:5672`
 - RabbitMQ management: `http://127.0.0.1:15672`
+- Valkey: `127.0.0.1:6379`
 
 Clouseau is internal-only. CouchDB and Clouseau share an Erlang cookie and
 CouchDB addresses the search node as
@@ -95,7 +98,7 @@ docker compose down --volumes
 ```
 
 The destructive command above removes the `couchdb_data`, `clouseau_index`,
-and `rabbitmq_data` volumes.
+`rabbitmq_data`, and `valkey_data` volumes.
 
 ## Search initialization and verification
 
@@ -153,11 +156,13 @@ queries match.
 
 ## Persistence and backup
 
-Named volumes preserve CouchDB documents, Clouseau indexes, and RabbitMQ state
-across container replacement. Back up CouchDB through its HTTP API rather than
-copying a live volume. The export command in the migration section includes
-attachments; store its output in encrypted backup storage. Back up every
-application database and test a restore regularly.
+Named volumes preserve CouchDB documents, Clouseau indexes, RabbitMQ state, and
+the Valkey AOF across container replacement. The Valkey entrypoint reads the
+root-only password secret, installs only its SHA-256 ACL verifier, and drops to
+UID/GID 65532 before starting the server. Back up CouchDB through its HTTP API
+rather than copying a live volume. The export command in the migration section
+includes attachments; store its output in encrypted backup storage. Back up
+every application database and test a restore regularly.
 
 The Clouseau volume improves restart time but does not need an independent
 backup because its indexes can be rebuilt from CouchDB.
@@ -167,9 +172,9 @@ backup because its indexes can be rebuilt from CouchDB.
 1. Read the CouchDB and Clouseau release notes and compatibility requirements.
 2. Export every CouchDB database.
 3. Update the pinned versions, digest, and hashes in `nix/images.nix`
-   (CouchDB, Clouseau, and RabbitMQ).
+   (CouchDB, Clouseau, RabbitMQ, and Valkey).
 4. Update the matching image tags in `docker-compose.yml`.
-5. Run `nix build` for all three images and `./scripts/stack-test.sh`.
+5. Build all images and run `./scripts/stack-test.sh`.
 6. Load the new images and recreate the stack with
    `docker compose up --detach --wait`.
 7. Verify health, document counts, and representative FTS queries before

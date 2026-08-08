@@ -234,6 +234,27 @@ class OperationalSalvageContractTests(unittest.TestCase):
             self.assertNotIn("valkey", source)
             self.assertNotIn("redis", source)
 
+    def test_valkey_lease_backend_owns_atomic_scripts_and_safe_keys(self) -> None:
+        adapter = self.text("source/leases/valkey-store.lisp")
+        scripts = self.text("source/leases/valkey-scripts.lisp")
+        compose = self.text("docker-compose.yml")
+        usage = self.text("docs/lease-store-usage.org")
+        for script in (
+            "+valkey-acquire-script+",
+            "+valkey-renew-script+",
+            "+valkey-release-script+",
+            "+valkey-fenced-set-script+",
+        ):
+            self.assertIn(script, scripts)
+        self.assertIn("redis.call('TIME')", scripts)
+        self.assertIn("redis.call('INCR', KEYS[2])", scripts)
+        self.assertIn("format nil \"~a:{~a}:~a\"", adapter)
+        self.assertIn("make-valkey-lease-store", adapter)
+        self.assertIn("tls-verify-p", adapter)
+        self.assertIn("valkey_password", compose)
+        self.assertIn("make-valkey-lease-store", usage)
+        self.assertNotIn("no production kv adapter exists", usage.lower())
+
     def test_view_registry_targets_checked_in_design_documents(self) -> None:
         registry = self.text("source/databases/view-registry.lisp")
         designs = {

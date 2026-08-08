@@ -1,0 +1,135 @@
+#+title: Next ordered implementation-loop prompt
+#+options: toc:nil
+
+* Purpose
+
+Copy the prompt below into the next agent loop.  It resumes the canonical
+roadmap without treating partial code or an open pull request as completion.
+
+* Prompt
+
+#+begin_src text
+Continue the ordered implementation loop in `lost-rob0t/starintel-server`.
+
+Current verified state:
+
+- `dev` is the integration base.
+- Issue #30 was merged through PR #94.
+- The #30 merge commit on `dev` is
+  `6d2feb103e57f2227b3609430ae7c68e7e834aa1`.
+- Issue #31 is the active roadmap item:
+  `[P0-23] Implement the initial Valkey target-lease backend with atomic
+  fencing scripts`.
+- Its dedicated branch is `agent/issue-31-valkey-lease-backend`.
+- Its dedicated worktree was created at `/tmp/starintel-issue31`.
+- Do not touch the user's pre-existing dirty checkout.
+
+At the start:
+
+1. Read every applicable `AGENTS.md` again.
+2. Read issue #9 and the full body and comments of issue #31.
+3. Read all merged and open pull requests related to #31.
+4. Fetch remote refs and inspect current `dev`, `master`, their merge base, and
+   divergence.
+5. Inspect the existing #31 worktree, branch, commits, diff, test evidence, PR,
+   and CI before changing anything.
+6. Never create a duplicate branch or pull request.
+7. Create and maintain a concrete task list for the active issue.
+
+Finish issue #31 without changing the backend-neutral public protocol from #30
+merely to accommodate Valkey.  Prefer one direct owned adapter and remove any
+superseded implementation encountered in scope.
+
+Required behavior:
+
+- a real Valkey service;
+- one atomic acquire operation that creates only when free or expired and
+  increments a durable monotonic fencing counter;
+- atomic compare-and-renew using lease id, owner, service instance, and fencing
+  token;
+- atomic compare-and-delete release;
+- backend-authoritative server time and TTL;
+- request-id idempotency for committed and unknown outcomes;
+- deterministic namespaced keys with a cluster-safe hash-tag layout;
+- bounded connection pooling owned and closed by the lease runtime;
+- password authentication and explicit TLS/verification configuration;
+- finite operation and pool-acquisition deadlines;
+- bounded reconnect/backoff and health checks;
+- credential and metadata redaction at logging, audit, and error boundaries;
+- no GET-then-SET or other client-side race for lease transitions;
+- documented persistence, replication, failover, and fencing assumptions.
+- update `docs/lease-store-usage.org` with the real Valkey constructor,
+  configuration, secret, TLS, and shutdown examples before #31 is merged; remove
+  its pre-#31 availability warning once those examples are executable.
+
+Use server-side Lua scripts or equivalent Valkey atomic primitives.  Keep the
+scripts and key layout owned by this repository.  Do not monkey-patch a
+dependency at runtime.
+
+Begin with failing regression and real-service tests.  Required evidence:
+
+- the reusable backend contract suite passes against real Valkey;
+- 100 concurrent acquire attempts yield exactly one active owner;
+- reacquisition after expiry returns a strictly greater fencing token;
+- the stale owner cannot renew or release;
+- the stale owner cannot perform a fenced authoritative commit;
+- retry after an interrupted or unknown outcome resolves idempotently by
+  request id;
+- authentication is required and invalid credentials fail closed;
+- TLS configuration is validated without silently disabling verification;
+- pool deadlines, reconnect/backoff, health, closure, and resource cleanup are
+  tested;
+- tests verify observed state and fencing behavior, not merely command success;
+- zero discovered or executed tests is a failure.
+
+Run every mandatory gate on the final tree:
+
+```text
+nix run .#star-unit-tests
+nix run .#star-integration-tests
+python scripts/check-starintel-schema-lock.py
+docker compose config --quiet
+./scripts/stack-test.sh
+git diff --check
+```
+
+Also run the focused Valkey backend contract, concurrency, expiry, idempotency,
+authentication, TLS, and lifecycle suites.  Record exact discovered, executed,
+passed, failed, and skipped counts.  Do not label a failure environmental
+without demonstrating the exact missing dependency and retaining it as a merge
+blocker.
+
+Review the final diff for atomicity, cluster slot safety, counter durability,
+deadline semantics, idempotency retention, stale-holder exclusion, secret
+redaction, pool ownership, closure, and absence of backend imports in actors or
+HTTP routes.
+
+When all local gates pass:
+
+1. Commit and push the existing #31 branch.
+2. Open exactly one draft pull request targeting `dev`, or continue the
+   existing PR if one exists.
+3. Include root cause, atomic wire/storage contract, key layout, compatibility
+   impact, files changed, exact test counts, real Valkey evidence, operational
+   assumptions, remaining risks, and `Fixes #31` in the PR body.
+4. Keep it draft until every required check passes.
+5. Inspect and resolve all actionable review threads.
+6. If CI fails, inspect the actual GitHub Actions logs, fix the root cause,
+   rerun affected local gates, push, and monitor again.
+7. Merge into `dev` only when required checks are green.
+
+After #31 merges, re-read roadmap issue #9 and begin issue #32 on a fresh branch
+and worktree:
+
+`[P0-24] Expose authenticated target-lease HTTP APIs and enforce leases in
+target execution`
+
+For #32, inspect merged code and acceptance evidence first.  Do not redesign
+the #30 protocol or reimplement #31.  Process one issue per branch and PR, and
+never silently skip a canonical issue.
+
+Report the selected issue, branch/worktree, commits, exact tests, PR, CI/review
+state, blockers, and exact next issue.  Continue through test, review, commit,
+push, PR, CI, fix-on-failure, and merge-on-green unless a real design blocker
+requires a user decision.
+#+end_src

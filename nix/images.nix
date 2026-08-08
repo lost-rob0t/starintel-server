@@ -82,6 +82,17 @@ let
     pathsToLink = [ "/bin" "/etc" ];
   };
 
+  valkeyRoot = pkgs.runCommand "valkey-image-root" { } ''
+    install -Dm755 ${../docker/valkey-entrypoint.sh} \
+      "$out/bin/starintel-valkey-entrypoint"
+  '';
+
+  valkeyImageRoot = pkgs.buildEnv {
+    name = "valkey-image-environment";
+    paths = [ pkgs.valkey pkgs.busybox pkgs.util-linux valkeyRoot ];
+    pathsToLink = [ "/bin" ];
+  };
+
   couchdbImage = pkgs.dockerTools.buildImage {
     name = "starintel/couchdb";
     tag = couchdbVersion;
@@ -162,11 +173,36 @@ let
 
   rabbitmqImage = rabbitmqBase;
 
+  valkeyImage = pkgs.dockerTools.buildLayeredImage {
+    name = "starintel/valkey";
+    tag = pkgs.valkey.version;
+    contents = valkeyImageRoot;
+
+    extraCommands = ''
+      mkdir -p data
+      chmod 0700 data
+    '';
+
+    fakeRootCommands = ''
+      chown 65532:65532 data
+    '';
+
+    config = {
+      Entrypoint = [ "/bin/starintel-valkey-entrypoint" ];
+      Env = [ "VALKEY_PASSWORD_FILE=/run/secrets/valkey_password" ];
+      ExposedPorts."6379/tcp" = { };
+      User = "0:0";
+      Volumes."/data" = { };
+      WorkingDir = "/data";
+    };
+  };
+
   allImages = pkgs.dockerTools.mergeImages [
     serverImage
     couchdbImage
     clouseauImage
     rabbitmqImage
+    valkeyImage
   ];
 
   loadImages = pkgs.writeShellApplication {
@@ -185,5 +221,6 @@ in
     loadImages
     rabbitmqImage
     serverImage
+    valkeyImage
     ;
 }
