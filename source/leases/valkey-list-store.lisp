@@ -30,16 +30,15 @@ and validation cannot cause an older record to inherit a successor's TTL."
       ((not (stringp response))
        (values nil :backend-unavailable))
       (t
-       (let ((record
-               (handler-case
-                   (deserialize-lease-record response)
-                 (error () nil))))
-         (if (and record
-                  (string=
-                   key
-                   (valkey-active-key store (lease-record-identity record))))
-             (values record nil)
-             (values nil nil)))))))
+       (handler-case
+           (let ((record (deserialize-lease-record response)))
+             (if (string=
+                  key
+                  (valkey-active-key store (lease-record-identity record)))
+                 (values record nil)
+                 (values nil :backend-unavailable)))
+         (error ()
+           (values nil :backend-unavailable)))))))
 
 (defmethod list-leases
     ((store valkey-lease-store)
