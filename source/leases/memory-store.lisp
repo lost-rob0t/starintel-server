@@ -321,22 +321,26 @@
   (call-memory-operation
    store :list deadline request-id
    (lambda (now)
-     (let ((records nil))
-       (dolist (key
-                 (loop for key being the hash-keys
-                         of (memory-store-records store)
-                       collect key))
-          (multiple-value-bind (record expired)
-              (record-for-key store key now)
-            (declare (ignore expired))
-            (when (and record
-                       (record-matches-filters-p
-                        record owner-principal-id target-id program-id))
-              (push (snapshot-record record) records))))
-       (outcome
-        :listed
-        :leases
-        (sort records #'string< :key #'lease-record-lock-key))))))
+     (if (not (and (valid-lease-filter-p owner-principal-id)
+                   (valid-lease-component-filter-p target-id)
+                   (valid-lease-component-filter-p program-id)))
+         (outcome :invalid-request)
+         (let ((records nil))
+           (dolist (key
+                     (loop for key being the hash-keys
+                             of (memory-store-records store)
+                           collect key))
+             (multiple-value-bind (record expired)
+                 (record-for-key store key now)
+               (declare (ignore expired))
+               (when (and record
+                          (record-matches-filters-p
+                           record owner-principal-id target-id program-id))
+                 (push (snapshot-record record) records))))
+           (outcome
+            :listed
+            :leases
+            (sort records #'string< :key #'lease-record-lock-key)))))))
 
 (defmethod revoke-lease
     ((store memory-lease-store) identity

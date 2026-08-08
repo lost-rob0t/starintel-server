@@ -163,6 +163,22 @@
        (plusp (length value))
        (<= (utf-8-byte-length value) +lease-reason-max-bytes+)))
 
+(defun valid-lease-filter-p (value)
+  "Optional externally supplied filter: nil (omitted) or a bounded identifier.
+Used for owner-principal-id and similar non-canonical filters. Both backends
+MUST validate filters before any backend work."
+  (or (null value) (valid-lease-identifier-p value)))
+
+(defun valid-lease-component-filter-p (value)
+  "Optional canonical identity-component filter (target-id, program-id):
+nil (omitted) or a valid canonical component. Validates before backend work
+without signaling. Both backends MUST consult this before scanning."
+  (or (null value)
+      (and (stringp value) (plusp (length value))
+           (handler-case
+               (progn (normalize-identity-component "filter" value) t)
+             (error () nil)))))
+
 (defun lease-metadata-object-p (metadata)
   "True for NIL (empty metadata) or a parsed JSON object (jsown object)."
   (or (null metadata)

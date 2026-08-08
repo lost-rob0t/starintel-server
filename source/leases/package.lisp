@@ -54,6 +54,8 @@
    #:valid-lease-reason-p
    #:lease-metadata-object-p
    #:valid-lease-metadata-p
+   #:valid-lease-filter-p
+   #:valid-lease-component-filter-p
    #:lease-store
    #:memory-lease-store
    #:make-memory-lease-store

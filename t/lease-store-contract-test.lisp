@@ -497,5 +497,55 @@
               :service-instance-id "instance-a"
               :ttl-ms 100 :maximum-lifetime-ms 1000
               :execution-id "execution-a" :job-id "job-a"
-              :trace-id "trace-a" :deadline 2000 :request-id "request-a"
-              :metadata "not-a-json-object"))))))
+               :trace-id "trace-a" :deadline 2000 :request-id "request-a"
+               :metadata "not-a-json-object"))))))
+
+(test list-lease-filters-are-bounded-before-backend-work
+  "Optional list-leases filters (owner-principal-id, target-id, program-id)
+are validated before any backend work. nil (omitted) is valid; oversized or
+malformed filters return :invalid-request. Both backends behave equivalently."
+  (let* ((now 1000)
+         (store (make-test-lease-store (lambda () now)))
+         (identity (test-lease-identity))
+         (max-bytes star.leases:+lease-identifier-max-bytes+)
+         (oversized (make-string (1+ max-bytes) :initial-element #\a))
+         (multibyte-over
+           (make-string max-bytes
+                        :initial-element #\latin_small_letter_e_with_acute)))
+    ;; Acquire a lease so list has something to filter.
+    (acquire-test-lease store identity "list-filter-acquire" "owner-a")
+    ;; nil filters are valid and return the lease.
+    (is (eq :listed
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :deadline 2000 :request-id "list-all"))))
+    ;; Maximum-length owner filter is accepted.
+    (is (eq :listed
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :owner-principal-id (make-string max-bytes :initial-element #\a)
+              :deadline 2000 :request-id "list-max-owner"))))
+    ;; Oversized owner filter is rejected.
+    (is (eq :invalid-request
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :owner-principal-id oversized
+              :deadline 2000 :request-id "list-oversized-owner"))))
+    ;; Multibyte UTF-8 cannot bypass the byte bound.
+    (is (eq :invalid-request
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :owner-principal-id multibyte-over
+              :deadline 2000 :request-id "list-multibyte-owner"))))
+    ;; Oversized target-id filter is rejected.
+    (is (eq :invalid-request
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :target-id oversized
+              :deadline 2000 :request-id "list-oversized-target"))))
+    ;; Oversized program-id filter is rejected.
+    (is (eq :invalid-request
+            (star.leases:lease-outcome-code
+             (star.leases:list-leases
+              store :program-id oversized
+              :deadline 2000 :request-id "list-oversized-program"))))))

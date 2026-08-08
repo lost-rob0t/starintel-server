@@ -597,7 +597,10 @@
 (defmethod list-leases
     ((store valkey-lease-store)
      &key owner-principal-id target-id program-id deadline request-id)
-  (unless (valid-valkey-operation-p deadline request-id nil)
+  (unless (and (valid-valkey-operation-p deadline request-id nil)
+               (valid-lease-filter-p owner-principal-id)
+               (valid-lease-component-filter-p target-id)
+               (valid-lease-component-filter-p program-id))
     (return-from list-leases (valkey-outcome :invalid-request)))
   (handler-case
       (let ((cursor "0")
