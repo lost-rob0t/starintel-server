@@ -241,6 +241,7 @@
    #:+new-documents-key+
    #:+new-documents-fmt-key+
    #:+updated-documents-key+
+   #:+updated-documents-fmt-key+
    #:+new-targets-key+
    #:+targets-fmt-key+
    #:+ingest-topic-key+
