@@ -50,11 +50,16 @@
         (format nil "Field ~a must be a positive integer" field))))))
 
 (defun optional-auth-boolean (document field default)
+  ;; JSOWN's default reader maps JSON false to NIL, the same value returned by
+  ;; VAL-SAFE for a missing key. Check key presence first so an explicit false
+  ;; is not silently replaced by DEFAULT.
+  (unless (jsown:keyp document field)
+    (return-from optional-auth-boolean default))
   (let ((value (jsown:val-safe document field)))
     (cond
-      ((or (null value) (eq value :null)) default)
       ((or (eq value t) (eq value :true)) t)
-      ((eq value :false) nil)
+      ((or (null value) (eq value :false)) nil)
+      ((eq value :null) default)
       (t
        (signal-http-input-error
         422
