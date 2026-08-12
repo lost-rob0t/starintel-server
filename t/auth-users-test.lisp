@@ -146,3 +146,13 @@
     (is-true
      (star.auth:authenticate-user-password
       "analyst" "reset-password-456" :store store))))
+
+(test explicit-false-auth-boolean-is-not-defaulted
+  (let ((document (jsown:parse "{\"must_change_password\":false}")))
+    (is-false
+     (star.frontends.http-api::optional-auth-boolean
+      document "must_change_password" t)))
+  (let ((document (jsown:parse "{}")))
+    (is-true
+     (star.frontends.http-api::optional-auth-boolean
+      document "must_change_password" t))))
