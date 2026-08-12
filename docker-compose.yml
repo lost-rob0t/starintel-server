@@ -104,6 +104,7 @@ services:
       STAR_AUTH_PEPPER_FILE: /run/secrets/auth_pepper
       STAR_AUTH_BOOTSTRAP_SECRET_FILE: /run/secrets/auth_bootstrap_secret
       STAR_AUTH_ALLOWED_ORIGINS: ${STAR_AUTH_ALLOWED_ORIGINS:-}
+      STAR_AUTH_PASSWORD_ITERATIONS: ${STAR_AUTH_PASSWORD_ITERATIONS:-600000}
       STAR_SERVER_INIT_FILE: ${STAR_SERVER_INIT_FILE:-/etc/starintel/init.lisp}
     secrets:
       - couchdb_password
@@ -152,3 +153,5 @@ volumes:
 
 networks:
   backend:
+    driver: bridge
+    internal: true
