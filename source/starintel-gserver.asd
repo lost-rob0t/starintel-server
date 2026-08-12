@@ -22,6 +22,7 @@
    (:file "auth/verification-hardening")
    (:file "auth/immutability")
    (:file "auth/store")
+   (:file "auth/users")
    (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
