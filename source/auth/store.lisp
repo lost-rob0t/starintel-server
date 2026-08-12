@@ -4,6 +4,9 @@
   ((records
     :initform (make-hash-table :test #'equal)
     :reader memory-store-records)
+   (users
+    :initform (make-hash-table :test #'equal)
+    :reader memory-store-users)
    (lock
     :initform (bt:make-lock "memory-credential-store")
     :reader memory-store-lock)))
@@ -237,7 +240,11 @@
        ("credentials"
         (jsown:new-js
           ("map"
-           "function(doc){if(doc.kind==='api-key'){emit(doc.created_at,null);}}")))))))
+           "function(doc){if(doc.kind==='api-key'){emit(doc.created_at,null);}}")))
+       ("users"
+        (jsown:new-js
+          ("map"
+           "function(doc){if(doc.kind==='user'){emit(doc.username,null);}}")))))))
 
 (defun ensure-auth-database (store)
   (anypool:with-connection (client (couchdb-store-pool store))
