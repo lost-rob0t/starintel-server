@@ -18,6 +18,7 @@
         (lparallel:make-kernel star:*ingest-workers*))
   (star.databases.couchdb:init-db)
   (star.auth:initialize-auth-store)
+  (star.auth:ensure-initial-user)
   (star.actors:start-actors
    :rabbit-host *rabbit-address*
    :rabbit-vhost "/"

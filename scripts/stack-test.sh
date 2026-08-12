@@ -16,6 +16,8 @@ export STAR_SERVER_PORT="$port_base"
 export COUCHDB_PORT="$((port_base + 1))"
 export RABBITMQ_PORT="$((port_base + 2))"
 export RABBITMQ_MANAGEMENT_PORT="$((port_base + 3))"
+# Keep the container contract identical while making CI password tests fast.
+export STAR_AUTH_PASSWORD_ITERATIONS="1000"
 
 mkdir -p "$artifact_dir"
 rm -f "$artifact_dir"/*
@@ -111,6 +113,80 @@ bootstrap_response="$(
 api_key="$(jq --exit-status --raw-output '.api_key' <<<"$bootstrap_response")"
 [[ "$api_key" == star_sk_v1_* ]]
 auth_header="Authorization: Bearer ${api_key}"
+
+set_stage "verify-default-star-intel-login"
+default_login_response="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --data '{"username":"star","password":"intel"}' \
+    "${server_url}/auth/login"
+)"
+default_api_key="$(jq --exit-status --raw-output '.api_key' <<<"$default_login_response")"
+[[ "$default_api_key" == star_sk_v1_* ]]
+jq --exit-status \
+  '.user.username == "star" and .user.principal_type == "administrator" and .user.must_change_password == true' \
+  <<<"$default_login_response" >/dev/null
+default_auth_header="Authorization: Bearer ${default_api_key}"
+
+set_stage "create-human-user"
+stack_user_password="stack-user-password-123"
+curl --fail --silent --show-error \
+  --request POST \
+  --header "Content-Type: application/json" \
+  --header "$default_auth_header" \
+  --data "{\"username\":\"stack-user\",\"password\":\"${stack_user_password}\",\"principal_type\":\"user\",\"scopes\":[\"documents:read\",\"search:read\"],\"must_change_password\":false}" \
+  "${server_url}/auth/users" |
+  jq --exit-status \
+    '.user.username == "stack-user" and .user.must_change_password == false' \
+    >/dev/null
+
+set_stage "login-created-user"
+stack_user_login_response="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --data "{\"username\":\"stack-user\",\"password\":\"${stack_user_password}\"}" \
+    "${server_url}/auth/login"
+)"
+stack_user_api_key="$(jq --exit-status --raw-output '.api_key' <<<"$stack_user_login_response")"
+[[ "$stack_user_api_key" == star_sk_v1_* ]]
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer ${stack_user_api_key}" \
+  "${server_url}/auth/context" |
+  jq --exit-status \
+    '.principal_id == "stack-user" and .principal_type == "user"' \
+    >/dev/null
+
+set_stage "change-default-password"
+new_default_password="stack-default-password-456"
+curl --fail --silent --show-error \
+  --request POST \
+  --header "Content-Type: application/json" \
+  --header "$default_auth_header" \
+  --data "{\"current_password\":\"intel\",\"new_password\":\"${new_default_password}\"}" \
+  "${server_url}/auth/password" |
+  jq --exit-status '.user.username == "star" and .user.must_change_password == false' \
+    >/dev/null
+
+old_default_status="$(
+  curl --silent --output /dev/null --write-out '%{http_code}' \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --data '{"username":"star","password":"intel"}' \
+    "${server_url}/auth/login"
+)"
+[[ "$old_default_status" == "401" ]]
+
+new_default_login_response="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --data "{\"username\":\"star\",\"password\":\"${new_default_password}\"}" \
+    "${server_url}/auth/login"
+)"
+jq --exit-status '.user.username == "star" and .user.must_change_password == false' \
+  <<<"$new_default_login_response" >/dev/null
 
 set_stage "verify-unauthenticated-denial"
 unauthenticated_status="$(
@@ -216,7 +292,28 @@ curl --fail --silent --show-error \
   "${server_url}/auth/context" |
   jq --exit-status '.principal_id == "stack-administrator"' >/dev/null
 
+set_stage "verify-user-persistence"
+post_restart_user_login="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --data "{\"username\":\"stack-user\",\"password\":\"${stack_user_password}\"}" \
+    "${server_url}/auth/login"
+)"
+jq --exit-status '.user.username == "stack-user"' \
+  <<<"$post_restart_user_login" >/dev/null
+
+post_restart_default_login="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Content-Type: application/json" \
+    --data "{\"username\":\"star\",\"password\":\"${new_default_password}\"}" \
+    "${server_url}/auth/login"
+)"
+jq --exit-status '.user.username == "star" and .user.must_change_password == false' \
+  <<<"$post_restart_default_login" >/dev/null
+
 set_stage "verify-search-after-restart"
 wait_for_search
 
-printf 'Authenticated Nix-built stack passed bootstrap, denial, FTS, and restart persistence checks.\n'
+printf 'Authenticated Nix-built stack passed bootstrap, user login, user creation, password rotation, FTS, and restart persistence checks.\n'
