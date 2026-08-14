@@ -314,6 +314,7 @@ EOF
           service_root="$(mktemp -d)"
           plain_pid=""
           tls_pid=""
+          services_ready=false
           stop_valkey() {
             local pid="$1"
             if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then return; fi
@@ -329,6 +330,15 @@ EOF
             wait "$pid" 2>/dev/null || true
           }
           cleanup_valkey() {
+            local exit_status=$?
+            if [ "$exit_status" -ne 0 ] && [ "$services_ready" != true ]; then
+              for log in plain.log plain.stdout.log tls.log tls.stdout.log; do
+                if [ -s "$service_root/$log" ]; then
+                  printf '%s\n' "--- Valkey $log ---" >&2
+                  cat "$service_root/$log" >&2
+                fi
+              done
+            fi
             stop_valkey "$tls_pid"
             stop_valkey "$plain_pid"
             rm -rf "$service_root"
@@ -408,20 +418,21 @@ PY
           done
           VALKEYCLI_AUTH='valkey-integration-secret' \
             valkey-cli -h 127.0.0.1 -p "$plain_port" ping \
-            2>/dev/null | grep -q PONG
+            | grep -q PONG
           for _ in $(seq 1 100); do
             if VALKEYCLI_AUTH='valkey-integration-secret' \
               valkey-cli --tls --cacert "$service_root/ca.crt" \
-              -h localhost -p "$tls_port" ping 2>/dev/null | grep -q PONG; then
+              -h 127.0.0.1 -p "$tls_port" ping 2>/dev/null | grep -q PONG; then
               break
             fi
             sleep 0.05
           done
           VALKEYCLI_AUTH='valkey-integration-secret' \
             valkey-cli --tls --cacert "$service_root/ca.crt" \
-            -h localhost -p "$tls_port" ping 2>/dev/null | grep -q PONG
+            -h 127.0.0.1 -p "$tls_port" ping | grep -q PONG
+          services_ready=true
 
-          export STAR_TEST_VALKEY_HOST=localhost
+          export STAR_TEST_VALKEY_HOST=127.0.0.1
           export STAR_TEST_VALKEY_PORT="$plain_port"
           export STAR_TEST_VALKEY_TLS_PORT="$tls_port"
           export STAR_TEST_VALKEY_UNUSED_PORT="$unused_port"
@@ -429,7 +440,7 @@ PY
           export STAR_TEST_VALKEY_BAD_PASSWORD_FILE="$bad_password_file"
           export STAR_TEST_VALKEY_CA_FILE="$service_root/ca.crt"
           export STAR_TEST_VALKEY_WRONG_CA_FILE="$service_root/wrong-ca.crt"
-          export VALKEY_HOST=localhost
+          export VALKEY_HOST=127.0.0.1
           export VALKEY_PORT="$plain_port"
           export VALKEY_PASSWORD_FILE="$password_file"
         '';

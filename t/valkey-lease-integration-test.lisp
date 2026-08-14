@@ -518,11 +518,12 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code result)))
         (is-false (star.leases:lease-outcome-lease result)))
-      ;; list-leases must also skip the corrupt record without signaling.
+      ;; list-leases must fail closed without signaling or returning records.
       (let ((listed
               (star.leases:list-leases
                store :deadline (real-deadline) :request-id "cr-list")))
-        (is (eq :listed (star.leases:lease-outcome-code listed)))
+        (is (eq :backend-unavailable
+                (star.leases:lease-outcome-code listed)))
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner

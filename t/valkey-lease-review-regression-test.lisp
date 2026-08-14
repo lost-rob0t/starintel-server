@@ -38,7 +38,7 @@
             (star.leases::valkey-validated-active-record
              store active-key (real-deadline))
           (is-false failure)
-          (is validated)
+          (is-true validated)
           (is (string=
                (star.leases:lease-record-lease-id current)
                (star.leases:lease-record-lease-id validated)))
@@ -104,10 +104,11 @@
                 (star.leases:lease-outcome-code result)))
         (is-false (star.leases:lease-outcome-lease result)))
       ;; Listing uses the same contract decoder after atomic per-key validation,
-      ;; so the invalid record is omitted rather than escaping as a Lisp error.
+      ;; so the invalid record fails closed rather than escaping as a Lisp error.
       (let ((listed
               (star.leases:list-leases
                store :deadline (real-deadline)
                :request-id "corrupt-version-list")))
-        (is (eq :listed (star.leases:lease-outcome-code listed)))
+        (is (eq :backend-unavailable
+                (star.leases:lease-outcome-code listed)))
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
