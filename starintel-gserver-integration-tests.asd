@@ -7,7 +7,8 @@
   :depends-on (#:starintel-gserver-tests)
   :components ((:module "t"
                 :serial t
-                :components ((:file "http-api-test")
+                :components ((:file "couchdb-view-integration-test")
+                             (:file "http-api-test")
                              (:file "run-integration-tests"))))
   :perform (test-op (o c)
              (declare (ignore o c))

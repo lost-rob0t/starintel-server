@@ -54,35 +54,43 @@
 (defun comma-separated-scopes (scopes)
   (format nil "~{~a~^,~}" scopes))
 
-(defun service-context-properties (dtype context)
-  (let ((properties (list (cons :type dtype))))
+(defun service-context-properties
+    (dtype context &optional star.authorization:*current-authorization-decision*)
+  "Build server-owned Rabbit properties. Caller-supplied document fields are ignored."
+  (let ((properties (list (cons :type dtype)))
+        (headers nil))
     (when context
       (push (cons :correlation-id
                   (star.auth:service-call-context-correlation-id context))
             properties)
-      (push
-       (cons :headers
-             (list
-              (cons "x-star-principal-id"
-                    (star.auth:service-call-context-principal-id context))
-              (cons "x-star-principal-type"
-                    (star.auth:service-call-context-principal-type context))
-              (cons "x-star-credential-id"
-                    (star.auth:service-call-context-credential-id context))
-              (cons "x-star-scopes"
-                    (comma-separated-scopes
-                     (star.auth:service-call-context-scopes context)))
-              (cons "x-star-deadline"
-                    (princ-to-string
-                     (star.auth:service-call-context-deadline context)))))
-       properties))
+      (setf headers
+            (list
+             (cons "x-star-principal-id"
+                   (star.auth:service-call-context-principal-id context))
+             (cons "x-star-principal-type"
+                   (star.auth:service-call-context-principal-type context))
+             (cons "x-star-credential-id"
+                   (star.auth:service-call-context-credential-id context))
+             (cons "x-star-scopes"
+                   (comma-separated-scopes
+                    (star.auth:service-call-context-scopes context)))
+             (cons "x-star-deadline"
+                   (princ-to-string
+                    (star.auth:service-call-context-deadline context))))))
+    (when star.authorization:*current-authorization-decision*
+      (setf headers
+            (append headers
+                    (star.authorization:decision-rabbit-headers
+                     star.authorization:*current-authorization-decision*))))
+    (when headers
+      (push (cons :headers headers) properties))
     (nreverse properties)))
 
 (defun current-publish-service-context ()
   (or *service-call-context*
       (star.auth:current-service-call-context)))
 
-(defun publish-document (document)
+(defun publish-document-unchecked (document)
   (let* ((dtype (jsown:val document "dtype"))
          (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype))
          (context (current-publish-service-context)))
@@ -90,7 +98,22 @@
      star.actors:*producer-agent*
      :body (jsown:to-json document)
      :routing-key routing-key
-     :properties (service-context-properties dtype context))))
+     :properties
+     (service-context-properties
+      dtype
+      context
+      star.authorization:*current-authorization-decision*))))
+
+(defun publish-document (document)
+  "Authorize at the embedded publish boundary before any Rabbit side effect."
+  (star.authorization:authorized-publish-document
+   document
+   #'publish-document-unchecked
+   :principal (current-publish-service-context)
+   :metadata
+   (list :route "internal:rabbit-publish"
+         :method "PUBLISH"
+         :correlation-id (current-correlation-id))))
 
 (defun execute-bulk-job (job &key (publish-fn #'publish-document))
   (setf (bulk-ingest-job-status job) :running)
@@ -231,6 +254,8 @@
                    (progn
                      (publish-document document)
                      (incf succeeded))
+                 (star.authorization:authorization-error (condition)
+                   (error condition))
                  (error (condition)
                    (log:error "Inline bulk publish failed correlation=~a: ~a"
                               (current-correlation-id)
@@ -253,5 +278,6 @@
             bulk-ingest-job-status
             bulk-ingest-job-succeeded
             bulk-ingest-job-failed
-            service-context-properties)
+            service-context-properties
+            publish-document)
           :star.frontends.http-api))

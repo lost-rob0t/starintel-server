@@ -8,8 +8,12 @@ This document is a normative part of the StarIntel Server HTTP authentication
 threat model. It defines the trust boundary between authenticated HTTP callers,
 actor components, target-lease operations, and the key-value lease store.
 
-It is design only. It does not claim that the current runtime implements these
-controls.
+Lease identity, records, state transitions, operations, deadlines, idempotency,
+fencing enforcement, and wire results are defined by
+[[file:target-lease-semantics.org][the distributed target lease semantics]].
+
+Both documents are design only. They do not claim that the current runtime
+implements these controls.
 
 * Protected lease assets
 

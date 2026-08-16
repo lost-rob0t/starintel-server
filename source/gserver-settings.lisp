@@ -140,3 +140,17 @@
 ;;;; Event log and bulk operations
 (defparameter *couchdb-event-log-database* "starintel-event-source")
 (defparameter *bulk-max-documents* 500)
+
+;;;; Rabbit retry and quarantine
+(defparameter *rabbit-max-retries* 4
+  "Maximum republished attempts after the original delivery.")
+(defparameter *rabbit-retry-base-delay-ms* 250
+  "Initial retry delay in milliseconds.")
+(defparameter *rabbit-retry-max-delay-ms* 30000
+  "Maximum exponential retry delay in milliseconds.")
+(defparameter *rabbit-retry-jitter-ratio* 0.20d0
+  "Symmetric retry jitter ratio.")
+(defparameter *rabbit-quarantine-exchange* "starintel.quarantine"
+  "Durable topic exchange receiving structured quarantine records.")
+(defparameter *rabbit-quarantine-queue* "starintel-quarantine"
+  "Durable queue used for poison-message inspection.")
