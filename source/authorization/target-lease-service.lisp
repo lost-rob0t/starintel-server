@@ -7,6 +7,35 @@
     :backend-unavailable :deadline-exceeded :outcome-unknown
     :unauthenticated :unauthorized))
 
+(defparameter *target-lease-valkey-host*
+  (or (uiop:getenv "VALKEY_HOST") "127.0.0.1"))
+(defparameter *target-lease-valkey-port*
+  (star::environment-integer "VALKEY_PORT" 6379))
+(defparameter *target-lease-valkey-password-file*
+  (uiop:getenv "VALKEY_PASSWORD_FILE"))
+(defparameter *target-lease-valkey-tls-p*
+  (not (null (star::environment-boolean "VALKEY_TLS" nil))))
+(defparameter *target-lease-valkey-ca-file*
+  (uiop:getenv "VALKEY_CA_FILE"))
+(defparameter *target-lease-valkey-pool-size*
+  (star::environment-integer "STAR_TARGET_LEASE_POOL_SIZE" 8))
+(defparameter *target-lease-valkey-pool-wait-timeout-ms*
+  (star::environment-integer "STAR_TARGET_LEASE_POOL_WAIT_TIMEOUT_MS" 500))
+(defparameter *target-lease-valkey-operation-timeout-ms*
+  (star::environment-integer "STAR_TARGET_LEASE_OPERATION_TIMEOUT_MS" 1000))
+(defparameter *target-lease-valkey-reconnect-attempts*
+  (star::environment-integer "STAR_TARGET_LEASE_RECONNECT_ATTEMPTS" 2))
+(defparameter *target-lease-valkey-reconnect-backoff-ms*
+  (star::environment-integer "STAR_TARGET_LEASE_RECONNECT_BACKOFF_MS" 25))
+(defparameter *target-lease-idempotency-ttl-ms*
+  (star::environment-integer "STAR_TARGET_LEASE_IDEMPOTENCY_TTL_MS" 86400000))
+(defparameter *target-lease-default-ttl-ms*
+  (star::environment-integer "STAR_TARGET_LEASE_DEFAULT_TTL_MS" 30000))
+(defparameter *target-lease-maximum-lifetime-ms*
+  (star::environment-integer "STAR_TARGET_LEASE_MAXIMUM_LIFETIME_MS" 300000))
+(defparameter *target-lease-service-instance-id*
+  (uiop:getenv "STAR_TARGET_LEASE_SERVICE_INSTANCE_ID"))
+
 (defstruct (target-lease-service
              (:constructor %make-target-lease-service
                  (store runtime service-instance-id)))
@@ -65,16 +94,16 @@
   (* 1000 (- (get-universal-time) 2208988800)))
 
 (defun target-lease-deadline-milliseconds (deadline)
+  "Normalize a finite trusted deadline to Unix milliseconds.
+HTTP security contexts carry Common Lisp universal seconds. Embedded callers
+may pass Unix milliseconds directly."
   (cond
     ((null deadline)
-     (+ (target-lease-unix-milliseconds)
-        star:*auth-default-request-timeout-ms*))
-    ;; HTTP/request security contexts use Common Lisp universal seconds.
-    ((> deadline 3000000000)
-     (* 1000 (- deadline 2208988800)))
-    ;; Embedded callers may already provide Unix milliseconds.
-    ((> deadline 300000000000)
+     (error "Target lease deadline is required"))
+    ((and (integerp deadline) (> deadline 300000000000))
      deadline)
+    ((and (integerp deadline) (> deadline 3000000000))
+     (* 1000 (- deadline 2208988800)))
     (t
      (error "Target lease deadline must be finite universal seconds or Unix milliseconds"))))
 
@@ -106,7 +135,7 @@
    :target-id (target-lease-request-context-target-id context)
    :actor-name (target-lease-request-context-actor-name context)))
 
-(defun target-lease-context-metadata (context operation)
+(defun target-lease-policy-metadata (context operation)
   (list :route "target-lease-service"
         :method operation
         :correlation-id
@@ -120,7 +149,7 @@
    action
    :principal (target-lease-request-context-principal context)
    :resource (target-lease-context-resource context)
-   :metadata (target-lease-context-metadata context operation)))
+   :metadata (target-lease-policy-metadata context operation)))
 
 (defun target-lease-service-result (code &key lease leases retryable-p detail decision)
   (unless (member code +target-lease-service-result-codes+ :test #'eq)
@@ -152,115 +181,150 @@
          :unauthorized)
      :decision decision)))
 
-(defmacro with-target-lease-service-boundary
-    ((context &key hide-scope-p) &body body)
-  `(handler-case
-       (cond
-         ((null (target-lease-request-context-principal ,context))
-          (target-lease-service-result :unauthenticated))
-         ((or (null (target-lease-request-context-request-id ,context))
-              (null (target-lease-request-context-deadline ,context)))
+(defun valid-target-lease-context-p (context &key identity-required-p)
+  (and (typep context 'target-lease-request-context)
+       (target-lease-request-context-principal context)
+       (star.leases:valid-lease-identifier-p
+        (target-lease-request-context-request-id context))
+       (integerp (target-lease-request-context-deadline context))
+       (or (not identity-required-p)
+           (handler-case
+               (progn
+                 (target-lease-context-identity context)
+                 t)
+             (error () nil)))))
+
+(defun context-validation-result (context &key identity-required-p)
+  (cond
+    ((or (null context)
+         (null (target-lease-request-context-principal context)))
+     (target-lease-service-result :unauthenticated))
+    ((not (valid-target-lease-context-p
+           context :identity-required-p identity-required-p))
+     (target-lease-service-result
+      :invalid-request
+      :detail "invalid lease request context"))
+    (t nil)))
+
+(defun call-target-lease-operation
+    (context thunk &key (identity-required-p t) hide-scope-p)
+  (or (context-validation-result
+       context :identity-required-p identity-required-p)
+      (handler-case
+          (funcall thunk)
+        (authorization-error (condition)
+          (authorization-denial-result condition :hide-scope-p hide-scope-p))
+        (error (condition)
+          (log:error "target lease service failure: ~a" condition)
           (target-lease-service-result
-           :invalid-request
-           :detail "request-id and finite deadline are required"))
-         (t ,@body))
-     (authorization-error (condition)
-       (authorization-denial-result condition :hide-scope-p ,hide-scope-p))
-     (error (condition)
-       (target-lease-service-result
-        :invalid-request
-        :detail (princ-to-string condition)))))
+           :backend-unavailable
+           :retryable-p t
+           :detail "lease service unavailable")))))
 
 (defun acquire-target-lease (service context)
-  "Authorize and acquire a target lease through the backend-neutral store."
-  (with-target-lease-service-boundary (context)
-    (let* ((decision (target-lease-authorize! context "targets:lease" "ACQUIRE"))
-           (principal (target-lease-request-context-principal context))
-           (result
-             (star.leases:acquire-lease
-              (target-lease-service-store service)
-              (target-lease-context-identity context)
-              :owner-principal-id (principal-id principal)
-              :owner-client-id
-              (or (target-lease-request-context-owner-client-id context)
-                  (principal-id principal))
-              :owner-credential-id
-              (or (target-lease-principal-credential-id principal)
-                  "trusted-internal")
-              :service-instance-id
-              (target-lease-service-service-instance-id service)
-              :ttl-ms (target-lease-request-context-ttl-ms context)
-              :maximum-lifetime-ms
-              (target-lease-request-context-maximum-lifetime-ms context)
-              :execution-id (target-lease-request-context-execution-id context)
-              :job-id (target-lease-request-context-job-id context)
-              :trace-id (target-lease-request-context-trace-id context)
-              :metadata (target-lease-request-context-metadata context)
-              :deadline
-              (target-lease-deadline-milliseconds
-               (target-lease-request-context-deadline context))
-              :request-id (target-lease-request-context-request-id context))))
-      (translate-lease-outcome result :decision decision))))
+  "Authorize and acquire through the backend-neutral lease-store protocol."
+  (call-target-lease-operation
+   context
+   (lambda ()
+     (let* ((decision (target-lease-authorize! context "targets:lease" "ACQUIRE"))
+            (principal (target-lease-request-context-principal context))
+            (result
+              (star.leases:acquire-lease
+               (target-lease-service-store service)
+               (target-lease-context-identity context)
+               :owner-principal-id (principal-id principal)
+               :owner-client-id
+               (or (target-lease-request-context-owner-client-id context)
+                   (principal-id principal))
+               :owner-credential-id
+               (or (target-lease-principal-credential-id principal)
+                   "trusted-internal")
+               :service-instance-id
+               (target-lease-service-service-instance-id service)
+               :ttl-ms
+               (or (target-lease-request-context-ttl-ms context)
+                   *target-lease-default-ttl-ms*)
+               :maximum-lifetime-ms
+               (or (target-lease-request-context-maximum-lifetime-ms context)
+                   *target-lease-maximum-lifetime-ms*)
+               :execution-id (target-lease-request-context-execution-id context)
+               :job-id (target-lease-request-context-job-id context)
+               :trace-id (target-lease-request-context-trace-id context)
+               :metadata (target-lease-request-context-metadata context)
+               :deadline
+               (target-lease-deadline-milliseconds
+                (target-lease-request-context-deadline context))
+               :request-id (target-lease-request-context-request-id context))))
+       (translate-lease-outcome result :decision decision)))))
 
 (defun renew-target-lease (service context lease-id fencing-token)
-  (with-target-lease-service-boundary (context)
-    (let* ((decision (target-lease-authorize! context "targets:lease" "RENEW"))
-           (principal (target-lease-request-context-principal context))
-           (result
-             (star.leases:renew-lease
-              (target-lease-service-store service)
-              (target-lease-context-identity context)
-              :lease-id lease-id
-              :owner-principal-id (principal-id principal)
-              :service-instance-id
-              (target-lease-service-service-instance-id service)
-              :fencing-token fencing-token
-              :ttl-ms (target-lease-request-context-ttl-ms context)
-              :deadline
-              (target-lease-deadline-milliseconds
-               (target-lease-request-context-deadline context))
-              :request-id (target-lease-request-context-request-id context))))
-      (translate-lease-outcome result :decision decision))))
+  (call-target-lease-operation
+   context
+   (lambda ()
+     (let* ((decision (target-lease-authorize! context "targets:lease" "RENEW"))
+            (principal (target-lease-request-context-principal context))
+            (result
+              (star.leases:renew-lease
+               (target-lease-service-store service)
+               (target-lease-context-identity context)
+               :lease-id lease-id
+               :owner-principal-id (principal-id principal)
+               :service-instance-id
+               (target-lease-service-service-instance-id service)
+               :fencing-token fencing-token
+               :ttl-ms
+               (or (target-lease-request-context-ttl-ms context)
+                   *target-lease-default-ttl-ms*)
+               :deadline
+               (target-lease-deadline-milliseconds
+                (target-lease-request-context-deadline context))
+               :request-id (target-lease-request-context-request-id context))))
+       (translate-lease-outcome result :decision decision)))))
 
 (defun release-target-lease (service context lease-id fencing-token)
-  (with-target-lease-service-boundary (context)
-    (let* ((decision (target-lease-authorize! context "targets:lease" "RELEASE"))
-           (principal (target-lease-request-context-principal context))
-           (result
-             (star.leases:release-lease
-              (target-lease-service-store service)
-              (target-lease-context-identity context)
-              :lease-id lease-id
-              :owner-principal-id (principal-id principal)
-              :service-instance-id
-              (target-lease-service-service-instance-id service)
-              :fencing-token fencing-token
-              :deadline
-              (target-lease-deadline-milliseconds
-               (target-lease-request-context-deadline context))
-              :request-id (target-lease-request-context-request-id context))))
-      (translate-lease-outcome result :decision decision))))
+  (call-target-lease-operation
+   context
+   (lambda ()
+     (let* ((decision (target-lease-authorize! context "targets:lease" "RELEASE"))
+            (principal (target-lease-request-context-principal context))
+            (result
+              (star.leases:release-lease
+               (target-lease-service-store service)
+               (target-lease-context-identity context)
+               :lease-id lease-id
+               :owner-principal-id (principal-id principal)
+               :service-instance-id
+               (target-lease-service-service-instance-id service)
+               :fencing-token fencing-token
+               :deadline
+               (target-lease-deadline-milliseconds
+                (target-lease-request-context-deadline context))
+               :request-id (target-lease-request-context-request-id context))))
+       (translate-lease-outcome result :decision decision)))))
 
 (defun get-target-lease (service context &optional lease-id)
-  (with-target-lease-service-boundary (context :hide-scope-p t)
-    (let* ((decision (target-lease-authorize! context "targets:lease" "GET"))
-           (result
-             (star.leases:get-lease
-              (target-lease-service-store service)
-              (target-lease-context-identity context)
-              :deadline
-              (target-lease-deadline-milliseconds
-               (target-lease-request-context-deadline context))
-              :request-id (target-lease-request-context-request-id context)))
-           (translated (translate-lease-outcome result :decision decision)))
-      (if (and lease-id
-               (target-lease-service-result-lease translated)
-               (not (string=
-                     lease-id
-                     (star.leases:lease-record-lease-id
-                      (target-lease-service-result-lease translated)))))
-          (target-lease-service-result :not-found :decision decision)
-          translated))))
+  (call-target-lease-operation
+   context
+   (lambda ()
+     (let* ((decision (target-lease-authorize! context "targets:lease" "GET"))
+            (result
+              (star.leases:get-lease
+               (target-lease-service-store service)
+               (target-lease-context-identity context)
+               :deadline
+               (target-lease-deadline-milliseconds
+                (target-lease-request-context-deadline context))
+               :request-id (target-lease-request-context-request-id context)))
+            (translated (translate-lease-outcome result :decision decision)))
+       (if (and lease-id
+                (target-lease-service-result-lease translated)
+                (not (string=
+                      lease-id
+                      (star.leases:lease-record-lease-id
+                       (target-lease-service-result-lease translated)))))
+           (target-lease-service-result :not-found :decision decision)
+           translated)))
+   :hide-scope-p t))
 
 (defun lease-record-resource (record &optional dataset-id)
   (let ((identity (star.leases:lease-record-identity record)))
@@ -280,63 +344,65 @@
     :resource
     (lease-record-resource
      record (target-lease-request-context-dataset-id context))
-    :metadata (target-lease-context-metadata context "LIST-ITEM"))))
+    :metadata (target-lease-policy-metadata context "LIST-ITEM"))))
 
 (defun list-target-leases (service context &key owner-principal-id target-id program-id)
-  (with-target-lease-service-boundary (context)
-    (let* ((principal (target-lease-request-context-principal context))
-           (decision
-             (authorize!
-              "targets:lease"
-              :principal principal
-              :metadata (target-lease-context-metadata context "LIST")))
-           (scopes (principal-scopes principal))
-           (administrator-p (administrator-scopes-p scopes))
-           (effective-owner
-             (if administrator-p
-                 owner-principal-id
-                 (principal-id principal)))
-           (result
-             (star.leases:list-leases
-              (target-lease-service-store service)
-              :owner-principal-id effective-owner
-              :target-id target-id
-              :program-id program-id
-              :deadline
-              (target-lease-deadline-milliseconds
-               (target-lease-request-context-deadline context))
-              :request-id (target-lease-request-context-request-id context))))
-      (if (eq :listed (star.leases:lease-outcome-code result))
-          (target-lease-service-result
-           :listed
-           :leases
-           (remove-if-not
-            (lambda (record) (lease-record-visible-p record context))
-            (star.leases:lease-outcome-leases result))
-           :decision decision)
-          (translate-lease-outcome result :decision decision)))))
+  (call-target-lease-operation
+   context
+   (lambda ()
+     (let* ((principal (target-lease-request-context-principal context))
+            (decision
+              (authorize!
+               "targets:lease"
+               :principal principal
+               :metadata (target-lease-policy-metadata context "LIST")))
+            (scopes (principal-scopes principal))
+            (administrator-p (administrator-scopes-p scopes))
+            (effective-owner
+              (if administrator-p owner-principal-id (principal-id principal)))
+            (result
+              (star.leases:list-leases
+               (target-lease-service-store service)
+               :owner-principal-id effective-owner
+               :target-id target-id
+               :program-id program-id
+               :deadline
+               (target-lease-deadline-milliseconds
+                (target-lease-request-context-deadline context))
+               :request-id (target-lease-request-context-request-id context))))
+       (if (eq :listed (star.leases:lease-outcome-code result))
+           (target-lease-service-result
+            :listed
+            :leases
+            (remove-if-not
+             (lambda (record) (lease-record-visible-p record context))
+             (star.leases:lease-outcome-leases result))
+            :decision decision)
+           (translate-lease-outcome result :decision decision))))
+   :identity-required-p nil))
 
 (defun revoke-target-lease (service context lease-id fencing-token reason)
-  (with-target-lease-service-boundary (context)
-    (let* ((decision
-             (target-lease-authorize!
-              context "targets:force-release" "REVOKE"))
-           (result
-             (star.leases:revoke-lease
-              (target-lease-service-store service)
-              (target-lease-context-identity context)
-              :lease-id lease-id
-              :fencing-token fencing-token
-              :reason reason
-              :deadline
-              (target-lease-deadline-milliseconds
-               (target-lease-request-context-deadline context))
-              :request-id (target-lease-request-context-request-id context))))
-      (translate-lease-outcome result :decision decision))))
+  (call-target-lease-operation
+   context
+   (lambda ()
+     (let* ((decision
+              (target-lease-authorize!
+               context "targets:force-release" "REVOKE"))
+            (result
+              (star.leases:revoke-lease
+               (target-lease-service-store service)
+               (target-lease-context-identity context)
+               :lease-id lease-id
+               :fencing-token fencing-token
+               :reason reason
+               :deadline
+               (target-lease-deadline-milliseconds
+                (target-lease-request-context-deadline context))
+               :request-id (target-lease-request-context-request-id context))))
+       (translate-lease-outcome result :decision decision)))))
 
 (defun current-target-lease-authority (service context lease-id fencing-token)
-  "Resolve a caller-provided lease locator into trusted current server state.
-The returned lease record, not request JSON, is the authority used by dispatch."
+  "Resolve a caller lease locator to the current trusted lease record."
   (let ((result (get-target-lease service context lease-id)))
     (cond
       ((not (eq :found (target-lease-service-result-code result))) result)
@@ -353,26 +419,25 @@ The returned lease record, not request JSON, is the authority used by dispatch."
 
 (defun initialize-target-lease-service ()
   "Create the process-owned production Valkey lease service once."
+  (unless *target-lease-valkey-password-file*
+    (error "VALKEY_PASSWORD_FILE is required for the target lease runtime"))
   (or *target-lease-service*
       (setf *target-lease-service*
             (make-target-lease-service
              (star.leases:make-valkey-lease-store
-              :host star:*target-lease-valkey-host*
-              :port star:*target-lease-valkey-port*
-              :password-file star:*target-lease-valkey-password-file*
-              :tls-p star:*target-lease-valkey-tls-p*
+              :host *target-lease-valkey-host*
+              :port *target-lease-valkey-port*
+              :password-file *target-lease-valkey-password-file*
+              :tls-p *target-lease-valkey-tls-p*
               :tls-verify-p t
-              :tls-ca-file star:*target-lease-valkey-ca-file*
-              :pool-size star:*target-lease-valkey-pool-size*
-              :pool-wait-timeout-ms
-              star:*target-lease-valkey-pool-wait-timeout-ms*
-              :operation-timeout-ms
-              star:*target-lease-valkey-operation-timeout-ms*
-              :reconnect-attempts star:*target-lease-valkey-reconnect-attempts*
-              :reconnect-backoff-ms
-              star:*target-lease-valkey-reconnect-backoff-ms*
-              :idempotency-ttl-ms star:*target-lease-idempotency-ttl-ms*)
-             :service-instance-id star:*target-lease-service-instance-id*))))
+              :tls-ca-file *target-lease-valkey-ca-file*
+              :pool-size *target-lease-valkey-pool-size*
+              :pool-wait-timeout-ms *target-lease-valkey-pool-wait-timeout-ms*
+              :operation-timeout-ms *target-lease-valkey-operation-timeout-ms*
+              :reconnect-attempts *target-lease-valkey-reconnect-attempts*
+              :reconnect-backoff-ms *target-lease-valkey-reconnect-backoff-ms*
+              :idempotency-ttl-ms *target-lease-idempotency-ttl-ms*)
+             :service-instance-id *target-lease-service-instance-id*))))
 
 (defun close-target-lease-service ()
   (when *target-lease-service*
