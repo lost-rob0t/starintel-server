@@ -19,6 +19,7 @@
   (star.databases.couchdb:init-db)
   (star.auth:initialize-auth-store)
   (star.auth:ensure-initial-user)
+  (star.authorization:initialize-target-lease-service)
   (star.actors:start-actors
    :rabbit-host *rabbit-address*
    :rabbit-vhost "/"
@@ -30,10 +31,13 @@
   (star.actors:start-event-consumer 2))
 
 (defun server/handler (command)
-  (initialize-runtime (clingon:getopt command :init-value))
-  (loop for thread in (bt:all-threads)
-        unless (equal thread (bt:current-thread))
-          do (bt:join-thread thread)))
+  (unwind-protect
+       (progn
+         (initialize-runtime (clingon:getopt command :init-value))
+         (loop for thread in (bt:all-threads)
+               unless (equal thread (bt:current-thread))
+                 do (bt:join-thread thread)))
+    (star.authorization:close-target-lease-service)))
 
 (defun server/command ()
   (clingon:make-command
