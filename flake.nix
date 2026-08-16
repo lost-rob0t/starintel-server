@@ -136,6 +136,8 @@ EOF
           cl-ppcre
           cms-ulid
           bordeaux-threads
+          usocket
+          cl_plus_ssl
           jsown
           closer-mop
           ironclad
@@ -266,10 +268,10 @@ EOF
         (ps: with ps; [ starintel-gserver-integration-tests ]);
       sbcl-cli-wrapped = sbcl'.withPackages (ps: with ps; [ star-cli-lib ]);
 
-      make-test-runner = name: wrapped: asdfSystem:
+      make-test-runner = name: wrapped: asdfSystem: extraRuntimeInputs: prelude:
         pkgs.writeShellApplication {
           inherit name;
-          runtimeInputs = runtimeLibs;
+          runtimeInputs = runtimeLibs ++ extraRuntimeInputs;
           text = ''
             test_home="$(mktemp -d)"
             export HOME="$test_home"
@@ -278,6 +280,9 @@ EOF
             export TMP="/tmp"
             export TEMP="/tmp"
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
+            export STARINTEL_SOURCE_ROOT="${./.}"
+
+            ${prelude}
 
             ${wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
               --eval "(require :asdf)" \
@@ -296,12 +301,149 @@ EOF
       unit-test-runner = make-test-runner
         "star-unit-tests"
         sbcl-test-wrapped
-        "starintel-gserver-tests";
+        "starintel-gserver-tests"
+        []
+        "";
 
       integration-test-runner = make-test-runner
         "star-integration-tests"
         sbcl-integration-test-wrapped
-        "starintel-gserver-integration-tests";
+        "starintel-gserver-integration-tests"
+        [ pkgs.valkey pkgs.openssl pkgs.python3 ]
+        ''
+          service_root="$(mktemp -d)"
+          plain_pid=""
+          tls_pid=""
+          services_ready=false
+          stop_valkey() {
+            local pid="$1"
+            if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then return; fi
+            kill "$pid" 2>/dev/null || true
+            for _ in $(seq 1 50); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid" 2>/dev/null || true
+                return
+              fi
+              sleep 0.02
+            done
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+          cleanup_valkey() {
+            local exit_status=$?
+            if [ "$exit_status" -ne 0 ] && [ "$services_ready" != true ]; then
+              for log in plain.log plain.stdout.log tls.log tls.stdout.log; do
+                if [ -s "$service_root/$log" ]; then
+                  printf '%s\n' "--- Valkey $log ---" >&2
+                  cat "$service_root/$log" >&2
+                fi
+              done
+            fi
+            stop_valkey "$tls_pid"
+            stop_valkey "$plain_pid"
+            rm -rf "$service_root"
+          }
+          trap cleanup_valkey EXIT
+
+          mapfile -t valkey_ports < <(python - <<'PY'
+import socket
+for _ in range(3):
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+    sock.close()
+PY
+          )
+          plain_port="''${valkey_ports[0]}"
+          tls_port="''${valkey_ports[1]}"
+          unused_port="''${valkey_ports[2]}"
+          password_file="$service_root/password"
+          bad_password_file="$service_root/bad-password"
+          printf '%s\n' 'valkey-integration-secret' > "$password_file"
+          printf '%s\n' 'wrong-valkey-password' > "$bad_password_file"
+          chmod 600 "$password_file" "$bad_password_file"
+
+          mkdir -p "$service_root/plain" "$service_root/tls"
+          password_hash="$(printf %s "$(cat "$password_file")" | sha256sum | cut -d ' ' -f 1)"
+          # Least-privilege test ACL mirroring the production entrypoint: keys are
+          # restricted to the ephemeral StarIntel test namespace, dangerous and
+          # administrative commands are denied, and only the adapter/script
+          # commands are granted. The ACL regression test proves unrelated keys
+          # and out-of-surface commands are rejected.
+          printf 'user default on #%s ~starintel:* -@all +auth +ping +eval +get +set +del +incr +pttl +time +scan\n' "$password_hash" \
+            > "$service_root/plain/users.acl"
+          printf 'user default on #%s ~starintel:* -@all +auth +ping +eval +get +set +del +incr +pttl +time +scan\n' "$password_hash" \
+            > "$service_root/tls/users.acl"
+          unset password_hash
+          chmod 600 "$service_root/plain/users.acl" "$service_root/tls/users.acl"
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$service_root/ca.key" -out "$service_root/ca.crt" \
+            -days 1 -subj '/CN=StarIntel Valkey Test CA' >/dev/null 2>&1
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$service_root/server.key" -out "$service_root/server.csr" \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          openssl x509 -req -in "$service_root/server.csr" \
+            -CA "$service_root/ca.crt" -CAkey "$service_root/ca.key" \
+            -CAcreateserial -out "$service_root/server.crt" -days 1 \
+            -copy_extensions copy >/dev/null 2>&1
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$service_root/wrong-ca.key" \
+            -out "$service_root/wrong-ca.crt" -days 1 \
+            -subj '/CN=Wrong Test CA' >/dev/null 2>&1
+
+          valkey-server \
+            --bind 127.0.0.1 --protected-mode yes --port "$plain_port" \
+            --aclfile "$service_root/plain/users.acl" --appendonly yes \
+            --dir "$service_root/plain" --logfile "$service_root/plain.log" \
+            </dev/null >"$service_root/plain.stdout.log" 2>&1 &
+          plain_pid="$!"
+          valkey-server \
+            --bind 127.0.0.1 --protected-mode yes --port 0 \
+            --tls-port "$tls_port" --tls-cert-file "$service_root/server.crt" \
+            --tls-key-file "$service_root/server.key" \
+            --tls-ca-cert-file "$service_root/ca.crt" --tls-auth-clients no \
+            --aclfile "$service_root/tls/users.acl" --appendonly yes \
+            --dir "$service_root/tls" --logfile "$service_root/tls.log" \
+            </dev/null >"$service_root/tls.stdout.log" 2>&1 &
+          tls_pid="$!"
+
+          for _ in $(seq 1 100); do
+            if VALKEYCLI_AUTH='valkey-integration-secret' \
+              valkey-cli -h 127.0.0.1 -p "$plain_port" ping \
+              2>/dev/null | grep -q PONG; then
+              break
+            fi
+            sleep 0.05
+          done
+          VALKEYCLI_AUTH='valkey-integration-secret' \
+            valkey-cli -h 127.0.0.1 -p "$plain_port" ping \
+            | grep -q PONG
+          for _ in $(seq 1 100); do
+            if VALKEYCLI_AUTH='valkey-integration-secret' \
+              valkey-cli --tls --cacert "$service_root/ca.crt" \
+              -h 127.0.0.1 -p "$tls_port" ping 2>/dev/null | grep -q PONG; then
+              break
+            fi
+            sleep 0.05
+          done
+          VALKEYCLI_AUTH='valkey-integration-secret' \
+            valkey-cli --tls --cacert "$service_root/ca.crt" \
+            -h 127.0.0.1 -p "$tls_port" ping | grep -q PONG
+          services_ready=true
+
+          export STAR_TEST_VALKEY_HOST=127.0.0.1
+          export STAR_TEST_VALKEY_PORT="$plain_port"
+          export STAR_TEST_VALKEY_TLS_PORT="$tls_port"
+          export STAR_TEST_VALKEY_UNUSED_PORT="$unused_port"
+          export STAR_TEST_VALKEY_PASSWORD_FILE="$password_file"
+          export STAR_TEST_VALKEY_BAD_PASSWORD_FILE="$bad_password_file"
+          export STAR_TEST_VALKEY_CA_FILE="$service_root/ca.crt"
+          export STAR_TEST_VALKEY_WRONG_CA_FILE="$service_root/wrong-ca.crt"
+          export VALKEY_HOST=127.0.0.1
+          export VALKEY_PORT="$plain_port"
+          export VALKEY_PASSWORD_FILE="$password_file"
+        '';
 
       star-server-bin = pkgs.stdenv.mkDerivation {
         pname = "star-server";
@@ -350,6 +492,7 @@ EOF
         couchdb-image = containerImages.couchdbImage;
         clouseau-image = containerImages.clouseauImage;
         rabbitmq-image = containerImages.rabbitmqImage;
+        valkey-image = containerImages.valkeyImage;
         container-images = containerImages.allImages;
         load-images = containerImages.loadImages;
 

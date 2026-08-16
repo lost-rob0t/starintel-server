@@ -86,6 +86,29 @@ services:
       retries: 12
       start_period: 20s
 
+  valkey:
+    image: starintel/valkey:9.0.1
+    hostname: valkey
+    restart: unless-stopped
+    environment:
+      VALKEY_PASSWORD_FILE: /run/secrets/valkey_password
+    secrets:
+      - valkey_password
+    volumes:
+      - valkey_data:/data
+    ports:
+      - "${VALKEY_BIND_ADDRESS:-127.0.0.1}:${VALKEY_PORT:-6379}:6379"
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - VALKEYCLI_AUTH="$$(cat /run/secrets/valkey_password)" valkey-cli ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   star-server:
     image: starintel/server:0.1.0
     hostname: star-server
@@ -98,6 +121,9 @@ services:
       RABBITMQ_ADDRESS: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER:-starintel}
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD_FILE: /run/secrets/valkey_password
       HTTP_API_LISTEN_ADDRESS: 0.0.0.0
       STAR_AUTH_MODE: api-key
       STAR_AUTH_DATABASE: ${STAR_AUTH_DATABASE:-starintel-gserver-auth}
@@ -109,6 +135,7 @@ services:
     secrets:
       - couchdb_password
       - rabbitmq_password
+      - valkey_password
       - auth_pepper
       - auth_bootstrap_secret
     volumes:
@@ -124,6 +151,8 @@ services:
       couchdb:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
     healthcheck:
       test: [CMD, curl, --fail, --silent, http://localhost:5000/health]
@@ -141,6 +170,8 @@ secrets:
     file: ${CREDENTIALS_DIR:-./secrets}/erlang_cookie
   rabbitmq_password:
     file: ${CREDENTIALS_DIR:-./secrets}/rabbitmq_password
+  valkey_password:
+    file: ${CREDENTIALS_DIR:-./secrets}/valkey_password
   auth_pepper:
     file: ${CREDENTIALS_DIR:-./secrets}/auth_pepper
   auth_bootstrap_secret:
@@ -150,6 +181,7 @@ volumes:
   clouseau_index:
   couchdb_data:
   rabbitmq_data:
+  valkey_data:
 
 networks:
   backend:

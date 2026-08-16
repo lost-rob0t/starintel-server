@@ -120,6 +120,7 @@ openssl rand -base64 32 > secrets/couchdb_password
 openssl rand -base64 48 > secrets/couchdb_secret
 openssl rand -hex 24 | tr '[:lower:]' '[:upper:]' > secrets/erlang_cookie
 openssl rand -base64 32 > secrets/rabbitmq_password
+openssl rand -base64 32 > secrets/valkey_password
 chmod 0600 secrets/*
 
 nix run .#load-images
@@ -135,6 +136,7 @@ Default local endpoints:
 | CouchDB             | http://127.0.0.1:5984    |
 | RabbitMQ AMQP       | 127.0.0.1:5672           |
 | RabbitMQ management | http://127.0.0.1:15672   |
+| Valkey              | 127.0.0.1:6379           |
 
 See [[file:DOCKER.md][DOCKER.md]] for image builds, secrets, persistence, migration, backup, FTS,
 and upgrades.
@@ -226,6 +228,7 @@ The same path can be supplied through =STAR_SERVER_INIT_FILE=.
 | [[file:docs/document-spec.org][docs/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
 | [[file:docs/configuration.org][docs/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
 | [[file:docs/http-api-docs.org][docs/http-api-docs.org]] | HTTP endpoint reference and examples |
+| [[file:docs/lease-store-usage.org][docs/lease-store-usage.org]] | Backend-neutral target lease protocol examples and lifecycle |
 | [[file:DOCKER.md][DOCKER.md]] | Nix-built container stack and operations |
 | [[file:docs/testing.md][docs/testing.md]] | Unit, integration, and stack tests |
 

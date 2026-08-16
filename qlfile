@@ -12,6 +12,8 @@ ql lparallel :latest
 ql cl-stream :latest
 ql cl-ppcre :latest
 ql bordeaux-threads :latest
+ql usocket :latest
+ql cl+ssl :latest
 
 # GitHub repositories
 github lost-rob0t/star-cl

@@ -28,7 +28,7 @@
 (defparameter *test-port* 5555
   "Port for test HTTP server")
 
-(defparameter *test-base-url* (format nil "http://localhost:~d" *test-port*)
+(defparameter *test-base-url* (format nil "http://127.0.0.1:~d" *test-port*)
   "Base URL for test requests")
 
 (defparameter *test-database* "starintel-test"
