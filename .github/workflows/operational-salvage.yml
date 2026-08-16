@@ -1,0 +1,25 @@
+name: Operational salvage
+
+on:
+  push:
+    branches:
+      - agent/salvage-pr54-operational
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Run operational source contract
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Check patch hygiene
+        run: git diff --check

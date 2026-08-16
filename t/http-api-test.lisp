@@ -117,11 +117,13 @@
       (dbg "Error destroying database: ~a" e))))
 
 (defun start-test-server ()
-  "Start a test HTTP server instance."
+  "Start a test HTTP server instance backed by the real production
+middleware stack with request-scoped development authorization bindings."
   (dbg "start-test-server port=~d" *test-port*)
   (when (null *test-server*)
+    (ensure-restricted-credential)
     (setf *test-server*
-          (clack:clackup star.frontends.http-api::*app* 
+          (clack:clackup #'test-http-app
                          :port *test-port*
                          :silent t)))
   (dbg "start-test-server server=~s" *test-server*)
@@ -144,6 +146,89 @@
   (let ((url (format nil "~a~a" *test-base-url* path)))
     (dbg "make-test-url path=~s -> ~s" path url)
     url))
+
+;;; ----------------------------------------------------------------------
+;;; Test-only request security configuration
+;;; ----------------------------------------------------------------------
+;;; The HTTP integration tests must exercise the real production
+;;; middleware stack (star.frontends.http-api::*server*), which applies
+;;; authentication and route-level resource authorization.  Clack worker
+;;; threads may handle requests after the dynamic bindings established
+;;; around clack:clackup have ended, so the development bypass bindings
+;;; are re-established for every request inside the test app wrapper
+;;; below rather than around clack:clackup itself.
+
+(defparameter *test-auth-pepper* "http-api-test-pepper"
+  "Test-only auth pepper used to mint the restricted test credential.")
+
+(defparameter *restricted-credential-store* nil
+  "Memory credential store holding the test-only restricted principal.")
+
+(defparameter *restricted-credential-key* nil
+  "Raw API key for the test-only restricted principal.  The principal has
+the documents:read capability but no grant for the testing dataset, so
+route-level resource authorization denies with 403.")
+
+(defun ensure-restricted-credential ()
+  "Build a test-only memory credential store with one authenticated principal
+that lacks the dataset resource scope, so requests carrying its API key pass
+the capability check but are rejected by route-level resource authorization."
+  (unless *restricted-credential-store*
+    (let ((star:*auth-pepper* *test-auth-pepper*))
+      (setf *restricted-credential-store*
+            (star.auth:make-memory-credential-store))
+      (multiple-value-bind (record raw-key)
+          (star.auth:create-api-key
+           "restricted-client"
+           "api_client"
+           '("documents:read" "dataset:other")
+           :store *restricted-credential-store*)
+        (declare (ignore record))
+        (setf *restricted-credential-key* raw-key)))))
+
+(defun test-http-app (env)
+  "Test-only Clack app that runs each request through the real production
+middleware stack with request-scoped development authorization bindings.
+
+A test-only X-Test-Auth-Mode header selects the request security context:
+  nil or \"dev-bypass\"  -> disabled auth + loopback dev bypass, yielding the
+                          development administrator principal used by the
+                          legacy HTTP endpoint tests.
+  \"unauthenticated\"    -> disabled auth without dev bypass, so the
+                          authentication middleware rejects with 401.
+  \"restricted\"         -> api-key auth against a test-only memory credential
+                          store whose principal lacks the dataset grant, so
+                          route-level resource authorization rejects with 403."
+  (let* ((mode (let ((header
+                       (star.frontends.http-api::env-header-value
+                        env "X-Test-Auth-Mode")))
+                 (and header (string-downcase header))))
+         (restricted-p (string= mode "restricted"))
+         (unauthenticated-p (string= mode "unauthenticated"))
+         (star:*auth-mode* (if restricted-p "api-key" "disabled"))
+         (star:*auth-dev-bypass* (not unauthenticated-p))
+         (star:*http-api-address* "127.0.0.1")
+         (star:*auth-pepper*
+           (if restricted-p *test-auth-pepper* star:*auth-pepper*))
+         (star.auth:*credential-store*
+           (if restricted-p
+               *restricted-credential-store*
+               star.auth:*credential-store*)))
+    (lack.component:call star.frontends.http-api::*server* env)))
+
+(defun perform-request (thunk)
+  "Run THUNK (a zero-argument function performing a dexador request) and
+return (values status body). Dexador HTTP failures contribute their response
+status and body; any other error is re-signaled so the test fails loudly
+instead of being mistaken for an expected broker failure."
+  (handler-case
+      (multiple-value-bind (body status headers)
+          (funcall thunk)
+        (declare (ignore headers))
+        (values status body))
+    (dexador:http-request-failed (condition)
+      (values (dexador:response-status condition)
+              (dexador:response-body condition)))))
 
 (defun make-test-document (&key (id "test-123") (dtype "message"))
   "Create a test document structure."
@@ -538,39 +623,34 @@
                          (make-test-host :id "bulk-test-2" :ip "10.1.1.2")
                          (make-test-email :id "bulk-test-3" :user "bulk1" :domain "test.com")))
              (json-array (jsown:to-json docs)))
-        (handler-case
-            (let ((response (dex:post url
-                                      :content json-array
-                                      :headers '(("Content-Type" . "application/json")))))
-              (dbg "bulk response: ~s" response)
-              (let ((data (jsown:parse response)))
-                (is (jsown:keyp data "total"))
-                (is (jsown:keyp data "succeeded"))
-                (is (jsown:keyp data "failed"))
-                (is (= 3 (jsown:val data "total")))
-                (is (= 3 (jsown:val data "succeeded")))
-                (is (= 0 (jsown:val data "failed")))))
-          (error (e)
-            (dbg "Expected error (no RabbitMQ in tests): ~a" e)
-            (pass)))))
+        (multiple-value-bind (status body)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content json-array
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 200 status) "Bulk endpoint should accept a valid document array")
+          (when (= 200 status)
+            (let ((data (jsown:parse body)))
+              (is (jsown:keyp data "total"))
+              (is (jsown:keyp data "succeeded"))
+              (is (jsown:keyp data "failed"))
+              (is (= 3 (jsown:val data "total")))
+              (is (= 3 (jsown:val data "succeeded")))
+              (is (= 0 (jsown:val data "failed"))))))))
 
 (test test-bulk-endpoint-invalid-body
       "Test POST /documents/bulk endpoint with non-array body."
       (dbg "TEST: test-bulk-endpoint-invalid-body")
       (let* ((url (make-test-url "/documents/bulk"))
              (invalid-json (jsown:to-json (jsown:new-js ("type" "host")))))
-        (handler-case
-            (progn
-              (dex:post url
-                        :content invalid-json
-                        :headers '(("Content-Type" . "application/json")))
-              (fail "Expected 400 error for non-array body"))
-          (dexador:http-request-bad-request ()
-            (dbg "Correctly returned 400 for non-array body")
-            (pass))
-          (error (e)
-            (dbg "Other error (possibly no RabbitMQ): ~a" e)
-            (pass)))))
+        (multiple-value-bind (status)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content invalid-json
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 400 status) "Non-array bulk body must be rejected with 400"))))
 
 (test test-bulk-endpoint-exceeds-max
       "Test POST /documents/bulk endpoint with too many documents."
@@ -580,55 +660,46 @@
              (docs (loop for i from 1 to (+ max-docs 1)
                          collect (make-test-host :id (format nil "bulk-exceed-~a" i) :ip "10.2.2.2")))
              (json-array (jsown:to-json docs)))
-        (handler-case
-            (progn
-              (dex:post url
-                        :content json-array
-                        :headers '(("Content-Type" . "application/json")))
-              (fail "Expected 400 error for exceeding maximum documents"))
-          (dexador:http-request-bad-request ()
-            (dbg "Correctly returned 400 for exceeding maximum documents")
-            (pass))
-          (error (e)
-            (dbg "Other error: ~a" e)
-            (pass)))))
+        (multiple-value-bind (status)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content json-array
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 413 status) "Bulk requests exceeding the limit must be rejected with 413"))))
 
 (test test-bulk-endpoint-missing-type
-      "Test POST /documents/bulk endpoint with documents missing type field."
+      "Test POST /documents/bulk endpoint with documents missing required fields."
       (dbg "TEST: test-bulk-endpoint-missing-type")
       (let* ((url (make-test-url "/documents/bulk"))
              (docs (list (jsown:new-js ("_id" "no-type-1") ("data" "test"))))
              (json-array (jsown:to-json docs)))
-        (handler-case
-            (let ((response (dex:post url
-                                      :content json-array
-                                      :headers '(("Content-Type" . "application/json")))))
-              (dbg "bulk response: ~s" response)
-              (let ((data (jsown:parse response)))
-                (is (jsown:keyp data "failed"))
-                (is (> (jsown:val data "failed") 0))
-                (is (jsown:keyp data "errors"))))
-          (error (e)
-            (dbg "Expected error (no RabbitMQ or validation error): ~a" e)
-            (pass)))))
+        (multiple-value-bind (status)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content json-array
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 422 status)
+              "Bulk documents missing required fields must be rejected with 422"))))
 
 (test test-bulk-endpoint-empty-array
       "Test POST /documents/bulk endpoint with empty array."
       (dbg "TEST: test-bulk-endpoint-empty-array")
       (let* ((url (make-test-url "/documents/bulk"))
              (json-array (jsown:to-json (list))))
-        (handler-case
-            (let ((response (dex:post url
-                                      :content json-array
-                                      :headers '(("Content-Type" . "application/json")))))
-              (dbg "bulk response: ~s" response)
-              (let ((data (jsown:parse response)))
-                (is (= 0 (jsown:val data "total")))
-                (is (= 0 (jsown:val data "succeeded")))
-                (is (= 0 (jsown:val data "failed")))))
-          (error (e)
-            (dbg "Error: ~a" e)
-            (pass)))))
+        (multiple-value-bind (status body)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content json-array
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 200 status) "An empty bulk array should be accepted")
+          (when (= 200 status)
+            (let ((data (jsown:parse body)))
+              (is (= 0 (jsown:val data "total")))
+              (is (= 0 (jsown:val data "succeeded")))
+              (is (= 0 (jsown:val data "failed"))))))))
 
 ;;; Document creation via POST tests
 
@@ -637,34 +708,74 @@
       (dbg "TEST: test-post-new-host-document")
       (let* ((url (make-test-url "/new/document/host"))
              (doc (make-test-host :id "host-post-test" :ip "10.0.0.1")))
-        (handler-case
-            (let ((response (dex:post url
-                                      :content (jsown:to-json doc)
-                                      :headers '(("Content-Type" . "application/json")))))
-              (dbg "post-host response len=~d" (length response))
-              (let ((data (jsown:parse response)))
-                (is (jsown:keyp data "_id"))
-                (is (string= "host-post-test" (jsown:val data "_id")))))
-          (error (e)
-            (dbg "Expected error (no RabbitMQ in tests): ~a" e)
-            (pass)))))
+        (multiple-value-bind (status body)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content (jsown:to-json doc)
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 200 status) "Posting a valid host document should succeed")
+          (when (= 200 status)
+            (let ((data (jsown:parse body)))
+              (is (jsown:keyp data "_id"))
+              (is (string= "host-post-test" (jsown:val data "_id"))))))))
 
 (test test-post-new-email-document
       "Test POST /new/document/email endpoint."
       (dbg "TEST: test-post-new-email-document")
       (let* ((url (make-test-url "/new/document/email"))
              (doc (make-test-email :id "email-post-test" :user "posttest" :domain "example.com")))
-        (handler-case
-            (let ((response (dex:post url
-                                      :content (jsown:to-json doc)
-                                      :headers '(("Content-Type" . "application/json")))))
-              (dbg "post-email response len=~d" (length response))
-              (let ((data (jsown:parse response)))
-                (is (jsown:keyp data "_id"))
-                (is (string= "email-post-test" (jsown:val data "_id")))))
-          (error (e)
-            (dbg "Expected error (no RabbitMQ in tests): ~a" e)
-            (pass)))))
+        (multiple-value-bind (status body)
+            (perform-request
+             (lambda ()
+               (dex:post url
+                         :content (jsown:to-json doc)
+                         :headers '(("Content-Type" . "application/json")))))
+          (is (= 200 status) "Posting a valid email document should succeed")
+          (when (= 200 status)
+            (let ((data (jsown:parse body)))
+              (is (jsown:keyp data "_id"))
+              (is (string= "email-post-test" (jsown:val data "_id"))))))))
+
+;;; ----------------------------------------------------------------------
+;;; Authorization enforcement via the real middleware stack
+;;; ----------------------------------------------------------------------
+
+(test test-unauthenticated-protected-request-rejected
+      "An unauthenticated request to a protected route is rejected with 401."
+      (dbg "TEST: test-unauthenticated-protected-request-rejected")
+      (let ((url (make-test-url "/document/unauthenticated-401-test")))
+        (multiple-value-bind (status)
+            (perform-request
+             (lambda ()
+               (dex:get url
+                        :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+          (dbg "unauthenticated protected request status=~a" status)
+          (is (= 401 status)
+              "Unauthenticated protected requests must be rejected with 401"))))
+
+(test test-authorized-principal-lacking-resource-scope-rejected
+      "An authenticated principal lacking the required resource scope is
+rejected with 403 by route-level resource authorization."
+      (dbg "TEST: test-authorized-principal-lacking-resource-scope-rejected")
+      (let* ((test-id "restricted-403-test-1")
+             (doc (make-test-host :id test-id :ip "192.168.40.40")))
+        ;; Insert a document in the testing dataset directly into CouchDB.
+        (insert-test-document doc)
+        (sleep 1)
+        (let ((url (make-test-url (format nil "/document/~a" test-id))))
+          (multiple-value-bind (status)
+              (perform-request
+               (lambda ()
+                 (dex:get url
+                          :headers `(("X-Test-Auth-Mode" . "restricted")
+                                     ("Authorization" .
+                                      ,(format nil "Bearer ~a"
+                                               *restricted-credential-key*))))))
+            (dbg "restricted principal GET status=~a" status)
+            (is (= 403 status)
+                "An authenticated principal lacking the dataset resource scope "
+                "must be rejected with 403 by route-level authorization")))))
 
 ;;; ----------------------------------------------------------------------
 ;;; Document Deletion via HTTP API Tests

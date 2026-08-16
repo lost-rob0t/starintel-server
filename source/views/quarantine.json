@@ -1,0 +1,15 @@
+{
+  "_id": "_design/quarantine",
+  "language": "javascript",
+  "views": {
+    "by_status": {
+      "map": "function (doc) { if (doc.type === '_server_quarantine' && doc.status) { emit(doc.status, null); } }"
+    },
+    "by_failure_class": {
+      "map": "function (doc) { if (doc.type === '_server_quarantine' && doc.failure_class) { emit(doc.failure_class, null); } }"
+    },
+    "by_trace_id": {
+      "map": "function (doc) { if (doc.type === '_server_quarantine' && doc.trace_id) { emit(doc.trace_id, null); } }"
+    }
+  }
+}

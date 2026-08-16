@@ -93,14 +93,6 @@
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:delete-document client database document-id)))
 
-;;;;Couchdb views are key-value btrees that are generated from map-reduce results over a couchdb database
-;;;;this allows for fast lookup and creating analytic querys
-;;;;Read more about views here: https://docs.couchdb.org/en/stable/ddocs/views/intro.html
-;;;;Query a couchdb view.
-(defun couchdb-agent-get-view (agent database ddoc view query-json)
-  (anypool:with-connection (client (couchdb-agent-client agent))
-    (cl-couch:get-view client database ddoc view query-json)))
-
 (defun couchdb-document-exists-p (agent database id)
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:document-exists-p client database id)))
@@ -152,9 +144,13 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; *** Target Operations
 ;;;; Fetch targets from database
 (defun get-targets (client database)
-  (let ((jdata (jsown:val-safe (jsown:parse (cl-couch:get-view client star:*couchdb-default-database* "targets" "actor-targets" (jsown:to-json (jsown:new-js
-                                                                                                                                                ("include_docs" "true"))))) "rows")))
-    (when (> 0 (length jdata))
+  (let ((jdata
+          (jsown:val-safe
+           (star.databases.couchdb:query-view
+            client database "targets" "by_actor"
+            :include-docs t :reduce nil)
+           "rows")))
+    (when (plusp (length jdata))
       (loop for row in jdata
             for doc = (jsown:val row "doc")
             for actor = (jsown:val doc "actor")

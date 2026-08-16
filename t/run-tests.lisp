@@ -9,9 +9,12 @@
     couchdb-actor-tests
     event-actor-tests
     dataset-export-tests
+    couchdb-view-request-tests
+    lease-store-contract-tests
     http-boundary-tests
     http-auth-tests
-    auth-users-tests))
+    auth-users-tests
+    authorization-policy-tests))
 
 (defun run-all-gserver-tests ()
   "Run every hermetic unit suite and fail on empty, skipped, or failed tests."
