@@ -1,0 +1,43 @@
+#+title: Development and Branch Policy
+
+* Canonical branch
+
+=master= is the only long-lived canonical development branch for this repository.
+
+The former =dev= integration branch is retired. It is historical only and must not receive new feature, fix, research, or hotfix work.
+
+* Branching invariant
+
+Every new short-lived branch starts from current =master=:
+
+#+begin_example
+master
+  |
+  +-- feature/<issue>-<slug>
+  +-- fix/<issue>-<slug>
+  +-- research/<slug>
+  +-- hotfix/<issue>-<slug>
+#+end_example
+
+Normal pull requests target =master=. After a pull request is merged and no dependency still needs its branch, the short-lived branch may be deleted.
+
+Do not:
+
+- create new work from =dev=;
+- target new pull requests at =dev=;
+- recreate a permanent integration branch;
+- force-push published canonical history to simulate reconciliation.
+
+* Starting work
+
+Before creating a branch, refresh and verify =master=, inspect open pull requests/issues for overlap, and branch from the current master SHA. Keep each branch to one coherent implementation slice.
+
+* Verification and merge
+
+Run the repository's applicable gates before merge. Required suites that discover or execute zero tests are failures. Do not hide missing dependencies, skipped suites, environment failures, flaky failures, or integration failures.
+
+Normal feature/fix pull requests merge to =master= only after the required checks for that head commit are green and no unresolved correctness blocker remains.
+
+* Historical dev branch
+
+The final semantic =dev -> master= reconciliation was performed in PR #99. The =dev= ref, if still present, is deprecated history rather than an integration target. Open historical pull requests that formerly targeted =dev= must be retargeted to =master= or closed with an explicit disposition before =dev= can be deleted safely.
