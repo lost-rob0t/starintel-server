@@ -6,7 +6,7 @@ on:
       - agent/salvage-pr54-operational
   pull_request:
     branches:
-      - dev
+      - master
 
 permissions:
   contents: read
