@@ -2,10 +2,11 @@ name: Canonical StarIntel schema lock
 
 on:
   pull_request:
+    branches:
+      - master
   push:
     branches:
       - master
-      - dev
       - "agent/**"
     paths:
       - "schema/starintel-schema.lock.json"
