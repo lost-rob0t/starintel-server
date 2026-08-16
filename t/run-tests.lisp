@@ -11,6 +11,7 @@
     dataset-export-tests
     couchdb-view-request-tests
     lease-store-contract-tests
+    target-lease-service-tests
     http-boundary-tests
     http-auth-tests
     auth-users-tests
