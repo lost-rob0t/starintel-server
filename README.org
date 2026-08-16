@@ -28,6 +28,58 @@ restrict network access, and treat the Lisp init file as trusted executable
 code.
 #+end_quote
 
+** Position in the Quasar / StarIntel stack
+
+StarIntel Server is a *backend service layer*. It is not the Quasar browser UI
+and it is not replaced by =quasar-ui=.
+
+The intended deployment split is:
+
+#+begin_example
+quasar-ui
+  browser UI / graph renderer / standalone subset
+        |
+        | typed commands, projections, capability discovery
+        v
+quasar
+  canonical Common Lisp control plane/runtime
+        |
+        | StarIntel service APIs and adapters
+        v
+starintel-server
+  persistent ingest / storage / search / routing / RabbitMQ
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+star-bbpd                       other actor services
+  external recon actors          collectors / analyzers / tools
+#+end_example
+
+Responsibilities are intentionally separated:
+
+- =quasar-ui= owns browser presentation, mobile/PWA behavior, Cytoscape
+  rendering, browser-local standalone workspaces, and browser-safe bounded
+  actions.
+- =quasar= owns the canonical Common Lisp command/control boundary for migrated
+  durable Quasar operations, persistent runtime supervision, privileged local
+  integrations, reconnect/replay, and capability discovery.
+- =starintel-server= owns the persistent StarIntel backend responsibilities
+  implemented here: document ingest, CouchDB persistence/querying, RabbitMQ
+  document/actor routing, HTTP service boundaries, and recursive dataflow.
+- =star-bbpd= and similar repositories are external actor services. BBPD
+  consumes actor-specific RabbitMQ targets, runs Subfinder, Nmap, Httpx, Katana
+  and DNS workflows, and publishes derived StarIntel documents and relations.
+
+A connected Quasar UI may expose controls and results for server/external
+services, but that does not make those capabilities browser implementations.
+The UI should discover which runtime/service capabilities are actually
+available.
+
+Standalone =quasar-ui= remains valid without this server. That mode is a
+bounded subset and must not be documented as feature-equivalent to a connected
+StarIntel deployment.
+
 ** What the server does
 
 A document normally moves through this pipeline:
@@ -84,7 +136,7 @@ Default local endpoints:
 | CouchDB             | http://127.0.0.1:5984    |
 | RabbitMQ AMQP       | 127.0.0.1:5672           |
 | RabbitMQ management | http://127.0.0.1:15672   |
-| Valkey               | 127.0.0.1:6379          |
+| Valkey              | 127.0.0.1:6379           |
 
 See [[file:DOCKER.md][DOCKER.md]] for image builds, secrets, persistence, migration, backup, FTS,
 and upgrades.

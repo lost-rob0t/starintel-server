@@ -39,6 +39,7 @@
    (:file "auth/verification-hardening")
    (:file "auth/immutability")
    (:file "auth/store")
+   (:file "auth/users")
    (:file "authorization/package")
    (:file "authorization/policy")
    (:file "authorization/quota-policy")

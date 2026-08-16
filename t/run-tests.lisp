@@ -13,6 +13,7 @@
     lease-store-contract-tests
     http-boundary-tests
     http-auth-tests
+    auth-users-tests
     authorization-policy-tests))
 
 (defun run-all-gserver-tests ()

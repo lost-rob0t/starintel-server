@@ -102,8 +102,24 @@
   (environment-integer "STAR_AUTH_DEFAULT_REQUEST_TIMEOUT_MS" 30000))
 (defparameter *auth-max-request-timeout-ms*
   (environment-integer "STAR_AUTH_MAX_REQUEST_TIMEOUT_MS" 600000))
+
+;;;; Human users
+(defparameter *auth-initial-username*
+  (or (uiop:getenv "STAR_AUTH_INITIAL_USERNAME") "star"))
+(defparameter *auth-initial-password*
+  (or (environment-secret
+       "STAR_AUTH_INITIAL_PASSWORD"
+       "STAR_AUTH_INITIAL_PASSWORD_FILE")
+      "intel"))
+(defparameter *auth-password-min-length*
+  (environment-integer "STAR_AUTH_PASSWORD_MIN_LENGTH" 12))
+(defparameter *auth-password-iterations*
+  (environment-integer "STAR_AUTH_PASSWORD_ITERATIONS" 600000))
+(defparameter *auth-login-session-seconds*
+  (environment-integer "STAR_AUTH_LOGIN_SESSION_SECONDS" 86400))
+
 (defparameter *auth-public-paths*
-  '("/health" "/" "/auth/bootstrap"))
+  '("/health" "/" "/auth/bootstrap" "/auth/login"))
 
 ;;;; RabbitMQ
 (defparameter *rabbit-address*

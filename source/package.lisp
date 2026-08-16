@@ -37,6 +37,11 @@
    #:*auth-rotation-overlap-max-seconds*
    #:*auth-default-request-timeout-ms*
    #:*auth-max-request-timeout-ms*
+   #:*auth-initial-username*
+   #:*auth-initial-password*
+   #:*auth-password-min-length*
+   #:*auth-password-iterations*
+   #:*auth-login-session-seconds*
    #:*auth-public-paths*
    #:main
    #:reload
@@ -228,6 +233,28 @@
    #:disable-api-key
    #:api-key-metadata-json
    #:list-api-key-metadata
+   #:user-record
+   #:user-record-username
+   #:user-record-principal-type
+   #:user-record-scopes
+   #:user-record-status
+   #:user-record-created-at
+   #:user-record-password-updated-at
+   #:user-record-must-change-password
+   #:user-store-get
+   #:user-store-put
+   #:user-store-update
+   #:user-store-list
+   #:user-store-count
+   #:normalize-username
+   #:create-user
+   #:list-user-metadata
+   #:user-metadata-json
+   #:authenticate-user-password
+   #:login-user
+   #:change-user-password
+   #:admin-set-user-password
+   #:ensure-initial-user
    #:validate-auth-configuration
    #:initialize-auth-store))
 
