@@ -19,6 +19,7 @@
    (:file "producers/producers")
    (:file "package")
    (:file "leases/package")
+   (:file "leases/compile-exports")
    (:file "leases/protocol")
    (:file "leases/memory-store")
    (:file "leases/valkey-scripts")
