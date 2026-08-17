@@ -38,6 +38,7 @@
      (:file "authorization-policy-test")
      (:file "authorization-services-final-test")
      (:file "authorization-quota-test")
+     (:file "runtime-lifecycle-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
