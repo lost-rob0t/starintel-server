@@ -1,7 +1,7 @@
 (in-package :star.frontends.http-api)
 
-(defconstant +api-v1-version+ "v1")
-(defconstant +capabilities-path+ "/api/v1/capabilities")
+(defparameter +api-v1-version+ "v1")
+(defparameter +capabilities-path+ "/api/v1/capabilities")
 
 (defun json-boolean (value)
   (if value :true :false))
