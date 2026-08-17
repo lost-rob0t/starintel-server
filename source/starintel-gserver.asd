@@ -67,6 +67,7 @@
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
+   (:file "runtime-lifecycle")
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
