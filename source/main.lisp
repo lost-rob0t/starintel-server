@@ -12,28 +12,14 @@
     :key :init-value)))
 
 (defun initialize-runtime (init-file)
-  (safe-load-init init-file)
-  (log:info "Creating ~a worker threads" star:*ingest-workers*)
-  (setf lparallel:*kernel*
-        (lparallel:make-kernel star:*ingest-workers*))
-  (star.databases.couchdb:init-db)
-  (star.auth:initialize-auth-store)
-  (star.auth:ensure-initial-user)
-  (star.actors:start-actors
-   :rabbit-host *rabbit-address*
-   :rabbit-vhost "/"
-   :rabbit-port *rabbit-port*
-   :rabbit-user *rabbit-user*
-   :rabbit-password *rabbit-password*)
-  (star.frontends.http-api::start-http-api)
-  (star.rabbit:start-consumers)
-  (star.actors:start-event-consumer 2))
+  (star.runtime:start-runtime init-file))
 
 (defun server/handler (command)
-  (initialize-runtime (clingon:getopt command :init-value))
-  (loop for thread in (bt:all-threads)
-        unless (equal thread (bt:current-thread))
-          do (bt:join-thread thread)))
+  (let ((runtime
+          (initialize-runtime (clingon:getopt command :init-value))))
+    (unwind-protect
+         (star.runtime:run-runtime-loop runtime)
+      (star.runtime:stop-runtime runtime :reason :handler-exit))))
 
 (defun server/command ()
   (clingon:make-command
