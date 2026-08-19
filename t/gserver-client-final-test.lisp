@@ -16,3 +16,32 @@
       (is-false generated-p)))
   (signals error
     (star::resolve-admin-password :password "one" :random-password t)))
+
+(test openapi-secret-directions-match-wire-semantics
+  (let* ((document (jsown:parse (star.http.contract:openapi-json)))
+         (paths (jsown:val document "paths"))
+         (login (jsown:val (jsown:val paths "/auth/login") "post"))
+         (request-schema
+           (jsown:val
+            (jsown:val
+             (jsown:val
+              (jsown:val login "requestBody") "content")
+             "application/json")
+            "schema"))
+         (response-schema
+           (jsown:val
+            (jsown:val
+             (jsown:val
+              (jsown:val
+               (jsown:val login "responses") "200")
+              "content")
+             "application/json")
+            "schema"))
+         (password
+           (jsown:val (jsown:val request-schema "properties") "password"))
+         (api-key
+           (jsown:val (jsown:val response-schema "properties") "api_key")))
+    (is-true (jsown:val password "writeOnly"))
+    (is (null (jsown:val-safe password "readOnly")))
+    (is-true (jsown:val api-key "readOnly"))
+    (is (null (jsown:val-safe api-key "writeOnly")))))
