@@ -152,6 +152,21 @@ password-change handler, which re-verifies the current password."
                      caller-scopes
                      :test #'string=)))))
 
+(defun admin-scoped-principal-p (principal)
+  (and principal
+       (member "admin"
+               (star.auth:request-principal-scopes principal)
+               :test #'string=)))
+
+(defun credential-identity-delegable-p (owner principal-type principal)
+  "Non-admin issuers may only mint or manage credentials for their own identity."
+  (and principal
+       (or (admin-scoped-principal-p principal)
+           (and (string= owner
+                         (star.auth:request-principal-id principal))
+                (string-equal principal-type
+                              (star.auth:request-principal-type principal))))))
+
 (defun credential-grant-delegable-p (principal-type scopes principal)
   "Prevent a credential issuer from granting authority it does not possess."
   (when principal
@@ -163,33 +178,39 @@ password-change handler, which re-verifies the current password."
                         (delegated-scope-covered-p scope caller-scopes))
                       scopes))))))
 
-(defun require-delegable-credential-grant (principal-type scopes)
-  (unless (credential-grant-delegable-p
-           principal-type
-           scopes
-           (star.auth:current-request-principal))
-    (signal-http-input-error
-     403
-     "access_denied"
-     "Access denied"))
+(defun require-delegable-credential-grant (owner principal-type scopes)
+  (let ((principal (star.auth:current-request-principal)))
+    (unless (and (credential-identity-delegable-p
+                  owner principal-type principal)
+                 (credential-grant-delegable-p
+                  principal-type scopes principal))
+      (signal-http-input-error
+       403
+       "access_denied"
+       "Access denied")))
   t)
 
 (defun credential-record-delegable-p (record principal)
   (and record
+       (credential-identity-delegable-p
+        (star.auth:api-key-record-owner record)
+        (star.auth:api-key-record-principal-type record)
+        principal)
        (credential-grant-delegable-p
         (star.auth:api-key-record-principal-type record)
         (star.auth:api-key-record-scopes record)
         principal)))
 
 (defun require-delegable-stored-credential (credential-id)
-  "Deny delegated lifecycle operations against a more privileged credential."
+  "Deny delegated lifecycle operations outside the caller's identity or authority."
   (let ((record
           (and star.auth:*credential-store*
                (star.auth:credential-store-get
                 star.auth:*credential-store*
                 credential-id))))
     ;; Preserve the lifecycle API's normal not-found behavior. Existing records
-    ;; must be no more authoritative than the caller unless the caller has admin.
+    ;; must be owned by the caller and no more authoritative, unless the caller
+    ;; is explicitly admin-scoped.
     (when (and record
                (not (credential-record-delegable-p
                      record
@@ -212,7 +233,7 @@ password-change handler, which re-verifies the current password."
              (scopes (require-scope-array body))
              (expires-in-seconds
                (optional-positive-integer body "expires_in_seconds")))
-        (require-delegable-credential-grant principal-type scopes)
+        (require-delegable-credential-grant owner principal-type scopes)
         (multiple-value-bind (record raw-key)
             (star.auth:create-api-key
              owner
