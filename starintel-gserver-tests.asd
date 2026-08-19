@@ -33,6 +33,7 @@
      (:file "http-boundary-test")
      (:file "http-auth-test")
      (:file "auth-users-test")
+     (:file "security-hardening-test")
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")
