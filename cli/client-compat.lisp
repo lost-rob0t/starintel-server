@@ -19,3 +19,7 @@
     (setf (slot-value client 'headers)
           '(("Accept" . "application/json"))))
   client)
+
+(defmethod print-object ((result credential-secret-result) stream)
+  (print-unreadable-object (result stream :type t :identity t)
+    (write-string "api-key=REDACTED" stream)))
