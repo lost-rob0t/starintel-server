@@ -3,86 +3,67 @@
 
 * First-run administrator
 
-When the authentication database contains no user records, star-server creates
-one initial human administrator during startup:
+StarIntel does not ship a human administrator password.
 
-#+begin_example
-username: star
-password: intel
-#+end_example
+When the authentication database has no user records, startup creates the
+initial human administrator only when =STAR_AUTH_INITIAL_PASSWORD= or
+=STAR_AUTH_INITIAL_PASSWORD_FILE= is explicitly configured. If neither is set,
+startup leaves the human-user store empty and the one-time =/auth/bootstrap=
+API-key flow remains available.
 
-The shorthand credential pair is =star:intel=. The account is stored in the
-separate StarIntel authentication database and is marked
-=must_change_password=true=.
+The initial username defaults to =star=. An explicitly configured initial user
+is marked =must_change_password=true=.
 
-This built-in password exists only to make a fresh local installation usable.
-Change it immediately before exposing the HTTP listener to another machine or an
-untrusted network. The initial username and password can also be overridden
-before first startup.
+For deployed environments, prefer a root-readable secret file rather than an
+environment variable.
 
 * Password storage
 
 StarIntel never stores recoverable user passwords. Passwords are transformed
 with PBKDF2-SHA256 using Ironclad. The password input is mixed with the server
-authentication pepper before derivation, and the combined PBKDF2 representation
-contains the per-password salt and work factor needed for verification.
+authentication pepper before derivation, and each stored representation carries
+its own salt and work factor.
 
-The default PBKDF2 iteration count is 600000. CI lowers this value explicitly so
-that integration tests exercise the same behavior without spending production
-work-factor time on disposable credentials.
+The default PBKDF2 iteration count is 600000. CI lowers this value explicitly for
+disposable credentials.
 
-The short built-in =intel= password is a first-run compatibility exception.
-Passwords created or changed through the normal user lifecycle must satisfy the
-configured minimum length, which defaults to 12 characters.
+Normal user create/change operations enforce the configured minimum password
+length, which defaults to 12 characters. The explicitly configured first-run
+password retains compatibility with older deployments, so operators must still
+choose a strong secret.
 
 * Login
 
-=POST /auth/login= is public and accepts:
+=POST /auth/login= is public and accepts JSON credentials:
 
 #+begin_src json
 {
-  "username": "star",
-  "password": "intel"
+  "username": "analyst",
+  "password": "a-long-user-password"
 }
 #+end_src
 
-Successful login returns a normal StarIntel opaque API key:
+Successful login returns a normal opaque StarIntel API key. Subsequent requests
+use bearer authentication:
 
-#+begin_src json
-{
-  "api_key": "star_sk_v1_...",
-  "credential": { "...": "..." },
-  "user": {
-    "username": "star",
-    "principal_type": "administrator",
-    "scopes": ["admin"],
-    "status": "active",
-    "must_change_password": true
-  }
-}
-#+end_src
-
-The raw API key is returned only in the login response. Subsequent requests use
-the existing bearer authentication model:
-
-#+begin_example
+#+begin_src text
 Authorization: Bearer star_sk_v1_...
-#+end_example
+#+end_src
 
 Incorrect usernames and passwords return the same =401 invalid_credential=
-response so the endpoint does not reveal whether a username exists.
+response so login does not disclose whether a username exists.
 
 * Administrator user management
 
-All routes in this section require an administrator bearer credential.
+The following routes require an administrator bearer credential.
 
 ** Create a user
 
-#+begin_example
+#+begin_src text
 POST /auth/users
 Authorization: Bearer <administrator-key>
 Content-Type: application/json
-#+end_example
+#+end_src
 
 #+begin_src json
 {
@@ -99,20 +80,18 @@ hashes.
 
 ** List users
 
-#+begin_example
+#+begin_src text
 GET /auth/users
 Authorization: Bearer <administrator-key>
-#+end_example
-
-Returns non-secret user metadata only.
+#+end_src
 
 ** Reset a password
 
-#+begin_example
+#+begin_src text
 POST /auth/users/<username>/password
 Authorization: Bearer <administrator-key>
 Content-Type: application/json
-#+end_example
+#+end_src
 
 #+begin_src json
 {
@@ -125,22 +104,22 @@ Content-Type: application/json
 
 An authenticated human user can change their own password:
 
-#+begin_example
+#+begin_src text
 POST /auth/password
 Authorization: Bearer <login-key>
 Content-Type: application/json
-#+end_example
+#+end_src
 
 #+begin_src json
 {
-  "current_password": "intel",
+  "current_password": "current-password",
   "new_password": "replacement-password"
 }
 #+end_src
 
 A successful change clears =must_change_password=. Existing API keys minted
-before a password change remain ordinary API-key credentials and follow the
-existing credential lifecycle; rotate or revoke them separately when required.
+before a password change remain ordinary API-key credentials and must be rotated
+or revoked separately when required.
 
 * Persistence
 
@@ -149,36 +128,30 @@ User records live in =STAR_AUTH_DATABASE= alongside credential records but use
 separate =users= view. Password hashes are never stored in StarIntel intelligence
 documents.
 
-Startup creates the default user only when the auth user store is empty, so a
-restart does not reset passwords or recreate deleted/renamed bootstrap state.
+Startup never recreates a human administrator after the auth user store has a
+record.
 
 * Configuration
 
 | Environment variable | Default | Purpose |
 |----------------------+---------+---------|
-| =STAR_AUTH_INITIAL_USERNAME= | =star= | First user created in an empty auth user store. |
-| =STAR_AUTH_INITIAL_PASSWORD= | =intel= | First user's initial password. |
-| =STAR_AUTH_INITIAL_PASSWORD_FILE= | none | File override for the first user's password. |
+| =STAR_AUTH_INITIAL_USERNAME= | =star= | Username used only when an initial password is explicitly configured. |
+| =STAR_AUTH_INITIAL_PASSWORD= | none | Explicit first user's initial password. |
+| =STAR_AUTH_INITIAL_PASSWORD_FILE= | none | Preferred file source for the first user's password. |
 | =STAR_AUTH_PASSWORD_MIN_LENGTH= | =12= | Minimum normal user password length. |
 | =STAR_AUTH_PASSWORD_ITERATIONS= | =600000= | PBKDF2 work factor. |
 | =STAR_AUTH_LOGIN_SESSION_SECONDS= | =86400= | Lifetime of API keys minted by password login. |
 
-The server authentication pepper remains mandatory in normal API-key mode and is
-also part of the password-verification boundary.
+The authentication pepper remains mandatory in normal API-key mode and is also
+part of the password-verification boundary.
 
 * CI contract
 
-The container stack test proves the complete deployment path using Nix-built
-images:
+The container stack test bootstraps an ephemeral administrator API key using the
+one-time bootstrap secret; it does not depend on a built-in human password.
 
-- a fresh auth database accepts =star:intel=;
-- the returned administrator key can create another user;
-- the new user can log in and resolve its bearer security context;
-- the default administrator can change the initial password;
-- =star:intel= stops authenticating after the change;
-- both the created user and changed administrator password survive a full stack
-  restart.
-
-Hermetic unit tests separately cover password policy, first-run idempotence,
-metadata redaction, login-to-API-key conversion, self-service password changes,
-and administrator resets.
+The OWASP ZAP workflow additionally starts the same disposable Compose stack,
+seeds ZAP with =.zap/openapi.yaml=, authenticates it with an ephemeral bearer key,
+and stores HTML, Markdown, and JSON reports as CI artifacts. Pull requests and
+pushes use API safe mode (passive scanning); scheduled or manually selected
+active scans attack only the disposable CI stack.
