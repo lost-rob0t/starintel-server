@@ -6,8 +6,10 @@
   :license      "GNU GPL, version 3"
   :components   ((:file "http-contract-package")
                  (:file "http-contract")
+                 (:file "http-contract-final")
                  (:file "client-package")
                  (:file "client-runtime")
+                 (:file "client-compat")
                  (:file "generated-operations")
                  (:file "client-convenience")
                  (:file "api-client"))
