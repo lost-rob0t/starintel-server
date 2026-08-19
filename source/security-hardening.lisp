@@ -48,12 +48,13 @@ create/reset human users without shipping a known administrator password."
      (lack.component:call app env)
      *security-response-headers*)))
 
-;; This is intentionally the final HTTP middleware assembly. The older
-;; definitions in http-api.lisp remain load-order compatibility code, while the
-;; effective server uses strict CORS, authentication, and these security headers.
+;; This is intentionally the final HTTP middleware assembly. Security headers
+;; wrap the existing CORS, authentication, and authorization boundaries without
+;; weakening or replacing any of them.
 (setf *server*
       (lack:builder
        :accesslog
        (security-headers-middleware
         (cors-middleware
-         (authentication-middleware *app*)))))
+         (authentication-middleware
+          (authorization-middleware *app*))))))
