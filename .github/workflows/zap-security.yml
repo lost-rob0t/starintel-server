@@ -1,0 +1,55 @@
+name: OWASP ZAP Security
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: ZAP scan mode for the disposable CI stack
+        required: true
+        default: passive
+        type: choice
+        options:
+          - passive
+          - active
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zap-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ZAP_SCAN_MODE: ${{ github.event_name == 'schedule' && 'active' || (github.event_name == 'workflow_dispatch' && inputs.mode) || 'passive' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5.0.1
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.10.6
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Run ZAP against disposable stack
+        run: bash ./scripts/zap-ci.sh "$ZAP_SCAN_MODE"
+
+      - name: Upload ZAP reports and stack diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: zap-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: zap-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
