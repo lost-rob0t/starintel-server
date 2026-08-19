@@ -151,34 +151,73 @@ curl --fail --silent --show-error \
   "${server_url}/auth/users" >/dev/null
 
 network_name="${COMPOSE_PROJECT_NAME}_backend"
-scan_args=(
-  zap-api-scan.py
-  -t /zap/wrk/.zap/openapi.yaml
-  -f openapi
-  -c /zap/wrk/.zap/rules.tsv
-  -r zap-artifacts/report.html
-  -w zap-artifacts/report.md
-  -J zap-artifacts/report.json
-  -T 15
-)
+export ZAP_TARGET_URL="http://star-server:5000"
+export ZAP_TARGET_REGEX='http://star-server:5000.*'
+export ZAP_API_KEY="$api_key"
+export ZAP_REPORT_DIR="/zap/wrk/zap-artifacts"
 
 if [[ "$mode" == passive ]]; then
-  # Safe mode imports the OpenAPI endpoints and runs passive checks only.
-  # WARNs are retained in reports; selected systemic rules in rules.tsv gate CI.
-  scan_args+=(-S -I)
+  export ZAP_ACTIVE_SCAN=false
+  export ZAP_WARN_LEVEL=High
+  export ZAP_WARN_EXIT_VALUE=0
 else
-  # Active mode runs only against this disposable Compose network and fails on
-  # both FAIL and WARN results so scheduled/manual scans demand triage.
-  scan_args+=(-a)
+  export ZAP_ACTIVE_SCAN=true
+  export ZAP_WARN_LEVEL=Medium
+  export ZAP_WARN_EXIT_VALUE=2
 fi
 
-printf '==> running ZAP %s API scan with %s\n' "$mode" "$zap_image"
+printf '==> clearing Common Lisp RCE marker inside disposable server\n'
+docker compose exec -T star-server sh -lc \
+  'rm -f /tmp/starintel-zap-rce-canary'
+
+printf '==> validating ZAP Automation Framework plan\n'
 docker run --rm \
   --network "$network_name" \
   --volume "$repo_root:/zap/wrk:rw" \
-  --env ZAP_AUTH_HEADER=Authorization \
-  --env "ZAP_AUTH_HEADER_VALUE=Bearer ${api_key}" \
+  --env ZAP_TARGET_URL \
+  --env ZAP_TARGET_REGEX \
+  --env ZAP_API_KEY \
+  --env ZAP_REPORT_DIR \
+  --env ZAP_ACTIVE_SCAN \
+  --env ZAP_WARN_LEVEL \
+  --env ZAP_WARN_EXIT_VALUE \
   "$zap_image" \
-  "${scan_args[@]}"
+  zap.sh -cmd -autocheck /zap/wrk/.zap/automation.yaml
 
-printf 'ZAP %s scan completed successfully.\n' "$mode"
+printf '==> running ZAP %s Automation Framework plan with %s\n' "$mode" "$zap_image"
+set +e
+docker run --rm \
+  --network "$network_name" \
+  --volume "$repo_root:/zap/wrk:rw" \
+  --env ZAP_TARGET_URL \
+  --env ZAP_TARGET_REGEX \
+  --env ZAP_API_KEY \
+  --env ZAP_REPORT_DIR \
+  --env ZAP_ACTIVE_SCAN \
+  --env ZAP_WARN_LEVEL \
+  --env ZAP_WARN_EXIT_VALUE \
+  "$zap_image" \
+  zap.sh -cmd -autorun /zap/wrk/.zap/automation.yaml
+zap_status=$?
+set -e
+
+printf '==> checking Common Lisp RCE canary\n'
+for _ in $(seq 1 10); do
+  if docker compose exec -T star-server sh -lc \
+       'test -e /tmp/starintel-zap-rce-canary'; then
+    docker compose exec -T star-server sh -lc \
+      'cat /tmp/starintel-zap-rce-canary' \
+      > "$artifact_dir/rce-canary.txt" 2>&1 || true
+    printf 'RCE CANARY TRIPPED: a Lisp injection payload executed in star-server\n' >&2
+    cat "$artifact_dir/rce-canary.txt" >&2 || true
+    exit 1
+  fi
+  sleep 1
+done
+
+if ((zap_status != 0)); then
+  printf 'ZAP Automation Framework exited with status %s\n' "$zap_status" >&2
+  exit "$zap_status"
+fi
+
+printf 'ZAP %s automation scan and Lisp RCE canaries completed successfully.\n' "$mode"
