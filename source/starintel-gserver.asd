@@ -18,11 +18,11 @@
    (:file "producers/package")
    (:file "producers/producers")
    (:file "http-contract-package"
-    :pathname "../cli/http-contract-package.lisp")
+    :pathname "../cli/http-contract-package")
    (:file "http-contract"
-    :pathname "../cli/http-contract.lisp")
+    :pathname "../cli/http-contract")
    (:file "http-contract-final"
-    :pathname "../cli/http-contract-final.lisp")
+    :pathname "../cli/http-contract-final")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
