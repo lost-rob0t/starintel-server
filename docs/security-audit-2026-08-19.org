@@ -5,37 +5,49 @@
 * Scope
 
 This audit covers the StarIntel server HTTP/authentication boundary, runtime
-startup, container deployment, and GitHub Actions configuration. It is a
-source-level defensive review plus a new OWASP ZAP DAST gate against a disposable
-CI deployment.
+startup, credential delegation, container deployment, and GitHub Actions
+configuration. It is a source-level defensive review plus a new OWASP ZAP DAST
+gate against a disposable CI deployment.
 
 The review prioritizes remotely reachable security boundaries and deployment
 misconfiguration over style-only findings.
 
 * Executive summary
 
-The most serious issue was a known first-run administrator credential. A fresh
-auth database created the =star= administrator with the built-in password
-=intel=, while =POST /auth/login= was public and exchanged that password for a
+Two direct privilege paths were found.
+
+First, a fresh auth database created the =star= administrator with the built-in
+password =intel=. =POST /auth/login= was public and exchanged that password for a
 normal administrator API key. Marking the account =must_change_password=true=
 did not restrict the issued key.
 
-This branch removes the implicit password. A human administrator is now created
-only when an initial password is explicitly supplied. The existing one-time
-bootstrap-secret flow remains available for fresh deployments.
+Second, credential lifecycle capabilities were not attenuated. A principal with
+=credentials:create= could request arbitrary scopes and principal type, including
+an =administrator= credential carrying =admin=. A delegated caller with a
+lifecycle capability could also rotate a more authoritative credential and
+receive its replacement secret.
 
-The branch also adds browser-oriented response hardening headers and OWASP ZAP
-API scanning in CI.
+This branch removes the implicit password and enforces scope/principal attenuation
+across delegated credential creation and lifecycle operations. A human
+administrator is now created only when an initial password is explicitly
+supplied. The existing one-time bootstrap-secret flow remains available for fresh
+deployments.
+
+The branch also explicitly maps the newer human-user routes through the
+centralized authorization boundary, adds browser-oriented response hardening
+headers, and adds OWASP ZAP API scanning in CI.
 
 | Severity | Status | Finding |
 |----------+--------+---------|
 | Critical | Fixed  | Known first-run administrator credential |
+| High     | Fixed  | Delegated credential management could escalate to administrator authority |
 | High     | Open   | No in-process TLS enforcement for bearer credentials |
 | Medium   | Open   | =must_change_password= is advisory at login |
 | Medium   | Open   | Development auth bypass can grant administrator context |
 | Medium   | Open   | Application body limit is after HTTP request materialization |
 | Medium   | Open   | Container runtime lacks several least-privilege controls |
 | Medium   | Open   | CI write permissions and action pinning can be tightened |
+| Low      | Fixed  | Human-user routes were missing from the centralized route/action map |
 | Low      | Open   | Legacy HTTP definitions depend on load-order replacement |
 
 * Findings
@@ -83,6 +95,61 @@ An explicitly configured first-run password may still use the legacy weak-passwo
 compatibility path. Operators should supply a strong random secret. Removing this
 compatibility exception is a reasonable follow-up once existing deployments are
 migrated.
+
+** FIXED High: delegated credential management could escalate authority
+
+*** Evidence
+
+The principal/capability contract states that =credentials:create= issues
+credentials within delegated principal/scope rules. The runtime route mapping
+correctly required the =credentials:create= capability, but the create handler
+passed the requested =principal_type= and =scopes= directly to =create-api-key=.
+No comparison against the caller's authority occurred.
+
+A caller possessing only =credentials:create= could therefore request a new
+credential with =principal_type=administrator= and =scopes=["admin"]=.
+
+The same family of issue affected lifecycle operations. A caller possessing
+=credentials:rotate= could name another credential. Rotation preserved the
+target credential's scopes and returned the new raw bearer key, so rotating a
+more authoritative credential converted lifecycle authority into the target's
+authority. Revoke and disable could similarly affect more authoritative
+credentials.
+
+*** Impact
+
+Delegated credential-management capabilities acted as privilege-escalation
+primitives rather than bounded lifecycle permissions. The create path could mint
+administrator authority directly. The rotate path could disclose a replacement
+administrator bearer key when the target credential identifier was known.
+
+*** Remediation in this branch
+
+- Non-admin credential creation may grant only capabilities the caller already
+  possesses.
+- A caller holding a wildcard resource restriction, such as =dataset:*=, may
+  delegate a narrower value such as =dataset:dataset-a=.
+- Non-admin callers cannot grant the =admin= scope.
+- Non-admin callers cannot create an =administrator= principal type.
+- Delegated rotate, revoke, and disable operations reject targets whose authority
+  is broader than the caller's authority.
+- Admin-scoped callers retain unrestricted credential-administration behavior.
+- Regression tests cover direct =admin= escalation, capability widening,
+  wildcard-to-specific narrowing, and lifecycle targeting of a more
+  authoritative credential.
+
+** FIXED Low: human-user routes were absent from centralized route mapping
+
+=/auth/users=, =/auth/users/:username/password=, and =/auth/password= were added
+without corresponding entries in =route-action=. Because unknown routes are
+default-denied, this failed closed rather than creating an authorization bypass,
+but it made the user-management and self-service password-change routes unusable
+through the effective authorization middleware.
+
+This branch explicitly maps user administration to =principals:manage=. The
+self-service password-change route is marked =:authenticated= so it still passes
+through authentication while relying on the handler's current-password
+re-verification rather than requiring an unrelated capability.
 
 ** OPEN High: bearer authentication has no transport-security invariant
 
@@ -186,7 +253,9 @@ effective server is assembled.
 
 The current runtime therefore does not use the stale wildcard policy, but keeping
 security-sensitive dead definitions increases review cost and makes future load
-order changes riskier.
+order changes riskier. This audit itself encountered that risk while composing a
+final response-header middleware, which is a decent sign that the duplication
+should go rather than become folklore.
 
 Recommended remediation is to remove the obsolete definitions and retain one
 canonical HTTP boundary implementation.
@@ -201,6 +270,10 @@ The audit found several security controls worth preserving:
   string comparison.
 - Authentication failures are deliberately uniform.
 - API-key rotation, disable, revoke, expiry, and overlap behavior are explicit.
+- Authorization uses a closed capability vocabulary and unknown HTTP routes fail
+  closed even for administrators.
+- Backend search scoping inserts tenant/dataset clauses before execution rather
+  than relying on post-filtering.
 - CORS uses an explicit configured origin list in the effective middleware and
   does not emit wildcard credential-safe origins.
 - Generic HTTP errors do not return server tracebacks in the effective boundary.
@@ -212,6 +285,16 @@ The audit found several security controls worth preserving:
   in the compose document.
 - Existing integration coverage already exercises authenticated authorization,
   scoped denial, persistence, and one-time bootstrap behavior.
+
+* Trusted startup-code boundary
+
+=STAR_SERVER_INIT_FILE= is Common Lisp code loaded with =LOAD= at startup. This
+is intentional configurability rather than a remote injection path, but it is a
+full code-execution trust boundary, not a data-only configuration file.
+
+Operators must ensure the init file and its parent directory are writable only by
+the deployment administrator. The supplied container path is mounted read-only,
+which is the right default direction.
 
 * OWASP ZAP CI
 
