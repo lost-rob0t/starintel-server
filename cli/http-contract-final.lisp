@@ -38,6 +38,25 @@
 (refresh-operation-response-schema "auth.credentials.revoke" (credential-status-schema))
 (refresh-operation-response-schema "auth.credentials.disable" (credential-status-schema))
 
+(defun normalize-schema-json-values (value)
+  "Normalize schema booleans into JSOWN's explicit JSON atoms in place."
+  (cond
+    ((and (consp value) (eq (first value) :obj))
+     (dolist (pair (rest value) value)
+       (when (and (string= (princ-to-string (car pair)) "additionalProperties")
+                  (null (cdr pair)))
+         (setf (cdr pair) :false))
+       (normalize-schema-json-values (cdr pair))))
+    ((listp value)
+     (dolist (element value value)
+       (normalize-schema-json-values element)))
+    (t value)))
+
+(dolist (operation *http-operations*)
+  (normalize-schema-json-values (http-operation-request-schema operation))
+  (dolist (response (http-operation-responses operation))
+    (normalize-schema-json-values (getf response :schema))))
+
 (defun operation-openapi-object (operation)
   (let* ((object
            (json-object
