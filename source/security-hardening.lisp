@@ -132,6 +132,71 @@ password-change handler, which re-verifies the current password."
         action
         :metadata (request-policy-metadata method path correlation-id))))))
 
+(defun restriction-scope-prefix (scope)
+  (loop for prefix in star.authorization::+scope-prefixes+
+        when (and (> (length scope) (length prefix))
+                  (string= prefix scope :end2 (length prefix)))
+          return prefix))
+
+(defun delegated-scope-covered-p (requested-scope caller-scopes)
+  "Return true when CALLER-SCOPES contains REQUESTED-SCOPE or a matching wildcard."
+  (or (member requested-scope caller-scopes :test #'string=)
+      (let ((prefix (restriction-scope-prefix requested-scope)))
+        (and prefix
+             (member (concatenate 'string prefix "*")
+                     caller-scopes
+                     :test #'string=)))))
+
+(defun credential-grant-delegable-p (principal-type scopes principal)
+  "Prevent a credential issuer from granting authority it does not possess."
+  (when principal
+    (let ((caller-scopes (star.auth:request-principal-scopes principal)))
+      (or (member "admin" caller-scopes :test #'string=)
+          (and (not (string-equal principal-type "administrator"))
+               (not (member "admin" scopes :test #'string=))
+               (every (lambda (scope)
+                        (delegated-scope-covered-p scope caller-scopes))
+                      scopes))))))
+
+(defun require-delegable-credential-grant (principal-type scopes)
+  (unless (credential-grant-delegable-p
+           principal-type
+           scopes
+           (star.auth:current-request-principal))
+    (signal-http-input-error
+     403
+     "access_denied"
+     "Access denied"))
+  t)
+
+(defun handle-hardened-auth-create-route (params)
+  (declare (ignore params))
+  (with-http-boundary ()
+    (require-administrator-context)
+    (with-credential-lifecycle-errors
+      (let* ((body (require-json-object (parse-json-request)))
+             (owner (require-auth-string body "owner"))
+             (principal-type
+               (require-auth-string body "principal_type"))
+             (scopes (require-scope-array body))
+             (expires-in-seconds
+               (optional-positive-integer body "expires_in_seconds")))
+        (require-delegable-credential-grant principal-type scopes)
+        (multiple-value-bind (record raw-key)
+            (star.auth:create-api-key
+             owner
+             principal-type
+             scopes
+             :expires-in-seconds expires-in-seconds)
+          (setf (lack.response:response-status *response*) 201)
+          (credential-secret-response record raw-key))))))
+
+;; Re-register after http-authorization-routes so delegated credential creation
+;; cannot retain the pre-attenuation function object captured by that route.
+(setf (ningle:route *app* "/auth/credentials" :method :post)
+      (credential-action-handler
+       "credentials:create" #'handle-hardened-auth-create-route))
+
 (defparameter *security-response-headers*
   (list
    :x-content-type-options "nosniff"
