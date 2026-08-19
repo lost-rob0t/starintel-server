@@ -13,12 +13,20 @@
 
 (in-suite http-auth-tests)
 
-(defun security-test-principal (scopes)
+(defun security-test-principal (scopes &optional (type "api_client"))
   (star.auth::%make-request-principal
    :id "security-test-principal"
-   :type "api_client"
+   :type type
    :scopes scopes
    :credential-id "security-test-credential"))
+
+(test administrator-authority-requires-admin-scope
+  (let ((type-only
+          (security-test-principal '("documents:read") "administrator"))
+        (scope-admin
+          (security-test-principal '("admin") "api_client")))
+    (is-false (star.auth:administrator-principal-p type-only))
+    (is-true (star.auth:administrator-principal-p scope-admin))))
 
 (test every-http-response-has-browser-hardening-headers
   (let ((headers star.frontends.http-api::*security-response-headers*))
