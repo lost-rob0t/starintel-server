@@ -169,6 +169,32 @@ password-change handler, which re-verifies the current password."
      "Access denied"))
   t)
 
+(defun credential-record-delegable-p (record principal)
+  (and record
+       (credential-grant-delegable-p
+        (star.auth:api-key-record-principal-type record)
+        (star.auth:api-key-record-scopes record)
+        principal)))
+
+(defun require-delegable-stored-credential (credential-id)
+  "Deny delegated lifecycle operations against a more privileged credential."
+  (let ((record
+          (and star.auth:*credential-store*
+               (star.auth:credential-store-get
+                star.auth:*credential-store*
+                credential-id))))
+    ;; Preserve the lifecycle API's normal not-found behavior. Existing records
+    ;; must be no more authoritative than the caller unless the caller has admin.
+    (when (and record
+               (not (credential-record-delegable-p
+                     record
+                     (star.auth:current-request-principal))))
+      (signal-http-input-error
+       403
+       "access_denied"
+       "Access denied"))
+    record))
+
 (defun handle-hardened-auth-create-route (params)
   (declare (ignore params))
   (with-http-boundary ()
@@ -191,11 +217,60 @@ password-change handler, which re-verifies the current password."
           (setf (lack.response:response-status *response*) 201)
           (credential-secret-response record raw-key))))))
 
-;; Re-register after http-authorization-routes so delegated credential creation
-;; cannot retain the pre-attenuation function object captured by that route.
+(defun handle-hardened-auth-rotate-route (params)
+  (with-http-boundary ()
+    (require-administrator-context)
+    (with-credential-lifecycle-errors
+      (let* ((credential-id (credential-id-param params))
+             (body (require-json-object (parse-json-request)))
+             (overlap-seconds
+               (or (jsown:val-safe body "overlap_seconds") 0)))
+        (unless (and (integerp overlap-seconds)
+                     (not (minusp overlap-seconds)))
+          (signal-http-input-error
+           422
+           "invalid_auth_request"
+           "Field overlap_seconds must be a non-negative integer"))
+        (require-delegable-stored-credential credential-id)
+        (multiple-value-bind (record raw-key)
+            (star.auth:rotate-api-key credential-id overlap-seconds)
+          (setf (lack.response:response-status *response*) 201)
+          (credential-secret-response record raw-key))))))
+
+(defun handle-hardened-auth-revoke-route (params)
+  (with-http-boundary ()
+    (require-administrator-context)
+    (with-credential-lifecycle-errors
+      (let ((credential-id (credential-id-param params)))
+        (require-delegable-stored-credential credential-id)
+        (lifecycle-status-response
+         (star.auth:revoke-api-key credential-id)
+         "Credential revoked")))))
+
+(defun handle-hardened-auth-disable-route (params)
+  (with-http-boundary ()
+    (require-administrator-context)
+    (with-credential-lifecycle-errors
+      (let ((credential-id (credential-id-param params)))
+        (require-delegable-stored-credential credential-id)
+        (lifecycle-status-response
+         (star.auth:disable-api-key credential-id)
+         "Credential disabled")))))
+
+;; Re-register after http-authorization-routes so delegated lifecycle endpoints
+;; cannot retain the pre-attenuation function objects captured by those routes.
 (setf (ningle:route *app* "/auth/credentials" :method :post)
       (credential-action-handler
        "credentials:create" #'handle-hardened-auth-create-route))
+(setf (ningle:route *app* "/auth/credentials/:credential-id/rotate" :method :post)
+      (credential-action-handler
+       "credentials:rotate" #'handle-hardened-auth-rotate-route))
+(setf (ningle:route *app* "/auth/credentials/:credential-id/revoke" :method :post)
+      (credential-action-handler
+       "credentials:revoke" #'handle-hardened-auth-revoke-route))
+(setf (ningle:route *app* "/auth/credentials/:credential-id/disable" :method :post)
+      (credential-action-handler
+       "credentials:disable" #'handle-hardened-auth-disable-route))
 
 (defparameter *security-response-headers*
   (list
