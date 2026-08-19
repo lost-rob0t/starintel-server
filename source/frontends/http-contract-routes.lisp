@@ -1,5 +1,8 @@
 (in-package :star.frontends.http-api)
 
+(dolist (path '("/openapi.json" "/client-manifest.json"))
+  (pushnew path star:*auth-public-paths* :test #'string=))
+
 (defun mount-http-operation (operation-id handler)
   "Mount HANDLER using the canonical method/path for OPERATION-ID."
   (let ((operation (star.http.contract:find-http-operation operation-id)))
