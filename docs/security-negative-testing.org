@@ -1,0 +1,121 @@
+#+title: StarIntel negative security testing
+#+date: 2026-08-19
+#+options: toc:2
+
+* Purpose
+
+This suite exercises hostile input against a disposable StarIntel deployment.
+It is intended to detect code-evaluation, CouchDB/Clouseau scope escape, parser
+confusion, and bounded resource-exhaustion regressions without targeting a live
+deployment.
+
+The suite is part of the OWASP ZAP workflow on the security-audit branch.
+
+* Hard safety boundary
+
+=scripts/security-negative-test.sh= refuses to run unless both conditions hold:
+
+- =STAR_SECURITY_DISPOSABLE= is exactly =1=; and
+- =COMPOSE_PROJECT_NAME= starts with =starintel-zap-=.
+
+The ZAP workflow creates that disposable Compose project, uses ephemeral
+credentials, and destroys the project and volumes at the end of the run.
+
+Do not weaken this guard to point the suite at production. The denial-of-service
+checks are intentionally bounded, but they are still hostile-input tests.
+
+* Common Lisp code-execution probes
+
+=.zap/automation.yaml= contains canary payloads for likely Common Lisp injection
+classes, including:
+
+- reader evaluation through =#.=;
+- direct forms that would become dangerous if passed through =READ= and =EVAL=;
+- UIOP process execution;
+- SBCL process execution;
+- nested reader-eval forms;
+- dynamic symbol lookup; and
+- persistence/reload paths through credential metadata.
+
+All execution probes write only a marker under =/tmp= inside the disposable
+=star-server= container. The harness checks for the marker after the scan and
+fails immediately if it exists.
+
+The payloads are deliberately non-destructive canaries. Successful execution is
+still treated as remote code execution because it proves attacker-controlled
+Lisp was evaluated.
+
+* CouchDB and Clouseau probes
+
+=security/payloads.json= contains query and path payloads for the actual database
+surface StarIntel exposes.
+
+The suite creates two documents with the same search term in different datasets,
+then creates a reader restricted to one dataset. It submits Lucene/Clouseau
+queries intended to alter boolean grouping, inject dataset fields, override
+tenant fields, and confuse quoting.
+
+A successful HTTP response is accepted only when the denied document is absent.
+A rejected malformed query is also safe. Any denied-dataset document appearing
+in the response fails CI.
+
+The suite also probes encoded slash, dot-dot, double-encoding, and NUL-style
+inputs in CouchDB design/view route components. These must fail with a 4xx
+response rather than reaching an unintended CouchDB path.
+
+No externally controlled Mango selector endpoint was found in the reviewed HTTP
+surface, so the suite targets the real externally reachable boundaries instead
+of adding MongoDB-style payload theater to a CouchDB service.
+
+* JSON robustness probes
+
+The suite covers:
+
+- truncated objects;
+- unterminated strings;
+- trailing commas;
+- incorrect top-level JSON types;
+- invalid UTF-8; and
+- duplicate security-relevant keys.
+
+Malformed JSON and invalid UTF-8 are required to return =400=.
+
+Duplicate keys are currently observational. A =5xx= or connection failure is a
+hard failure; acceptance is written to the JSONL results artifact as
+=accepted-review-recommended=. This gives us evidence about current JSOWN/Yason
+behavior before choosing and documenting a canonical duplicate-key policy.
+
+* Bounded denial-of-service probes
+
+Resource-exhaustion tests use explicit ceilings from =security/payloads.json=:
+
+- a body slightly larger than the 1 MiB application limit, expected =413=;
+- 501 bulk documents against the 500-document limit, expected =413=;
+- JSON nesting depth 192, followed by a health check; and
+- 24 malformed JSON requests with parallelism 6, followed by a health check.
+
+The suite does not run unbounded floods, slowloris tests, decompression bombs, or
+open-ended concurrency. Those belong in a separately isolated load-testing
+environment with host-level resource controls.
+
+* Artifacts
+
+The ZAP workflow uploads =zap-artifacts/=. In addition to normal ZAP HTML,
+Markdown, and JSON reports, the negative suite writes:
+
+- =security-negative-results.jsonl=;
+- StarIntel server logs on cleanup;
+- CouchDB logs on cleanup; and
+- Compose status diagnostics.
+
+The JSONL result records category, payload name, HTTP status, and the security
+outcome without storing bearer credentials.
+
+* Running through CI
+
+Pull requests and master pushes use the passive ZAP mode plus the complete
+application-aware negative suite. Scheduled and manually selected active runs add
+ZAP active scanning against the same disposable stack.
+
+The intended entry point is the workflow, not direct execution against an
+arbitrary URL.
