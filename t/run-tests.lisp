@@ -15,6 +15,7 @@
     http-auth-tests
     auth-users-tests
     authorization-policy-tests
+    gserver-client-tests
     runtime-lifecycle-tests))
 
 (defun run-all-gserver-tests ()
