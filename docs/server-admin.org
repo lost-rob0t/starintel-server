@@ -1,0 +1,131 @@
+#+title: StarIntel Server-Local Administration
+#+options: toc:2
+
+* Purpose
+
+=star-server admin= is the host-local bootstrap and recovery interface for
+human users and API credentials. It does not call the HTTP API and does not
+start RabbitMQ, actor supervision, or the HTTP listener.
+
+The command loads the same server configuration used by =star-server start=,
+initializes only the authentication store, and calls =star.auth= lifecycle
+services. This keeps password hashing, policy, credential rotation, and record
+semantics shared with the HTTP management API.
+
+* Configuration
+
+The admin tree accepts the persistent server init option:
+
+#+begin_src sh
+star-server admin --init /etc/starintel/init.lisp user list
+#+end_src
+
+=STAR_SERVER_INIT_FILE= may provide the same value. CouchDB and authentication
+configuration still come from the normal StarIntel configuration/environment.
+
+* Users
+
+** Create a normal user
+
+#+begin_src sh
+star-server admin user create \
+  --username analyst \
+  --scopes documents:read,search:read \
+  --random-password
+#+end_src
+
+A generated temporary password is printed once in the JSON result. By default
+the new user must change it on first use.
+
+** Create an administrator
+
+#+begin_src sh
+star-server admin user create \
+  --username operator \
+  --admin \
+  --random-password
+#+end_src
+
+=--admin= sets principal type =administrator= and scope =admin=. It intentionally
+ignores normal-user scope input rather than creating a half-administrator.
+
+** List users
+
+#+begin_src sh
+star-server admin user list | jq
+#+end_src
+
+Only metadata is returned. Password-derived material is not part of the output.
+
+** Reset a password
+
+Prefer stdin or a protected file rather than putting a password in shell history:
+
+#+begin_src sh
+printf '%s\n' 'replacement-password-456' | \
+  star-server admin user set-password \
+    --username analyst \
+    --password-stdin
+#+end_src
+
+Or let the server generate the replacement:
+
+#+begin_src sh
+star-server admin user set-password \
+  --username analyst \
+  --random-password
+#+end_src
+
+Password inputs are mutually exclusive:
+
+- =--password=;
+- =--password-file=;
+- =--password-stdin=;
+- =--random-password=.
+
+The normal server password policy remains authoritative.
+
+* API credentials
+
+** Create
+
+#+begin_src sh
+star-server admin credential create \
+  --owner quasar \
+  --principal-type service \
+  --scopes documents:read,search:read
+#+end_src
+
+The raw API key is returned only at creation/rotation time.
+
+** List
+
+#+begin_src sh
+star-server admin credential list | jq
+#+end_src
+
+** Rotate
+
+#+begin_src sh
+star-server admin credential rotate \
+  --credential-id 01J... \
+  --overlap-seconds 60
+#+end_src
+
+** Revoke or disable
+
+#+begin_src sh
+star-server admin credential revoke --credential-id 01J...
+star-server admin credential disable --credential-id 01J...
+#+end_src
+
+* Trust boundary
+
+This command is deliberately privileged. Possession of host/container execution
+and the server's authentication-store configuration is the authority boundary.
+It is intended for bootstrap and recovery when the remote API or administrator
+credentials are unavailable.
+
+The local command never silently falls back from remote authentication, and the
+remote client never gains a direct CouchDB mode. The two adapters share domain
+services, not transport or trust assumptions.
