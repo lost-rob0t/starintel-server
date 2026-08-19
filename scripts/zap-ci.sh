@@ -37,6 +37,8 @@ cleanup() {
     > "$artifact_dir/compose-ps.txt" 2>&1 || true
   docker compose --project-directory "$repo_root" logs --no-color star-server \
     > "$artifact_dir/star-server.log" 2>&1 || true
+  docker compose --project-directory "$repo_root" logs --no-color couchdb \
+    > "$artifact_dir/couchdb.log" 2>&1 || true
   docker compose --project-directory "$repo_root" down \
     --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$credentials_dir"
@@ -150,6 +152,13 @@ curl --fail --silent --show-error \
   --data '{"username":"zap-user","password":"zap-ci-password-123456789","principal_type":"user","scopes":["documents:read","search:read"],"must_change_password":false}' \
   "${server_url}/auth/users" >/dev/null
 
+printf '==> running bounded CouchDB, JSON, and denial-of-service negative tests\n'
+STAR_SECURITY_DISPOSABLE=1 \
+STAR_SECURITY_SERVER_URL="$server_url" \
+STAR_SECURITY_ADMIN_KEY="$api_key" \
+STAR_SECURITY_ARTIFACT_DIR="$artifact_dir" \
+bash ./scripts/security-negative-test.sh
+
 network_name="${COMPOSE_PROJECT_NAME}_backend"
 export ZAP_TARGET_URL="http://star-server:5000"
 export ZAP_TARGET_REGEX='http://star-server:5000.*'
@@ -220,4 +229,4 @@ if ((zap_status != 0)); then
   exit "$zap_status"
 fi
 
-printf 'ZAP %s automation scan and Lisp RCE canaries completed successfully.\n' "$mode"
+printf 'ZAP %s automation scan, Lisp RCE canaries, CouchDB injection, JSON robustness, and bounded DoS probes completed successfully.\n' "$mode"
