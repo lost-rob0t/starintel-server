@@ -1,0 +1,191 @@
+openapi: 3.0.3
+info:
+  title: StarIntel security scan surface
+  version: 1.0.0
+  description: >-
+    Security-test seed for the disposable CI stack. This is intentionally a
+    focused DAST contract rather than the public client API specification.
+servers:
+  - url: http://star-server:5000
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: zap-user
+        password:
+          type: string
+          example: zap-ci-password-123456789
+    CredentialRequest:
+      type: object
+      required: [owner, principal_type, scopes]
+      properties:
+        owner:
+          type: string
+          example: zap-client
+        principal_type:
+          type: string
+          example: api_client
+        scopes:
+          type: array
+          items:
+            type: string
+          example: [documents:read, search:read]
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      security: []
+      responses:
+        '200':
+          description: Server metadata
+  /health:
+    get:
+      security: []
+      responses:
+        '200':
+          description: Health status
+        '503':
+          description: Not ready
+  /live:
+    get:
+      security: []
+      responses:
+        '200':
+          description: Liveness status
+  /ready:
+    get:
+      security: []
+      responses:
+        '200':
+          description: Readiness status
+        '503':
+          description: Not ready
+  /auth/context:
+    get:
+      responses:
+        '200':
+          description: Current authenticated principal
+        '401':
+          description: Authentication required
+  /auth/credentials:
+    get:
+      responses:
+        '200':
+          description: Credential metadata
+        '403':
+          description: Administrator required
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialRequest'
+      responses:
+        '201':
+          description: Credential created
+        '403':
+          description: Administrator required
+        '422':
+          description: Invalid request
+  /auth/users:
+    get:
+      responses:
+        '200':
+          description: Human user metadata
+        '403':
+          description: Administrator required
+  /auth/login:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login session key
+        '401':
+          description: Invalid credential
+  /search:
+    get:
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+          example: content:zap-ci
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          example: 10
+      responses:
+        '200':
+          description: Search results
+        '400':
+          description: Invalid query
+        '403':
+          description: Authorization denied
+  /document/{id}:
+    get:
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          example: zap-ci-missing-document
+      responses:
+        '200':
+          description: Document
+        '404':
+          description: Document not found
+        '403':
+          description: Authorization denied
+  /targets/{actor}:
+    get:
+      parameters:
+        - in: path
+          name: actor
+          required: true
+          schema:
+            type: string
+          example: zap-ci-actor
+      responses:
+        '200':
+          description: Scoped target list
+        '403':
+          description: Authorization denied
+  /views/authorization/documents_by_scope:
+    get:
+      parameters:
+        - in: query
+          name: dataset
+          schema:
+            type: string
+          example: starintel
+        - in: query
+          name: tenant
+          schema:
+            type: string
+          example: default
+      responses:
+        '200':
+          description: Scoped authorization view
+        '403':
+          description: Authorization denied
