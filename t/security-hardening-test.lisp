@@ -54,6 +54,24 @@
        (star.frontends.http-api::route-action
         :delete "/auth/users"))))
 
+(test delegated-credential-identity-cannot-impersonate-another-principal
+  (let ((delegator
+          (security-test-principal '("credentials:create")))
+        (administrator
+          (security-test-principal '("admin"))))
+    (is-true
+     (star.frontends.http-api::credential-identity-delegable-p
+      "security-test-principal" "api_client" delegator))
+    (is-false
+     (star.frontends.http-api::credential-identity-delegable-p
+      "other-principal" "api_client" delegator))
+    (is-false
+     (star.frontends.http-api::credential-identity-delegable-p
+      "security-test-principal" "actor_component" delegator))
+    (is-true
+     (star.frontends.http-api::credential-identity-delegable-p
+      "other-principal" "administrator" administrator))))
+
 (test delegated-credential-creation-cannot-escalate-authority
   (let ((delegator
           (security-test-principal
@@ -98,7 +116,7 @@
       '("admin")
       administrator))))
 
-(test delegated-credential-lifecycle-cannot-target-more-authoritative-key
+(test delegated-credential-lifecycle-cannot-cross-identity-or-authority
   (let* ((delegator
            (security-test-principal
             '("credentials:rotate"
@@ -109,15 +127,25 @@
            (security-test-principal '("admin")))
          (read-record
            (star.auth::make-api-key-record
+            :owner "security-test-principal"
+            :principal-type "api_client"
+            :scopes '("documents:read" "dataset:dataset-a")))
+         (foreign-read-record
+           (star.auth::make-api-key-record
+            :owner "other-principal"
             :principal-type "api_client"
             :scopes '("documents:read" "dataset:dataset-a")))
          (admin-record
            (star.auth::make-api-key-record
+            :owner "security-administrator"
             :principal-type "administrator"
             :scopes '("admin"))))
     (is-true
      (star.frontends.http-api::credential-record-delegable-p
       read-record delegator))
+    (is-false
+     (star.frontends.http-api::credential-record-delegable-p
+      foreign-read-record delegator))
     (is-false
      (star.frontends.http-api::credential-record-delegable-p
       admin-record delegator))
