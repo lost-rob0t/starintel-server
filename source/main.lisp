@@ -9,6 +9,7 @@
     :long-name "init"
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
+    :persistent t
     :key :init-value)))
 
 (defun initialize-runtime (init-file)
