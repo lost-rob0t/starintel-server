@@ -21,3 +21,20 @@
                 (getf headers :content-security-policy)))
     (is (string= "no-referrer" (getf headers :referrer-policy)))
     (is (search "camera=()" (getf headers :permissions-policy)))))
+
+(test human-user-routes-are-explicitly-authorized
+  (is (string= "principals:manage"
+               (star.frontends.http-api::route-action
+                :get "/auth/users")))
+  (is (string= "principals:manage"
+               (star.frontends.http-api::route-action
+                :post "/auth/users")))
+  (is (string= "principals:manage"
+               (star.frontends.http-api::route-action
+                :post "/auth/users/alice/password")))
+  (is (eq :authenticated
+          (star.frontends.http-api::route-action
+           :post "/auth/password")))
+  (is (null
+       (star.frontends.http-api::route-action
+        :delete "/auth/users"))))
