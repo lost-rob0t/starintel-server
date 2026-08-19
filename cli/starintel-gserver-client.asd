@@ -14,4 +14,9 @@
                  (:file "generated-operations")
                  (:file "client-convenience")
                  (:file "api-client"))
-  :depends-on   (#:starintel #:jsown #:uuid #:dexador #:quri))
+  :depends-on   (#:starintel
+                 #:jsown
+                 #:uuid
+                 #:dexador
+                 #:quri
+                 #:bordeaux-threads))
