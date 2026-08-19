@@ -4,319 +4,254 @@
 
 * Scope
 
-This audit covers the StarIntel server HTTP/authentication boundary, runtime
-startup, credential delegation, container deployment, and GitHub Actions
-configuration. It is a source-level defensive review plus a new OWASP ZAP DAST
-gate against a disposable CI deployment.
+This audit covers the StarIntel server HTTP authentication and authorization
+boundary, credential lifecycle, runtime startup, container deployment, and
+GitHub Actions configuration.
 
-The review prioritizes remotely reachable security boundaries and deployment
-misconfiguration over style-only findings.
+The review combines source inspection, focused regression tests, the existing
+unit/integration/container suites, and a new OWASP ZAP API scan against a
+disposable CI deployment.
 
 * Executive summary
 
-Two direct privilege paths were found.
-
-First, a fresh auth database created the =star= administrator with the built-in
-password =intel=. =POST /auth/login= was public and exchanged that password for a
-normal administrator API key. Marking the account =must_change_password=true=
-did not restrict the issued key.
-
-Second, credential lifecycle capabilities were not attenuated. A principal with
-=credentials:create= could request arbitrary scopes and principal type, including
-an =administrator= credential carrying =admin=. A delegated caller with a
-lifecycle capability could also rotate a more authoritative credential and
-receive its replacement secret.
-
-This branch removes the implicit password and enforces scope/principal attenuation
-across delegated credential creation and lifecycle operations. A human
-administrator is now created only when an initial password is explicitly
-supplied. The existing one-time bootstrap-secret flow remains available for fresh
-deployments.
-
-The branch also explicitly maps the newer human-user routes through the
-centralized authorization boundary, adds browser-oriented response hardening
-headers, and adds OWASP ZAP API scanning in CI.
+The audit found four privilege-boundary failures. All four are fixed on the audit
+branch.
 
 | Severity | Status | Finding |
 |----------+--------+---------|
 | Critical | Fixed  | Known first-run administrator credential |
-| High     | Fixed  | Delegated credential management could escalate to administrator authority |
-| High     | Open   | No in-process TLS enforcement for bearer credentials |
-| Medium   | Open   | =must_change_password= is advisory at login |
-| Medium   | Open   | Development auth bypass can grant administrator context |
-| Medium   | Open   | Application body limit is after HTTP request materialization |
-| Medium   | Open   | Container runtime lacks several least-privilege controls |
-| Medium   | Open   | CI write permissions and action pinning can be tightened |
-| Low      | Fixed  | Human-user routes were missing from the centralized route/action map |
-| Low      | Open   | Legacy HTTP definitions depend on load-order replacement |
+| High     | Fixed  | Delegated credential creation/lifecycle could escalate authority |
+| High     | Fixed  | Delegated credential ownership could impersonate another principal |
+| Medium   | Fixed  | Principal type string could act as administrator authority |
+| Low      | Fixed  | Human-user routes were absent from centralized route mapping |
+| High     | Open   | No runtime invariant requiring protected transport for bearer credentials |
+| Medium   | Open   | =must_change_password= remains advisory at login |
+| Medium   | Open   | Development auth bypass lacks a loopback-only invariant |
+| Medium   | Open   | Application body limit occurs after HTTP request materialization |
+| Medium   | Open   | Container runtime can be hardened further |
+| Medium   | Open   | CI permissions and dependency pinning can be tightened |
+| Low      | Open   | Security-sensitive HTTP behavior still depends on load-order replacement |
 
-* Findings
+* Fixed findings
 
-** FIXED Critical: known first-run administrator credential
+** Critical: known first-run administrator credential
 
-*** Evidence
+A fresh authentication database previously created the =star= administrator with
+the built-in password =intel=. The public =POST /auth/login= endpoint exchanged
+that password for a normal API key carrying the user's full scopes.
 
-Before this change, =gserver-settings.lisp= defaulted the initial username to
-=star= and the initial password to =intel=. Runtime startup initialized the auth
-store and called =ensure-initial-user= before starting the HTTP API.
+The =must_change_password=true= flag did not restrict the issued API key, so a
+fresh reachable deployment could be converted directly into administrator
+access before an operator changed the password.
 
-=ensure-initial-user= created an administrator with the =admin= scope when the
-human-user store was empty. The public =POST /auth/login= route accepted the
-password and =login-user= minted an ordinary API key containing the user's full
-scopes.
+The branch removes the password fallback. A human administrator is created only
+when =STAR_AUTH_INITIAL_PASSWORD= or =STAR_AUTH_INITIAL_PASSWORD_FILE= is
+explicitly configured. With neither configured, the human-user store remains
+empty and the existing one-time =/auth/bootstrap= flow is used to establish the
+first administrator credential.
 
-The =must_change_password= flag was returned as metadata but did not prevent API
-key issuance.
+** High: delegated credential management could escalate authority
 
-*** Impact
+The capability contract describes =credentials:create= as delegated credential
+issuance, but the runtime previously accepted arbitrary requested scopes and
+principal type after checking only that the caller possessed
+=credentials:create=.
 
-A fresh deployment reachable by an untrusted client before the password was
-changed could be converted directly into administrator access using a published,
-static credential.
+A caller with that capability could therefore request =scopes=["admin"]= and an
+administrator principal type. =credentials:rotate= was also dangerous because a
+caller could rotate a more authoritative credential and receive the replacement
+raw bearer key. Revoke and disable had the same target-selection problem.
 
-The default Compose host binding to =127.0.0.1= reduced exposure for the supplied
-container configuration, but it did not make the application default safe when
-the listener was exposed another way.
+The branch now enforces attenuation:
 
-*** Remediation in this branch
+- non-admin issuers may grant only capabilities they already possess;
+- wildcard resource restrictions may delegate narrower specific restrictions;
+- non-admin issuers cannot grant =admin=;
+- non-admin issuers cannot create an administrator principal;
+- rotate/revoke/disable cannot target a credential with broader authority; and
+- =admin=-scoped principals retain explicit cross-principal security
+  administration authority.
 
-- =STAR_AUTH_INITIAL_PASSWORD= has no built-in fallback.
-- =STAR_AUTH_INITIAL_PASSWORD_FILE= remains the preferred explicit secret source.
-- No human administrator is created when neither source is configured.
-- The one-time =/auth/bootstrap= flow remains available for an empty credential
-  store.
-- Documentation and examples no longer publish a default human credential.
-- Unit coverage verifies that an unset initial password leaves the user store
-  empty.
+Unit tests and the disposable-stack CI harness cover direct admin-scope
+escalation.
 
-*** Residual risk
+** High: delegated credential ownership enabled principal impersonation
 
-An explicitly configured first-run password may still use the legacy weak-password
-compatibility path. Operators should supply a strong random secret. Removing this
-compatibility exception is a reasonable follow-up once existing deployments are
-migrated.
+An API-key record's =owner= becomes the authenticated principal identifier.
+Delegated credential creation previously accepted an arbitrary owner string.
+That meant a credential issuer could mint a same-scope key under another
+principal's identity and pass application checks that rely on principal identity,
+such as asynchronous job ownership.
 
-** FIXED High: delegated credential management could escalate authority
+Lifecycle operations had the same horizontal problem: a caller could rotate,
+revoke, or disable a same-authority credential owned by another principal.
 
-*** Evidence
+The branch now binds non-admin delegated credentials to all three dimensions:
 
-The principal/capability contract states that =credentials:create= issues
-credentials within delegated principal/scope rules. The runtime route mapping
-correctly required the =credentials:create= capability, but the create handler
-passed the requested =principal_type= and =scopes= directly to =create-api-key=.
-No comparison against the caller's authority occurred.
+1. the caller's principal identifier;
+2. the caller's principal type; and
+3. authority no broader than the caller's scopes.
 
-A caller possessing only =credentials:create= could therefore request a new
-credential with =principal_type=administrator= and =scopes=["admin"]=.
+Cross-principal lifecycle administration requires explicit =admin= authority.
+The CI harness independently asserts that delegated owner impersonation and
+principal-class mutation return =403 access_denied=.
 
-The same family of issue affected lifecycle operations. A caller possessing
-=credentials:rotate= could name another credential. Rotation preserved the
-target credential's scopes and returned the new raw bearer key, so rotating a
-more authoritative credential converted lifecycle authority into the target's
-authority. Revoke and disable could similarly affect more authoritative
-credentials.
+** Medium: descriptive principal type could become administrator authority
 
-*** Impact
+The central authorization policy treats the explicit =admin= scope as
+administrator authority. The older =administrator-principal-p= helper also
+accepted the descriptive principal type string =administrator=.
 
-Delegated credential-management capabilities acted as privilege-escalation
-primitives rather than bounded lifecycle permissions. The create path could mint
-administrator authority directly. The rotate path could disclose a replacement
-administrator bearer key when the target credential identifier was known.
+The bulk-job status route used that helper to bypass submitter ownership, so a
+principal whose type string was =administrator= could receive administrator-like
+behavior without the =admin= grant.
 
-*** Remediation in this branch
+The helper now requires explicit =admin= scope, matching the central capability
+model. A regression test verifies that type-only authority is rejected.
 
-- Non-admin credential creation may grant only capabilities the caller already
-  possesses.
-- A caller holding a wildcard resource restriction, such as =dataset:*=, may
-  delegate a narrower value such as =dataset:dataset-a=.
-- Non-admin callers cannot grant the =admin= scope.
-- Non-admin callers cannot create an =administrator= principal type.
-- Delegated rotate, revoke, and disable operations reject targets whose authority
-  is broader than the caller's authority.
-- Admin-scoped callers retain unrestricted credential-administration behavior.
-- Regression tests cover direct =admin= escalation, capability widening,
-  wildcard-to-specific narrowing, and lifecycle targeting of a more
-  authoritative credential.
+** Low: human-user routes were missing from route/action mapping
 
-** FIXED Low: human-user routes were absent from centralized route mapping
+=/auth/users=, =/auth/users/:username/password=, and =/auth/password= existed as
+handlers but were not present in the centralized route/action map. Because the
+server defaults unknown routes to deny, this failed closed rather than bypassing
+authorization, but it made the routes unusable through the effective middleware.
 
-=/auth/users=, =/auth/users/:username/password=, and =/auth/password= were added
-without corresponding entries in =route-action=. Because unknown routes are
-default-denied, this failed closed rather than creating an authorization bypass,
-but it made the user-management and self-service password-change routes unusable
-through the effective authorization middleware.
+The branch maps user administration to =principals:manage=. Self-service password
+change remains authenticated and relies on current-password re-verification in
+the handler.
 
-This branch explicitly maps user administration to =principals:manage=. The
-self-service password-change route is marked =:authenticated= so it still passes
-through authentication while relying on the handler's current-password
-re-verification rather than requiring an unrelated capability.
+* Open findings
 
-** OPEN High: bearer authentication has no transport-security invariant
+** High: protected transport is not enforced by the runtime
 
-The HTTP runtime starts Hunchentoot without an SSL listener. Configuration
-contains certificate/key placeholders, but the current start path does not use
-them.
+The HTTP runtime starts Hunchentoot without an SSL listener despite certificate
+and key configuration placeholders. Bearer credentials are therefore only safe
+when deployment topology supplies an equivalent protected transport.
 
-The supplied Compose file binds the server to loopback by default, which is a
-useful mitigation when a TLS reverse proxy, Tailscale, or another encrypted
-private transport owns external exposure. It is not a substitute for a runtime
-invariant.
+The supplied Compose configuration binds the StarIntel API to loopback by
+default, which is a useful mitigation when a TLS reverse proxy, Tailscale, or
+another encrypted private overlay owns external exposure.
 
-Recommended remediation:
+Recommended next change:
 
-- Require TLS at the edge before any non-loopback exposure.
-- Add a startup guard that refuses a public/non-loopback listener unless an
-  explicit =trusted-proxy/private-overlay= deployment mode is configured.
-- Document which proxy headers are trusted and from which source addresses.
+- refuse a non-loopback HTTP listener unless an explicit trusted-proxy or private
+  overlay mode is configured;
+- document the accepted proxy trust boundary; and
+- require protected transport before accepting production bearer credentials.
 
-** OPEN Medium: =must_change_password= does not restrict login capability
+** Medium: =must_change_password= is advisory
 
-A user marked =must_change_password=true= can authenticate through
-=/auth/login= and receives a normal API key with the user's existing scopes. The
-flag therefore does not currently enforce a password-change boundary.
+A user marked =must_change_password=true= can still log in and receive a normal
+API key with the user's configured scopes.
 
-Recommended remediation is either:
+Recommended behavior is a short-lived password-change-only credential, or a
+login denial until the password is replaced.
 
-1. reject normal login while the flag is set and expose a narrowly scoped
-   password-change credential; or
-2. issue a short-lived credential restricted to the self-service password-change
-   endpoint until the password is replaced.
+** Medium: development bypass can become administrator context
 
-The second model preserves API-driven first-login UX without granting the normal
-scope set prematurely.
+=STAR_AUTH_MODE=disabled= plus =STAR_AUTH_DEV_BYPASS=true= creates an
+administrator request context. Both settings are explicit, but an exposed
+listener combined with this configuration becomes full administrator access.
 
-** OPEN Medium: development auth bypass can become administrator context
+The server should refuse development bypass on any non-loopback listener.
 
-When =STAR_AUTH_MODE= is =disabled= and =STAR_AUTH_DEV_BYPASS=true=, the HTTP
-authentication middleware constructs an administrator security context.
+** Medium: body limits are downstream of request materialization
 
-Both conditions are explicit, so this is not an accidental default bypass.
-However, a deployment mistake can turn the entire listener into administrator
-access.
+The JSON boundary rejects bodies above its configured limit, but the HTTP stack
+has already materialized request content before that check. A very large request
+may therefore consume memory before the application rejects it.
 
-Recommended remediation:
+Enforce a request-size limit at Hunchentoot or the trusted reverse proxy, while
+keeping the application limit as defense in depth.
 
-- refuse the development bypass unless the bind address is loopback; and
-- emit a startup-fatal error rather than a warning when bypass mode is combined
-  with a non-loopback listener.
+** Medium: container least privilege can be stronger
 
-** OPEN Medium: request body limit is applied after request materialization
+Positive defaults already include loopback host binds for the server and backing
+services and file-backed secrets. The server container can still add tested
+least-privilege controls:
 
-The HTTP boundary limits parsed JSON bodies to 1 MiB, but the code obtains the
-request content from the server before checking that byte length. A sufficiently
-large request may therefore consume memory at the Hunchentoot/Lack layer before
-StarIntel rejects it.
+- non-root UID/GID;
+- =cap_drop: [ALL]= unless a demonstrated capability is required;
+- =no-new-privileges=;
+- read-only root filesystem with explicit writable paths; and
+- memory/PID ceilings appropriate to actor workloads.
 
-Recommended remediation is to enforce request size at the HTTP server or trusted
-reverse proxy before body materialization, while keeping the application-level
-limit as defense in depth.
+** Medium: CI privilege and supply-chain tightening
 
-** OPEN Medium: container runtime least privilege can be stronger
+The existing container workflow grants =packages: write= at job scope even when
+running pull-request tests, while image publication happens only on master
+pushes. Third-party actions are also tag-pinned rather than commit-SHA pinned.
 
-The supplied Compose services use secret files and bind sensitive service ports
-to loopback by default, both of which are good controls. The server service does
-not currently declare a read-only root filesystem, dropped Linux capabilities,
-=no-new-privileges=, or explicit resource ceilings.
+Split image publication into the only job that needs write permission and pin
+third-party actions to reviewed commit SHAs with automated update support.
 
-Recommended remediation should be tested service-by-service rather than blindly
-turning every knob on at once:
+** Low: HTTP security behavior still relies on load order
 
-- run the server as a non-root UID/GID;
-- =cap_drop: [ALL]= unless a demonstrated capability is needed;
-- =security_opt: [no-new-privileges:true]=;
-- read-only root filesystem plus explicit writable tmp/state mounts; and
-- memory/PID limits appropriate to actor and query workloads.
+Earlier HTTP files contain obsolete security-sensitive definitions which later
+files replace. The effective runtime is stricter, but duplicate definitions make
+load order part of the security model and increase regression risk.
 
-** OPEN Medium: CI privilege and dependency pinning
-
-The container workflow grants =packages: write= at job scope even though image
-publishing happens only on pushes to =master=. Pull-request execution should not
-need that permission.
-
-Existing workflows also use mutable action tags. Exact release tags are better
-than broad major-version tags, but commit-SHA pinning provides a stronger
-supply-chain boundary.
-
-Recommended remediation:
-
-- split image publishing into a separate job with =packages: write=;
-- keep build/test jobs at =contents: read=; and
-- pin third-party actions to reviewed commit SHAs, preferably with automated
-  dependency update tooling.
-
-** OPEN Low: legacy HTTP definitions rely on load-order replacement
-
-=http-api.lisp= still contains older CORS/status helper definitions, including a
-wildcard CORS configuration and traceback-capable status helper. Later files
-replace these with the stricter authentication/CORS/error boundary before the
-effective server is assembled.
-
-The current runtime therefore does not use the stale wildcard policy, but keeping
-security-sensitive dead definitions increases review cost and makes future load
-order changes riskier. This audit itself encountered that risk while composing a
-final response-header middleware, which is a decent sign that the duplication
-should go rather than become folklore.
-
-Recommended remediation is to remove the obsolete definitions and retain one
-canonical HTTP boundary implementation.
+This audit hit that problem while adding the final response-header middleware.
+The long-term fix is one canonical HTTP boundary rather than another layer of
+folklore.
 
 * Positive controls observed
 
-The audit found several security controls worth preserving:
+The following controls are worth preserving:
 
-- API-key secrets use cryptographic randomness and are stored as salted,
-  peppered verifiers rather than recoverable raw keys.
-- Secret comparisons use fixed-length digest comparison rather than early-return
-  string comparison.
-- Authentication failures are deliberately uniform.
-- API-key rotation, disable, revoke, expiry, and overlap behavior are explicit.
-- Authorization uses a closed capability vocabulary and unknown HTTP routes fail
-  closed even for administrators.
-- Backend search scoping inserts tenant/dataset clauses before execution rather
-  than relying on post-filtering.
-- CORS uses an explicit configured origin list in the effective middleware and
-  does not emit wildcard credential-safe origins.
-- Generic HTTP errors do not return server tracebacks in the effective boundary.
-- JSON parsing, schema checks, query bounds, and correlation-ID bounds are
-  centralized.
-- The supplied Compose stack binds CouchDB, RabbitMQ, Valkey, and the StarIntel
-  API to loopback by default.
-- Deployment secrets for the Compose stack are file-backed rather than embedded
-  in the compose document.
-- Existing integration coverage already exercises authenticated authorization,
-  scoped denial, persistence, and one-time bootstrap behavior.
+- API-key secrets are generated cryptographically and stored as salted, peppered
+  verifiers rather than recoverable raw keys.
+- Secret verification uses fixed-length constant-time comparison.
+- Authentication failures are externally uniform.
+- Credential rotation, revocation, disable, expiry, and overlap states are
+  explicit.
+- Authorization uses a closed capability vocabulary.
+- Unknown protected HTTP routes fail closed, including for administrators.
+- Search tenant/dataset restrictions are inserted before backend execution
+  rather than relying only on result post-filtering.
+- Effective CORS uses an explicit configured origin list.
+- Effective generic HTTP errors do not return server tracebacks.
+- JSON/schema/query/correlation bounds are centralized.
+- Compose binds CouchDB, RabbitMQ, Valkey, and the API to loopback by default.
+- Compose deployment secrets are file-backed.
+- Existing integration tests already exercise scoped authorization, denial,
+  persistence, and one-time bootstrap behavior.
 
 * Trusted startup-code boundary
 
-=STAR_SERVER_INIT_FILE= is Common Lisp code loaded with =LOAD= at startup. This
-is intentional configurability rather than a remote injection path, but it is a
-full code-execution trust boundary, not a data-only configuration file.
+=STAR_SERVER_INIT_FILE= is loaded as Common Lisp code. This is intentional
+configuration capability, not a data-only configuration format.
 
-Operators must ensure the init file and its parent directory are writable only by
-the deployment administrator. The supplied container path is mounted read-only,
-which is the right default direction.
+The init file and its parent directory therefore belong inside the trusted code
+boundary and must be writable only by the deployment administrator. The supplied
+container mount is read-only, which is the correct default direction.
 
 * OWASP ZAP CI
 
 =.github/workflows/zap-security.yml= starts a disposable Nix-built Compose stack
-and runs ZAP's API scanner against it using =.zap/openapi.yaml=.
+and runs ZAP's API scanner against =.zap/openapi.yaml=.
 
-For pull requests and pushes to =master=, the workflow uses API safe mode so the
-scan imports the API surface and performs passive checks without active attacks.
-Selected systemic response-header regressions are promoted to CI failures.
+Pull requests and master pushes use ZAP API safe mode so the API contract is
+imported and passive checks run without active attacks. The rules file promotes
+selected systemic response-header regressions to CI failures.
 
-A weekly schedule and manually selected =active= mode run ZAP's active API scan
-against only the disposable Compose network. The workflow uploads HTML,
-Markdown, and JSON ZAP reports plus stack diagnostics.
+A weekly schedule and manually selected =active= mode run active scanning only
+against the disposable Compose network. CI uploads HTML, Markdown, and JSON ZAP
+reports plus stack diagnostics.
 
-No production URL, production credential, or long-lived secret is required by
-the scan.
+The harness also performs application-aware regressions before ZAP runs:
+
+- delegated =admin= issuance must return =403=;
+- delegated owner impersonation must return =403=; and
+- delegated principal-type mutation must return =403=.
+
+No production URL, production credential, or long-lived secret is required.
 
 * Recommended next security slice
 
-1. Enforce the transport/exposure invariant around non-loopback HTTP listeners.
+1. Enforce the non-loopback protected-transport invariant.
 2. Give =must_change_password= real authorization semantics.
-3. Add a loopback-only invariant for development auth bypass.
-4. Enforce maximum request size before body materialization.
-5. Harden container privileges and CI supply-chain permissions.
-6. Remove the obsolete duplicate HTTP boundary definitions.
+3. Make development bypass loopback-only and startup-fatal otherwise.
+4. Enforce request size before body materialization.
+5. Harden container privileges and CI permissions.
+6. Remove duplicate HTTP security definitions and collapse to one boundary.
