@@ -1,0 +1,8 @@
+# ZAP API scan rule configuration.
+# PR/push safe scans tolerate unspecified WARNs but fail on these systemic
+# response-hardening regressions. Scheduled/manual active scans fail on WARNs too.
+10020	FAIL	(Anti-clickjacking Header)
+10021	FAIL	(X-Content-Type-Options Header Missing)
+10038	FAIL	(Content Security Policy Header Not Set)
+10015	WARN	(Incomplete or No Cache-control and Pragma HTTP Header Set)
+10036	WARN	(HTTP Server Response Header information disclosure)
