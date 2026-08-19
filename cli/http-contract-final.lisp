@@ -38,6 +38,31 @@
 (refresh-operation-response-schema "auth.credentials.revoke" (credential-status-schema))
 (refresh-operation-response-schema "auth.credentials.disable" (credential-status-schema))
 
+(defun remove-json-object-key (object key)
+  (when (and (consp object) (eq (first object) :obj))
+    (setf (cdr object)
+          (delete key (cdr object) :key #'car :test #'string=)))
+  object)
+
+(defun mark-property-read-only (schema property-name)
+  "Mark one response property read-only while retaining secret metadata."
+  (let* ((properties (and schema (jsown:val-safe schema "properties")))
+         (property (and properties
+                        (jsown:val-safe properties property-name))))
+    (when property
+      (remove-json-object-key property "writeOnly")
+      (setf (jsown:val property "readOnly") t
+            (jsown:val property "x-starintel-secret") t)))
+  schema)
+
+(dolist (operation-id '("auth.login"
+                        "auth.bootstrap"
+                        "auth.credentials.create"
+                        "auth.credentials.rotate"))
+  (let* ((operation (find-http-operation operation-id))
+         (success (first (http-operation-responses operation))))
+    (mark-property-read-only (getf success :schema) "api_key")))
+
 (defun normalize-schema-json-values (value)
   "Normalize schema booleans into JSOWN's explicit JSON atoms in place."
   (cond
