@@ -32,6 +32,106 @@ create/reset human users without shipping a known administrator password."
 
 (in-package :star.frontends.http-api)
 
+(defun route-action (method path)
+  "Resolve the capability required for an HTTP route.
+
+Human-user administration was added after the original centralized mapping.
+Keep it fail-closed while allowing authenticated users to reach their own
+password-change handler, which re-verifies the current password."
+  (cond
+    ((or (public-auth-path-p path)
+         (eq method :options))
+     :public)
+    ((and (eq method :post) (string= path "/auth/password"))
+     :authenticated)
+    ((string= path "/auth/users")
+     (case method
+       ((:get :post) "principals:manage")
+       (otherwise nil)))
+    ((and (eq method :post)
+          (path-prefix-p "/auth/users/" path)
+          (path-suffix-p "/password" path))
+     "principals:manage")
+    ((and (eq method :get) (string= path "/auth/context"))
+     "identity:read")
+    ((string= path "/auth/credentials")
+     (case method
+       (:get "credentials:read")
+       (:post "credentials:create")
+       (otherwise nil)))
+    ((and (path-prefix-p "/auth/credentials/" path)
+          (eq method :post))
+     (cond
+       ((path-suffix-p "/rotate" path) "credentials:rotate")
+       ((path-suffix-p "/revoke" path) "credentials:revoke")
+       ((path-suffix-p "/disable" path) "credentials:disable")
+       (t nil)))
+    ((path-prefix-p "/document/" path)
+     (case method
+       (:get "documents:read")
+       (:delete "documents:delete")
+       (otherwise nil)))
+    ((and (eq method :post)
+          (path-prefix-p "/new/document/" path))
+     "documents:write")
+    ((path-prefix-p "/documents/bulk" path)
+     "documents:bulk")
+    ((and (eq method :get) (string= path "/search"))
+     "search:read")
+    ((and (eq method :post)
+          (path-prefix-p "/new/target/" path))
+     "targets:dispatch")
+    ((path-prefix-p "/targets/" path)
+     (cond
+       ((and (eq method :post)
+             (path-suffix-p "/force-release" path))
+        "targets:force-release")
+       ((and (eq method :post)
+             (path-suffix-p "/lease" path))
+        "targets:lease")
+       ((eq method :get) "targets:read")
+       (t nil)))
+    ((and (eq method :post)
+          (path-prefix-p "/new/event/" path))
+     "events:write")
+    ((and (eq method :post)
+          (path-prefix-p "/events/" path)
+          (path-suffix-p "/replay" path))
+     "events:replay")
+    ((and (eq method :get)
+          (path-prefix-p "/views/" path))
+     "views:read")
+    ((and (eq method :get)
+          (string= path "/dataset-size"))
+     "views:read")
+    ((and (eq method :get)
+          (path-prefix-p "/documents/" path))
+     "views:read")
+    (t nil)))
+
+(defun authorize-http-route! (method path correlation-id)
+  (let ((action (route-action method path)))
+    (cond
+      ((or (eq action :public)
+           (eq action :authenticated))
+       nil)
+      ((null action)
+       (star.authorization:authorize!
+        "unmapped:http-route"
+        :metadata (request-policy-metadata method path correlation-id)))
+      ((legacy-unscoped-view-path-p path)
+       (star.authorization:authorize!
+        action
+        :resource
+        (star.authorization:make-authorization-resource
+         :tenant-id "default"
+         :dataset-id "__unscoped_legacy_view__")
+        :metadata (request-policy-metadata method path correlation-id)))
+      (t
+       (star.authorization:authorize!
+        action
+        :metadata (request-policy-metadata method path correlation-id))))))
+
 (defparameter *security-response-headers*
   (list
    :x-content-type-options "nosniff"
