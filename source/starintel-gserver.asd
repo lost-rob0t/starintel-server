@@ -21,6 +21,8 @@
     :pathname "../cli/http-contract-package.lisp")
    (:file "http-contract"
     :pathname "../cli/http-contract.lisp")
+   (:file "http-contract-final"
+    :pathname "../cli/http-contract-final.lisp")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
