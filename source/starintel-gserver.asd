@@ -76,6 +76,7 @@
    (:file "frontends/http-contract-routes")
    (:file "runtime-lifecycle")
    (:file "admin")
+   (:file "admin-final")
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
