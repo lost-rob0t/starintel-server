@@ -10,6 +10,7 @@
                  (:file "client-package")
                  (:file "client-runtime")
                  (:file "client-compat")
+                 (:file "client-runtime-final")
                  (:file "generated-operations")
                  (:file "client-convenience")
                  (:file "api-client"))
