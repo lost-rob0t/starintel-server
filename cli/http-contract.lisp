@@ -523,7 +523,7 @@
                          (json-object
                           (cons "type" "http")
                           (cons "scheme" "bearer")
-                          (cons "bearerFormat" "StarIntel API key")))))))))
+                          (cons "bearerFormat" "StarIntel API key"))))))))))
 
 (defun openapi-json ()
   (jsown:to-json (openapi-document)))
