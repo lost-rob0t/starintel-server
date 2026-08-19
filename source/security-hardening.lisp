@@ -30,6 +30,11 @@ create/reset human users without shipping a known administrator password."
         :allow-weak-password t
         :store store)))))
 
+(defun administrator-principal-p (&optional (principal (current-request-principal)))
+  "Treat explicit admin scope, not descriptive principal type, as authority."
+  (and principal
+       (scope-granted-p "admin" principal)))
+
 (in-package :star.frontends.http-api)
 
 (defun route-action (method path)
