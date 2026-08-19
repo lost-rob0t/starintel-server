@@ -1,0 +1,103 @@
+{
+  "couchdb_search": [
+    {
+      "name": "lucene-or-dataset-escape",
+      "query": "content:{{TERM}} OR dataset:\"{{DENIED_DATASET}}\""
+    },
+    {
+      "name": "lucene-parenthesis-breakout",
+      "query": "content:{{TERM}}) OR dataset:\"{{DENIED_DATASET}}\" OR (content:{{TERM}}"
+    },
+    {
+      "name": "lucene-wildcard-field-escape",
+      "query": "*:* OR dataset:{{DENIED_DATASET}}"
+    },
+    {
+      "name": "lucene-tenant-field-override",
+      "query": "content:{{TERM}} OR tenant_id:*"
+    },
+    {
+      "name": "lucene-quoted-field-confusion",
+      "query": "content:\"{{TERM}}\" OR dataset:\"{{DENIED_DATASET}}\""
+    },
+    {
+      "name": "lucene-escaped-quote-confusion",
+      "query": "content:\"{{TERM}}\\\" OR dataset:{{DENIED_DATASET}} OR content:\\"{{TERM}}\""
+    }
+  ],
+  "couchdb_view_paths": [
+    {
+      "name": "encoded-slash-traversal",
+      "design": "authorization%2F..%2F_auth",
+      "view": "documents_by_scope"
+    },
+    {
+      "name": "encoded-dotdot-design",
+      "design": "%2e%2e",
+      "view": "documents_by_scope"
+    },
+    {
+      "name": "double-encoded-slash",
+      "design": "authorization%252F..%252F_auth",
+      "view": "documents_by_scope"
+    },
+    {
+      "name": "encoded-null-design",
+      "design": "authorization%00",
+      "view": "documents_by_scope"
+    },
+    {
+      "name": "encoded-slash-view",
+      "design": "authorization",
+      "view": "documents_by_scope%2F..%2F..%2F_all_docs"
+    }
+  ],
+  "json_invalid": [
+    {
+      "name": "truncated-object",
+      "body": "{\"_id\":\"security-json-truncated\""
+    },
+    {
+      "name": "unterminated-string",
+      "body": "{\"_id\":\"security-json-string\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9\",\"content\":\"unterminated}"
+    },
+    {
+      "name": "trailing-comma",
+      "body": "{\"_id\":\"security-json-comma\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9\",}"
+    },
+    {
+      "name": "top-level-array",
+      "body": "[]"
+    },
+    {
+      "name": "top-level-string",
+      "body": "\"not-an-object\""
+    },
+    {
+      "name": "top-level-number",
+      "body": "545"
+    }
+  ],
+  "json_ambiguous": [
+    {
+      "name": "duplicate-id",
+      "body": "{\"_id\":\"security-json-dup-a\",\"_id\":\"security-json-dup-b\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9\"}"
+    },
+    {
+      "name": "duplicate-dataset",
+      "body": "{\"_id\":\"security-json-dup-dataset\",\"dataset\":\"security-a\",\"dataset\":\"security-b\",\"dtype\":\"note\",\"version\":\"0.9\"}"
+    },
+    {
+      "name": "duplicate-version",
+      "body": "{\"_id\":\"security-json-dup-version\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9\",\"version\":\"999\"}"
+    }
+  ],
+  "dos": {
+    "oversized_body_bytes": 1052672,
+    "deep_json_depth": 192,
+    "bulk_document_count": 501,
+    "concurrency_requests": 24,
+    "concurrency_parallelism": 6,
+    "curl_max_time_seconds": 10
+  }
+}
