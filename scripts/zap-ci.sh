@@ -51,6 +51,33 @@ write_secret() {
   chmod 0600 "$credentials_dir/$name"
 }
 
+expect_access_denied() {
+  local label="$1"
+  local bearer="$2"
+  local payload="$3"
+  local response_body="${artifact_dir}/security-regression.json"
+  local status
+
+  status="$(
+    curl --silent --show-error \
+      --output "$response_body" \
+      --write-out '%{http_code}' \
+      --request POST \
+      --header "Authorization: Bearer ${bearer}" \
+      --header 'Content-Type: application/json' \
+      --data "$payload" \
+      "${server_url}/auth/credentials"
+  )"
+
+  if [[ "$status" != "403" ]]; then
+    printf '%s: expected 403, got %s\n' "$label" "$status" >&2
+    cat "$response_body" >&2 || true
+    return 1
+  fi
+  jq --exit-status -e '.code == "access_denied"' "$response_body" >/dev/null
+  rm -f "$response_body"
+}
+
 write_secret couchdb_password "zap-couchdb-${run_suffix}"
 write_secret couchdb_secret "zap-couchdb-secret-${run_suffix}"
 write_secret erlang_cookie "ZAPERLANGCOOKIE${GITHUB_RUN_ID:-$$}"
@@ -85,7 +112,7 @@ bootstrap_response="$(
 api_key="$(jq --exit-status --raw-output '.api_key' <<<"$bootstrap_response")"
 [[ "$api_key" == star_sk_v1_* ]]
 
-printf '==> verifying delegated credential creation cannot escalate to admin\n'
+printf '==> creating delegated credential-management fixture\n'
 delegator_response="$(
   curl --fail --silent --show-error \
     --request POST \
@@ -97,25 +124,23 @@ delegator_response="$(
 delegator_key="$(jq --exit-status --raw-output '.api_key' <<<"$delegator_response")"
 [[ "$delegator_key" == star_sk_v1_* ]]
 
-escalation_body="${artifact_dir}/delegation-escalation.json"
-escalation_status="$(
-  curl --silent --show-error \
-    --output "$escalation_body" \
-    --write-out '%{http_code}' \
-    --request POST \
-    --header "Authorization: Bearer ${delegator_key}" \
-    --header 'Content-Type: application/json' \
-    --data '{"owner":"zap-ci-escalated-admin","principal_type":"administrator","scopes":["admin"]}' \
-    "${server_url}/auth/credentials"
-)"
-if [[ "$escalation_status" != "403" ]]; then
-  printf 'expected delegated admin issuance to return 403, got %s\n' \
-    "$escalation_status" >&2
-  cat "$escalation_body" >&2 || true
-  exit 1
-fi
-jq --exit-status -e '.code == "access_denied"' "$escalation_body" >/dev/null
-rm -f "$escalation_body"
+printf '==> verifying delegated credential creation cannot escalate authority\n'
+expect_access_denied \
+  "delegated admin scope escalation" \
+  "$delegator_key" \
+  '{"owner":"zap-ci-delegator","principal_type":"api_client","scopes":["admin"]}'
+
+printf '==> verifying delegated credential creation cannot impersonate another principal\n'
+expect_access_denied \
+  "delegated owner impersonation" \
+  "$delegator_key" \
+  '{"owner":"zap-ci-other-principal","principal_type":"api_client","scopes":["credentials:create"]}'
+
+printf '==> verifying delegated credential creation cannot change principal class\n'
+expect_access_denied \
+  "delegated principal type mutation" \
+  "$delegator_key" \
+  '{"owner":"zap-ci-delegator","principal_type":"actor_component","scopes":["credentials:create"]}'
 
 printf '==> creating disposable login principal for request-body coverage\n'
 curl --fail --silent --show-error \
