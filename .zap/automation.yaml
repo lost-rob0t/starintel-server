@@ -1,0 +1,261 @@
+env:
+  contexts:
+    - name: starintel-ci
+      urls:
+        - ${ZAP_TARGET_URL}
+      includePaths:
+        - ${ZAP_TARGET_REGEX}
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    continueOnFailure: false
+    progressToStdout: true
+
+jobs:
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 20
+      scanOnlyInScope: true
+      maxBodySizeInBytesToScan: 1048576
+
+  - type: replacer
+    parameters:
+      deleteAllRules: true
+    rules:
+      - description: Ephemeral StarIntel CI bearer token
+        url: ${ZAP_TARGET_REGEX}
+        matchType: req_header
+        matchString: Authorization
+        matchRegex: false
+        replacementString: Bearer ${ZAP_API_KEY}
+
+  - type: openapi
+    parameters:
+      apiFile: openapi.yaml
+      context: starintel-ci
+      targetUrl: ${ZAP_TARGET_URL}
+
+  - type: requestor
+    parameters:
+      requests:
+        - name: Pre-injection health canary
+          url: ${ZAP_TARGET_URL}/health
+          method: GET
+          responseCode: 200
+
+        - name: Lisp reader-eval file write probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-001","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"#.(progn (with-open-file (s #P\"/tmp/starintel-zap-rce-canary\" :direction :output :if-exists :supersede :if-does-not-exist :create) (write-string \"reader-eval\" s)) \"safe\")"}
+          responseCode: 200
+
+        - name: UIOP process execution reader-eval probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-002","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"#.(progn (uiop:run-program '(\"/bin/sh\" \"-c\" \"printf uiop > /tmp/starintel-zap-rce-canary\") :ignore-error-status t) \"safe\")"}
+          responseCode: 200
+
+        - name: SBCL process execution reader-eval probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-003","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"#.(progn (sb-ext:run-program \"/bin/sh\" '(\"-c\" \"printf sbext > /tmp/starintel-zap-rce-canary\") :search nil :wait t) \"safe\")"}
+          responseCode: 200
+
+        - name: Read-then-eval form probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-004","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"(progn (with-open-file (s #P\"/tmp/starintel-zap-rce-canary\" :direction :output :if-exists :supersede :if-does-not-exist :create) (write-string \"eval-after-read\" s)) \"safe\")"}
+          responseCode: 200
+
+        - name: Quoted nested reader-eval probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-005","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"'(#.(progn (with-open-file (s #P\"/tmp/starintel-zap-rce-canary\" :direction :output :if-exists :supersede :if-does-not-exist :create) (write-string \"nested-reader-eval\" s)) :safe))"}
+          responseCode: 200
+
+        - name: Dynamic symbol lookup reader-eval probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-006","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"#.(progn (funcall (symbol-function (find-symbol \"RUN-PROGRAM\" \"UIOP\")) '(\"/bin/sh\" \"-c\" \"printf dynamic > /tmp/starintel-zap-rce-canary\") :ignore-error-status t) \"safe\")"}
+          responseCode: 200
+
+        - name: SBCL feature-conditional reader-eval probe
+          url: ${ZAP_TARGET_URL}/new/document/note
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"_id":"zap-lisp-007","dataset":"zap-rce","tenant_id":"default","dtype":"note","version":"0.9","content":"#+sbcl #.(progn (with-open-file (s #P\"/tmp/starintel-zap-rce-canary\" :direction :output :if-exists :supersede :if-does-not-exist :create) (write-string \"feature-reader-eval\" s)) \"safe\")"}
+          responseCode: 200
+
+        - name: Credential owner reader-eval persistence probe
+          url: ${ZAP_TARGET_URL}/auth/credentials
+          method: POST
+          headers:
+            - "Content-Type: application/json"
+          data: >-
+            {"owner":"#.(progn (with-open-file (s #P\"/tmp/starintel-zap-rce-canary\" :direction :output :if-exists :supersede :if-does-not-exist :create) (write-string \"credential-owner\" s)) \"zap-lisp-owner\")","principal_type":"api_client","scopes":["identity:read"]}
+          responseCode: 201
+
+        - name: Force persisted credential metadata decode
+          url: ${ZAP_TARGET_URL}/auth/credentials
+          method: GET
+          responseCode: 200
+
+        - name: Post-injection health canary
+          url: ${ZAP_TARGET_URL}/health
+          method: GET
+          responseCode: 200
+    tests:
+      - name: Reader-eval document completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-001"'
+        responseBodyRegex: '"_id":"zap-lisp-001"'
+        onFail: error
+      - name: UIOP probe completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-002"'
+        responseBodyRegex: '"_id":"zap-lisp-002"'
+        onFail: error
+      - name: SBCL probe completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-003"'
+        responseBodyRegex: '"_id":"zap-lisp-003"'
+        onFail: error
+      - name: Read-then-eval probe completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-004"'
+        responseBodyRegex: '"_id":"zap-lisp-004"'
+        onFail: error
+      - name: Nested reader-eval probe completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-005"'
+        responseBodyRegex: '"_id":"zap-lisp-005"'
+        onFail: error
+      - name: Dynamic lookup probe completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-006"'
+        responseBodyRegex: '"_id":"zap-lisp-006"'
+        onFail: error
+      - name: Feature conditional probe completed without server error
+        type: url
+        url: ${ZAP_TARGET_URL}/new/document/note
+        operator: and
+        requestBodyRegex: '"_id":"zap-lisp-007"'
+        responseBodyRegex: '"_id":"zap-lisp-007"'
+        onFail: error
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+    tests:
+      - name: Anti-clickjacking header must remain present
+        type: alert
+        action: passIfAbsent
+        scanRuleId: 10020
+        onFail: error
+      - name: X-Content-Type-Options must remain present
+        type: alert
+        action: passIfAbsent
+        scanRuleId: 10021
+        onFail: error
+      - name: Content-Security-Policy must remain present
+        type: alert
+        action: passIfAbsent
+        scanRuleId: 10038
+        onFail: error
+
+  - type: activeScan-config
+    parameters:
+      maxRuleDurationInMins: 2
+      maxScanDurationInMins: 20
+      maxAlertsPerRule: 20
+      injectPluginIdInHeader: true
+    inputVectors:
+      urlQueryStringAndDataDrivenNodes:
+        enabled: true
+        addParam: false
+      postData:
+        enabled: true
+        json:
+          enabled: true
+          scanNullValues: false
+      urlPath: true
+      httpHeaders:
+        enabled: false
+      cookieData:
+        enabled: false
+    enabled: ${ZAP_ACTIVE_SCAN}
+
+  - type: activeScan
+    parameters:
+      context: starintel-ci
+      url: ${ZAP_TARGET_URL}
+    enabled: ${ZAP_ACTIVE_SCAN}
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: report.html
+      reportTitle: StarIntel ZAP security report
+      reportDescription: Disposable-stack API DAST plus Common Lisp reader/eval RCE canaries
+      displayReport: false
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: report.json
+      reportTitle: StarIntel ZAP security report
+      displayReport: false
+
+  - type: report
+    parameters:
+      template: traditional-md
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: report.md
+      reportTitle: StarIntel ZAP security report
+      displayReport: false
+
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: ${ZAP_WARN_LEVEL}
+      okExitValue: 0
+      errorExitValue: 1
+      warnExitValue: ${ZAP_WARN_EXIT_VALUE}
