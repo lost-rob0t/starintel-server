@@ -89,3 +89,30 @@
       "administrator"
       '("admin")
       administrator))))
+
+(test delegated-credential-lifecycle-cannot-target-more-authoritative-key
+  (let* ((delegator
+           (security-test-principal
+            '("credentials:rotate"
+              "credentials:revoke"
+              "documents:read"
+              "dataset:dataset-a")))
+         (administrator
+           (security-test-principal '("admin")))
+         (read-record
+           (star.auth::make-api-key-record
+            :principal-type "api_client"
+            :scopes '("documents:read" "dataset:dataset-a")))
+         (admin-record
+           (star.auth::make-api-key-record
+            :principal-type "administrator"
+            :scopes '("admin"))))
+    (is-true
+     (star.frontends.http-api::credential-record-delegable-p
+      read-record delegator))
+    (is-false
+     (star.frontends.http-api::credential-record-delegable-p
+      admin-record delegator))
+    (is-true
+     (star.frontends.http-api::credential-record-delegable-p
+      admin-record administrator))))
