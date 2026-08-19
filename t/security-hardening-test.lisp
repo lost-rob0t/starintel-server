@@ -13,6 +13,13 @@
 
 (in-suite http-auth-tests)
 
+(defun security-test-principal (scopes)
+  (star.auth::%make-request-principal
+   :id "security-test-principal"
+   :type "api_client"
+   :scopes scopes
+   :credential-id "security-test-credential"))
+
 (test every-http-response-has-browser-hardening-headers
   (let ((headers star.frontends.http-api::*security-response-headers*))
     (is (string= "nosniff" (getf headers :x-content-type-options)))
@@ -38,3 +45,47 @@
   (is (null
        (star.frontends.http-api::route-action
         :delete "/auth/users"))))
+
+(test delegated-credential-creation-cannot-escalate-authority
+  (let ((delegator
+          (security-test-principal
+           '("credentials:create"
+             "documents:read"
+             "dataset:dataset-a")))
+        (wildcard-delegator
+          (security-test-principal
+           '("credentials:create"
+             "documents:read"
+             "dataset:*")))
+        (administrator
+          (security-test-principal '("admin"))))
+    (is-true
+     (star.frontends.http-api::credential-grant-delegable-p
+      "api_client"
+      '("documents:read" "dataset:dataset-a")
+      delegator))
+    (is-true
+     (star.frontends.http-api::credential-grant-delegable-p
+      "api_client"
+      '("documents:read" "dataset:dataset-b")
+      wildcard-delegator))
+    (is-false
+     (star.frontends.http-api::credential-grant-delegable-p
+      "api_client"
+      '("documents:write" "dataset:dataset-a")
+      delegator))
+    (is-false
+     (star.frontends.http-api::credential-grant-delegable-p
+      "api_client"
+      '("admin")
+      delegator))
+    (is-false
+     (star.frontends.http-api::credential-grant-delegable-p
+      "administrator"
+      '("documents:read" "dataset:dataset-a")
+      delegator))
+    (is-true
+     (star.frontends.http-api::credential-grant-delegable-p
+      "administrator"
+      '("admin")
+      administrator))))
