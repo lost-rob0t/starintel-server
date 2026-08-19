@@ -1,0 +1,239 @@
+#+title: StarIntel server security audit
+#+date: 2026-08-19
+#+options: toc:3
+
+* Scope
+
+This audit covers the StarIntel server HTTP/authentication boundary, runtime
+startup, container deployment, and GitHub Actions configuration. It is a
+source-level defensive review plus a new OWASP ZAP DAST gate against a disposable
+CI deployment.
+
+The review prioritizes remotely reachable security boundaries and deployment
+misconfiguration over style-only findings.
+
+* Executive summary
+
+The most serious issue was a known first-run administrator credential. A fresh
+auth database created the =star= administrator with the built-in password
+=intel=, while =POST /auth/login= was public and exchanged that password for a
+normal administrator API key. Marking the account =must_change_password=true=
+did not restrict the issued key.
+
+This branch removes the implicit password. A human administrator is now created
+only when an initial password is explicitly supplied. The existing one-time
+bootstrap-secret flow remains available for fresh deployments.
+
+The branch also adds browser-oriented response hardening headers and OWASP ZAP
+API scanning in CI.
+
+| Severity | Status | Finding |
+|----------+--------+---------|
+| Critical | Fixed  | Known first-run administrator credential |
+| High     | Open   | No in-process TLS enforcement for bearer credentials |
+| Medium   | Open   | =must_change_password= is advisory at login |
+| Medium   | Open   | Development auth bypass can grant administrator context |
+| Medium   | Open   | Application body limit is after HTTP request materialization |
+| Medium   | Open   | Container runtime lacks several least-privilege controls |
+| Medium   | Open   | CI write permissions and action pinning can be tightened |
+| Low      | Open   | Legacy HTTP definitions depend on load-order replacement |
+
+* Findings
+
+** FIXED Critical: known first-run administrator credential
+
+*** Evidence
+
+Before this change, =gserver-settings.lisp= defaulted the initial username to
+=star= and the initial password to =intel=. Runtime startup initialized the auth
+store and called =ensure-initial-user= before starting the HTTP API.
+
+=ensure-initial-user= created an administrator with the =admin= scope when the
+human-user store was empty. The public =POST /auth/login= route accepted the
+password and =login-user= minted an ordinary API key containing the user's full
+scopes.
+
+The =must_change_password= flag was returned as metadata but did not prevent API
+key issuance.
+
+*** Impact
+
+A fresh deployment reachable by an untrusted client before the password was
+changed could be converted directly into administrator access using a published,
+static credential.
+
+The default Compose host binding to =127.0.0.1= reduced exposure for the supplied
+container configuration, but it did not make the application default safe when
+the listener was exposed another way.
+
+*** Remediation in this branch
+
+- =STAR_AUTH_INITIAL_PASSWORD= has no built-in fallback.
+- =STAR_AUTH_INITIAL_PASSWORD_FILE= remains the preferred explicit secret source.
+- No human administrator is created when neither source is configured.
+- The one-time =/auth/bootstrap= flow remains available for an empty credential
+  store.
+- Documentation and examples no longer publish a default human credential.
+- Unit coverage verifies that an unset initial password leaves the user store
+  empty.
+
+*** Residual risk
+
+An explicitly configured first-run password may still use the legacy weak-password
+compatibility path. Operators should supply a strong random secret. Removing this
+compatibility exception is a reasonable follow-up once existing deployments are
+migrated.
+
+** OPEN High: bearer authentication has no transport-security invariant
+
+The HTTP runtime starts Hunchentoot without an SSL listener. Configuration
+contains certificate/key placeholders, but the current start path does not use
+them.
+
+The supplied Compose file binds the server to loopback by default, which is a
+useful mitigation when a TLS reverse proxy, Tailscale, or another encrypted
+private transport owns external exposure. It is not a substitute for a runtime
+invariant.
+
+Recommended remediation:
+
+- Require TLS at the edge before any non-loopback exposure.
+- Add a startup guard that refuses a public/non-loopback listener unless an
+  explicit =trusted-proxy/private-overlay= deployment mode is configured.
+- Document which proxy headers are trusted and from which source addresses.
+
+** OPEN Medium: =must_change_password= does not restrict login capability
+
+A user marked =must_change_password=true= can authenticate through
+=/auth/login= and receives a normal API key with the user's existing scopes. The
+flag therefore does not currently enforce a password-change boundary.
+
+Recommended remediation is either:
+
+1. reject normal login while the flag is set and expose a narrowly scoped
+   password-change credential; or
+2. issue a short-lived credential restricted to the self-service password-change
+   endpoint until the password is replaced.
+
+The second model preserves API-driven first-login UX without granting the normal
+scope set prematurely.
+
+** OPEN Medium: development auth bypass can become administrator context
+
+When =STAR_AUTH_MODE= is =disabled= and =STAR_AUTH_DEV_BYPASS=true=, the HTTP
+authentication middleware constructs an administrator security context.
+
+Both conditions are explicit, so this is not an accidental default bypass.
+However, a deployment mistake can turn the entire listener into administrator
+access.
+
+Recommended remediation:
+
+- refuse the development bypass unless the bind address is loopback; and
+- emit a startup-fatal error rather than a warning when bypass mode is combined
+  with a non-loopback listener.
+
+** OPEN Medium: request body limit is applied after request materialization
+
+The HTTP boundary limits parsed JSON bodies to 1 MiB, but the code obtains the
+request content from the server before checking that byte length. A sufficiently
+large request may therefore consume memory at the Hunchentoot/Lack layer before
+StarIntel rejects it.
+
+Recommended remediation is to enforce request size at the HTTP server or trusted
+reverse proxy before body materialization, while keeping the application-level
+limit as defense in depth.
+
+** OPEN Medium: container runtime least privilege can be stronger
+
+The supplied Compose services use secret files and bind sensitive service ports
+to loopback by default, both of which are good controls. The server service does
+not currently declare a read-only root filesystem, dropped Linux capabilities,
+=no-new-privileges=, or explicit resource ceilings.
+
+Recommended remediation should be tested service-by-service rather than blindly
+turning every knob on at once:
+
+- run the server as a non-root UID/GID;
+- =cap_drop: [ALL]= unless a demonstrated capability is needed;
+- =security_opt: [no-new-privileges:true]=;
+- read-only root filesystem plus explicit writable tmp/state mounts; and
+- memory/PID limits appropriate to actor and query workloads.
+
+** OPEN Medium: CI privilege and dependency pinning
+
+The container workflow grants =packages: write= at job scope even though image
+publishing happens only on pushes to =master=. Pull-request execution should not
+need that permission.
+
+Existing workflows also use mutable action tags. Exact release tags are better
+than broad major-version tags, but commit-SHA pinning provides a stronger
+supply-chain boundary.
+
+Recommended remediation:
+
+- split image publishing into a separate job with =packages: write=;
+- keep build/test jobs at =contents: read=; and
+- pin third-party actions to reviewed commit SHAs, preferably with automated
+  dependency update tooling.
+
+** OPEN Low: legacy HTTP definitions rely on load-order replacement
+
+=http-api.lisp= still contains older CORS/status helper definitions, including a
+wildcard CORS configuration and traceback-capable status helper. Later files
+replace these with the stricter authentication/CORS/error boundary before the
+effective server is assembled.
+
+The current runtime therefore does not use the stale wildcard policy, but keeping
+security-sensitive dead definitions increases review cost and makes future load
+order changes riskier.
+
+Recommended remediation is to remove the obsolete definitions and retain one
+canonical HTTP boundary implementation.
+
+* Positive controls observed
+
+The audit found several security controls worth preserving:
+
+- API-key secrets use cryptographic randomness and are stored as salted,
+  peppered verifiers rather than recoverable raw keys.
+- Secret comparisons use fixed-length digest comparison rather than early-return
+  string comparison.
+- Authentication failures are deliberately uniform.
+- API-key rotation, disable, revoke, expiry, and overlap behavior are explicit.
+- CORS uses an explicit configured origin list in the effective middleware and
+  does not emit wildcard credential-safe origins.
+- Generic HTTP errors do not return server tracebacks in the effective boundary.
+- JSON parsing, schema checks, query bounds, and correlation-ID bounds are
+  centralized.
+- The supplied Compose stack binds CouchDB, RabbitMQ, Valkey, and the StarIntel
+  API to loopback by default.
+- Deployment secrets for the Compose stack are file-backed rather than embedded
+  in the compose document.
+- Existing integration coverage already exercises authenticated authorization,
+  scoped denial, persistence, and one-time bootstrap behavior.
+
+* OWASP ZAP CI
+
+=.github/workflows/zap-security.yml= starts a disposable Nix-built Compose stack
+and runs ZAP's API scanner against it using =.zap/openapi.yaml=.
+
+For pull requests and pushes to =master=, the workflow uses API safe mode so the
+scan imports the API surface and performs passive checks without active attacks.
+Selected systemic response-header regressions are promoted to CI failures.
+
+A weekly schedule and manually selected =active= mode run ZAP's active API scan
+against only the disposable Compose network. The workflow uploads HTML,
+Markdown, and JSON ZAP reports plus stack diagnostics.
+
+No production URL, production credential, or long-lived secret is required by
+the scan.
+
+* Recommended next security slice
+
+1. Enforce the transport/exposure invariant around non-loopback HTTP listeners.
+2. Give =must_change_password= real authorization semantics.
+3. Add a loopback-only invariant for development auth bypass.
+4. Enforce maximum request size before body materialization.
+5. Harden container privileges and CI supply-chain permissions.
+6. Remove the obsolete duplicate HTTP boundary definitions.
