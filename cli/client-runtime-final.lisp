@@ -12,6 +12,9 @@
   #+sbcl (make-hash-table :test #'eq :weakness :key)
   #-sbcl (make-hash-table :test #'eq))
 
+(defparameter *request-option-deadlines-lock*
+  (bt:make-lock "starintel-client-request-deadlines"))
+
 (defparameter *raw-make-request-options*
   (symbol-function 'make-request-options))
 
@@ -24,15 +27,22 @@
 (defun internal-ticks-to-milliseconds (ticks)
   (floor (* ticks 1000) internal-time-units-per-second))
 
+(defun request-options-deadline (options)
+  (bt:with-lock-held (*request-option-deadlines-lock*)
+    (gethash options *request-option-deadlines*)))
+
 (defun set-request-options-deadline (options timeout-ms)
   (when timeout-ms
-    (setf (gethash options *request-option-deadlines*)
-          (+ (monotonic-ticks)
-             (milliseconds-to-internal-ticks timeout-ms))))
+    (let ((deadline
+            (+ (monotonic-ticks)
+               (milliseconds-to-internal-ticks timeout-ms))))
+      (bt:with-lock-held (*request-option-deadlines-lock*)
+        (setf (gethash options *request-option-deadlines*) deadline))))
   options)
 
 (defun forget-request-options-deadline (options)
-  (remhash options *request-option-deadlines*)
+  (bt:with-lock-held (*request-option-deadlines-lock*)
+    (remhash options *request-option-deadlines*))
   options)
 
 (defun make-request-options (&key timeout-ms correlation-id idempotency-key headers)
@@ -50,13 +60,13 @@
     (unless (request-options-timeout-ms result)
       (setf (request-options-timeout-ms result)
             (star-client-default-timeout-ms client)))
-    (unless (gethash result *request-option-deadlines*)
+    (unless (request-options-deadline result)
       (set-request-options-deadline
        result (request-options-timeout-ms result)))
     result))
 
 (defun remaining-request-timeout-ms (options)
-  (let ((deadline (gethash options *request-option-deadlines*)))
+  (let ((deadline (request-options-deadline options)))
     (if deadline
         (max 0
              (internal-ticks-to-milliseconds
