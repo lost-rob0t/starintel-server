@@ -35,6 +35,58 @@ The short built-in =intel= password is a first-run compatibility exception.
 Passwords created or changed through the normal user lifecycle must satisfy the
 configured minimum length, which defaults to 12 characters.
 
+* Remote CLI
+
+=star-cli= consumes =starintel-gserver-client= rather than constructing auth
+routes or HTTP headers itself. Set a server URL globally with =--url= or
+=STAR_SERVER_URL=. Authenticated management commands accept =--token= or
+=STAR_SERVER_TOKEN=.
+
+Login prints machine-readable JSON containing the newly minted key:
+
+#+begin_src sh
+printf '%s\n' 'intel' | \
+  star-cli --url http://127.0.0.1:5000 \
+    auth login --username star --password-stdin
+#+end_src
+
+Use the returned key for remote administration:
+
+#+begin_src sh
+export STAR_SERVER_TOKEN='star_sk_v1_...'
+
+star-cli admin user list
+star-cli admin user create \
+  --username analyst \
+  --scopes documents:read,search:read \
+  --password-stdin
+
+star-cli admin credential create \
+  --owner quasar \
+  --principal-type service \
+  --scopes documents:read,search:read
+#+end_src
+
+The remote command families are:
+
+#+begin_example
+star-cli auth login
+star-cli auth context
+star-cli auth change-password
+star-cli admin user create
+star-cli admin user list
+star-cli admin user set-password
+star-cli admin credential create
+star-cli admin credential list
+star-cli admin credential rotate
+star-cli admin credential revoke
+star-cli admin credential disable
+#+end_example
+
+For host-local bootstrap/recovery when the HTTP plane or administrator key is
+unavailable, use [[file:server-admin.org][star-server admin]] instead. The remote
+client never falls back to direct database access.
+
 * Login
 
 =POST /auth/login= is public and accepts:
@@ -181,4 +233,5 @@ images:
 
 Hermetic unit tests separately cover password policy, first-run idempotence,
 metadata redaction, login-to-API-key conversion, self-service password changes,
-and administrator resets.
+administrator resets, generated client operations, normalized client errors,
+deadlines, and server-local administration helpers.
