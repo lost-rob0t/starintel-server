@@ -60,6 +60,7 @@
    (:file "frontends/http-status-message")
    (:file "frontends/http-boundary-core")
    (:file "frontends/http-auth")
+   (:file "security-hardening")
    (:file "frontends/http-authorization")
    (:file "frontends/http-bulk-jobs")
    (:file "frontends/http-boundary-routes")
