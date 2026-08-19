@@ -17,6 +17,10 @@
    (:file "consumers/retry-policy")
    (:file "producers/package")
    (:file "producers/producers")
+   (:file "http-contract-package"
+    :pathname "../cli/http-contract-package.lisp")
+   (:file "http-contract"
+    :pathname "../cli/http-contract.lisp")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
@@ -67,7 +71,9 @@
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
+   (:file "frontends/http-contract-routes")
    (:file "runtime-lifecycle")
+   (:file "admin")
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
