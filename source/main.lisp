@@ -31,7 +31,8 @@
    :handler #'server/handler))
 
 (defun main/commands ()
-  (list (server/command)))
+  (list (server/command)
+        (admin/command)))
 
 (defun main/handler (command)
   (clingon:print-usage-and-exit command t))
