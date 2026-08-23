@@ -193,5 +193,26 @@
                (is-false (eq first replacement))
                (is
                 (star.databases.couchdb::couchdb-client-session-valid-p
-                 replacement)))
+                 replacement))
+               (is
+                (cl-couch:database-exists-p
+                 replacement *view-integration-database*)))
+          (anypool:putback replacement pool))))))
+
+(test auth-couchdb-pool-replaces-client-through-shared-session-policy
+  (let ((pool (star.auth::make-auth-couchdb-pool)))
+    (let ((first (anypool:fetch pool)))
+      (is (star.databases.couchdb::couchdb-client-session-valid-p first))
+      (cl-couch:remove-auth first)
+      (anypool:putback first pool)
+      (let ((replacement (anypool:fetch pool)))
+        (unwind-protect
+             (progn
+               (is-false (eq first replacement))
+               (is
+                (star.databases.couchdb::couchdb-client-session-valid-p
+                 replacement))
+               (is
+                (cl-couch:database-exists-p
+                 replacement *view-integration-database*)))
           (anypool:putback replacement pool))))))
