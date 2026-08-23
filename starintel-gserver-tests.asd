@@ -31,6 +31,7 @@
      (:file "dataset-export-test")
      (:file "couchdb-view-request-test")
      (:file "lease-store-contract-test")
+     (:file "target-lease-service-test")
      (:file "http-boundary-test")
      (:file "http-auth-test")
      (:file "auth-users-test")
