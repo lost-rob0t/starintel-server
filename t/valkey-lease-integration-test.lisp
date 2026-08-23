@@ -492,7 +492,10 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
   (with-real-valkey-store
-      (store :label "concurrency" :pool-size 16 :pool-wait-timeout-ms 10000)
+      (store :label "concurrency"
+       :pool-size 100
+       :pool-wait-timeout-ms 10000
+       :operation-timeout-ms 5000)
     (let ((identity (real-valkey-identity "concurrent-target"))
           (results nil)
           (results-lock (bt:make-lock "valkey-acquire-results")))
