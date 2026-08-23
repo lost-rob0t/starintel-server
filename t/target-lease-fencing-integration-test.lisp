@@ -25,13 +25,13 @@
         (is (< (star.leases:lease-record-fencing-token lease-a)
                (star.leases:lease-record-fencing-token lease-b)))
         (is (eq :stale-token
-                (star.leases::valkey-fenced-commit
+                (star.leases:commit-fenced-intent
                  store identity lease-a
                  "intent-a" "{\"result\":\"stale\"}"
                  :deadline (real-deadline)
                  :request-id "fenced-commit-a")))
         (is (eq :committed
-                (star.leases::valkey-fenced-commit
+                (star.leases:commit-fenced-intent
                  store identity lease-b
                  "intent-b" "{\"result\":\"current\"}"
                  :deadline (real-deadline)
