@@ -128,12 +128,14 @@
    :disconnector disconnector))
 
 (defun install-couchdb-session-hardening ()
-  "Replace the live HTTP API pool with session-aware CouchDB clients."
-  (setf star.frontends.http-api::*couchdb-pool*
-        (make-star-couchdb-pool
-         :name "couchdb-connections"
-         :max-open-count 20
-         :max-idle-count 10))
+  "Install checkout validation on the already-constructed live HTTP pool.
+
+Preserve the pool object itself: tests and runtime components may retain its
+identity.  Its existing connector already creates and authenticates fresh
+clients, so adding the shared session probe is sufficient to make AnyPool
+discard an expired idle client and invoke that connector for a replacement."
+  (setf (anypool::pool-ping star.frontends.http-api::*couchdb-pool*)
+        #'couchdb-client-session-valid-p)
   t)
 
 (install-couchdb-session-hardening)
