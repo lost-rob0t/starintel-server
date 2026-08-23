@@ -381,7 +381,7 @@ still comes from the backend compare-and-* operation using lease id and token."
                      :request-id
                      (target-lease-request-context-request-id context))))
              (declare (ignore record))
-             (translate-lease-outcome result))))))))
+             (translate-lease-outcome result)))))))
 
 (defun get-target-lease (service context &optional lease-id)
   (call-target-lease-operation
