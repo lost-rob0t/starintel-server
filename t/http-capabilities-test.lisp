@@ -53,8 +53,8 @@
            (capability-endpoint-by-id document "capabilities"))
          (legacy-document
            (capability-endpoint-by-id document "document_create")))
-    (is capabilities)
-    (is legacy-document)
+    (is (not (null capabilities)))
+    (is (not (null legacy-document)))
     (is (string= "GET" (jsown:val capabilities "method")))
     (is (string= "/api/v1/capabilities"
                  (jsown:val capabilities "path")))
