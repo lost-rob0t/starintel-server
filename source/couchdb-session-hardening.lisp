@@ -97,20 +97,32 @@
    :max-open-count max-open-count
    :max-idle-count max-idle-count))
 
-(defun install-couchdb-session-hardening ()
-  "Replace the main application pool with session-aware CouchDB clients."
-  (setf *couchdb-pool*
-        (make-star-couchdb-pool
-         :name "couchdb-connections"
-         :max-open-count 20
-         :max-idle-count 10))
-  t)
-
-(defun star.auth::make-auth-couchdb-pool ()
-  "Create the authorization store pool with the same session renewal policy."
+(defun star.auth::make-auth-couchdb-pool
+    (&key
+       (connector
+         (lambda ()
+           (cl-couch:new-couchdb
+            star:*couchdb-host*
+            star:*couchdb-port*
+            :scheme star:*couchdb-scheme*)))
+       (authenticator
+         (lambda (client)
+           (cl-couch:password-auth
+            client
+            star:*couchdb-user*
+            star:*couchdb-password*)))
+       (session-valid-p
+         (lambda (client)
+           (couchdb-client-session-valid-p client)))
+       (disconnector
+         (lambda (client)
+           (cl-couch:remove-auth client))))
+  "Create the authorization store pool with the shared session renewal policy."
   (make-star-couchdb-pool
    :name "starintel-auth-couchdb-connections"
    :max-open-count 10
-   :max-idle-count 5))
-
-(install-couchdb-session-hardening)
+   :max-idle-count 5
+   :connector connector
+   :authenticator authenticator
+   :session-valid-p session-valid-p
+   :disconnector disconnector))
