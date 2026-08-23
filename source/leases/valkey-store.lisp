@@ -223,6 +223,7 @@
                        (valkey-connection-socket connection)
                        :timeout (remaining-operation-seconds store deadline)
                        :ready-only t))
+            (close-valkey-connection connection)
             (error 'valkey-command-failure :submitted-p submitted-p))
           (read-valkey-response (valkey-connection-stream connection)))
       (valkey-server-error (condition) (error condition))
