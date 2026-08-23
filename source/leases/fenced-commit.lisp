@@ -24,6 +24,16 @@ if now >= tonumber(record.expires_at) then return 'expired' end
 redis.call('SET', KEYS[2], ARGV[5])
 return 'committed'")
 
+(defgeneric commit-fenced-intent
+    (store identity record intent-id value &key deadline request-id)
+  (:documentation
+   "Atomically validate RECORD as current lease authority and commit immutable VALUE for INTENT-ID.
+
+The backend operation is the side-effect authorization linearization point.
+Implementations must return :COMMITTED only when RECORD is still the active
+lease for IDENTITY. Replaying the same intent/value is idempotent; a different
+value for the same intent returns :IDEMPOTENCY-CONFLICT."))
+
 (defun valkey-fenced-intent-key (store identity intent-id)
   "Return the immutable same-slot key for one authoritative side-effect intent."
   (unless (and (typep store 'valkey-lease-store)
@@ -34,20 +44,20 @@ return 'committed'")
    store identity
    (format nil "intent:~a" (digest-string intent-id))))
 
-(defun valkey-fenced-commit
-    (store identity record intent-id value &key deadline request-id)
+(defmethod commit-fenced-intent
+    ((store valkey-lease-store) identity record intent-id value
+     &key deadline request-id)
   "Atomically validate RECORD as current authority and persist immutable VALUE.
 
 The Valkey EVAL is the commit linearization point: stale/expired holders cannot
 create the intent after a successor lease is active. Replaying INTENT-ID with the
 same VALUE is idempotent; changing VALUE fails closed."
-  (unless (and (typep store 'valkey-lease-store)
-               (typep identity 'lease-identity)
+  (unless (and (typep identity 'lease-identity)
                (typep record 'lease-record)
                (valid-lease-identifier-p intent-id)
                (non-empty-string-p value)
                (valid-valkey-operation-p deadline request-id nil))
-    (return-from valkey-fenced-commit :invalid-request))
+    (return-from commit-fenced-intent :invalid-request))
   (let ((intent-key (valkey-fenced-intent-key store identity intent-id)))
     (multiple-value-bind (response failure)
         (valkey-eval
