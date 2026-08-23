@@ -491,10 +491,11 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
+  "One hundred callers contend on the lease atomically; transport saturation is tested separately."
   (with-real-valkey-store
       (store :label "concurrency"
-       :pool-size 100
-       :pool-wait-timeout-ms 10000
+       :pool-size 16
+       :pool-wait-timeout-ms 30000
        :operation-timeout-ms 5000)
     (let ((identity (real-valkey-identity "concurrent-target"))
           (results nil)
@@ -511,10 +512,16 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
                                   (format nil "concurrent-request-~d"
                                           thread-index)
                                   (format nil "owner-~d" thread-index)
-                                  :deadline-ms 10000)))
+                                  :deadline-ms 30000)))
                            (bt:with-lock-held (results-lock)
                              (push result results)))))))))
         (mapc #'bt:join-thread threads))
+      (is (= 100 (length results)))
+      (is (every (lambda (result)
+                   (member (star.leases:lease-outcome-code result)
+                           '(:acquired :conflict)
+                           :test #'eq))
+                 results))
       (is (= 1 (count :acquired results
                       :key #'star.leases:lease-outcome-code)))
       (is (= 99 (count :conflict results
@@ -764,7 +771,7 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
               :request-id "unavailable-health"))
            (elapsed
              (/ (- (get-internal-real-time) started)
-                internal-time-units-per-second)))
+                    internal-time-units-per-second)))
       (is (eq :backend-unavailable
               (star.leases:lease-outcome-code result)))
       (is (< elapsed 1.0)))))
