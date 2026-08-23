@@ -771,7 +771,7 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
               :request-id "unavailable-health"))
            (elapsed
              (/ (- (get-internal-real-time) started)
-                    internal-time-units-per-second)))
+                internal-time-units-per-second)))
       (is (eq :backend-unavailable
               (star.leases:lease-outcome-code result)))
       (is (< elapsed 1.0)))))
