@@ -32,7 +32,23 @@ jobs:
         run: nix flake check --show-trace
 
       - name: Build server
-        run: nix build .#default --no-link --print-build-logs
+        shell: bash
+        run: |
+          set +e
+          log_file="$RUNNER_TEMP/server-build.log"
+          nix build .#default --no-link --print-build-logs >"$log_file" 2>&1
+          status=$?
+          tail -n 250 "$log_file"
+          exit "$status"
+
+      - name: Upload server-build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-build-${{ github.sha }}
+          path: ${{ runner.temp }}/server-build.log
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Run hermetic unit tests
         shell: bash
