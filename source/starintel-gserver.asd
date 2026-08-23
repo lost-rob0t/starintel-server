@@ -24,6 +24,7 @@
    (:file "leases/memory-store")
    (:file "leases/valkey-scripts")
    (:file "leases/valkey-store")
+   (:file "leases/fenced-commit")
    (:file "leases/valkey-list-store")
    (:file "gserver-settings")
    (:file "databases/couchdb")
