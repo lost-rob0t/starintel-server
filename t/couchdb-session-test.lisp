@@ -98,14 +98,13 @@
                  (is (= 2 (getf replacement :generation))))
             (anypool:putback replacement pool)))))))
 
-(test application-and-auth-pools-reject-unauthenticated-checkout
+(test application-and-auth-pools-share-session-validator
   ;; On master both pools use AnyPool's default always-true ping.  The live
-  ;; HTTP pool and auth credential-store pool must instead run the shared
-  ;; CouchDB /_session validator before reusing an idle client.
-  (is-false
-   (funcall
-    (anypool::pool-ping star.frontends.http-api::*couchdb-pool*)
-    :fake-client))
+  ;; HTTP pool and auth credential-store pool must instead use the exact same
+  ;; CouchDB /_session validator before reusing an idle client.  Assert policy
+  ;; wiring directly rather than invoking a real client accessor on a sentinel.
+  (is (eq #'star.databases.couchdb::couchdb-client-session-valid-p
+          (anypool::pool-ping star.frontends.http-api::*couchdb-pool*)))
   (let ((auth-pool (star.auth::make-auth-couchdb-pool)))
-    (is-false
-     (funcall (anypool::pool-ping auth-pool) :fake-client))))
+    (is (eq #'star.databases.couchdb::couchdb-client-session-valid-p
+            (anypool::pool-ping auth-pool)))))
