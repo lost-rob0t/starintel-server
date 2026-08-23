@@ -7,6 +7,7 @@
     target-routing-tests
     system-load-tests
     couchdb-actor-tests
+    couchdb-session-tests
     event-actor-tests
     dataset-export-tests
     couchdb-view-request-tests
