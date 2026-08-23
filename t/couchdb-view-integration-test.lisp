@@ -168,3 +168,30 @@
     (is-false (typep result 'star.databases.couchdb:view-document-result))
     (dolist (row (star.databases.couchdb:view-reduced-result-rows result))
       (is-false (jsown:keyp row "doc")))))
+
+(test real-couchdb-pool-replaces-client-after-session-loss
+  (let ((connect-count 0)
+        (pool
+          (star.databases.couchdb::make-star-couchdb-pool
+           :name "couchdb-session-integration-test"
+           :max-open-count 1
+           :max-idle-count 1
+           :connector
+           (lambda ()
+             (incf connect-count)
+             (cl-couch:new-couchdb star:*couchdb-host*
+                                   star:*couchdb-port*
+                                   :scheme star:*couchdb-scheme*)))))
+    (let ((first (anypool:fetch pool)))
+      (is (star.databases.couchdb::couchdb-client-session-valid-p first))
+      (cl-couch:remove-auth first)
+      (anypool:putback first pool)
+      (let ((replacement (anypool:fetch pool)))
+        (unwind-protect
+             (progn
+               (is (= 2 connect-count))
+               (is-false (eq first replacement))
+               (is
+                (star.databases.couchdb::couchdb-client-session-valid-p
+                 replacement)))
+          (anypool:putback replacement pool))))))
