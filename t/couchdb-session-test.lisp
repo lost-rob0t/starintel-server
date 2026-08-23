@@ -96,7 +96,7 @@
                  (is (= 2 connect-count))
                  (is (= 2 auth-count))
                  (is (= 2 (getf replacement :generation))))
-            (anypool:putback replacement pool)))))))
+            (anypool:putback replacement pool))))))))
 
 (test application-and-auth-pools-share-session-validator
   ;; On master both pools use AnyPool's default always-true ping.  The live
