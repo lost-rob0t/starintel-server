@@ -57,6 +57,7 @@
    (:file "actor-systems/matcher-actor")
    (:file "rabbit")
    (:file "frontends/http-api")
+   (:file "couchdb-session-hardening")
    (:file "frontends/http-document-update")
    (:file "frontends/http-view-registry")
    (:file "frontends/http-status-message")
@@ -70,6 +71,7 @@
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-target-lease-routes")
    (:file "frontends/http-authorization-view-routes")
+   (:file "runtime-lifecycle")
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
