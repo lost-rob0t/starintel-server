@@ -67,7 +67,7 @@
 
 (defun acquire-real-valkey-lease
     (store identity request-id owner &key (ttl-ms 1000)
-       (maximum-lifetime-ms 10000))
+       (maximum-lifetime-ms 10000) (deadline-ms 3000))
   (star.leases:acquire-lease
    store identity
    :owner-principal-id owner
@@ -80,7 +80,7 @@
    :job-id (format nil "job-~a" owner)
    :trace-id (format nil "trace-~a" owner)
    :metadata (jsown:new-js ("safe_label" "integration-test"))
-   :deadline (real-deadline)
+   :deadline (real-deadline deadline-ms)
    :request-id request-id))
 
 (defun close-real-valkey-store (store request-id)
@@ -432,6 +432,7 @@ leases. The list script applies the same corrupt-state rules as get-lease."
            (identity-b (real-valkey-identity "list-corrupt-b"))
            (active-key-a (star.leases::valkey-active-key store identity-a))
            (active-key-b (star.leases::valkey-active-key store identity-b)))
+      (declare (ignore active-key-b))
       (acquire-real-valkey-lease store identity-a "lc-a" "owner-a"
                                  :ttl-ms 5000 :maximum-lifetime-ms 10000)
       (acquire-real-valkey-lease store identity-b "lc-b" "owner-b"
@@ -464,7 +465,6 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
     (let* ((identity (real-valkey-identity "corrupt-record-target"))
            (first
              (acquire-real-valkey-lease store identity "cr-a" "owner-a"))
-           (record (star.leases:lease-outcome-lease first))
            (active-key (star.leases::valkey-active-key store identity))
            (original-json
              (star.leases::valkey-test-command
@@ -491,7 +491,8 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
-  (with-real-valkey-store (store :label "concurrency" :pool-size 16)
+  (with-real-valkey-store
+      (store :label "concurrency" :pool-size 16 :pool-wait-timeout-ms 10000)
     (let ((identity (real-valkey-identity "concurrent-target"))
           (results nil)
           (results-lock (bt:make-lock "valkey-acquire-results")))
@@ -506,7 +507,8 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
                                   store identity
                                   (format nil "concurrent-request-~d"
                                           thread-index)
-                                  (format nil "owner-~d" thread-index))))
+                                  (format nil "owner-~d" thread-index)
+                                  :deadline-ms 10000)))
                            (bt:with-lock-held (results-lock)
                              (push result results)))))))))
         (mapc #'bt:join-thread threads))
