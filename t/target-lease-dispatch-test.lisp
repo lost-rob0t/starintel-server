@@ -45,6 +45,32 @@
             :state :active)))
     (values record lease)))
 
+(test unfenced-target-acceptance-does-not-fabricate-authority
+  "Compatibility ingress must fail closed instead of inventing lease authority."
+  (multiple-value-bind (record lease) (make-fenced-dispatch-fixture)
+    (declare (ignore lease))
+    (let ((persist-count 0))
+      (let ((outcome
+              (star.actors::accept-target-record
+               record
+               :destination
+               (star.actors::make-target-destination-handle
+                :rabbit "nmap" :routing-key "documents.target.dispatch.nmap")
+               :persist-fn
+               (lambda (&rest arguments)
+                 (declare (ignore arguments))
+                 (incf persist-count)
+                 (error "unfenced target reached persistence"))
+               :update-fn (lambda (&rest arguments) (declare (ignore arguments)))
+               :schedule-once-fn
+               (lambda (&rest arguments)
+                 (declare (ignore arguments))
+                 (error "unfenced target reached scheduling")))))
+        (is (eq :invalid (star.actors:target-dispatch-outcome-status outcome)))
+        (is (= 0 persist-count))
+        (is (search "authoritative lease"
+                    (star.actors:target-dispatch-outcome-reason outcome)))))))
+
 (test stale-lease-cannot-persist-target-acceptance
   "The fencing decision must happen before CouchDB acceptance or scheduling."
   (multiple-value-bind (record lease) (make-fenced-dispatch-fixture)
