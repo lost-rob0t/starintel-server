@@ -60,6 +60,7 @@
    (:file "frontends/http-view-registry")
    (:file "frontends/http-status-message")
    (:file "frontends/http-boundary-core")
+   (:file "frontends/http-capabilities")
    (:file "frontends/http-auth")
    (:file "frontends/http-authorization")
    (:file "frontends/http-bulk-jobs")
