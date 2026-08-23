@@ -79,7 +79,7 @@ submit_document() {
       --arg id "$id" \
       --arg dataset "$dataset" \
       --arg content "$content" \
-      '{_id:$id,dataset:$dataset,tenant_id:"default",dtype:"note",version:"0.9",content:$content}'
+      '{_id:$id,dataset:$dataset,tenant_id:"default",dtype:"note",version:"0.9.0",content:$content}'
   )"
   curl \
     --fail --silent --show-error \
@@ -287,7 +287,7 @@ from pathlib import Path
 import sys
 
 Path(sys.argv[1]).write_bytes(
-    b'{"_id":"security-invalid-utf8","dataset":"security-a","dtype":"note","version":"0.9","content":"\xff"}'
+    b'{"_id":"security-invalid-utf8","dataset":"security-a","dtype":"note","version":"0.9.0","content":"\xff"}'
 )
 PY
 utf8_body="${artifact_dir}/security-invalid-utf8-response.json"
@@ -317,7 +317,7 @@ import sys
 
 path = Path(sys.argv[1])
 target = int(sys.argv[2])
-prefix = b'{"_id":"security-oversized","dataset":"security-a","dtype":"note","version":"0.9","content":"'
+prefix = b'{"_id":"security-oversized","dataset":"security-a","dtype":"note","version":"0.9.0","content":"'
 suffix = b'"}'
 fill = max(1, target - len(prefix) - len(suffix))
 path.write_bytes(prefix + (b'A' * fill) + suffix)
@@ -357,7 +357,7 @@ docs = [
         "dataset": "security-a",
         "tenant_id": "default",
         "dtype": "note",
-        "version": "0.9",
+        "version": "0.9.0",
     }
     for index in range(count)
 ]
@@ -400,7 +400,7 @@ body = {
     "dataset": "security-a",
     "tenant_id": "default",
     "dtype": "note",
-    "version": "0.9",
+    "version": "0.9.0",
     "content": value,
 }
 path.write_text(json.dumps(body, separators=(",", ":")), encoding="utf-8")
