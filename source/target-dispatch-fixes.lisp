@@ -12,6 +12,34 @@
           (star.consumers:retry-stream-current-properties stream)))
         (values 0 nil))))
 
+(defun make-target-dispatch-envelope
+    (record &key destination (attempt 0) trace-id lease-id fencing-token)
+  "Build a target dispatch envelope only from explicit lease authority.
+
+Compatibility callers must not fabricate a lease id or fencing token. Until an
+ingress path resolves a current trusted lease record, target execution fails
+closed before persistence, scheduling, or publication."
+  (validate-target-dispatch-record record)
+  (unless (and (target-nonempty-string-p lease-id)
+               (integerp fencing-token)
+               (plusp fencing-token))
+    (error 'invalid-target-dispatch
+           :reason "authoritative lease id and positive fencing token are required"))
+  (let* ((schedule-id (target-record-schedule-id record))
+         (resolved
+           (or destination
+               (resolve-target-destination (target-record-actor record)))))
+    (%make-target-dispatch-envelope
+     record
+     resolved
+     schedule-id
+     (target-execution-id record schedule-id)
+     attempt
+     (or trace-id (cms-ulid:ulid))
+     lease-id
+     fencing-token
+     (target-record-deadline record))))
+
 (defun target-record-matches-lease-identity-p (record identity)
   "Fail closed unless lease authority names this exact target and actor."
   (and (typep record 'target-record)
