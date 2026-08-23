@@ -31,7 +31,18 @@ stage_secret_file() {
     exit 1
   fi
 
-  target="/tmp/starintel-${name}.secret"
+  # Keep staged credentials out of sticky /tmp itself. On container restart a
+  # previous 0400 file is owned by uid 65532; Linux protected_regular can then
+  # reject root's shell redirection when trying to truncate it in sticky /tmp.
+  # A root-owned, runtime-readable directory lets entrypoint safely replace the
+  # staged copy on every boot without granting the server write access to it.
+  runtime_secret_dir="/tmp/starintel-runtime-secrets"
+  mkdir -p "$runtime_secret_dir"
+  chown 0:65532 "$runtime_secret_dir"
+  chmod 0750 "$runtime_secret_dir"
+
+  target="$runtime_secret_dir/${name}.secret"
+  rm -f "$target"
   umask 077
   cat "$source" > "$target"
   [ -s "$target" ] || {
