@@ -103,7 +103,8 @@
 (test current-lease-commits-before-target-acceptance
   "A current fenced lease may cross the acceptance boundary with its real token."
   (multiple-value-bind (record lease) (make-fenced-dispatch-fixture)
-    (let ((persist-count 0)
+    (let ((star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+          (persist-count 0)
           (schedule-count 0))
       (let* ((outcome
                (star.actors::accept-target-record-with-lease
@@ -169,7 +170,8 @@
 (test trusted-authority-record-drives-fenced-target-acceptance
   "A valid locator is replaced by the server-owned lease record before commit."
   (multiple-value-bind (record lease) (make-fenced-dispatch-fixture)
-    (let ((resolved-lease-id nil)
+    (let ((star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+          (resolved-lease-id nil)
           (resolved-token nil)
           (persist-count 0)
           (service (star.authorization::%make-target-lease-service nil nil "server-a")))
