@@ -49,6 +49,35 @@ closed before persistence, scheduling, or publication."
        (string= (string-downcase (target-record-actor record))
                 (star.leases:lease-identity-actor-name identity))))
 
+(defun target-side-effect-deadline ()
+  (+ (* 1000 (- (get-universal-time) 2208988800)) 5000))
+
+(defun target-side-effect-intent-id (envelope)
+  (format nil "target-side-effect-intent:~a"
+          (target-dispatch-envelope-execution-id envelope)))
+
+(defun make-fenced-target-dispatch-fn
+    (store lease-record commit-fn dispatch-fn)
+  "Return a dispatcher that re-establishes lease authority at side-effect time.
+
+Acceptance-time fencing is not enough for delayed schedules: the original lease
+may expire and be replaced before the timer fires. Each concrete occurrence gets
+its own immutable fenced intent immediately before local/Rabbit publication. A
+stale lease therefore cannot cross the side-effect boundary."
+  (lambda (envelope)
+    (let* ((intent-id (target-side-effect-intent-id envelope))
+           (commit-result
+             (funcall commit-fn
+                      store
+                      (star.leases:lease-record-identity lease-record)
+                      lease-record
+                      intent-id
+                      (target-dispatch-fingerprint envelope)
+                      :deadline (target-side-effect-deadline)
+                      :request-id intent-id)))
+      (when (eq commit-result :committed)
+        (funcall dispatch-fn envelope)))))
+
 (defun accept-target-record-with-authority
     (record service context lease-id fencing-token
      &key (attempt 0) trace-id destination
@@ -99,10 +128,11 @@ backend before persistence, scheduling, or publication."
        (commit-fn #'star.leases:commit-fenced-intent))
   "Accept RECORD only after the lease backend commits an immutable dispatch intent.
 
-The fenced intent is the authorization linearization point. A stale/expired lease
-must fail before CouchDB acceptance, scheduling, or Rabbit/local dispatch can run.
-The immutable intent also gives recovery code a durable key from which to finish a
-commit after a crash between lease authorization and downstream persistence."
+The fenced acceptance intent is the authorization linearization point for durable
+acceptance. Scheduled side effects are fenced again when the occurrence fires, so
+a lease that expires after acceptance cannot later publish under stale authority.
+The immutable intents also give recovery code durable keys from which to finish a
+commit after a crash between lease authorization and downstream work."
   (unless (and (typep lease-record 'star.leases:lease-record)
                (target-record-matches-lease-identity-p
                 record (star.leases:lease-record-identity lease-record)))
@@ -136,26 +166,30 @@ commit after a crash between lease authorization and downstream persistence."
          :invalid envelope
          :reason (format nil "lease authority rejected target dispatch: ~a"
                          commit-result))))
-    (if persist-fn
-        (process-target-dispatch-envelope
-         envelope persist-fn update-fn
-         :dispatch-fn (or dispatch-fn #'dispatch-target-envelope-now)
-         :schedule-once-fn (or schedule-once-fn #'wheel-schedule-target-once)
-         :schedule-recurring-fn
-         (or schedule-recurring-fn #'wheel-schedule-target-recurring))
-        (anypool:with-connection
-            (client star.databases.couchdb:*couchdb-pool*)
+    (let ((fenced-dispatch-fn
+            (make-fenced-target-dispatch-fn
+             store lease-record commit-fn
+             (or dispatch-fn #'dispatch-target-envelope-now))))
+      (if persist-fn
           (process-target-dispatch-envelope
-           envelope
-           (lambda (desired duplicate-predicate)
-             (star.databases.couchdb:couchdb-persist-target-acceptance
-              client star:*couchdb-default-database*
-              desired duplicate-predicate))
-           (lambda (acceptance-id updater)
-             (star.databases.couchdb:couchdb-update-target-acceptance
-              client star:*couchdb-default-database*
-              acceptance-id updater))
-           :dispatch-fn (or dispatch-fn #'dispatch-target-envelope-now)
+           envelope persist-fn update-fn
+           :dispatch-fn fenced-dispatch-fn
            :schedule-once-fn (or schedule-once-fn #'wheel-schedule-target-once)
            :schedule-recurring-fn
-           (or schedule-recurring-fn #'wheel-schedule-target-recurring))))))
+           (or schedule-recurring-fn #'wheel-schedule-target-recurring))
+          (anypool:with-connection
+              (client star.databases.couchdb:*couchdb-pool*)
+            (process-target-dispatch-envelope
+             envelope
+             (lambda (desired duplicate-predicate)
+               (star.databases.couchdb:couchdb-persist-target-acceptance
+                client star:*couchdb-default-database*
+                desired duplicate-predicate))
+             (lambda (acceptance-id updater)
+               (star.databases.couchdb:couchdb-update-target-acceptance
+                client star:*couchdb-default-database*
+                acceptance-id updater))
+             :dispatch-fn fenced-dispatch-fn
+             :schedule-once-fn (or schedule-once-fn #'wheel-schedule-target-once)
+             :schedule-recurring-fn
+             (or schedule-recurring-fn #'wheel-schedule-target-recurring)))))))
