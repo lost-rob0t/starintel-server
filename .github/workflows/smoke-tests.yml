@@ -35,7 +35,23 @@ jobs:
         run: nix build .#default --no-link --print-build-logs
 
       - name: Run hermetic unit tests
-        run: nix run .#star-unit-tests
+        shell: bash
+        run: |
+          set +e
+          log_file="$RUNNER_TEMP/hermetic-unit-tests.log"
+          nix run .#star-unit-tests >"$log_file" 2>&1
+          status=$?
+          tail -n 250 "$log_file"
+          exit "$status"
+
+      - name: Upload hermetic unit-test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermetic-unit-tests-${{ github.sha }}
+          path: ${{ runner.temp }}/hermetic-unit-tests.log
+          if-no-files-found: warn
+          retention-days: 1
 
   integration-tests:
     runs-on: ubuntu-latest
