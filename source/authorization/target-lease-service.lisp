@@ -353,7 +353,7 @@ still comes from the backend compare-and-* operation using lease id and token."
                      :request-id
                      (target-lease-request-context-request-id context))))
              (declare (ignore record))
-             (translate-lease-outcome result))))))))
+             (translate-lease-outcome result)))))))
 
 (defun release-target-lease (service context lease-id fencing-token)
   (call-target-lease-operation
