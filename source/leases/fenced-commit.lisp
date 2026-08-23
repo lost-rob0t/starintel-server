@@ -59,8 +59,7 @@ same VALUE is idempotent; changing VALUE fails closed."
                (lease-record-fencing-token record)
                value
                (canonical-target-lock-key identity)))
-      (let ((code (if failure failure (or (valkey-code response)
-                                          :backend-unavailable))))
-        (emit-valkey-hooks store :fenced-commit request-id
-                           (valkey-outcome code))
-        code))))
+      ;; This is a side-effect authority result, not a lease transition. Keep
+      ;; it separate from +LEASE-OUTCOME-CODES+ rather than pretending a commit
+      ;; is an acquire/renew/release result.
+      (if failure failure (or (valkey-code response) :backend-unavailable)))))
