@@ -22,7 +22,7 @@
     },
     {
       "name": "lucene-escaped-quote-confusion",
-      "query": "content:\"{{TERM}}\\\" OR dataset:{{DENIED_DATASET}} OR content:\\"{{TERM}}\""
+      "query": "content:\"{{TERM}}\\\" OR dataset:{{DENIED_DATASET}} OR content:\\\"{{TERM}}\""
     }
   ],
   "couchdb_view_paths": [
