@@ -49,6 +49,47 @@ closed before persistence, scheduling, or publication."
        (string= (string-downcase (target-record-actor record))
                 (star.leases:lease-identity-actor-name identity))))
 
+(defun accept-target-record-with-authority
+    (record service context lease-id fencing-token
+     &key (attempt 0) trace-id destination
+       persist-fn update-fn dispatch-fn schedule-once-fn schedule-recurring-fn
+       (deadline (+ (* 1000 (- (get-universal-time) 2208988800)) 5000))
+       (request-id (format nil "target-dispatch:~a" (cms-ulid:ulid)))
+       (authority-fn #'star.authorization:current-target-lease-authority)
+       (commit-fn #'star.leases:commit-fenced-intent))
+  "Resolve caller-supplied lease locators to trusted authority before acceptance.
+
+Adapters must supply a trusted request context plus the caller's lease id and
+fencing token. The caller-provided locator is never copied into a dispatch
+envelope directly: CURRENT-TARGET-LEASE-AUTHORITY must first return the active
+server-owned lease record, which is then committed atomically by the fencing
+backend before persistence, scheduling, or publication."
+  (let ((authority
+          (funcall authority-fn service context lease-id fencing-token)))
+    (unless (eq :found
+                (star.authorization:target-lease-service-result-code authority))
+      (return-from accept-target-record-with-authority
+        (make-target-dispatch-outcome
+         :invalid
+         :reason
+         (format nil "target lease authority rejected dispatch: ~a"
+                 (star.authorization:target-lease-service-result-code authority)))))
+    (accept-target-record-with-lease
+     record
+     (star.authorization:target-lease-service-store service)
+     (star.authorization:target-lease-service-result-lease authority)
+     :attempt attempt
+     :trace-id trace-id
+     :destination destination
+     :persist-fn persist-fn
+     :update-fn update-fn
+     :dispatch-fn dispatch-fn
+     :schedule-once-fn schedule-once-fn
+     :schedule-recurring-fn schedule-recurring-fn
+     :deadline deadline
+     :request-id request-id
+     :commit-fn commit-fn)))
+
 (defun accept-target-record-with-lease
     (record store lease-record
      &key (attempt 0) trace-id destination
