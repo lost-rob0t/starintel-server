@@ -281,6 +281,13 @@ still comes from the backend compare-and-* operation using lease id and token."
           (values record nil))
         (values nil (translate-lease-outcome outcome)))))
 
+(defun target-lease-terminal-preflight-p (preflight)
+  "True when no active record remains, so the backend may resolve an idempotent replay."
+  (and preflight
+       (member (target-lease-service-result-code preflight)
+               '(:not-found :expired)
+               :test #'eq)))
+
 (defun acquire-target-lease (service context)
   "Authorize and acquire through the backend-neutral lease-store protocol."
   (call-target-lease-operation
@@ -332,7 +339,8 @@ still comes from the backend compare-and-* operation using lease id and token."
      (multiple-value-bind (record preflight)
          (target-lease-preflight-current-record
           service context "targets:lease" "RENEW")
-       (if preflight
+       (declare (ignore record))
+       (if (and preflight (not (target-lease-terminal-preflight-p preflight)))
            preflight
            (let* ((principal (target-lease-request-context-principal context))
                   (result
@@ -352,7 +360,6 @@ still comes from the backend compare-and-* operation using lease id and token."
                       (target-lease-request-context-deadline context))
                      :request-id
                      (target-lease-request-context-request-id context))))
-             (declare (ignore record))
              (translate-lease-outcome result)))))))
 
 (defun release-target-lease (service context lease-id fencing-token)
@@ -363,7 +370,8 @@ still comes from the backend compare-and-* operation using lease id and token."
      (multiple-value-bind (record preflight)
          (target-lease-preflight-current-record
           service context "targets:lease" "RELEASE")
-       (if preflight
+       (declare (ignore record))
+       (if (and preflight (not (target-lease-terminal-preflight-p preflight)))
            preflight
            (let* ((principal (target-lease-request-context-principal context))
                   (result
@@ -380,7 +388,6 @@ still comes from the backend compare-and-* operation using lease id and token."
                       (target-lease-request-context-deadline context))
                      :request-id
                      (target-lease-request-context-request-id context))))
-             (declare (ignore record))
              (translate-lease-outcome result)))))))
 
 (defun get-target-lease (service context &optional lease-id)
@@ -459,7 +466,8 @@ still comes from the backend compare-and-* operation using lease id and token."
      (multiple-value-bind (record preflight)
          (target-lease-preflight-current-record
           service context "targets:force-release" "REVOKE")
-       (if preflight
+       (declare (ignore record))
+       (if (and preflight (not (target-lease-terminal-preflight-p preflight)))
            preflight
            (let ((result
                    (star.leases:revoke-lease
@@ -473,7 +481,6 @@ still comes from the backend compare-and-* operation using lease id and token."
                      (target-lease-request-context-deadline context))
                     :request-id
                     (target-lease-request-context-request-id context))))
-             (declare (ignore record))
              (translate-lease-outcome result)))))))
 
 (defun current-target-lease-authority (service context lease-id fencing-token)
