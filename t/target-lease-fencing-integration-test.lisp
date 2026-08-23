@@ -36,14 +36,24 @@
                  "intent-b" "{\"result\":\"current\"}"
                  :deadline (real-deadline)
                  :request-id "fenced-commit-b")))
-        (is-false
-         (star.leases::valkey-test-command
-          store (real-deadline) "GET"
-          (star.leases::valkey-fenced-intent-key
-           store identity "intent-a")))
-        (is (string=
-             "{\"result\":\"current\"}"
-             (star.leases::valkey-test-command
-              store (real-deadline) "GET"
-              (star.leases::valkey-fenced-intent-key
-               store identity "intent-b"))))))))
+        (multiple-value-bind (value status)
+            (star.leases:read-fenced-intent
+             store identity "intent-a"
+             :deadline (real-deadline)
+             :request-id "fenced-read-a")
+          (is-false value)
+          (is (eq :not-found status)))
+        (multiple-value-bind (value status)
+            (star.leases:read-fenced-intent
+             store identity "intent-b"
+             :deadline (real-deadline)
+             :request-id "fenced-read-b")
+          (is (eq :found status))
+          (is (string= "{\"result\":\"current\"}" value)))
+        (multiple-value-bind (value status)
+            (star.leases:read-fenced-intent
+             store identity "forged-intent-id"
+             :deadline (real-deadline)
+             :request-id "fenced-read-forged")
+          (is-false value)
+          (is (eq :not-found status)))))))
