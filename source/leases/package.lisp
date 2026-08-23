@@ -67,6 +67,7 @@
    #:get-lease
    #:list-leases
    #:revoke-lease
+   #:commit-fenced-intent
    #:backend-health
    #:close-lease-store
    #:lease-runtime
