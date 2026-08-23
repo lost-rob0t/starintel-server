@@ -26,6 +26,7 @@
      (:file "target-routing-test")
      (:file "system-load-test")
      (:file "couchdb-actor-test")
+     (:file "couchdb-session-test")
      (:file "event-actor-test")
      (:file "dataset-export-test")
      (:file "couchdb-view-request-test")
@@ -39,6 +40,7 @@
      (:file "authorization-policy-test")
      (:file "authorization-services-final-test")
      (:file "authorization-quota-test")
+     (:file "runtime-lifecycle-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
