@@ -126,3 +126,14 @@
    :authenticator authenticator
    :session-valid-p session-valid-p
    :disconnector disconnector))
+
+(defun install-couchdb-session-hardening ()
+  "Replace the live HTTP API pool with session-aware CouchDB clients."
+  (setf star.frontends.http-api::*couchdb-pool*
+        (make-star-couchdb-pool
+         :name "couchdb-connections"
+         :max-open-count 20
+         :max-idle-count 10))
+  t)
+
+(install-couchdb-session-hardening)
