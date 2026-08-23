@@ -34,6 +34,17 @@ Implementations must return :COMMITTED only when RECORD is still the active
 lease for IDENTITY. Replaying the same intent/value is idempotent; a different
 value for the same intent returns :IDEMPOTENCY-CONFLICT."))
 
+(defgeneric read-fenced-intent
+    (store identity intent-id &key deadline request-id)
+  (:documentation
+   "Read an immutable fenced intent committed for IDENTITY and INTENT-ID.
+
+Return two values: the exact committed string (or NIL) and a status keyword.
+:FOUND means the value exists, :NOT-FOUND means no authoritative receipt exists,
+and transport/deadline failures are returned as their backend status. Readback
+never creates authority; callers must still resolve the current lease before
+using a receipt to authorize a new side effect."))
+
 (defun valkey-fenced-intent-key (store identity intent-id)
   "Return the immutable same-slot key for one authoritative side-effect intent."
   (unless (and (typep store 'valkey-lease-store)
@@ -73,3 +84,19 @@ same VALUE is idempotent; changing VALUE fails closed."
       ;; it separate from +LEASE-OUTCOME-CODES+ rather than pretending a commit
       ;; is an acquire/renew/release result.
       (if failure failure (or (valkey-code response) :backend-unavailable)))))
+
+(defmethod read-fenced-intent
+    ((store valkey-lease-store) identity intent-id &key deadline request-id)
+  "Read an immutable Valkey intent without mutating lease or receipt state."
+  (unless (and (typep identity 'lease-identity)
+               (valid-lease-identifier-p intent-id)
+               (valid-valkey-operation-p deadline request-id nil))
+    (return-from read-fenced-intent (values nil :invalid-request)))
+  (multiple-value-bind (response failure)
+      (call-valkey-request
+       store deadline nil
+       (list "GET" (valkey-fenced-intent-key store identity intent-id)))
+    (cond
+      (failure (values nil failure))
+      (response (values response :found))
+      (t (values nil :not-found)))))
