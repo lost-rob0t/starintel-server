@@ -81,9 +81,7 @@
             client
             star:*couchdb-user*
             star:*couchdb-password*)))
-       (session-valid-p
-         (lambda (client)
-           (couchdb-client-session-valid-p client)))
+       (session-valid-p #'couchdb-client-session-valid-p)
        (disconnector
          (lambda (client)
            (cl-couch:remove-auth client))))
@@ -111,9 +109,7 @@
             client
             star:*couchdb-user*
             star:*couchdb-password*)))
-       (session-valid-p
-         (lambda (client)
-           (couchdb-client-session-valid-p client)))
+       (session-valid-p #'couchdb-client-session-valid-p)
        (disconnector
          (lambda (client)
            (cl-couch:remove-auth client))))
