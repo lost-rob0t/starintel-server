@@ -11,16 +11,22 @@
         (and (stringp username) username))
     (error () nil)))
 
+(defun couchdb-session-response (client)
+  "Fetch CLIENT's CouchDB /_session response using its live cookie jar."
+  (dexador:request
+   (quri:merge-uris
+    (quri:make-uri :path "/_session")
+    (cl-couch:couchdb-url client))
+   :method :get
+   :headers (cl-couch:couchdb-headers client)
+   :cookie-jar (cl-couch:couchdb-cookie client)
+   :keep-alive t))
+
 (defun couchdb-client-session-valid-p
     (client
      &key
        (username star:*couchdb-user*)
-       (request-fn
-         (lambda (current-client)
-           (cl-couch:couchdb-request
-            current-client
-            (quri:make-uri :path "/_session")
-            :method :get))))
+       (request-fn #'couchdb-session-response))
   "Return true only when CLIENT still has an authenticated CouchDB session."
   (handler-case
       (let ((actual-username
