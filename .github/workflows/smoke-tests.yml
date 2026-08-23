@@ -35,7 +35,15 @@ jobs:
         run: nix build .#default --no-link --print-build-logs
 
       - name: Run hermetic unit tests
-        run: nix run .#star-unit-tests
+        shell: bash
+        run: |
+          set +e
+          log_file="$(mktemp)"
+          nix run .#star-unit-tests >"$log_file" 2>&1
+          status=$?
+          tail -n 250 "$log_file"
+          rm -f "$log_file"
+          exit "$status"
 
   integration-tests:
     runs-on: ubuntu-latest
