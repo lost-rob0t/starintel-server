@@ -1,9 +1,9 @@
 (in-package :star.addons.bixby)
 
-(defparameter *public-base-url* nil)
-(defparameter *redirect-uri* nil)
-(defparameter *read-scopes* '("documents:read" "search:read"))
-(defparameter *operations-scopes*
+(defvar *public-base-url* nil)
+(defvar *redirect-uri* nil)
+(defvar *read-scopes* '("documents:read" "search:read"))
+(defvar *operations-scopes*
   '("starintel.targets.write" "starintel.autodig.read" "starintel.autodig.control"))
 
 (defun normalize-base-url (value)
