@@ -8,12 +8,20 @@
 (defun call-bixby (name &rest arguments)
   (apply #'uiop:symbol-call :star.addons.bixby name arguments))
 
+(defun load-bixby-addon-or-report-cause ()
+  (handler-case
+      (star:load-addon :starintel-bixby)
+    (star:addon-error (condition)
+      (error "Bixby add-on load failed: ~a"
+             (or (star:addon-error-cause condition)
+                 condition)))))
+
 (test bixby-is-an-optional-asdf-addon-over-core-oauth
   (let ((before (star:addon-status :starintel-bixby)))
     (when (and before
                (eq :active (star:addon-state-status before)))
       (star:unload-addon :starintel-bixby)))
-  (let* ((loaded (star:load-addon :starintel-bixby))
+  (let* ((loaded (load-bixby-addon-or-report-cause))
          (generation (star:addon-state-generation loaded)))
     (is (eq :active (star:addon-state-status loaded)))
     (is (string= "starintel-bixby" (star:addon-state-system loaded)))
@@ -42,7 +50,7 @@
 (test bixby-client-registration-uses-standard-oauth-client-store
   (let* ((star:*auth-pepper* "bixby-addon-test-pepper")
          (store (make-oauth-test-world)))
-    (star:load-addon :starintel-bixby)
+    (load-bixby-addon-or-report-cause)
     (call-bixby
      :configure-bixby
      :public-base-url "https://api.starintel.example"
