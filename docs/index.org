@@ -15,18 +15,19 @@ the corresponding controls are implemented.
 1. [[file:../README.org][README]] — install, run, submit a document, and find the main entry points.
 2. [[file:architecture.org][Architecture]] — understand startup, components, concurrency, and the repository.
 3. [[file:document-spec.org][Document specification]] — understand the data that moves through the system.
-4. [[file:actors.org][Actors]] — build local actors and connect external actor services.
-5. [[file:messaging.org][Messaging]] — understand routing, delivery, recursion, and loop control.
-6. [[file:configuration.org][Configuration]] — configure local, container, remote, and tuned deployments.
-7. [[file:http-api-docs.org][HTTP API]] — call the service.
-8. [[file:http-authentication-runtime.org][HTTP authentication runtime]] — bootstrap, API-key lifecycle, CORS, request context, revocation behavior, and deployment.
-9. [[file:http-authorization-runtime.org][HTTP authorization runtime]] — capabilities, tenant/dataset/actor/target policy, route mapping, search isolation, Rabbit provenance, audit, and quotas.
-10. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
-11. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design contract.
-12. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative design contract.
-13. [[file:target-lease-semantics.org][Distributed target lease semantics]] — canonical lock identity, records, state transitions, operations, idempotency, deadlines, fencing enforcement, races, errors, audit, and recovery. Normative design contract.
-14. [[file:lease-store-usage.org][Lease-store protocol usage]] — Common Lisp examples for canonical identity, acquire, renew, inspect, list, release, serialization, typed outcomes, and owned shutdown.
-15. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
+4. [[file:v09-runtime.org][StarIntel v0.9 runtime]] — canonical schema validation, version semantics, ingest boundaries, and the legacy target compatibility adapter.
+5. [[file:actors.org][Actors]] — build local actors and connect external actor services.
+6. [[file:messaging.org][Messaging]] — understand routing, delivery, recursion, and loop control.
+7. [[file:configuration.org][Configuration]] — configure local, container, remote, and tuned deployments.
+8. [[file:http-api-docs.org][HTTP API]] — call the service.
+9. [[file:http-authentication-runtime.org][HTTP authentication runtime]] — bootstrap, API-key lifecycle, CORS, request context, revocation behavior, and deployment.
+10. [[file:http-authorization-runtime.org][HTTP authorization runtime]] — capabilities, tenant/dataset/actor/target policy, route mapping, search isolation, Rabbit provenance, audit, and quotas.
+11. [[file:../DOCKER.md][Docker/Nix stack]] and [[file:testing.md][testing]] — operate and verify it.
+12. [[file:http-auth-threat-model.org][HTTP authentication threat model]] — protected assets, attackers, boundaries, controls, failures, and residual risks. Design contract.
+13. [[file:http-auth-kv-lease-boundary.org][KV lease authentication boundary]] — target-lease assets, atomic ownership, fencing, replay controls, and the KV trust boundary. Normative design contract.
+14. [[file:target-lease-semantics.org][Distributed target lease semantics]] — canonical lock identity, records, state transitions, operations, idempotency, deadlines, fencing enforcement, races, errors, audit, and recovery. Normative design contract.
+15. [[file:lease-store-usage.org][Lease-store protocol usage]] — Common Lisp examples for canonical identity, acquire, renew, inspect, list, release, serialization, typed outcomes, and owned shutdown.
+16. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
 
 ** Development workflow
 
@@ -37,9 +38,9 @@ the corresponding controls are implemented.
 | Area | Status | Notes |
 |------+--------+-------|
 | CouchDB database initialization | Active | Creates main, actor-event, and separate authentication databases; upserts required design documents |
-| RabbitMQ document ingest | Active | =documents.ingest.#= |
-| RabbitMQ update ingest | Active | =documents.updated.#=; partial deep merge and conflict retry |
-| Target routing | Active | Local Sento actor or =actors.<name>.new.target= |
+| RabbitMQ document ingest | Active | =documents.ingest.#=; canonical mutations are strict v0.9 before persistence |
+| RabbitMQ update ingest | Active | =documents.update.#=; canonical mutations are strict v0.9 before persistence |
+| Target routing | Active | Local Sento actor or =actors.<name>.new.target=; legacy target envelope remains an explicit compatibility adapter |
 | Actor event storage | Active | Local receiver and separate =events= exchange consumer |
 | HTTP API-key authentication | Active | Default-deny bearer authentication, immutable request context, lifecycle routes, exact-origin CORS, and separate credential storage |
 | Fine-grained route authorization | Active | Closed capabilities and tenant/dataset/actor/target scopes enforced at HTTP and embedded service boundaries; unmapped routes deny |
@@ -49,13 +50,12 @@ the corresponding controls are implemented.
 | URL extractor pattern | Experimental | Actor starts; complete global pattern dispatcher is not evident |
 | User-finder/user-hunt actors | Present, inactive | Files are not in the ASDF component list |
 | HTTP event endpoint | Stub | =/new/event/:id= has no implementation; replay authorization is active but backend returns =501= |
-| Strict StarIntel 0.9 ingest validation | Partially wired | HTTP boundary validates required envelope fields and schema version; Rabbit ingest remains a separate boundary |
+| Strict StarIntel 0.9 ingest validation | Active | Canonical HTTP and Rabbit document mutations call the strict =star-cl= v0.9 validator; legacy target compatibility is explicitly isolated |
 
 ** Source-of-truth rule
 
 When documentation and code disagree, the current code wins. Correct the docs in
 the same pull request as behavior changes.
 
-The document model itself lives in [[https://github.com/lost-rob0t/star-cl][lost-rob0t/star-cl]]. The Python adapter lives
-in [[https://github.com/lost-rob0t/starintel-doc][lost-rob0t/starintel-doc]]. This server transports and stores those documents,
-but it currently also carries legacy flat 0.8 behavior.
+The document model and canonical Common Lisp validator live in [[https://github.com/lost-rob0t/star-cl][lost-rob0t/star-cl]]. The Python adapter lives
+in [[https://github.com/lost-rob0t/starintel-doc][lost-rob0t/starintel-doc]]. This server transports and stores canonical v0.9 documents while retaining a narrow legacy target compatibility path until the versioned target lifecycle API replaces it.
