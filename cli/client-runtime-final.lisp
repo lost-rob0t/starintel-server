@@ -15,7 +15,13 @@
 (defparameter *request-option-deadlines-lock*
   (bt:make-lock "starintel-client-request-deadlines"))
 
-(defparameter *raw-make-request-options*
+;; Capture the DEFSTRUCT constructor once. Do not FMAKUNBOUND it during
+;; compilation: ASDF compiles and loads serial files in the same image, so a
+;; compile-time unbind leaves the later FASL unable to capture the constructor.
+;; The public symbol is rebound at load time after the wrapper exists, which
+;; avoids a DEFUN-vs-DEFSTRUCT redefinition warning without deleting the raw
+;; constructor out from under the compiler.
+(defvar *raw-make-request-options*
   (symbol-function 'make-request-options))
 
 (defun monotonic-ticks ()
@@ -45,10 +51,8 @@
     (remhash options *request-option-deadlines*))
   options)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (fmakunbound 'make-request-options))
-
-(defun make-request-options (&key timeout-ms correlation-id idempotency-key headers)
+(defun make-request-options-with-deadline
+    (&key timeout-ms correlation-id idempotency-key headers)
   "Create request options with one absolute monotonic deadline when bounded."
   (let ((options
           (funcall *raw-make-request-options*
@@ -57,6 +61,10 @@
                    :idempotency-key idempotency-key
                    :headers headers)))
     (set-request-options-deadline options timeout-ms)))
+
+(eval-when (:load-toplevel :execute)
+  (setf (symbol-function 'make-request-options)
+        #'make-request-options-with-deadline))
 
 (defun ensure-request-options (options client)
   (let ((result (or options (make-request-options))))
