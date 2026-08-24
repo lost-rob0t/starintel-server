@@ -53,10 +53,9 @@
 
 (test ensure-init-file-exists-creates-minimal-if-no-example
       "Test that ensure-init-file-exists creates minimal config if example missing"
-      (let ((temp-file (pathname (format nil "/tmp/test-init-~A.lisp" (get-universal-time))))
+      (let ((temp-file (pathname (format nil "/tmp/test-init-~A.lisp" (get-universal-time)))))
             ;; Temporarily shadow the system source directory to simulate missing example
             (original-dir (asdf:system-source-directory :starintel-gserver)))
-        (declare (ignore original-dir))
         (unwind-protect
              (progn
                ;; This will fail to find example_configs and create minimal file
@@ -91,6 +90,12 @@
                       (star:load-init-file temp-file))
           (cleanup-temp-path temp-file))))
 
+
+
+
+
+
+
 ;;; Tests for safe-load-init
 
 (test safe-load-init-loads-file
@@ -102,6 +107,8 @@
                (is-true (star:safe-load-init temp-file))
                (is (= 100 (symbol-value (find-symbol "*TEST-SAFE-LOAD*" :star)))))
           (cleanup-temp-path temp-file))))
+
+
 
 (test safe-load-init-creates-missing-file
       "Test that safe-load-init creates file if it doesn't exist"
@@ -135,8 +142,27 @@
                                 file-variable)
                         source))))))
 
+
+
+;;; Tests for load-modular-init
+
+
+
+
 ;;; Run all init-loader tests
 
 (defun run-init-loader-tests ()
   "Run all init loader tests"
   (run! 'init-loader-tests))
+
+
+
+
+
+
+
+
+
+
+
+
