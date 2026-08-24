@@ -52,10 +52,16 @@
           '("/api/v1/search" "/api/v1/stats")
           :test #'string=))
 
+;; Keep the default public-read surface visible to existing introspection while
+;; making PUBLIC-AUTH-PATH-P the authoritative runtime decision. This means an
+;; init.lisp setting of *PUBLIC-MODE* NIL can override these default entries.
+(dolist (path '("/api/v1/search" "/api/v1/stats"))
+  (pushnew path star:*auth-public-paths* :test #'string=))
+
 (defun public-auth-path-p (path)
-  (or (member path star:*auth-public-paths* :test #'string=)
-      (and star::*public-mode*
-           (public-mode-read-path-p path))))
+  (if (public-mode-read-path-p path)
+      star::*public-mode*
+      (member path star:*auth-public-paths* :test #'string=)))
 
 (defun development-security-context (correlation-id deadline)
   (star.auth::%make-request-security-context
