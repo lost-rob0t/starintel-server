@@ -44,8 +44,11 @@ finishes loading the system.
 - =load-addon= loads the ASDF system and starts it once.
 - =unload-addon= invokes the stop hook and marks it stopped. Common Lisp code is
   intentionally not claimed to be physically unloaded.
-- =reload-addon= stops the active generation, force-loads the ASDF system, then
-  starts the replacement generation.
+- =reload-addon= stops the active generation, asks ASDF to load the current
+  system, then starts the replacement generation. ASDF rebuilds/reloads changed
+  components normally; the lifecycle does not pass =:force= because nested ASDF
+  operations (including test/tooling operations) reject incompatible force
+  settings.
 - if replacement load/start fails, the previous definition and start hook are
   restored when possible.
 - =addon-status= exposes lifecycle state and generation; =list-addons= returns
