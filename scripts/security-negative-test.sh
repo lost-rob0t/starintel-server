@@ -69,6 +69,16 @@ assert_healthy() {
   rm -f "$body"
 }
 
+server_info="${artifact_dir}/security-server-info.json"
+server_info_status="$(request_status "$server_info" "${server_url}/")"
+if [[ "$server_info_status" != "200" ]]; then
+  printf 'failed to read canonical server document version: HTTP %s\n' "$server_info_status" >&2
+  cat "$server_info" >&2 || true
+  exit 1
+fi
+document_version="$(jq --exit-status --raw-output '.doc_spec_version | select(type == "string" and length > 0)' "$server_info")"
+rm -f "$server_info"
+
 submit_document() {
   local id="$1"
   local dataset="$2"
@@ -78,19 +88,27 @@ submit_document() {
     jq -nc \
       --arg id "$id" \
       --arg dataset "$dataset" \
+      --arg version "$document_version" \
       --arg content "$content" \
-      '{_id:$id,dataset:$dataset,tenant_id:"default",dtype:"note",version:"0.9.0",content:$content}'
+      '{_id:$id,dataset:$dataset,tenant_id:"default",dtype:"note",version:$version,content:$content}'
   )"
-  curl \
-    --fail --silent --show-error \
-    --connect-timeout 3 \
-    --max-time "$curl_max_time" \
-    --request POST \
-    --header "$auth_header" \
-    --header 'Content-Type: application/json' \
-    --data "$body" \
-    "${server_url}/new/document/note" \
-    >/dev/null
+  local response="${artifact_dir}/security-submit-document.json"
+  local status
+  status="$(
+    request_status \
+      "$response" \
+      --request POST \
+      --header "$auth_header" \
+      --header 'Content-Type: application/json' \
+      --data "$body" \
+      "${server_url}/new/document/note"
+  )"
+  if [[ "$status" != 2* ]]; then
+    printf 'failed to create security fixture %s: HTTP %s\n' "$id" "$status" >&2
+    cat "$response" >&2 || true
+    return 1
+  fi
+  rm -f "$response"
 }
 
 wait_for_search_id() {
@@ -282,13 +300,21 @@ done < <(jq --raw-output '.json_ambiguous[] | [.name,.body] | @tsv' "$corpus")
 
 printf '==> security negative suite: invalid UTF-8 JSON\n'
 invalid_utf8="${artifact_dir}/security-invalid-utf8.bin"
-python3 - "$invalid_utf8" <<'PY'
+python3 - "$invalid_utf8" "$document_version" <<'PY'
 from pathlib import Path
+import json
 import sys
 
-Path(sys.argv[1]).write_bytes(
-    b'{"_id":"security-invalid-utf8","dataset":"security-a","dtype":"note","version":"0.9.0","content":"\xff"}'
-)
+path = Path(sys.argv[1])
+version = sys.argv[2]
+prefix = json.dumps({
+    "_id": "security-invalid-utf8",
+    "dataset": "security-a",
+    "dtype": "note",
+    "version": version,
+    "content": "",
+}, separators=(",", ":")).encode("utf-8")
+path.write_bytes(prefix[:-2] + b'\xff"}')
 PY
 utf8_body="${artifact_dir}/security-invalid-utf8-response.json"
 utf8_status="$(
@@ -311,13 +337,21 @@ rm -f "$invalid_utf8" "$utf8_body"
 printf '==> security negative suite: oversized request body\n'
 oversized_bytes="$(jq --exit-status --raw-output '.dos.oversized_body_bytes' "$corpus")"
 oversized_file="${artifact_dir}/security-oversized.json"
-python3 - "$oversized_file" "$oversized_bytes" <<'PY'
+python3 - "$oversized_file" "$oversized_bytes" "$document_version" <<'PY'
 from pathlib import Path
+import json
 import sys
 
 path = Path(sys.argv[1])
 target = int(sys.argv[2])
-prefix = b'{"_id":"security-oversized","dataset":"security-a","dtype":"note","version":"0.9.0","content":"'
+version = sys.argv[3]
+prefix = json.dumps({
+    "_id": "security-oversized",
+    "dataset": "security-a",
+    "dtype": "note",
+    "version": version,
+    "content": "",
+}, separators=(",", ":")).encode("utf-8")[:-2]
 suffix = b'"}'
 fill = max(1, target - len(prefix) - len(suffix))
 path.write_bytes(prefix + (b'A' * fill) + suffix)
@@ -344,20 +378,21 @@ assert_healthy
 printf '==> security negative suite: bounded bulk amplification\n'
 bulk_count="$(jq --exit-status --raw-output '.dos.bulk_document_count' "$corpus")"
 bulk_file="${artifact_dir}/security-bulk.json"
-python3 - "$bulk_file" "$bulk_count" <<'PY'
+python3 - "$bulk_file" "$bulk_count" "$document_version" <<'PY'
 from pathlib import Path
 import json
 import sys
 
 path = Path(sys.argv[1])
 count = int(sys.argv[2])
+version = sys.argv[3]
 docs = [
     {
         "_id": f"security-bulk-{index}",
         "dataset": "security-a",
         "tenant_id": "default",
         "dtype": "note",
-        "version": "0.9.0",
+        "version": version,
     }
     for index in range(count)
 ]
@@ -385,13 +420,14 @@ assert_healthy
 printf '==> security negative suite: deep JSON parser resilience\n'
 deep_depth="$(jq --exit-status --raw-output '.dos.deep_json_depth' "$corpus")"
 deep_file="${artifact_dir}/security-deep.json"
-python3 - "$deep_file" "$deep_depth" <<'PY'
+python3 - "$deep_file" "$deep_depth" "$document_version" <<'PY'
 from pathlib import Path
 import json
 import sys
 
 path = Path(sys.argv[1])
 depth = int(sys.argv[2])
+version = sys.argv[3]
 value = "leaf"
 for _ in range(depth):
     value = [value]
@@ -400,7 +436,7 @@ body = {
     "dataset": "security-a",
     "tenant_id": "default",
     "dtype": "note",
-    "version": "0.9.0",
+    "version": version,
     "content": value,
 }
 path.write_text(json.dumps(body, separators=(",", ":")), encoding="utf-8")
