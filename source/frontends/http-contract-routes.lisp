@@ -4,7 +4,7 @@
   (or (star::split-comma-setting
        (uiop:getenv "STAR_PUBLIC_SEARCH_DATASETS"))
       '("*"))
-  "Datasets visible through the unauthenticated v1 search surface.
+  "Datasets visible through the v1 public-read search surface.
 The default wildcard matches the public-server deployment model. Operators
 that mix public and private datasets must explicitly configure this list.")
 
@@ -14,10 +14,12 @@ that mix public and private datasets must explicitly configure this list.")
 (defparameter +public-search-max-results+ 50)
 (defparameter +public-stats-cache-seconds+ 15)
 
+;; Schema/discovery artifacts remain safe to fetch anonymously regardless of
+;; deployment mode. Data-bearing read endpoints are gated dynamically by
+;; STAR::*PUBLIC-MODE* in the authentication middleware, so init.lisp can
+;; switch them between anonymous and authenticated operation after system load.
 (dolist (path '("/openapi.json"
-                "/client-manifest.json"
-                "/api/v1/search"
-                "/api/v1/stats"))
+                "/client-manifest.json"))
   (pushnew path star:*auth-public-paths* :test #'string=))
 
 (defun mount-http-operation (operation-id handler)
