@@ -17,7 +17,7 @@
   (let ((scopes
           (remove-if
            (lambda (scope) (zerop (length scope)))
-           (cl-ppcre:split "[[:space:]]+" value))))
+           (cl-ppcre:split "\\s+" value))))
     (unless scopes
       (star.auth::signal-oauth-error
        "invalid_scope"
