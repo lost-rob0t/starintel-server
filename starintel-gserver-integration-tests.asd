@@ -11,6 +11,7 @@
                              (:file "valkey-lease-integration-test")
                              (:file "valkey-lease-review-regression-test")
                              (:file "http-api-test")
+                             (:file "http-public-api-integration-test")
                              (:file "run-integration-tests"))))
   :perform (test-op (o c)
              (declare (ignore o c))
