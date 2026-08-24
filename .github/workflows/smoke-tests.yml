@@ -76,6 +76,7 @@ jobs:
         env:
           COUCHDB_USER: admin
           COUCHDB_PASSWORD: password
+          COUCHDB_ERLANG_COOKIE: starintel-ci-clouseau
         options: >-
           --health-cmd "curl -f http://localhost:5984/_up || exit 1"
           --health-interval 10s
@@ -92,6 +93,20 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Start Clouseau search sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          couchdb_id="$(docker ps --filter 'ancestor=couchdb:3.5.2' --format '{{.ID}}' | head -n 1)"
+          test -n "$couchdb_id"
+          docker run --detach \
+            --name starintel-clouseau \
+            --network "container:$couchdb_id" \
+            --env ERLANG_COOKIE=starintel-ci-clouseau \
+            --entrypoint sh \
+            ghcr.io/jaydoane/clouseau:3.0.0 \
+            -c 'set -eu; printf "%s\n" "$ERLANG_COOKIE" > /opt/couchdb-search/.erlang.cookie; chmod 400 /opt/couchdb-search/.erlang.cookie; exec tini -- java -server -Dsun.net.inetaddr.ttl=30 -Dsun.net.inetaddr.negative.ttl=30 -classpath "/opt/couchdb-search/lib/*" com.cloudant.ziose.clouseau.Main /opt/couchdb-search/etc/app.conf'
+
       - name: Wait for services and initialize
         run: |
           echo "Waiting for RabbitMQ..."
@@ -99,6 +114,9 @@ jobs:
 
           echo "Waiting for CouchDB..."
           timeout 60 bash -c 'until curl -f http://localhost:5984/_up > /dev/null 2>&1; do sleep 2; done'
+
+          echo "Waiting for CouchDB Search / Clouseau..."
+          timeout 90 bash -c 'until curl --fail --silent --user admin:password http://localhost:5984/_node/_local/_versions | jq -e ".clouseau.version" >/dev/null; do docker logs --tail 20 starintel-clouseau || true; sleep 2; done'
 
           echo "Creating CouchDB database..."
           curl --fail --silent --show-error \
@@ -131,3 +149,7 @@ jobs:
           path: ${{ runner.temp }}/service-backed-integration-tests.log
           if-no-files-found: warn
           retention-days: 1
+
+      - name: Show Clouseau logs on failure
+        if: failure()
+        run: docker logs starintel-clouseau || true
