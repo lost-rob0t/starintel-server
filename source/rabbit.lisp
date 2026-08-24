@@ -158,8 +158,9 @@ compatibility queues must opt out explicitly."
      #'publish-outbox-event)))
 
 (defun transient-p (message)
+  "Inspect legacy transport metadata without weakening canonical mutation validation."
   (star.documents:document-transient-p
-   (decode-rabbit-document message)))
+   (decode-rabbit-document message :strict-schema-p nil)))
 
 (defun target-outcome-settlement (outcome)
   (case (star.actors:target-dispatch-outcome-status outcome)
