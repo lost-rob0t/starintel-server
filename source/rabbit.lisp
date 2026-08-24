@@ -63,12 +63,20 @@
    :password password
    :vhost vhost))
 
-(defun decode-rabbit-document (message &key route-dtype)
-  "Parse one Rabbit delivery and convert malformed payloads to permanent errors."
+(defun decode-rabbit-document
+    (message &key route-dtype (strict-schema-p t))
+  "Parse one Rabbit delivery and convert malformed payloads to permanent errors.
+
+Canonical document mutation queues enforce the StarIntel v0.9 schema. Legacy
+compatibility queues must opt out explicitly."
   (handler-case
-      (star.documents:ensure-document
-       (car message)
-       :route-dtype route-dtype)
+      (let ((document
+              (star.documents:ensure-document
+               (car message)
+               :route-dtype route-dtype)))
+        (when strict-schema-p
+          (star.documents:validate-v09-document document))
+        document)
     (star.consumers:delivery-processing-error (condition)
       (error condition))
     (error (condition)
@@ -182,7 +190,10 @@
   (target-outcome-settlement
    (star.actors:accept-target-delivery
     consumer
-    (decode-rabbit-document message :route-dtype "target"))))
+    (decode-rabbit-document
+     message
+     :route-dtype "target"
+     :strict-schema-p nil))))
 
 (defun consumer-retry-options ()
   (list
