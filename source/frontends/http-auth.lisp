@@ -47,8 +47,15 @@
   (+ (get-universal-time)
      (ceiling (parse-request-timeout-ms env) 1000)))
 
+(defun public-mode-read-path-p (path)
+  (member path
+          '("/api/v1/search" "/api/v1/stats")
+          :test #'string=))
+
 (defun public-auth-path-p (path)
-  (member path star:*auth-public-paths* :test #'string=))
+  (or (member path star:*auth-public-paths* :test #'string=)
+      (and star::*public-mode*
+           (public-mode-read-path-p path))))
 
 (defun development-security-context (correlation-id deadline)
   (star.auth::%make-request-security-context
