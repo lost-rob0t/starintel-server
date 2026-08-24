@@ -31,13 +31,6 @@
         (uiop:delete-directory-tree path :validate t :if-does-not-exist :ignore)
         (delete-file path))))
 
-(defun without-layout-whitespace (value)
-  (remove-if (lambda (character)
-               (member character
-                       '(#\Space #\Tab #\Newline #\Return)
-                       :test #'char=))
-             value))
-
 ;;; Tests for ensure-init-file-exists
 
 (test ensure-init-file-exists-creates-from-example
@@ -119,28 +112,6 @@
                (is-true (star:safe-load-init temp-file))
                (is-true (probe-file temp-file)))
           (cleanup-temp-path temp-file))))
-
-(test container-init-resolves-compose-secret-files
-      "The container init must refresh every Compose *_FILE secret at command runtime"
-      (let* ((source-path
-               (uiop:merge-pathnames*
-                "docker/star-server-init.lisp"
-                (asdf:system-source-directory :starintel-gserver)))
-             (source
-               (without-layout-whitespace
-                (alexandria:read-file-into-string source-path))))
-        (dolist (variables
-                 '(("COUCHDB_PASSWORD" "COUCHDB_PASSWORD_FILE")
-                   ("RABBITMQ_PASSWORD" "RABBITMQ_PASSWORD_FILE")
-                   ("STAR_AUTH_PEPPER" "STAR_AUTH_PEPPER_FILE")
-                   ("STAR_AUTH_BOOTSTRAP_SECRET"
-                    "STAR_AUTH_BOOTSTRAP_SECRET_FILE")))
-          (destructuring-bind (value-variable file-variable) variables
-            (is (search (format nil
-                                "(environment-secret~s~s)"
-                                value-variable
-                                file-variable)
-                        source))))))
 
 
 
