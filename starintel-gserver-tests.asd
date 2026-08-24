@@ -35,6 +35,8 @@
      (:file "http-capabilities-test")
      (:file "http-auth-test")
      (:file "auth-users-test")
+     (:file "oauth-authorization-code-test")
+     (:file "oauth-http-bearer-test")
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")

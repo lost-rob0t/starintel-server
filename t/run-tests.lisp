@@ -15,6 +15,7 @@
     http-boundary-tests
     http-auth-tests
     auth-users-tests
+    oauth-authorization-code-tests
     authorization-policy-tests
     gserver-client-tests
     runtime-lifecycle-tests))
