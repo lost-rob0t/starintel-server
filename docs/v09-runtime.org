@@ -1,0 +1,72 @@
+#+title: StarIntel v0.9 document runtime
+#+options: toc:2
+
+* Runtime contract
+
+StarIntel Server's canonical document mutation boundary is StarIntel document
+specification =0.9.0=.
+
+The server runtime and both dependency locks use the v0.9 implementation from
+=lost-rob0t/star-cl=. The checked-in schema lock remains the authority for the
+canonical schema revision.
+
+A canonical document carries two different version fields:
+
+- =schema_version= is the document specification revision and must be exactly
+  ="0.9.0"=;
+- =version= is the integer revision counter for the document itself.
+
+These fields are not interchangeable.
+
+* Validation
+
+Canonical HTTP and RabbitMQ document mutation paths validate the complete JSON
+document with the strict v0.9 validator supplied by =star-cl= before publish or
+persistence.
+
+The server does not maintain a fork of the JSON schema validator. The
+=star.documents:validate-v09-document= adapter locates the schema distributed
+with the loaded =starintel= ASDF system, converts the server's JSOWN value to the
+validator's Jzon representation, and translates validation failures into a
+stable server condition.
+
+HTTP schema failures return =422= and =invalid_document_schema=. A missing
+=schema_version= returns =schema_version_required=; a non-v0.9 revision returns
+=unsupported_schema_version=.
+
+RabbitMQ canonical ingest and update deliveries that fail v0.9 validation are
+classified as permanent schema-invalid deliveries and follow the existing
+retry/quarantine settlement policy rather than reaching CouchDB.
+
+* Canonical mutation paths
+
+Strict v0.9 validation is active on:
+
+- =POST /new/document/:dtype=;
+- =POST /documents/bulk=;
+- =documents.ingest.#= RabbitMQ deliveries;
+- =documents.update.#= RabbitMQ deliveries.
+
+The capability endpoint reports the document schema revision from the loaded
+=star-cl= runtime.
+
+* Legacy target compatibility
+
+=POST /new/target/:actor= and the existing target-dispatch Rabbit compatibility
+path still use the historical flat target envelope. They explicitly opt out of
+strict document-schema validation until the versioned target lifecycle API
+replaces that compatibility adapter.
+
+This exemption is narrow: it does not weaken canonical document or bulk ingest.
+New document producers should emit v0.9 documents and must not rely on the legacy
+target envelope as a general schema escape hatch.
+
+* Deployment consistency
+
+Both =flake.lock= and =qlfile.lock= must point at the same v0.9-capable =star-cl=
+revision. The source-contract test fails if either build path drifts back to the
+older 0.7/0.8 runtime.
+
+The Nix build remains the deployment authority. CI evaluates the flake, builds
+the server, and runs the hermetic and service-backed suites against the exact
+pull-request head.
