@@ -172,6 +172,8 @@ and packaging boundary, not a sandbox or an authorization boundary."
     (addon-state-for-system canonical-system)))
 
 (defun restore-addon-generation (definition system condition)
+  (bt:with-lock-held (*addon-lock*)
+    (setf (gethash system *addon-definitions*) definition))
   (handler-case
       (progn
         (invoke-addon-hook definition :start)
@@ -193,8 +195,8 @@ and packaging boundary, not a sandbox or an authorization boundary."
   "Reload one add-on transactionally at the lifecycle boundary.
 
 The old START/STOP function objects are retained until the replacement starts.
-If loading or starting the replacement fails, the old START hook is invoked to
-restore the previous live generation when possible."
+If loading or starting the replacement fails, the old definition and START
+hook are restored when possible."
   (let* ((canonical-system (canonical-addon-system system))
          (old-definition (ensure-addon-definition canonical-system))
          (old-state (addon-state-for-system canonical-system))
@@ -211,13 +213,14 @@ restore the previous live generation when possible."
           (asdf:load-system canonical-system :force t)
           (start-addon-definition (ensure-addon-definition canonical-system)))
       (error (condition)
-        (when was-active
-          (restore-addon-generation old-definition canonical-system condition))
-        (unless was-active
-          (bt:with-lock-held (*addon-lock*)
-            (update-addon-state canonical-system
-                                :status :failed
-                                :last-error (princ-to-string condition))))
+        (if was-active
+            (restore-addon-generation old-definition canonical-system condition)
+            (progn
+              (bt:with-lock-held (*addon-lock*)
+                (setf (gethash canonical-system *addon-definitions*) old-definition)
+                (update-addon-state canonical-system
+                                    :status :failed
+                                    :last-error (princ-to-string condition)))))
         (error 'addon-error
                :name canonical-system
                :message "reload failed"
