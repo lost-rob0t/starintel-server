@@ -1,0 +1,64 @@
+#+title: StarIntel OAuth 2 authorization-code provider
+
+* Ownership
+
+OAuth is a built-in StarIntel Server capability. External integrations such as
+Bixby consume it; they do not own alternate identities, token formats, scopes,
+or authorization policy.
+
+* Endpoints
+
+** GET /oauth/authorize
+
+Validates the OAuth protocol request before displaying the StarIntel login form.
+The current provider profile requires:
+
+- =response_type= exactly =code=;
+- registered =client_id=;
+- exact registered HTTPS =redirect_uri=;
+- space-delimited =scope= within the client's registered scope ceiling;
+- PKCE =code_challenge_method=S256=;
+- valid =code_challenge=;
+- opaque =state= is preserved when supplied.
+
+** POST /oauth/authorize
+
+Revalidates the protocol request, authenticates an existing StarIntel human
+user directly, issues a short-lived one-time authorization code, then redirects
+to the exact registered callback with only =code= and =state= query values.
+Password login does not mint an API key.
+
+** POST /oauth/token
+
+Accepts the authorization-code grant with client credentials, exact redirect,
+and PKCE verifier. Successful responses are JSON containing:
+
+#+begin_example
+{
+  "access_token": "<opaque bearer>",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "scope": "documents:read search:read"
+}
+#+end_example
+
+Token responses include =Cache-Control: no-store= and =Pragma: no-cache=.
+Authorization codes are one-time and replay fails with =invalid_grant=.
+
+The current core does not issue refresh tokens. Clients re-enter the
+authorization-code flow after access-token expiry. Do not fabricate refresh
+semantics in integration packages.
+
+* Security invariants
+
+- exact redirect matching; no wildcard/suffix matching;
+- S256 PKCE only for this profile;
+- client scope ceiling and user scope ceiling both apply;
+- failed user login is generic =access_denied=;
+- failed code/client/redirect/verifier checks never issue a token;
+- passwords, client secrets, authorization codes, verifiers, and bearer tokens
+  must not enter logs or diagnostic payloads;
+- public routability of OAuth protocol endpoints does not imply public access to
+  application data;
+- authenticated bearer requests continue through the existing StarIntel request
+  security context and authorization policy.
