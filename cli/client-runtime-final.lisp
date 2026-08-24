@@ -45,6 +45,9 @@
     (remhash options *request-option-deadlines*))
   options)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (fmakunbound 'make-request-options))
+
 (defun make-request-options (&key timeout-ms correlation-id idempotency-key headers)
   "Create request options with one absolute monotonic deadline when bounded."
   (let ((options
