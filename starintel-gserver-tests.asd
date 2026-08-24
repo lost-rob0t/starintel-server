@@ -6,7 +6,6 @@
   :serial t
   :depends-on
   (#:starintel-gserver
-   #:starintel-bixby
    #:starintel-gserver-client
    #:star-cli
    #:star-ui
