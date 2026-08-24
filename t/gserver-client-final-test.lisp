@@ -2,6 +2,23 @@
 
 (in-suite gserver-client-tests)
 
+(test request-options-constructor-survives-serial-build
+  "The public constructor must remain callable after the final runtime layer loads."
+  (is-true (fboundp 'star.api.client:make-request-options))
+  (let ((options
+          (star.api.client:make-request-options
+           :timeout-ms 1000
+           :correlation-id "constructor-regression"
+           :idempotency-key "constructor-idempotency"
+           :headers '(("X-Test" . "yes")))))
+    (is (= 1000 (star.api.client::request-options-timeout-ms options)))
+    (is (string= "constructor-regression"
+                 (star.api.client::request-options-correlation-id options)))
+    (is (string= "constructor-idempotency"
+                 (star.api.client::request-options-idempotency-key options)))
+    (is-true
+     (integerp (star.api.client::request-options-deadline options)))))
+
 ;; Redefine the fixture with an actual Common Lisp newline. In CL, "\n" is
 ;; the character n with an escape, not a C-style newline sequence.
 (test admin-password-source-is-explicit
