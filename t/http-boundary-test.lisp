@@ -6,13 +6,20 @@
 (in-suite http-boundary-tests)
 
 (defun make-boundary-document (&key (dtype "host")
-                                    (version starintel:+starintel-doc-version+)
+                                    (schema-version starintel:+starintel-doc-version+)
+                                    (version 1)
                                     (id "boundary-doc-1"))
-  (jsown:new-js
-    ("_id" id)
-    ("dataset" "boundary-tests")
-    ("dtype" dtype)
-    ("version" version)))
+  (let ((document
+          (starintel:encode
+           (starintel:new-host
+            "boundary-tests"
+            :id id
+            :hostname "boundary.example"
+            :ip "192.0.2.10"))))
+    (setf (jsown:val document "dtype") dtype
+          (jsown:val document "schema_version") schema-version
+          (jsown:val document "version") version)
+    document))
 
 (defun capture-http-input-error (thunk)
   (handler-case
@@ -69,6 +76,22 @@
     (is (string= "request_body_too_large"
                  (star.frontends.http-api:http-input-error-code condition)))))
 
+(test canonical-v09-document-passes-strict-validation
+  (let ((document (make-boundary-document)))
+    (is (eq document
+            (star.frontends.http-api:validate-document-input
+             document
+             :path-dtype "host")))))
+
+(test document-version-is-not-schema-version
+  (let ((document (make-boundary-document :version 7)))
+    (is (eq document
+            (star.frontends.http-api:validate-document-input
+             document
+             :path-dtype "host")))
+    (is (= 7 (jsown:val document "version")))
+    (is (string= "0.9.0" (jsown:val document "schema_version")))))
+
 (test missing-and-mismatched-dtype-return-422
   (let* ((missing (make-boundary-document))
          (mismatch (make-boundary-document :dtype "email")))
@@ -95,17 +118,55 @@
                    (star.frontends.http-api:http-input-error-code
                     mismatch-condition))))))
 
+(test missing-schema-version-is-rejected-even-when-version-looks-like-schema
+  (let ((document (make-boundary-document)))
+    (jsown:remkey document "schema_version")
+    (setf (jsown:val document "version") "0.9.0")
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:validate-document-input
+                document
+                :path-dtype "host")))))
+      (is (= 422
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "schema_version_required"
+                   (star.frontends.http-api:http-input-error-code condition))))))
+
 (test unsupported-schema-version-is-rejected
   (let ((condition
           (capture-http-input-error
            (lambda ()
              (star.frontends.http-api:validate-document-input
-              (make-boundary-document :version "999.0")
+              (make-boundary-document :schema-version "999.0")
               :path-dtype "host")))))
     (is (= 422
            (star.frontends.http-api:http-input-error-status condition)))
     (is (string= "unsupported_schema_version"
                  (star.frontends.http-api:http-input-error-code condition)))))
+
+(test undeclared-v09-field-is-rejected-by-canonical-schema
+  (let ((document (make-boundary-document)))
+    (setf (jsown:val document "legacy_flat_field") "not-v09")
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:validate-document-input
+                document
+                :path-dtype "host")))))
+      (is (= 422
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "invalid_document_schema"
+                   (star.frontends.http-api:http-input-error-code condition))))))
+
+(test legacy-target-adapter-can-skip-strict-document-schema
+  (let ((document (make-boundary-document :dtype "target")))
+    (setf (jsown:val document "actor") "legacy-actor")
+    (is (eq document
+            (star.frontends.http-api:validate-document-input
+             document
+             :path-dtype "target"
+             :strict-schema-p nil)))))
 
 (test client-status-envelopes-never-expose-tracebacks
   (let* ((star.frontends.http-api::*http-correlation-id* "corr-test")
