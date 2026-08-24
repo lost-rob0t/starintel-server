@@ -53,6 +53,7 @@
    (:file "authorization/policy")
    (:file "authorization/quota-policy")
    (:file "authorization/services")
+   (:file "addons")
    (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
