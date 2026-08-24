@@ -40,6 +40,8 @@
      (:file "authorization-policy-test")
      (:file "authorization-services-final-test")
      (:file "authorization-quota-test")
+     (:file "gserver-client-test")
+     (:file "gserver-client-final-test")
      (:file "runtime-lifecycle-test")
      (:file "run-tests"))))
   :perform

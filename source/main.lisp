@@ -9,6 +9,7 @@
     :long-name "init"
     :initial-value "./init.lisp"
     :env-vars '("STAR_SERVER_INIT_FILE")
+    :persistent t
     :key :init-value)))
 
 (defun initialize-runtime (init-file)
@@ -31,7 +32,8 @@
    :handler #'server/handler))
 
 (defun main/commands ()
-  (list (server/command)))
+  (list (server/command)
+        (admin/command)))
 
 (defun main/handler (command)
   (clingon:print-usage-and-exit command t))
