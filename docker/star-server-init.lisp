@@ -50,3 +50,58 @@
       (environment-integer
        "STAR_AUTH_MAX_REQUEST_TIMEOUT_MS"
        *auth-max-request-timeout-ms*))
+
+;; The standalone SBCL image is built before deployment environment variables
+;; exist. Refresh target-lease settings from the live process environment here,
+;; just like the server's CouchDB/Rabbit/auth settings above, so dumped build-time
+;; values never become runtime configuration.
+(setf star.authorization::*target-lease-valkey-host*
+      (or (uiop:getenv "VALKEY_HOST")
+          star.authorization::*target-lease-valkey-host*)
+      star.authorization::*target-lease-valkey-port*
+      (environment-integer
+       "VALKEY_PORT"
+       star.authorization::*target-lease-valkey-port*)
+      star.authorization::*target-lease-valkey-password-file*
+      (uiop:getenv "VALKEY_PASSWORD_FILE")
+      star.authorization::*target-lease-valkey-tls-p*
+      (not (null
+            (environment-boolean
+             "VALKEY_TLS"
+             star.authorization::*target-lease-valkey-tls-p*)))
+      star.authorization::*target-lease-valkey-ca-file*
+      (uiop:getenv "VALKEY_CA_FILE")
+      star.authorization::*target-lease-valkey-pool-size*
+      (environment-integer
+       "STAR_TARGET_LEASE_POOL_SIZE"
+       star.authorization::*target-lease-valkey-pool-size*)
+      star.authorization::*target-lease-valkey-pool-wait-timeout-ms*
+      (environment-integer
+       "STAR_TARGET_LEASE_POOL_WAIT_TIMEOUT_MS"
+       star.authorization::*target-lease-valkey-pool-wait-timeout-ms*)
+      star.authorization::*target-lease-valkey-operation-timeout-ms*
+      (environment-integer
+       "STAR_TARGET_LEASE_OPERATION_TIMEOUT_MS"
+       star.authorization::*target-lease-valkey-operation-timeout-ms*)
+      star.authorization::*target-lease-valkey-reconnect-attempts*
+      (environment-integer
+       "STAR_TARGET_LEASE_RECONNECT_ATTEMPTS"
+       star.authorization::*target-lease-valkey-reconnect-attempts*)
+      star.authorization::*target-lease-valkey-reconnect-backoff-ms*
+      (environment-integer
+       "STAR_TARGET_LEASE_RECONNECT_BACKOFF_MS"
+       star.authorization::*target-lease-valkey-reconnect-backoff-ms*)
+      star.authorization::*target-lease-idempotency-ttl-ms*
+      (environment-integer
+       "STAR_TARGET_LEASE_IDEMPOTENCY_TTL_MS"
+       star.authorization::*target-lease-idempotency-ttl-ms*)
+      star.authorization::*target-lease-default-ttl-ms*
+      (environment-integer
+       "STAR_TARGET_LEASE_DEFAULT_TTL_MS"
+       star.authorization::*target-lease-default-ttl-ms*)
+      star.authorization::*target-lease-maximum-lifetime-ms*
+      (environment-integer
+       "STAR_TARGET_LEASE_MAXIMUM_LIFETIME_MS"
+       star.authorization::*target-lease-maximum-lifetime-ms*)
+      star.authorization::*target-lease-service-instance-id*
+      (uiop:getenv "STAR_TARGET_LEASE_SERVICE_INSTANCE_ID"))

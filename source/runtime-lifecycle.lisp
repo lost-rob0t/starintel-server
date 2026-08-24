@@ -411,6 +411,8 @@
     (star.actors::stop-actors
      :timeout-seconds *shutdown-timeout-seconds*))
   (setf (star-runtime-actor-system runtime) nil)
+  (ignore-errors
+    (star.authorization:close-target-lease-service))
   (when (and (star-runtime-kernel runtime)
              (eq (star-runtime-kernel runtime) lparallel:*kernel*))
     (handler-case
@@ -448,6 +450,7 @@
           (star.databases.couchdb:init-db)
           (star.auth:initialize-auth-store)
           (star.auth:ensure-initial-user)
+          (star.authorization:initialize-target-lease-service)
           (setf (star-runtime-actor-system runtime)
                 (star.actors:start-actors
                  :rabbit-host star:*rabbit-address*

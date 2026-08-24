@@ -28,7 +28,7 @@
 
 (defun make-real-valkey-store
     (&key (label "lease") password-file tls-p tls-ca-file
-       (tls-verify-p t) (pool-size 8) (pool-wait-timeout-ms 500)
+       (tls-verify-p t) (pool-size 8) (pool-wait-timeout-ms 3000)
        (operation-timeout-ms 1000) (reconnect-attempts 2)
        (reconnect-backoff-ms 10) port key-prefix audit-hook metrics-hook
        after-submit-hook)
@@ -67,7 +67,7 @@
 
 (defun acquire-real-valkey-lease
     (store identity request-id owner &key (ttl-ms 1000)
-       (maximum-lifetime-ms 10000))
+       (maximum-lifetime-ms 10000) (deadline-ms 3000))
   (star.leases:acquire-lease
    store identity
    :owner-principal-id owner
@@ -80,7 +80,7 @@
    :job-id (format nil "job-~a" owner)
    :trace-id (format nil "trace-~a" owner)
    :metadata (jsown:new-js ("safe_label" "integration-test"))
-   :deadline (real-deadline)
+   :deadline (real-deadline deadline-ms)
    :request-id request-id))
 
 (defun close-real-valkey-store (store request-id)
@@ -160,15 +160,12 @@
                (star.leases:get-lease store identity
                                       :deadline (real-deadline)
                                       :request-id "acl-get"))))
-      ;; Unrelated key access is rejected by the key namespace restriction.
       (signals error
         (star.leases::valkey-test-command
          store (real-deadline) "SET" "unrelated:key" "rejected"))
-      ;; A command outside the allowed operational surface is rejected.
       (signals error
         (star.leases::valkey-test-command
          store (real-deadline) "FLUSHDB"))
-      ;; The active lease key is still present and intact after the denials.
       (is (plusp
            (length
             (star.leases::valkey-test-command
@@ -189,7 +186,6 @@
               store (real-deadline) "GET" active-key)))
       (is (eq :acquired (star.leases:lease-outcome-code first)))
       (is (= 1 (star.leases:lease-record-fencing-token record)))
-      ;; Corrupt the active key: overwrite without PX so it has no TTL.
       (star.leases::valkey-test-command
        store (real-deadline) "SET" active-key original-json)
       (is (= -1
@@ -202,18 +198,15 @@
         (let ((second
                 (acquire-real-valkey-lease
                  store identity "no-ttl-acquire-b" "owner-b")))
-          ;; Acquisition fails closed with the stable backend error result.
           (is (eq :backend-unavailable
                   (star.leases:lease-outcome-code second)))
           (is-false (star.leases:lease-outcome-lease second)))
-        ;; The original record was not deleted or replaced.
         (is (string= original-json
                      (star.leases::valkey-test-command
                       store (real-deadline) "GET" active-key)))
         (is (= -1
                (star.leases::valkey-test-command
                 store (real-deadline) "PTTL" active-key)))
-         ;; No new fencing token was allocated; the counter is unchanged.
          (is (string= fence-before
                       (star.leases::valkey-test-command
                        store (real-deadline) "GET" fence-key)))))))
@@ -236,25 +229,20 @@ validates current authority-bearing state before returning an active result."
       (is (string= "1"
                    (star.leases::valkey-test-command
                     store (real-deadline) "GET" fence-key)))
-      ;; Corrupt the active key: remove its TTL.
       (star.leases::valkey-test-command
        store (real-deadline) "SET" active-key original-json)
       (is (= -1
              (star.leases::valkey-test-command
               store (real-deadline) "PTTL" active-key)))
-      ;; Replay the exact same request ID.
       (let ((replay
               (acquire-real-valkey-lease
                store identity "idem-replay-a" "owner-a")))
-        ;; Must NOT return an authoritative active :acquired lease.
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code replay)))
         (is-false (star.leases:lease-outcome-lease replay)))
-      ;; Fencing counter is unchanged.
       (is (string= "1"
                    (star.leases::valkey-test-command
                     store (real-deadline) "GET" fence-key)))
-      ;; Active record was not replaced.
       (is (string= original-json
                    (star.leases::valkey-test-command
                     store (real-deadline) "GET" active-key))))))
@@ -272,13 +260,11 @@ reattach a TTL or silently repair/normalize the corrupt state."
              (star.leases::valkey-test-command
               store (real-deadline) "GET" active-key)))
       (is (eq :acquired (star.leases:lease-outcome-code first)))
-      ;; Corrupt: remove TTL.
       (star.leases::valkey-test-command
        store (real-deadline) "SET" active-key original-json)
       (is (= -1
              (star.leases::valkey-test-command
               store (real-deadline) "PTTL" active-key)))
-      ;; Attempt exact-owner renew.
       (let ((renew
               (star.leases:renew-lease
                store identity
@@ -290,11 +276,9 @@ reattach a TTL or silently repair/normalize the corrupt state."
                :request-id "no-ttl-renew")))
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code renew))))
-      ;; Active key was not repaired (still no TTL).
       (is (= -1
              (star.leases::valkey-test-command
               store (real-deadline) "PTTL" active-key)))
-      ;; Record was not replaced.
       (is (string= original-json
                    (star.leases::valkey-test-command
                     store (real-deadline) "GET" active-key))))))
@@ -314,12 +298,9 @@ is still positive."
              (star.leases::valkey-test-command
               store (real-deadline) "GET" active-key)))
       (is (eq :acquired (star.leases:lease-outcome-code first)))
-      ;; Tamper: rewrite the key with a long TTL but the original JSON whose
-      ;; expires_at is already past.
       (star.leases::valkey-test-command
        store (real-deadline) "SET" active-key original-json "PX" 60000)
       (sleep 0.3)
-      ;; Attempt exact-owner renew.
       (let ((renew
               (star.leases:renew-lease
                store identity
@@ -346,13 +327,11 @@ fenced commit must be rejected. No authoritative value is written."
              (star.leases::valkey-test-command
               store (real-deadline) "GET" active-key)))
       (is (eq :acquired (star.leases:lease-outcome-code first)))
-      ;; Corrupt: remove TTL.
       (star.leases::valkey-test-command
        store (real-deadline) "SET" active-key original-json)
       (is (= -1
              (star.leases::valkey-test-command
               store (real-deadline) "PTTL" active-key)))
-      ;; get-lease does not report an authoritative active lease.
       (let ((observed
               (star.leases:get-lease
                store identity :deadline (real-deadline)
@@ -360,13 +339,11 @@ fenced commit must be rejected. No authoritative value is written."
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code observed)))
         (is-false (star.leases:lease-outcome-lease observed)))
-      ;; Fenced commit is rejected.
       (is (eq :backend-unavailable
               (star.leases::valkey-fenced-set
                store identity record commit-key "corrupt-commit"
                :deadline (real-deadline)
                :request-id "ntgc-commit")))
-      ;; No authoritative value was written.
       (is-false
        (star.leases::valkey-test-command
         store (real-deadline) "GET" commit-key)))))
@@ -385,13 +362,11 @@ exact ownership tuple. This is cleanup, not authority continuation."
              (star.leases::valkey-test-command
               store (real-deadline) "GET" active-key)))
       (is (eq :acquired (star.leases:lease-outcome-code first)))
-      ;; Corrupt: remove TTL.
       (star.leases::valkey-test-command
        store (real-deadline) "SET" active-key original-json)
       (is (= -1
              (star.leases::valkey-test-command
               store (real-deadline) "PTTL" active-key)))
-      ;; Exact-owner release cleans up the corrupt key.
       (let ((released
               (star.leases:release-lease
                store identity
@@ -405,7 +380,6 @@ exact ownership tuple. This is cleanup, not authority continuation."
       (is-false
        (star.leases::valkey-test-command
         store (real-deadline) "GET" active-key))
-      ;; Re-acquire and test revoke on corrupt state.
       (let* ((second
                (acquire-real-valkey-lease store identity "ntcl-b" "owner-b"))
              (record-b (star.leases:lease-outcome-lease second))
@@ -458,18 +432,16 @@ leases. The list script applies the same corrupt-state rules as get-lease."
            (identity-b (real-valkey-identity "list-corrupt-b"))
            (active-key-a (star.leases::valkey-active-key store identity-a))
            (active-key-b (star.leases::valkey-active-key store identity-b)))
-      ;; Acquire two valid leases.
+      (declare (ignore active-key-b))
       (acquire-real-valkey-lease store identity-a "lc-a" "owner-a"
                                  :ttl-ms 5000 :maximum-lifetime-ms 10000)
       (acquire-real-valkey-lease store identity-b "lc-b" "owner-b"
                                  :ttl-ms 200 :maximum-lifetime-ms 1000)
-      ;; list-leases returns both while active.
       (let ((valid-list
               (star.leases:list-leases
                store :deadline (real-deadline) :request-id "lc-list-valid")))
         (is (eq :listed (star.leases:lease-outcome-code valid-list)))
         (is (= 2 (length (star.leases:lease-outcome-leases valid-list)))))
-      ;; Corrupt lease A: remove TTL.
       (let ((json-a
               (star.leases::valkey-test-command
                store (real-deadline) "GET" active-key-a)))
@@ -478,10 +450,7 @@ leases. The list script applies the same corrupt-state rules as get-lease."
       (is (= -1
              (star.leases::valkey-test-command
               store (real-deadline) "PTTL" active-key-a)))
-      ;; Wait for lease B to logically expire.
       (sleep 0.3)
-      ;; list-leases must return zero active leases: A is no-TTL (corrupt),
-      ;; B is logically expired.
       (let ((corrupt-list
               (star.leases:list-leases
                store :deadline (real-deadline) :request-id "lc-list-corrupt")))
@@ -496,21 +465,17 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
     (let* ((identity (real-valkey-identity "corrupt-record-target"))
            (first
              (acquire-real-valkey-lease store identity "cr-a" "owner-a"))
-           (record (star.leases:lease-outcome-lease first))
            (active-key (star.leases::valkey-active-key store identity))
            (original-json
              (star.leases::valkey-test-command
               store (real-deadline) "GET" active-key)))
       (is (eq :acquired (star.leases:lease-outcome-code first)))
-      ;; Tamper: replace the stored lock_key so the record's canonical identity
-      ;; no longer matches. The JSON is syntactically valid but contract-invalid.
       (let ((tampered (jsown:parse original-json)))
         (setf (jsown:val tampered "lock_key")
               "starintel:target-lease:v1:tampereddeadbeef")
         (star.leases::valkey-test-command
          store (real-deadline) "SET" active-key
          (jsown:to-json tampered) "PX" 5000))
-      ;; get-lease must return :backend-unavailable, not signal.
       (let ((result
               (star.leases:get-lease
                store identity :deadline (real-deadline)
@@ -518,7 +483,6 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code result)))
         (is-false (star.leases:lease-outcome-lease result)))
-      ;; list-leases must fail closed without signaling or returning records.
       (let ((listed
               (star.leases:list-leases
                store :deadline (real-deadline) :request-id "cr-list")))
@@ -527,7 +491,12 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
-  (with-real-valkey-store (store :label "concurrency" :pool-size 16)
+  "One hundred callers contend on the lease atomically; transport saturation is tested separately."
+  (with-real-valkey-store
+      (store :label "concurrency"
+       :pool-size 16
+       :pool-wait-timeout-ms 30000
+       :operation-timeout-ms 5000)
     (let ((identity (real-valkey-identity "concurrent-target"))
           (results nil)
           (results-lock (bt:make-lock "valkey-acquire-results")))
@@ -542,10 +511,17 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
                                   store identity
                                   (format nil "concurrent-request-~d"
                                           thread-index)
-                                  (format nil "owner-~d" thread-index))))
+                                  (format nil "owner-~d" thread-index)
+                                  :deadline-ms 30000)))
                            (bt:with-lock-held (results-lock)
                              (push result results)))))))))
         (mapc #'bt:join-thread threads))
+      (is (= 100 (length results)))
+      (is (every (lambda (result)
+                   (member (star.leases:lease-outcome-code result)
+                           '(:acquired :conflict)
+                           :test #'eq))
+                 results))
       (is (= 1 (count :acquired results
                       :key #'star.leases:lease-outcome-code)))
       (is (= 99 (count :conflict results

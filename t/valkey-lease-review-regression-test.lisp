@@ -112,3 +112,42 @@
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code listed)))
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
+
+(test submitted-response-timeout-poisons-the-valkey-connection
+  "Once a command is submitted, a response-read timeout must discard that
+connection. Reusing it can let the next operation consume the late response and
+misclassify authority, e.g. a GET observing an earlier acquire's CONFLICT."
+  (with-real-valkey-store (store :label "late-response" :pool-size 1)
+    ;; Establish one authenticated idle connection before replacing only the
+    ;; readiness probe used for the injected command.
+    (is (eq :healthy
+            (star.leases:lease-outcome-code
+             (star.leases:backend-health
+              store :deadline (real-deadline)
+              :request-id "late-response-prime"))))
+    (is (= 1 (star.leases::valkey-pool-open-count store)))
+    (let* ((symbol 'usocket:wait-for-input)
+           (original (symbol-function symbol)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function symbol)
+                   (lambda (&rest arguments)
+                     (declare (ignore arguments))
+                     nil))
+             (signals star.leases::valkey-command-failure
+               (star.leases::call-with-valkey-connection
+                store (real-deadline)
+                (lambda (connection)
+                  (star.leases::send-valkey-command
+                   store connection (real-deadline) t (list "PING")))))
+             ;; The submitted command's response can still arrive later. The
+             ;; socket must not remain reusable in the pool.
+             (is (= 0 (star.leases::valkey-pool-open-count store))))
+        (setf (symbol-function symbol) original)))
+    ;; Restoring normal I/O must create a fresh connection, not consume the
+    ;; timed-out command's late response.
+    (is (eq :healthy
+            (star.leases:lease-outcome-code
+             (star.leases:backend-health
+              store :deadline (real-deadline)
+              :request-id "late-response-fresh"))))))

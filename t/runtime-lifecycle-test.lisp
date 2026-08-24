@@ -68,6 +68,23 @@
           (star.runtime::*rabbit-readiness-probe* (constantly nil)))
       (is (not (star.runtime:runtime-ready-p runtime))))))
 
+(test runtime-stop-closes-owned-target-lease-service
+  "Stopping the server must close and clear the process-owned lease runtime."
+  (let* ((store (star.leases:make-memory-lease-store))
+         (service
+           (star.authorization:make-target-lease-service
+            store :service-instance-id "runtime-lifecycle-test"))
+         (lease-runtime
+           (star.authorization:target-lease-service-runtime service))
+         (runtime
+           (star.runtime::%make-star-runtime
+            :state :running
+            :started-at (get-universal-time))))
+    (let ((star.authorization:*target-lease-service* service))
+      (is (star.runtime:stop-runtime runtime :reason :test))
+      (is (null star.authorization:*target-lease-service*))
+      (is (star.leases:lease-runtime-closed-p lease-runtime)))))
+
 (test runtime-liveness-tracks-lifecycle-state
   (let ((runtime
           (star.runtime::%make-star-runtime
