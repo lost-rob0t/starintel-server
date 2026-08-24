@@ -78,7 +78,7 @@
 
 (test pkce-s256-rfc7636-vector-exchanges-once-and-maps-existing-human-principal
   (let* ((star:*auth-pepper* "oauth-test-pepper")
-         (star:*auth-clock* (lambda () 1000000))
+         (star.auth:*auth-clock* (lambda () 1000000))
          (store (make-oauth-test-world))
          (redirect "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb")
          (verifier "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
@@ -131,7 +131,7 @@
 
 (test code-exchange-rejects-client-secret-pkce-and-redirect-substitution
   (let* ((star:*auth-pepper* "oauth-test-pepper")
-         (star:*auth-clock* (lambda () 1000000))
+         (star.auth:*auth-clock* (lambda () 1000000))
          (store (make-oauth-test-world))
          (redirect "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb")
          (verifier "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
@@ -169,7 +169,7 @@
 (test expired-and-revoked-oauth-access-tokens-fail-uniformly
   (let* ((star:*auth-pepper* "oauth-test-pepper")
          (now 1000000)
-         (star:*auth-clock* (lambda () now))
+         (star.auth:*auth-clock* (lambda () now))
          (star:*oauth-access-token-seconds* 60)
          (store (make-oauth-test-world))
          (redirect "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb")
