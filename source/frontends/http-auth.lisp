@@ -66,7 +66,7 @@
   (let ((mode (string-downcase star:*auth-mode*)))
     (cond
       ((string= mode "api-key")
-       (star.auth:authenticate-authorization-header
+       (star.auth:authenticate-bearer-authorization-header
         (env-header-value env "Authorization")
         correlation-id
         deadline))
