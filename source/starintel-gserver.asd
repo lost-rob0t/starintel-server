@@ -76,6 +76,7 @@
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
    (:file "frontends/http-contract-routes")
+   (:file "security-hardening")
    (:file "runtime-lifecycle")
    (:file "admin")
    (:file "admin-final")

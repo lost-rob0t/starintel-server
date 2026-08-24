@@ -107,10 +107,9 @@
 (defparameter *auth-initial-username*
   (or (uiop:getenv "STAR_AUTH_INITIAL_USERNAME") "star"))
 (defparameter *auth-initial-password*
-  (or (environment-secret
-       "STAR_AUTH_INITIAL_PASSWORD"
-       "STAR_AUTH_INITIAL_PASSWORD_FILE")
-      "intel"))
+  (environment-secret
+   "STAR_AUTH_INITIAL_PASSWORD"
+   "STAR_AUTH_INITIAL_PASSWORD_FILE"))
 (defparameter *auth-password-min-length*
   (environment-integer "STAR_AUTH_PASSWORD_MIN_LENGTH" 12))
 (defparameter *auth-password-iterations*
