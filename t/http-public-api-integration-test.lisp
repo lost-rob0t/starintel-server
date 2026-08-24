@@ -4,7 +4,7 @@
 
 (test test-public-mode-defaults-enabled
   "Public-read mode is the default server posture unless init disables it."
-  (is star:*public-mode*))
+  (is star::*public-mode*))
 
 (test test-public-stats-does-not-require-authentication
   "The watch-safe aggregate stats endpoint is intentionally public by default."
@@ -47,10 +47,10 @@ server-owned authorization scope before the backend query executes."
 
 (test test-private-mode-requires-authentication-for-v1-search
   "Init can disable public reads without removing the versioned search route."
-  (let ((original star:*public-mode*))
+  (let ((original star::*public-mode*))
     (unwind-protect
          (progn
-           (setf star:*public-mode* nil)
+           (setf star::*public-mode* nil)
            (multiple-value-bind (status)
                (perform-request
                 (lambda ()
@@ -58,14 +58,14 @@ server-owned authorization scope before the backend query executes."
                    (make-test-url "/api/v1/search?q=test")
                    :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
              (is (= 401 status))))
-      (setf star:*public-mode* original))))
+      (setf star::*public-mode* original))))
 
 (test test-private-mode-requires-authentication-for-v1-stats
   "Init can disable anonymous aggregate stats for private deployments."
-  (let ((original star:*public-mode*))
+  (let ((original star::*public-mode*))
     (unwind-protect
          (progn
-           (setf star:*public-mode* nil)
+           (setf star::*public-mode* nil)
            (multiple-value-bind (status)
                (perform-request
                 (lambda ()
@@ -73,7 +73,7 @@ server-owned authorization scope before the backend query executes."
                    (make-test-url "/api/v1/stats")
                    :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
              (is (= 401 status))))
-      (setf star:*public-mode* original))))
+      (setf star::*public-mode* original))))
 
 (test test-public-search-rejects-caller-scope-overrides
   "Anonymous callers cannot supply tenant or dataset scope to widen search."
