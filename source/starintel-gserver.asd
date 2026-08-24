@@ -71,6 +71,7 @@
    (:file "frontends/http-boundary-core")
    (:file "frontends/http-capabilities")
    (:file "frontends/http-auth")
+   (:file "frontends/http-oauth-provider")
    (:file "frontends/http-authorization")
    (:file "frontends/http-bulk-jobs")
    (:file "frontends/http-boundary-routes")
