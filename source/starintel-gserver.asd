@@ -46,6 +46,8 @@
    (:file "auth/immutability")
    (:file "auth/store")
    (:file "auth/users")
+   (:file "auth/oauth-package")
+   (:file "auth/oauth")
    (:file "authorization/package")
    (:file "authorization/policy")
    (:file "authorization/quota-policy")
