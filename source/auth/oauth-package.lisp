@@ -30,6 +30,8 @@
           oauth-access-token-record-scopes
           oauth-access-token-record-expires-at
           oauth-access-token-record-revoked-at
+          valid-https-redirect-uri-p
+          normalize-oauth-scopes
           create-oauth-client
           oauth-client-metadata-json
           issue-oauth-authorization-code

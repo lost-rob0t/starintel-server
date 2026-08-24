@@ -1,0 +1,92 @@
+#+title: StarIntel Server add-ons
+
+* Contract
+
+StarIntel add-ons are optional ASDF systems loaded by the trusted operator from
+=init.lisp=. The experience stays Lisp-native:
+
+#+begin_src lisp
+(in-package :star)
+
+(load-addon :starintel-bixby)
+
+(uiop:symbol-call
+ :star.addons.bixby
+ :configure-bixby
+ :public-base-url "https://starintel.example"
+ :redirect-uri "https://example-capsule.oauth.aibixby.com/auth/external/cb")
+#+end_src
+
+An add-on is a packaging and lifecycle boundary. It is *not* a sandbox and it
+never bypasses StarIntel authentication/authorization. Loading an add-on has the
+same trust level as evaluating =init.lisp=.
+
+* ASDF package rule
+
+Each add-on is its own ASDF system and depends on =starintel-gserver= rather
+than being added to the core server dependency graph.
+
+During load the system calls:
+
+#+begin_src lisp
+(star:register-addon
+ :my-addon
+ :system :my-addon
+ :start #'start-my-addon
+ :stop #'stop-my-addon)
+#+end_src
+
+Registration is metadata only. =load-addon= starts the lifecycle after ASDF
+finishes loading the system.
+
+* Lifecycle
+
+- =load-addon= loads the ASDF system and starts it once.
+- =unload-addon= invokes the stop hook and marks it stopped. Common Lisp code is
+  intentionally not claimed to be physically unloaded.
+- =reload-addon= stops the active generation, asks ASDF to load the current
+  system, then starts the replacement generation. ASDF rebuilds/reloads changed
+  components normally; the lifecycle does not pass =:force= because nested ASDF
+  operations (including test/tooling operations) reject incompatible force
+  settings.
+- if replacement load/start fails, the previous definition and start hook are
+  restored when possible.
+- =addon-status= exposes lifecycle state and generation; =list-addons= returns
+  registered runtime state.
+
+Add-on start/stop hooks must be idempotent with respect to their own owned
+resources. They must unregister routes/hooks/timers they create before returning
+from stop.
+
+* Bixby boundary
+
+=starintel-bixby= is the first packaged add-on.
+
+Core server owns:
+- StarIntel human users;
+- OAuth client/code/access-token storage;
+- =/oauth/authorize= and =/oauth/token=;
+- PKCE, scope attenuation and bearer authentication;
+- downstream authorization.
+
+The Bixby add-on owns only Samsung-specific configuration such as public OAuth
+endpoint projection, callback URI, and the explicit operator helper that creates
+a normal core OAuth client. It does not create a second identity/token/scope
+system, and reload never creates new client secrets automatically.
+
+* Stable secret rule
+
+Functions that mint credentials or other one-time secret material must never run
+implicitly from add-on =start= or =reload=. For Bixby, client registration is an
+explicit operator action:
+
+#+begin_src lisp
+(multiple-value-bind (client secret)
+    (uiop:symbol-call
+     :star.addons.bixby
+     :create-bixby-oauth-client
+     :include-operations t)
+  ;; Store SECRET in Samsung Developer Center / secret storage immediately.
+  ;; It is not available from metadata later.
+  (values client secret))
+#+end_src
