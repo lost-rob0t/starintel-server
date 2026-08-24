@@ -2,6 +2,11 @@
 
 (in-suite http-api-tests)
 
+(defun report-public-api-response (case status body)
+  (format t "~&[public-api-integration] ~a status=~a body=~s~%"
+          case status body)
+  (finish-output))
+
 (test test-public-mode-defaults-enabled
   "Public-read mode is the default server posture unless init disables it."
   (is star::*public-mode*))
@@ -14,6 +19,7 @@
          (dex:get
           (make-test-url "/api/v1/stats")
           :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+    (report-public-api-response "public-stats" status body)
     (is (= 200 status))
     (let* ((document (jsown:parse body))
            (data (jsown:val document "data"))
@@ -42,7 +48,7 @@ server-owned authorization scope before the backend query executes."
          (dex:get
           (make-test-url "/api/v1/search?q=public-search-needle&limit=5")
           :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
-    (declare (ignore body))
+    (report-public-api-response "public-search" status body)
     (is (= 200 status))))
 
 (test test-private-mode-requires-authentication-for-v1-search
@@ -51,12 +57,13 @@ server-owned authorization scope before the backend query executes."
     (unwind-protect
          (progn
            (setf star::*public-mode* nil)
-           (multiple-value-bind (status)
+           (multiple-value-bind (status body)
                (perform-request
                 (lambda ()
                   (dex:get
                    (make-test-url "/api/v1/search?q=test")
                    :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+             (report-public-api-response "private-mode-search" status body)
              (is (= 401 status))))
       (setf star::*public-mode* original))))
 
@@ -66,12 +73,13 @@ server-owned authorization scope before the backend query executes."
     (unwind-protect
          (progn
            (setf star::*public-mode* nil)
-           (multiple-value-bind (status)
+           (multiple-value-bind (status body)
                (perform-request
                 (lambda ()
                   (dex:get
                    (make-test-url "/api/v1/stats")
                    :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+             (report-public-api-response "private-mode-stats" status body)
              (is (= 401 status))))
       (setf star::*public-mode* original))))
 
@@ -85,12 +93,15 @@ server-owned authorization scope before the backend query executes."
            (dex:get
             (make-test-url (format nil "/api/v1/search?~a" query))
             :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+      (report-public-api-response
+       (format nil "scope-override ~a" query)
+       status body)
       (is (= 400 status))
       (is (search "public_scope_is_server_owned" body)))))
 
 (test test-public-api-does-not-open-document-ingest
   "Making the read plane public must not make document ingestion anonymous."
-  (multiple-value-bind (status)
+  (multiple-value-bind (status body)
       (perform-request
        (lambda ()
          (dex:post
@@ -98,11 +109,12 @@ server-owned authorization scope before the backend query executes."
           :content "{}"
           :headers '(("Content-Type" . "application/json")
                      ("X-Test-Auth-Mode" . "unauthenticated")))))
+    (report-public-api-response "anonymous-document-ingest" status body)
     (is (= 401 status))))
 
 (test test-public-api-does-not-open-target-dispatch
   "Target dispatch remains authenticated even when public search is enabled."
-  (multiple-value-bind (status)
+  (multiple-value-bind (status body)
       (perform-request
        (lambda ()
          (dex:post
@@ -110,4 +122,5 @@ server-owned authorization scope before the backend query executes."
           :content "{}"
           :headers '(("Content-Type" . "application/json")
                      ("X-Test-Auth-Mode" . "unauthenticated")))))
+    (report-public-api-response "anonymous-target-dispatch" status body)
     (is (= 401 status))))
