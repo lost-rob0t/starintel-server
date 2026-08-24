@@ -27,7 +27,8 @@
 
 (defvar *addon-definitions* (make-hash-table :test #'equal))
 (defvar *addon-states* (make-hash-table :test #'equal))
-(defvar *addon-lock* (bt:make-lock "starintel-addons"))
+(defvar *addon-lock* (bt:make-lock "starintel-addon-registry"))
+(defvar *addon-lifecycle-lock* (bt:make-lock "starintel-addon-lifecycle"))
 
 (defun canonical-addon-name (name)
   (string-downcase
@@ -70,10 +71,14 @@ add-on and therefore remains safe to repeat during ASDF reload."
     canonical-name))
 
 (defun addon-definition-for-system (system)
-  (gethash (canonical-addon-system system) *addon-definitions*))
+  (let ((canonical-system (canonical-addon-system system)))
+    (bt:with-lock-held (*addon-lock*)
+      (gethash canonical-system *addon-definitions*))))
 
 (defun addon-state-for-system (system)
-  (gethash (canonical-addon-system system) *addon-states*))
+  (let ((canonical-system (canonical-addon-system system)))
+    (bt:with-lock-held (*addon-lock*)
+      (gethash canonical-system *addon-states*))))
 
 (defun ensure-addon-definition (system)
   (or (addon-definition-for-system system)
@@ -82,6 +87,7 @@ add-on and therefore remains safe to repeat during ASDF reload."
              :message "ASDF system loaded but did not register a StarIntel add-on")))
 
 (defun update-addon-state (system &key status generation started-at stopped-at last-error)
+  "Mutate registry state. Caller must hold *ADDON-LOCK*."
   (let* ((canonical-system (canonical-addon-system system))
          (state
            (or (gethash canonical-system *addon-states*)
@@ -112,23 +118,15 @@ add-on and therefore remains safe to repeat during ASDF reload."
                                      :started-at (get-universal-time)
                                      :last-error nil)))
       (incf (addon-state-generation state))
-      state)))
+      (copy-addon-state state))))
 
-(defun load-addon (system)
-  "Load SYSTEM through ASDF and start its registered StarIntel lifecycle.
-
-This is the intended init.lisp experience:
-
-  (load-addon :starintel-bixby)
-
-Add-ons are trusted operator code, exactly like init.lisp; this is a lifecycle
-and packaging boundary, not a sandbox or an authorization boundary."
+(defun %load-addon (system)
   (let ((canonical-system (canonical-addon-system system)))
     (handler-case
         (progn
           (asdf:load-system canonical-system)
           (let ((definition (ensure-addon-definition canonical-system))
-                (state (addon-state-for-system canonical-system)))
+                (state (addon-status canonical-system)))
             (if (and state (eq :active (addon-state-status state)))
                 state
                 (start-addon-definition definition))))
@@ -142,11 +140,23 @@ and packaging boundary, not a sandbox or an authorization boundary."
                :message "load/start failed"
                :cause condition)))))
 
-(defun unload-addon (system)
-  "Stop a loaded add-on without pretending Common Lisp code can be unloaded."
+(defun load-addon (system)
+  "Load SYSTEM through ASDF and start its registered StarIntel lifecycle.
+
+This is the intended init.lisp experience:
+
+  (load-addon :starintel-bixby)
+
+Add-ons are trusted operator code, exactly like init.lisp; this is a lifecycle
+and packaging boundary, not a sandbox or an authorization boundary. Lifecycle
+operations are serialized so load/stop/reload cannot interleave."
+  (bt:with-lock-held (*addon-lifecycle-lock*)
+    (%load-addon system)))
+
+(defun %unload-addon (system)
   (let* ((canonical-system (canonical-addon-system system))
          (definition (addon-definition-for-system canonical-system))
-         (state (addon-state-for-system canonical-system)))
+         (state (addon-status canonical-system)))
     (unless definition
       (error 'addon-error
              :name canonical-system
@@ -169,7 +179,12 @@ and packaging boundary, not a sandbox or an authorization boundary."
                  :name canonical-system
                  :message "stop failed"
                  :cause condition))))
-    (addon-state-for-system canonical-system)))
+    (addon-status canonical-system)))
+
+(defun unload-addon (system)
+  "Stop a loaded add-on without pretending Common Lisp code can be unloaded."
+  (bt:with-lock-held (*addon-lifecycle-lock*)
+    (%unload-addon system)))
 
 (defun restore-addon-generation (definition system condition)
   (bt:with-lock-held (*addon-lock*)
@@ -191,18 +206,23 @@ and packaging boundary, not a sandbox or an authorization boundary."
                             (format nil "reload failed: ~a; rollback failed: ~a"
                                     condition rollback-condition))))))
 
-(defun reload-addon (system)
-  "Reload one add-on transactionally at the lifecycle boundary.
-
-The old START/STOP function objects are retained until the replacement starts.
-If loading or starting the replacement fails, the old definition and START
-hook are restored when possible."
+(defun %reload-addon (system)
   (let* ((canonical-system (canonical-addon-system system))
          (old-definition (ensure-addon-definition canonical-system))
-         (old-state (addon-state-for-system canonical-system))
+         (old-state (addon-status canonical-system))
          (was-active (and old-state (eq :active (addon-state-status old-state)))))
     (when was-active
-      (invoke-addon-hook old-definition :stop)
+      (handler-case
+          (invoke-addon-hook old-definition :stop)
+        (error (condition)
+          (bt:with-lock-held (*addon-lock*)
+            (update-addon-state canonical-system
+                                :status :failed
+                                :last-error (princ-to-string condition)))
+          (error 'addon-error
+                 :name canonical-system
+                 :message "reload stop phase failed"
+                 :cause condition)))
       (bt:with-lock-held (*addon-lock*)
         (update-addon-state canonical-system
                             :status :reloading
@@ -215,20 +235,31 @@ hook are restored when possible."
       (error (condition)
         (if was-active
             (restore-addon-generation old-definition canonical-system condition)
-            (progn
-              (bt:with-lock-held (*addon-lock*)
-                (setf (gethash canonical-system *addon-definitions*) old-definition)
-                (update-addon-state canonical-system
-                                    :status :failed
-                                    :last-error (princ-to-string condition)))))
+            (bt:with-lock-held (*addon-lock*)
+              (setf (gethash canonical-system *addon-definitions*) old-definition)
+              (update-addon-state canonical-system
+                                  :status :failed
+                                  :last-error (princ-to-string condition))))
         (error 'addon-error
                :name canonical-system
                :message "reload failed"
                :cause condition)))))
 
+(defun reload-addon (system)
+  "Reload one add-on transactionally at the lifecycle boundary.
+
+The old START/STOP function objects are retained until the replacement starts.
+If loading or starting the replacement fails, the old definition and START
+hook are restored when possible. ASDF dependencies own dependency ordering;
+START/STOP hooks must not recursively invoke add-on lifecycle operations."
+  (bt:with-lock-held (*addon-lifecycle-lock*)
+    (%reload-addon system)))
+
 (defun addon-status (system)
-  (let ((state (addon-state-for-system system)))
-    (and state (copy-addon-state state))))
+  (let ((canonical-system (canonical-addon-system system)))
+    (bt:with-lock-held (*addon-lock*)
+      (let ((state (gethash canonical-system *addon-states*)))
+        (and state (copy-addon-state state))))))
 
 (defun list-addons ()
   (bt:with-lock-held (*addon-lock*)
