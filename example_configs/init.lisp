@@ -30,6 +30,9 @@
 (setf *http-api-address*
       (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") "127.0.0.1")
       *http-api-port* 5000
+      ;; Public-read mode is the default. Set NIL for authenticated-only
+      ;; /api/v1/search and /api/v1/stats deployments.
+      *public-mode* t
       *bulk-max-documents* 500)
 
 ;;; Concurrency ------------------------------------------------------------
