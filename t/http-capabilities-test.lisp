@@ -105,7 +105,8 @@
                (jsown:val target-create "scopes")))))
 
 (test api-v1-public-search-uses-server-owned-scope
-  (let ((star:*http-public-search-datasets* '("public-a" "public-b")))
+  (let ((star.frontends.http-api::*public-search-datasets*
+          '("public-a" "public-b")))
     (let ((query
             (star.frontends.http-api::public-search-authorized-query
              "alice")))
@@ -114,7 +115,7 @@
       (is (null (search "private-dataset" query))))))
 
 (test api-v1-public-search-wildcard-mode-is-explicit
-  (let ((star:*http-public-search-datasets* '("*")))
+  (let ((star.frontends.http-api::*public-search-datasets* '("*")))
     (is (string=
          "(alice)"
          (star.frontends.http-api::public-search-authorized-query
