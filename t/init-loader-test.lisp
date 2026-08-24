@@ -53,7 +53,7 @@
 
 (test ensure-init-file-exists-creates-minimal-if-no-example
       "Test that ensure-init-file-exists creates minimal config if example missing"
-      (let ((temp-file (pathname (format nil "/tmp/test-init-~A.lisp" (get-universal-time)))))
+      (let ((temp-file (pathname (format nil "/tmp/test-init-~A.lisp" (get-universal-time))))
             ;; Temporarily shadow the system source directory to simulate missing example
             (original-dir (asdf:system-source-directory :starintel-gserver)))
         (unwind-protect
