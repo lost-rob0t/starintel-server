@@ -137,6 +137,9 @@ api_key="$(jq --exit-status --raw-output '.api_key' <<<"$bootstrap_response")"
 [[ "$api_key" == star_sk_v1_* ]]
 auth_header="Authorization: Bearer ${api_key}"
 
+set_stage "verify-admin-cli-file-secrets"
+docker compose exec -T star-server /bin/star-server admin user list >/dev/null
+
 set_stage "verify-unauthenticated-denial"
 unauthenticated_status="$(
   http_status \

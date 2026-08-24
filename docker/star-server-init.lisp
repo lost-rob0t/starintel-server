@@ -9,13 +9,15 @@
       *couchdb-user*
       (or (uiop:getenv "COUCHDB_USER") *couchdb-user*)
       *couchdb-password*
-      (or (uiop:getenv "COUCHDB_PASSWORD") *couchdb-password*)
+      (or (environment-secret "COUCHDB_PASSWORD" "COUCHDB_PASSWORD_FILE")
+          *couchdb-password*)
       *rabbit-address*
       (or (uiop:getenv "RABBITMQ_ADDRESS") *rabbit-address*)
       *rabbit-user*
       (or (uiop:getenv "RABBITMQ_USER") *rabbit-user*)
       *rabbit-password*
-      (or (uiop:getenv "RABBITMQ_PASSWORD") *rabbit-password*)
+      (or (environment-secret "RABBITMQ_PASSWORD" "RABBITMQ_PASSWORD_FILE")
+          *rabbit-password*)
       *http-api-address*
       (or (uiop:getenv "HTTP_API_LISTEN_ADDRESS") *http-api-address*)
       *http-cors-allowed-origins*
@@ -24,9 +26,12 @@
       *auth-mode*
       (or (uiop:getenv "STAR_AUTH_MODE") *auth-mode*)
       *auth-pepper*
-      (or (uiop:getenv "STAR_AUTH_PEPPER") *auth-pepper*)
+      (or (environment-secret "STAR_AUTH_PEPPER" "STAR_AUTH_PEPPER_FILE")
+          *auth-pepper*)
       *auth-bootstrap-secret*
-      (or (uiop:getenv "STAR_AUTH_BOOTSTRAP_SECRET")
+      (or (environment-secret
+           "STAR_AUTH_BOOTSTRAP_SECRET"
+           "STAR_AUTH_BOOTSTRAP_SECRET_FILE")
           *auth-bootstrap-secret*)
       *auth-dev-bypass*
       (not (null
