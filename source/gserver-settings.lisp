@@ -130,7 +130,8 @@ STAR_PUBLIC_MODE=false before init loads) for authenticated-only deployments.")
   (environment-integer "STAR_AUTH_LOGIN_SESSION_SECONDS" 86400))
 
 (defparameter *auth-public-paths*
-  '("/health" "/" "/auth/bootstrap" "/auth/login"))
+  '("/health" "/" "/auth/bootstrap" "/auth/login"
+    "/oauth/authorize" "/oauth/token"))
 
 ;;;; RabbitMQ
 (defparameter *rabbit-address*
