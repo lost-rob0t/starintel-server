@@ -19,7 +19,7 @@
   (string-right-trim "/" value))
 
 (defun normalize-redirect-uri (value)
-  (unless (star.auth::valid-https-redirect-uri-p value)
+  (unless (star.auth:valid-https-redirect-uri-p value)
     (error "Bixby redirect URI must be an absolute HTTPS callback URI"))
   value)
 
@@ -34,10 +34,10 @@ owned by STAR.AUTH."
   (when redirect-uri
     (setf *redirect-uri* (normalize-redirect-uri redirect-uri)))
   (when read-scopes
-    (setf *read-scopes* (star.auth::normalize-oauth-scopes read-scopes)))
+    (setf *read-scopes* (star.auth:normalize-oauth-scopes read-scopes)))
   (when operations-scopes
     (setf *operations-scopes*
-          (star.auth::normalize-oauth-scopes operations-scopes)))
+          (star.auth:normalize-oauth-scopes operations-scopes)))
   (bixby-oauth-settings))
 
 (defun require-bixby-config ()
