@@ -83,6 +83,7 @@
    (:file "authorization/services-final"))
   :depends-on
   (#:starintel
+   #:com.inuoe.jzon
    #:cl-couch
    #:serapeum
    #:alexandria
