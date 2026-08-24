@@ -5,6 +5,9 @@
 
 (in-suite addon-system-tests)
 
+(defun call-bixby (name &rest arguments)
+  (apply #'uiop:symbol-call :star.addons.bixby name arguments))
+
 (test bixby-is-an-optional-asdf-addon-over-core-oauth
   (let ((before (star:addon-status :starintel-bixby)))
     (when (and before
@@ -14,10 +17,11 @@
          (generation (star:addon-state-generation loaded)))
     (is (eq :active (star:addon-state-status loaded)))
     (is (string= "starintel-bixby" (star:addon-state-system loaded)))
-    (star.addons.bixby:configure-bixby
+    (call-bixby
+     :configure-bixby
      :public-base-url "https://api.starintel.example/"
      :redirect-uri "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb")
-    (let ((settings (star.addons.bixby:bixby-oauth-settings)))
+    (let ((settings (call-bixby :bixby-oauth-settings)))
       (is (string= "https://api.starintel.example/oauth/authorize"
                    (getf settings :authorize-endpoint)))
       (is (string= "https://api.starintel.example/oauth/token"
@@ -34,13 +38,15 @@
   (let* ((star:*auth-pepper* "bixby-addon-test-pepper")
          (store (make-oauth-test-world)))
     (star:load-addon :starintel-bixby)
-    (star.addons.bixby:configure-bixby
+    (call-bixby
+     :configure-bixby
      :public-base-url "https://api.starintel.example"
      :redirect-uri "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb"
      :read-scopes '("documents:read" "search:read")
      :operations-scopes '("targets:dispatch"))
     (multiple-value-bind (client secret)
-        (star.addons.bixby:create-bixby-oauth-client
+        (call-bixby
+         :create-bixby-oauth-client
          :include-operations t
          :store store)
       (is (plusp (length secret)))
