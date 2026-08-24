@@ -169,7 +169,7 @@
              request "alice" "definitely-wrong-password" :store store)
           (star.auth:oauth-error (condition)
             (is (null (search "definitely-wrong-password"
-                              (princ-to-string condition)))))))))))
+                              (princ-to-string condition))))))))))
 
 (test oauth-provider-token-exchange-is-no-store-bearer-json-and-one-time
   (let* ((star:*auth-pepper* "oauth-provider-test-pepper")
