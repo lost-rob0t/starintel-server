@@ -151,6 +151,20 @@ EOF
         dontStrip = true;
       };
 
+      starintel-bixby = sbcl'.buildASDFSystem {
+        pname = "starintel-bixby";
+        version = "0.1.0";
+        src = ./.;
+
+        lispLibs = with sbcl'.pkgs; [
+          starintel-gserver
+        ];
+
+        systems = [ "starintel-bixby" ];
+        asdFilesToKeep = [ "starintel-bixby.asd" ];
+        dontStrip = true;
+      };
+
       starintel-gserver-tests = sbcl'.buildASDFSystem {
         pname = "starintel-gserver-tests";
         version = "0.1.0";
@@ -158,6 +172,7 @@ EOF
 
         lispLibs = with sbcl'.pkgs; [
           starintel-gserver
+          starintel-bixby
           starintel-gserver-client
           star-cli-lib
           star-ui-lib
@@ -262,7 +277,8 @@ EOF
         dontStrip = true;
       };
 
-      sbcl-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver ]);
+      sbcl-wrapped = sbcl'.withPackages
+        (ps: with ps; [ starintel-gserver starintel-bixby ]);
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver-tests ]);
       sbcl-integration-test-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-gserver-integration-tests ]);
@@ -524,6 +540,7 @@ PY
         };
 
         starintel-gserver = starintel-gserver;
+        starintel-bixby = starintel-bixby;
         starintel-gserver-tests = starintel-gserver-tests;
         starintel-gserver-integration-tests =
           starintel-gserver-integration-tests;
