@@ -114,4 +114,20 @@ jobs:
           COUCHDB_PASSWORD: password
           RABBITMQ_USER: guest
           RABBITMQ_PASSWORD: guest
-        run: nix run .#star-integration-tests
+        shell: bash
+        run: |
+          set +e
+          log_file="$RUNNER_TEMP/service-backed-integration-tests.log"
+          nix run .#star-integration-tests >"$log_file" 2>&1
+          status=$?
+          tail -n 400 "$log_file"
+          exit "$status"
+
+      - name: Upload service-backed integration-test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-backed-integration-tests-${{ github.sha }}
+          path: ${{ runner.temp }}/service-backed-integration-tests.log
+          if-no-files-found: warn
+          retention-days: 1
