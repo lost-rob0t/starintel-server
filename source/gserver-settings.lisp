@@ -103,6 +103,12 @@
 (defparameter *auth-max-request-timeout-ms*
   (environment-integer "STAR_AUTH_MAX_REQUEST_TIMEOUT_MS" 600000))
 
+;;;; OAuth authorization-code credentials
+(defparameter *oauth-authorization-code-seconds*
+  (environment-integer "STAR_OAUTH_AUTHORIZATION_CODE_SECONDS" 300))
+(defparameter *oauth-access-token-seconds*
+  (environment-integer "STAR_OAUTH_ACCESS_TOKEN_SECONDS" 900))
+
 ;;;; Human users
 (defparameter *auth-initial-username*
   (or (uiop:getenv "STAR_AUTH_INITIAL_USERNAME") "star"))
