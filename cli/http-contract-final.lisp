@@ -38,6 +38,47 @@
 (refresh-operation-response-schema "auth.credentials.revoke" (credential-status-schema))
 (refresh-operation-response-schema "auth.credentials.disable" (credential-status-schema))
 
+(defun upsert-http-operation (operation)
+  "Replace OPERATION by ID or append it once. Safe across interactive reloads."
+  (setf *http-operations*
+        (append
+         (remove (http-operation-id operation)
+                 *http-operations*
+                 :key #'http-operation-id
+                 :test #'string=)
+         (list operation)))
+  operation)
+
+(upsert-http-operation
+ (make-http-operation
+  :id "public.search.get"
+  :client-name "public-search"
+  :method :get
+  :path "/api/v1/search"
+  :summary "Search the server-owned public intelligence scope"
+  :tags '("public" "search")
+  :authority :public
+  :responses
+  (list
+   (response 200 "Public search result." (generic-object-schema))
+   (response 400 "Invalid public search request." +error-schema+)
+   (response 500 "Search backend failure." +error-schema+))))
+
+(upsert-http-operation
+ (make-http-operation
+  :id "stats.get"
+  :client-name "public-stats"
+  :method :get
+  :path "/api/v1/stats"
+  :summary "Compact aggregate server statistics for public clients"
+  :tags '("public" "system" "stats")
+  :authority :public
+  :responses
+  (list
+   (response 200 "Aggregate server statistics." (generic-object-schema))
+   (response 500 "Statistics backend failure." +error-schema+)
+   (response 504 "Statistics backend timeout." +error-schema+))))
+
 (defun remove-json-object-key (object key)
   (when (and (consp object) (eq (first object) :obj))
     (setf (cdr object)
