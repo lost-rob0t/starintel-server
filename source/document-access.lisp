@@ -1,5 +1,21 @@
 (in-package :star.documents)
 
+(define-condition document-schema-validation-error (error)
+  ((category
+    :initarg :category
+    :reader document-schema-validation-category)
+   (reason
+    :initarg :reason
+    :reader document-schema-validation-reason))
+  (:report
+   (lambda (condition stream)
+     (format stream "StarIntel v0.9 validation failed (~a): ~a"
+             (document-schema-validation-category condition)
+             (document-schema-validation-reason condition)))))
+
+(defvar *v09-schema* nil)
+(defvar *v09-schema-lock* (bt:make-lock "starintel-v09-schema"))
+
 (defun object-has-key-p (object key)
   (and object
        (handler-case
@@ -81,11 +97,46 @@
   (let ((value (document-value document "transient" nil)))
     (or (eq value t) (eq value :true))))
 
-(defun ensure-document (document &key route-dtype)
-  "Parse DOCUMENT and enforce the transport-level identity invariants.
+(defun v09-schema-path ()
+  (merge-pathnames
+   "../schemas/starintel-doc-v0.9.0.schema.json"
+   (asdf:system-source-directory :starintel)))
 
-Schema validation remains owned by star-cl. This accessor only guarantees a
-JSON object, a stable _id, and a route-compatible dtype."
+(defun load-v09-schema ()
+  (let ((path (v09-schema-path)))
+    (unless (probe-file path)
+      (error "StarIntel v0.9 schema not found: ~a" path))
+    (com.inuoe.jzon:parse path)))
+
+(defun v09-schema ()
+  (or *v09-schema*
+      (bt:with-lock-held (*v09-schema-lock*)
+        (or *v09-schema*
+            (setf *v09-schema* (load-v09-schema))))))
+
+(defun validate-v09-document (document)
+  "Validate DOCUMENT against the canonical StarIntel v0.9 JSON schema.
+
+The canonical validator remains implemented by star-cl. This adapter owns only
+schema discovery, JSOWN/Jzon conversion, and a stable server-side condition."
+  (let* ((object (parse-document-object document))
+         (jzon-object
+           (com.inuoe.jzon:parse (jsown:to-json object))))
+    (handler-case
+        (progn
+          (starintel::validate-v090-document jzon-object (v09-schema))
+          object)
+      (starintel::starintel-validation-error (condition)
+        (error 'document-schema-validation-error
+               :category (starintel::validation-category condition)
+               :reason (starintel::validation-message condition))))))
+
+(defun ensure-document (document &key route-dtype)
+  "Parse DOCUMENT and enforce transport-level identity invariants.
+
+Strict StarIntel v0.9 schema validation is intentionally separate so legacy
+compatibility transports can normalize their old envelope without being
+mistaken for canonical v0.9 ingest."
   (let* ((object (parse-document-object document))
          (dtype (document-dtype object))
          (route (and route-dtype (canonical-dtype route-dtype))))
