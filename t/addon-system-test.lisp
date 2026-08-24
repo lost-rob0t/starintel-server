@@ -16,6 +16,14 @@
              (or (star:addon-error-cause condition)
                  condition)))))
 
+(defun reload-bixby-addon-or-report-cause ()
+  (handler-case
+      (star:reload-addon :starintel-bixby)
+    (star:addon-error (condition)
+      (error "Bixby add-on reload failed: ~a"
+             (or (star:addon-error-cause condition)
+                 condition)))))
+
 (test bixby-is-an-optional-asdf-addon-over-core-oauth
   (let ((before (star:addon-status :starintel-bixby)))
     (when (and before
@@ -36,7 +44,7 @@
                    (getf settings :token-endpoint)))
       (is (equal '("documents:read" "search:read")
                  (getf settings :read-scopes))))
-    (let ((reloaded (star:reload-addon :starintel-bixby)))
+    (let ((reloaded (reload-bixby-addon-or-report-cause)))
       (is (eq :active (star:addon-state-status reloaded)))
       (is (> (star:addon-state-generation reloaded) generation)))
     (let ((settings-after-reload (call-bixby :bixby-oauth-settings)))
