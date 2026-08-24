@@ -7,6 +7,15 @@
    (users
     :initform (make-hash-table :test #'equal)
     :reader memory-store-users)
+   (oauth-clients
+    :initform (make-hash-table :test #'equal)
+    :reader memory-store-oauth-clients)
+   (oauth-codes
+    :initform (make-hash-table :test #'equal)
+    :reader memory-store-oauth-codes)
+   (oauth-access-tokens
+    :initform (make-hash-table :test #'equal)
+    :reader memory-store-oauth-access-tokens)
    (lock
     :initform (bt:make-lock "memory-credential-store")
     :reader memory-store-lock)))
