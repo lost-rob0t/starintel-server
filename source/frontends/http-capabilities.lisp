@@ -23,6 +23,9 @@
       ((string= mode "disabled") (list "disabled"))
       (t (list "configured")))))
 
+(defun public-read-authority ()
+  (if star::*public-mode* "public" "authenticated"))
+
 (defun capabilities-data ()
   (jsown:new-js
     ("build"
@@ -37,6 +40,7 @@
     ("authentication"
      (jsown:new-js
        ("modes" (configured-auth-modes))
+       ("public_mode" (json-boolean star::*public-mode*))
        ("capabilities_endpoint_requires_auth" :false)))
     ("features"
      (jsown:new-js
@@ -69,10 +73,10 @@
        :authority "public")
       (capability-endpoint
        "public_search" "GET" "/api/v1/search"
-       :authority "public")
+       :authority (public-read-authority))
       (capability-endpoint
        "stats" "GET" "/api/v1/stats"
-       :authority "public")
+       :authority (public-read-authority))
       (capability-endpoint
        "document_create" "POST" "/new/document/:dtype"
        :legacy t :scopes '("documents:write"))
