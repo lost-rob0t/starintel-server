@@ -230,7 +230,13 @@ operations are serialized so load/stop/reload cannot interleave."
                             :last-error nil)))
     (handler-case
         (progn
-          (asdf:load-system canonical-system :force t)
+          ;; Do not pass :FORCE here. RELOAD-ADDON may run while an enclosing
+          ;; ASDF operation (for example TEST-OP) is active, and ASDF rejects
+          ;; nested OPERATE calls whose FORCE settings differ from the outer
+          ;; operation. LOAD-SYSTEM already rebuilds and reloads components
+          ;; whose source changed, which is the behavior a source-code reload
+          ;; needs without making the lifecycle unusable from tests or tooling.
+          (asdf:load-system canonical-system)
           (start-addon-definition (ensure-addon-definition canonical-system)))
       (error (condition)
         (if was-active
