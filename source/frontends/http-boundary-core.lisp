@@ -185,26 +185,42 @@
     value))
 
 (defun validate-schema-version (document &key index)
-  (let ((version (jsown:val-safe document "version"))
+  (let ((schema-version (jsown:val-safe document "schema_version"))
         (expected starintel:+starintel-doc-version+))
-    (unless version
+    (unless schema-version
       (signal-http-input-error
        422
        "schema_version_required"
        (if index
-           (format nil "Document at index ~d requires a version field" index)
-           "Document requires a version field")))
-    (unless (string= (princ-to-string version)
-                     (princ-to-string expected))
+           (format nil "Document at index ~d requires a schema_version field" index)
+           "Document requires a schema_version field")))
+    (unless (and (stringp schema-version)
+                 (string= schema-version expected))
       (signal-http-input-error
        422
        "unsupported_schema_version"
        "Document schema version is not supported"
-       (jsown:new-js ("expected" (princ-to-string expected))
-                     ("received" (princ-to-string version))
+       (jsown:new-js ("expected" expected)
+                     ("received" (princ-to-string schema-version))
                      ("index" (or index :null)))))))
 
-(defun validate-document-input (document &key path-dtype index)
+(defun validate-document-schema (document &key index)
+  (handler-case
+      (star.documents:validate-v09-document document)
+    (star.documents:document-schema-validation-error (condition)
+      (signal-http-input-error
+       422
+       "invalid_document_schema"
+       "Document does not conform to the StarIntel v0.9 schema"
+       (jsown:new-js
+         ("category"
+          (star.documents:document-schema-validation-category condition))
+         ("reason"
+          (star.documents:document-schema-validation-reason condition))
+         ("index" (or index :null)))))))
+
+(defun validate-document-input
+    (document &key path-dtype index (strict-schema-p t))
   (unless (json-object-p document)
     (signal-http-input-error
      422
@@ -224,6 +240,8 @@
        (jsown:new-js ("path_dtype" path-dtype)
                      ("document_dtype" dtype))))
     (validate-schema-version document :index index)
+    (when strict-schema-p
+      (validate-document-schema document :index index))
     document))
 
 (defun query-value (params name)
