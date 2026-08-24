@@ -59,11 +59,11 @@
     },
     {
       "name": "unterminated-string",
-      "body": "{\"_id\":\"security-json-string\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9.0\",\"content\":\"unterminated}"
+      "body": "{\"_id\":\"security-json-string\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"{{VERSION}}\",\"content\":\"unterminated}"
     },
     {
       "name": "trailing-comma",
-      "body": "{\"_id\":\"security-json-comma\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9.0\",}"
+      "body": "{\"_id\":\"security-json-comma\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"{{VERSION}}\",}"
     },
     {
       "name": "top-level-array",
@@ -81,15 +81,15 @@
   "json_ambiguous": [
     {
       "name": "duplicate-id",
-      "body": "{\"_id\":\"security-json-dup-a\",\"_id\":\"security-json-dup-b\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9.0\"}"
+      "body": "{\"_id\":\"security-json-dup-a\",\"_id\":\"security-json-dup-b\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"{{VERSION}}\"}"
     },
     {
       "name": "duplicate-dataset",
-      "body": "{\"_id\":\"security-json-dup-dataset\",\"dataset\":\"security-a\",\"dataset\":\"security-b\",\"dtype\":\"note\",\"version\":\"0.9.0\"}"
+      "body": "{\"_id\":\"security-json-dup-dataset\",\"dataset\":\"security-a\",\"dataset\":\"security-b\",\"dtype\":\"note\",\"version\":\"{{VERSION}}\"}"
     },
     {
       "name": "duplicate-version",
-      "body": "{\"_id\":\"security-json-dup-version\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"0.9.0\",\"version\":\"999\"}"
+      "body": "{\"_id\":\"security-json-dup-version\",\"dataset\":\"security-a\",\"dtype\":\"note\",\"version\":\"{{VERSION}}\",\"version\":\"999\"}"
     }
   ],
   "dos": {
