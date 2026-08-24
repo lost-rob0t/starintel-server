@@ -9,7 +9,7 @@
 
 (test test-public-mode-defaults-enabled
   "Public-read mode is the default server posture unless init disables it."
-  (is star::*public-mode*))
+  (is (not (null star::*public-mode*))))
 
 (test test-public-stats-does-not-require-authentication
   "The watch-safe aggregate stats endpoint is intentionally public by default."
