@@ -24,7 +24,13 @@
          "Route actor is required"))
       (setf (jsown:val document "dtype") "target"
             (jsown:val document "actor") actor)
-      (validate-document-input document :path-dtype "target")
+      ;; /new/target/:actor is an explicit legacy compatibility adapter. It
+      ;; keeps the old flat target shape until the versioned target API lands;
+      ;; canonical document ingest remains strict v0.9.
+      (validate-document-input
+       document
+       :path-dtype "target"
+       :strict-schema-p nil)
       (publish-document document)
       (jsown:to-json document))))
 
