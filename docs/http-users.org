@@ -12,10 +12,8 @@ startup leaves the human-user store empty and the one-time =/auth/bootstrap=
 API-key flow remains available.
 
 The initial username defaults to =star=. An explicitly configured initial user
-is marked =must_change_password=true=.
-
-For deployed environments, prefer a root-readable secret file rather than an
-environment variable.
+is marked =must_change_password=true=. For deployed environments, prefer a
+root-readable secret file rather than an environment variable.
 
 * Password storage
 
@@ -24,17 +22,70 @@ with PBKDF2-SHA256 using Ironclad. The password input is mixed with the server
 authentication pepper before derivation, and each stored representation carries
 its own salt and work factor.
 
-The default PBKDF2 iteration count is 600000. CI lowers this value explicitly for
-disposable credentials.
+The default PBKDF2 iteration count is 600000. CI lowers this value explicitly so
+integration tests exercise the same behavior without spending production
+work-factor time on disposable credentials.
 
 Normal user create/change operations enforce the configured minimum password
 length, which defaults to 12 characters. The explicitly configured first-run
 password retains compatibility with older deployments, so operators must still
 choose a strong secret.
 
+* Remote CLI
+
+=star-cli= consumes =starintel-gserver-client= rather than constructing auth
+routes or HTTP headers itself. Set a server URL globally with =--url= or
+=STAR_SERVER_URL=. Authenticated management commands accept =--token= or
+=STAR_SERVER_TOKEN=.
+
+Login prints machine-readable JSON containing the newly minted key:
+
+#+begin_src sh
+printf '%s\n' 'a-long-user-password' | \
+  star-cli --url http://127.0.0.1:5000 \
+    auth login --username analyst --password-stdin
+#+end_src
+
+Use the returned key for remote administration:
+
+#+begin_src sh
+export STAR_SERVER_TOKEN='star_sk_v1_...'
+
+star-cli admin user list
+star-cli admin user create \
+  --username analyst \
+  --scopes documents:read,search:read \
+  --password-stdin
+
+star-cli admin credential create \
+  --owner quasar \
+  --principal-type service \
+  --scopes documents:read,search:read
+#+end_src
+
+The remote command families are:
+
+#+begin_example
+star-cli auth login
+star-cli auth context
+star-cli auth change-password
+star-cli admin user create
+star-cli admin user list
+star-cli admin user set-password
+star-cli admin credential create
+star-cli admin credential list
+star-cli admin credential rotate
+star-cli admin credential revoke
+star-cli admin credential disable
+#+end_example
+
+For host-local bootstrap/recovery when the HTTP plane or administrator key is
+unavailable, use [[file:server-admin.org][star-server admin]] instead. The remote
+client never falls back to direct database access.
+
 * Login
 
-=POST /auth/login= is public and accepts JSON credentials:
+=POST /auth/login= is public and accepts:
 
 #+begin_src json
 {
@@ -43,27 +94,44 @@ choose a strong secret.
 }
 #+end_src
 
-Successful login returns a normal opaque StarIntel API key. Subsequent requests
-use bearer authentication:
+Successful login returns a normal StarIntel opaque API key:
 
-#+begin_src text
-Authorization: Bearer star_sk_v1_...
+#+begin_src json
+{
+  "api_key": "star_sk_v1_...",
+  "credential": { "...": "..." },
+  "user": {
+    "username": "analyst",
+    "principal_type": "user",
+    "scopes": ["documents:read", "search:read"],
+    "status": "active",
+    "must_change_password": false
+  }
+}
 #+end_src
 
+The raw API key is returned only in the login response. Subsequent requests use
+the existing bearer authentication model:
+
+#+begin_example
+Authorization: Bearer star_sk_v1_...
+#+end_example
+
 Incorrect usernames and passwords return the same =401 invalid_credential=
-response so login does not disclose whether a username exists.
+response so the endpoint does not reveal whether a username exists.
 
 * Administrator user management
 
-The following routes require an administrator bearer credential.
+All routes in this section require an administrator bearer credential with
+explicit =admin= authority.
 
 ** Create a user
 
-#+begin_src text
+#+begin_example
 POST /auth/users
 Authorization: Bearer <administrator-key>
 Content-Type: application/json
-#+end_src
+#+end_example
 
 #+begin_src json
 {
@@ -80,18 +148,20 @@ hashes.
 
 ** List users
 
-#+begin_src text
+#+begin_example
 GET /auth/users
 Authorization: Bearer <administrator-key>
-#+end_src
+#+end_example
+
+Returns non-secret user metadata only.
 
 ** Reset a password
 
-#+begin_src text
+#+begin_example
 POST /auth/users/<username>/password
 Authorization: Bearer <administrator-key>
 Content-Type: application/json
-#+end_src
+#+end_example
 
 #+begin_src json
 {
@@ -104,11 +174,11 @@ Content-Type: application/json
 
 An authenticated human user can change their own password:
 
-#+begin_src text
+#+begin_example
 POST /auth/password
 Authorization: Bearer <login-key>
 Content-Type: application/json
-#+end_src
+#+end_example
 
 #+begin_src json
 {
@@ -118,8 +188,17 @@ Content-Type: application/json
 #+end_src
 
 A successful change clears =must_change_password=. Existing API keys minted
-before a password change remain ordinary API-key credentials and must be rotated
-or revoked separately when required.
+before a password change remain ordinary API-key credentials and follow the
+existing credential lifecycle; rotate or revoke them separately when required.
+
+* Credential delegation boundary
+
+Credential creation and lifecycle operations are capability-scoped. A
+non-administrator credential issuer may not mint =admin=, grant scopes it does
+not possess, impersonate another owner, change principal class, or rotate,
+revoke, or disable a credential outside its own identity/authority boundary.
+Administrator authority is determined by explicit =admin= scope rather than the
+descriptive principal type.
 
 * Persistence
 
@@ -128,8 +207,9 @@ User records live in =STAR_AUTH_DATABASE= alongside credential records but use
 separate =users= view. Password hashes are never stored in StarIntel intelligence
 documents.
 
-Startup never recreates a human administrator after the auth user store has a
-record.
+Startup creates an initial user only when the auth user store is empty and an
+initial password is explicitly configured, so a restart does not reset
+passwords or recreate deleted/renamed bootstrap state.
 
 * Configuration
 
@@ -142,16 +222,26 @@ record.
 | =STAR_AUTH_PASSWORD_ITERATIONS= | =600000= | PBKDF2 work factor. |
 | =STAR_AUTH_LOGIN_SESSION_SECONDS= | =86400= | Lifetime of API keys minted by password login. |
 
-The authentication pepper remains mandatory in normal API-key mode and is also
-part of the password-verification boundary.
+The server authentication pepper remains mandatory in normal API-key mode and is
+also part of the password-verification boundary.
 
 * CI contract
 
-The container stack test bootstraps an ephemeral administrator API key using the
-one-time bootstrap secret; it does not depend on a built-in human password.
+The container stack test proves the complete deployment path using Nix-built
+images and the one-time bootstrap-secret administrator API-key flow; it does not
+depend on a built-in human password. It covers user creation/login, bearer
+security context, credential persistence, and restart behavior.
 
-The OWASP ZAP workflow additionally starts the same disposable Compose stack,
-seeds ZAP with =.zap/openapi.yaml=, authenticates it with an ephemeral bearer key,
-and stores HTML, Markdown, and JSON reports as CI artifacts. Pull requests and
-pushes use API safe mode (passive scanning); scheduled or manually selected
-active scans attack only the disposable CI stack.
+Hermetic unit tests separately cover password policy, first-run idempotence,
+metadata redaction, login-to-API-key conversion, self-service password changes,
+administrator resets, credential attenuation, generated client operations,
+normalized client errors, deadlines, and server-local administration helpers.
+
+The OWASP ZAP workflow starts the same disposable Compose stack, seeds ZAP with
+=.zap/openapi.yaml=, authenticates it with an ephemeral bearer key, and stores
+HTML, Markdown, JSON, hostile-input results, and service diagnostics as CI
+artifacts. Pull requests and pushes use API safe mode (passive scanning);
+scheduled or manually selected active scans attack only the disposable CI stack.
+The hostile-input suite also covers Common Lisp RCE canaries, CouchDB/Clouseau
+scope escape, malformed and ambiguous JSON, invalid UTF-8, request-size limits,
+deep nesting, bounded bulk amplification, and concurrent parser pressure.

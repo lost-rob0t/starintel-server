@@ -3,294 +3,154 @@
 
 * HTTP API
 
-Default base URL: =http://127.0.0.1:5000=
+Default base URL: =http://127.0.0.1:5000=.
 
-The API currently has no authentication or authorization and allows every CORS
-origin. Do not expose it directly to an untrusted network.
+The server uses API-key authentication by default. Public paths are deliberately
+limited; authenticated routes require =Authorization: Bearer <api-key>= and are
+subject to server authorization policy. CORS is allow-list based rather than
+wildcard. See [[file:http-users.org][HTTP users and credentials]] for the human-user lifecycle.
 
 All implemented routes are mounted at =/=; =*http-api-base-path*= is not used.
 
-** Response behavior
+* Machine-readable contract
 
-Most successful document/query responses are raw JSON from JSOWN or CouchDB.
-Structured status responses look like:
+The first stable control-plane surface is described by one Common Lisp contract
+registry shared by the server and =starintel-gserver-client=. The registry is the
+source for route method/path metadata and generated client operation wrappers.
 
-#+begin_src json
-{"msg":"OK","status":"info"}
-#+end_src
+Two public discovery endpoints expose the contract:
 
-CouchDB wrapper errors commonly map to:
-
-| Status | Meaning |
-|--------+---------|
-| 400 | Bad request |
-| 404 | Document/view result not found |
-| 409 | CouchDB revision conflict |
-| 500 | Unhandled server error |
-| 504 | CouchDB/socket timeout |
-
-Rabbit publish failure from document/target routes maps to 502; publish timeout
-maps to 504.
-
-** Core endpoints
-
-*** GET /health
-
-Returns process-level health:
+- =GET /openapi.json= returns OpenAPI 3.1.2;
+- =GET /client-manifest.json= returns the normalized StarIntel client manifest.
 
 #+begin_src sh
-curl --fail http://127.0.0.1:5000/health
+curl --fail http://127.0.0.1:5000/openapi.json | jq
+curl --fail http://127.0.0.1:5000/client-manifest.json | jq
 #+end_src
 
-This does not deeply verify CouchDB, RabbitMQ, or Clouseau.
+The initial contracted operations cover:
 
-*** GET /
+- process health and server metadata;
+- password login and authenticated-context inspection;
+- human-user create/list/password lifecycle;
+- API credential create/list/rotate/revoke/disable lifecycle;
+- OpenAPI and client-manifest discovery.
 
-Returns server metadata:
+Legacy document, target, search, and CouchDB-view routes remain available and
+will migrate into the same registry incrementally. Clients should prefer named
+SDK operations over hard-coded route strings where a contracted operation exists.
+
+* Common request behavior
+
+Authenticated requests use:
+
+#+begin_src text
+Authorization: Bearer star_sk_v1_...
+#+end_src
+
+The HTTP boundary also understands:
+
+| Header | Purpose |
+|--------+---------|
+| =X-Correlation-ID= | Caller-supplied bounded correlation identifier |
+| =X-Request-Timeout-Ms= | Bounded logical request timeout request |
+| =Content-Type: application/json= | Required for JSON request bodies |
+| =X-Star-Bootstrap-Secret= | Bootstrap-only secret for =/auth/bootstrap= |
+
+Errors use client-safe JSON envelopes containing =status=, =msg=,
+=correlation_id=, and usually a stable =code=. Server tracebacks and secrets are
+not returned in normal error responses.
+
+* Core endpoints
+
+** GET /health
+
+Process-level liveness. This does not deeply verify CouchDB, RabbitMQ, Valkey, or
+Clouseau.
+
+#+begin_src sh
+curl --fail http://127.0.0.1:5000/health | jq
+#+end_src
+
+** GET /
+
+Returns server metadata including document spec version, configured databases,
+server version, and links to the machine-readable contract endpoints.
 
 #+begin_src sh
 curl --fail http://127.0.0.1:5000/ | jq
 #+end_src
 
-Fields include document spec version, default dataset/database, actor-event
-database, server name, and server version.
+* Authentication and users
 
-*** POST /new/document/:dtype
+Public authentication routes include =POST /auth/login= and bootstrap when
+configured. Administrator-authenticated routes manage users and API credentials.
+The canonical route shapes and request/response schemas are emitted by
+=/openapi.json=; operational examples live in [[file:http-users.org][http-users.org]].
 
-Publishes one JSON document to =documents.ingest.<dtype>=.
+* Legacy document and target endpoints
 
-#+begin_src sh
-curl --fail \
-  --header 'Content-Type: application/json' \
-  --request POST \
-  --data '{
-    "_id": "note-1",
-    "dataset": "demo",
-    "dtype": "note",
-    "sources": ["manual"],
-    "version": "0.8.0",
-    "dateAdded": 0,
-    "dateUpdated": 0,
-    "content": "hello"
-  }' \
-  http://127.0.0.1:5000/new/document/note
-#+end_src
+These routes predate the machine-readable registry and are retained for
+compatibility while they are migrated.
 
-Important:
+| Method | Route | Purpose |
+|--------+-------+---------|
+| POST | =/new/document/:dtype= | Publish one document for ingestion |
+| POST | =/documents/bulk= | Publish a bounded document batch |
+| GET | =/document/:id= | Read one document |
+| PUT | =/document/:id= | Update one document through the HTTP boundary |
+| DELETE | =/document/:id= | Delete one document |
+| POST | =/new/target/:actor= | Submit a target to an actor |
+| GET | =/targets/:actor= | Read persisted targets for an actor |
+| GET | =/search= | Full-text search |
 
-- the URL dtype selects the routing key;
-- the handler does not inject the URL dtype into the body;
-- the ingest consumer requires a non-empty body =dtype=;
-- success means publication, not completed persistence;
-- strict 0.9 validation is not called.
+Document write routes validate bounded JSON input, required StarIntel document
+fields, and the supported document schema version before dispatch.
 
-*** POST /documents/bulk
+* View query routes
 
-Publishes an array of documents. Each element must have =dtype=.
+View-backed routes expose bounded pagination/query parameters. Common parameters
+include =limit=, =start_key=, =end_key=, =descending=, =skip=, and route-specific
+=reduce=. String start/end keys are JSON values and therefore need JSON quoting.
 
-#+begin_src sh
-curl --fail \
-  --header 'Content-Type: application/json' \
-  --request POST \
-  --data '[
-    {"_id":"note-1","dataset":"demo","dtype":"note","content":"one"},
-    {"_id":"note-2","dataset":"demo","dtype":"note","content":"two"}
-  ]' \
-  http://127.0.0.1:5000/documents/bulk | jq
-#+end_src
+Representative routes include:
 
-Response:
-
-#+begin_src json
-{
-  "total": 2,
-  "succeeded": 2,
-  "failed": 0
-}
-#+end_src
-
-Failures are per element and can produce partial acceptance. The default maximum
-is 500 documents.
-
-*** GET /document/:id
-
-#+begin_src sh
-curl --fail http://127.0.0.1:5000/document/note-1 | jq
-#+end_src
-
-Reads from the configured main CouchDB database.
-
-*** DELETE /document/:id
-
-The server fetches the current revision then deletes the document:
-
-#+begin_src sh
-curl --fail --request DELETE \
-  http://127.0.0.1:5000/document/note-1 | jq
-#+end_src
-
-Deletion does not emit a RabbitMQ deletion event.
-
-*** POST /new/target/:actor
-
-Sets =dtype= to =target=, sets =actor= from the URL, and publishes to target
-ingest.
-
-#+begin_src sh
-curl --fail \
-  --header 'Content-Type: application/json' \
-  --request POST \
-  --data '{
-    "dataset": "demo",
-    "target": "example.org",
-    "delay": 3600,
-    "recurring": true,
-    "options": []
-  }' \
-  http://127.0.0.1:5000/new/target/domain-enricher
-#+end_src
-
-*** GET /targets/:actor
-
-Returns persisted targets from the =targets/by_actor= CouchDB view:
-
-#+begin_src sh
-curl --fail \
-  http://127.0.0.1:5000/targets/domain-enricher | jq
-#+end_src
-
-** Full-text search
-
-*** GET /search
-
-Parameters:
-
-| Parameter | Required | Default | Meaning |
-|-----------+----------+---------+---------|
-| =q= | yes in practice | none | Clouseau/Lucene query string |
-| =limit= | no | 25 | Maximum rows |
-| =bookmark= | no | none | CouchDB FTS bookmark |
-| =sort= | no | none | Sort expression accepted by CouchDB FTS |
-
-The handler always sets =include_docs=true=.
-
-#+begin_src sh
-curl --fail --get \
-  --data-urlencode 'q=content:"hello"' \
-  --data-urlencode 'limit=10' \
-  http://127.0.0.1:5000/search | jq
-#+end_src
-
-Search requires the =_design/search= FTS design document and Clouseau.
-
-** Common view query parameters
-
-Many view routes accept:
-
-| Parameter | Default | Meaning |
-|-----------+---------+---------|
-| =limit= | 50 | Row limit |
-| =start_key= | none | JSON-encoded CouchDB start key |
-| =end_key= | none | JSON-encoded CouchDB end key |
-| =descending= | false | Reverse result order |
-| =skip= | 0 | Skip rows |
-| =reduce= | route-specific | Request reduce/group behavior |
-
-=start_key= and =end_key= are parsed as JSON. Quote string keys correctly:
-
-#+begin_src sh
-curl --get \
-  --data-urlencode 'user=alice' \
-  --data-urlencode 'start_key="alice"' \
-  --data-urlencode 'limit=20' \
-  http://127.0.0.1:5000/documents/messages/by-user
-#+end_src
-
-** Message and social-post views
-
-| Method | Route | Key parameters |
-|--------+-------+----------------|
-| GET | =/documents/messages/by-user= | =user= |
-| GET | =/documents/messages/by-channel= | =group=, =channel=, optional =reduce= |
-| GET | =/documents/messages/by-groups= | legacy/duplicate channel-style query |
-| GET | =/documents/messages/by-platform= | =platform= |
-| GET | =/documents/messages/groups= | pagination parameters |
-| GET | =/documents/socialmpost/by-user= | =user= |
-
-The spelling =socialmpost= is the implemented route.
-
-** Dataset view
-
-*** GET /dataset-size
-
-The source declares this route twice. The later declaration exposes general
-view pagination/reduce parameters and can shadow the earlier simple
-=dataset=<name>= variant.
-
-Treat the current route as unstable until the duplicate definition is removed.
-
-** Host views
-
-| Route | Key |
-|-------+-----|
+| Route | Key parameters |
+|-------+----------------|
+| =/documents/messages/by-user= | =user= |
+| =/documents/messages/by-channel= | =group=, =channel= |
+| =/documents/messages/by-platform= | =platform= |
+| =/documents/messages/groups= | pagination parameters |
+| =/documents/socialmpost/by-user= | =user= |
 | =/documents/hosts/by-ip= | =ip= |
-| =/documents/hosts/by-port= | =port= integer |
-| =/documents/hosts/by-service= | =service= |
-
-** Email views
-
-| Route | Key |
-|-------+-----|
 | =/documents/emails/by-email= | =email= |
-| =/documents/emails/by-domain= | =domain= |
-| =/documents/emails/with-password= | no key |
-
-** Domain views
-
-| Route | Key |
-|-------+-----|
 | =/documents/domains/by-record= | =record= |
-| =/documents/domains/by-resolved-address= | =ip= |
-
-** User views
-
-| Route | Key |
-|-------+-----|
-| =/documents/users/by-name= | =name= |
 | =/documents/users/by-platform= | =platform= |
-
-** Network views
-
-| Route | Key |
-|-------+-----|
-| =/documents/networks/by-asn= | =asn= integer |
-| =/documents/networks/by-org= | =org= |
-
-** URL views
-
-| Route | Key |
-|-------+-----|
-| =/documents/urls/by-url= | =url= |
+| =/documents/networks/by-asn= | =asn= |
 | =/documents/urls/by-domain= | =domain= |
 
-** Breach views
+The historical =socialmpost= spelling is still part of the implemented legacy
+wire path.
 
-| Route | Key |
-|-------+-----|
-| =/documents/breaches/by-size= | no explicit key; sort/paginate by size |
+* Client generation boundary
 
-** Stub endpoint
+=starintel-gserver-client= contains a handwritten runtime for transport,
+authentication, timeouts, error normalization, correlation metadata, and secret
+redaction. Thin request wrappers for contracted operations are generated from the
+shared Lisp registry at compile/load time.
 
-=/new/event/:id= exists in the route source but has no implementation. Do not
-use it. Send events through =log-actor-event= locally or the =events= exchange.
+Generated wrappers call one runtime primitive and do not contain Dexador,
+authentication, or retry policy. This keeps regeneration from overwriting client
+semantics while still removing repetitive wire code.
 
-** HTTP operational notes
+* HTTP operational notes
 
-- CORS is wildcard.
-- Request bodies are loaded in memory.
-- Bulk requests are sequentially published inside one HTTP request.
-- The producer is serialized through one pinned agent.
-- Default publish timeout is five seconds.
-- Hunchentoot request timeout is 300 seconds.
-- No OpenAPI document is generated.
-- No endpoint currently validates the strict StarIntel 0.9 schema.
+- Authentication is enabled by default and may only be disabled through the
+  explicit loopback development bypass.
+- CORS origins are configuration allow-listed; wildcard origins are not emitted.
+- Request bodies are bounded and parsed as JSON at the hardened HTTP boundary.
+- Correlation identifiers are propagated in response headers and structured
+  control-plane responses.
+- The contracted API is emitted as OpenAPI 3.1.2 and a StarIntel client manifest.
+- Legacy routes remain intentionally outside the initial generated-client
+  guarantee until migrated into the registry.

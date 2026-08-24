@@ -7,6 +7,7 @@
     target-routing-tests
     system-load-tests
     couchdb-actor-tests
+    couchdb-session-tests
     event-actor-tests
     dataset-export-tests
     couchdb-view-request-tests
@@ -15,6 +16,7 @@
     http-auth-tests
     auth-users-tests
     authorization-policy-tests
+    gserver-client-tests
     runtime-lifecycle-tests))
 
 (defun run-all-gserver-tests ()

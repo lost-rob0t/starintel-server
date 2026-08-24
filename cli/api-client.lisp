@@ -1,55 +1,11 @@
-(uiop:define-package   :starintel-gserver-client
-  (:nicknames :star.api.client)
-  (:use       :cl)
-  (:documentation "doc")
-   (:export
-    #:star-client
-    #:make-url
-    #:api-request
-    #:get-targets
-    #:new-target
-    #:submit-document
-    #:bulk-submit
-    #:get-document
-    #:fts
-    #:messages-by-user
-    #:messages-by-channel
-    #:messages-by-platform
-    #:messages-by-group
-    #:social-posts-by-user
-    #:dataset-size
-    #:do-view
-    #:groups))
-
 (in-package :star.api.client)
-(defclass star-client ()
-  ((base-url :initform "http://127.0.0.1:5000" :initarg :base-url :accessor base-url)
-   (headers :initform '(("Accept" . "application/json")
-                        ("Content-Type" . "application/json")) :initarg :headers :accessor star-client-headers))
-  (:documentation "The Starintel gserver api client"))
 
-(defun make-url (client api-url &key (query nil))
-  (if query
-      (quri:merge-uris (quri:make-uri :path api-url :query (quri:url-encode-params query)) (base-url client))
-      (quri:merge-uris (quri:make-uri :path api-url) (base-url client))))
-
-
-(defmacro api-request (client path &key
-                                     (stream nil)
-                                     (query nil)
-                                     (content nil)
-                                     (method :get)
-                                     (force-binary nil)
-                                     (keep-alive t))
-
-
-  `(let ((resp
-           (dexador:request (make-url ,client ,path :query ,query)
-                            :method ,method :headers (star-client-headers ,client) :content ,content :want-stream ,stream :keep-alive ,keep-alive :force-binary ,force-binary)))
-
-
-
-     resp))
+;;; Legacy document/query convenience API.
+;;;
+;;; These functions preserve the existing public surface while routing raw HTTP
+;;; through the new StarIntel-owned transport/error boundary. New stable
+;;; control-plane operations live in CLIENT-CONVENIENCE.LISP and are backed by
+;;; the shared machine-readable contract.
 
 (defmethod get-targets ((client star-client) actor-name)
   "Get all targets for ACTOR-NAME."
@@ -58,29 +14,38 @@
 (defmethod new-target ((client star-client) target-doc actor &optional (transient nil))
   "Insert new target."
   (if transient
-      (api-request client (format nil "/new/target/~a" actor) :method :post
-                                                              :content (jsown:to-json (jsown:extend-js (jsown:parse target-doc)
-                                                                                                       ("transient" t))))
-      (api-request client (format nil "/new/target/~a" actor) :method :post
-                                                              :content target-doc)))
-
-
+      (api-request client
+                   (format nil "/new/target/~a" actor)
+                   :method :post
+                   :content (jsown:to-json
+                             (jsown:extend-js
+                              (jsown:parse target-doc)
+                              ("transient" t))))
+      (api-request client
+                   (format nil "/new/target/~a" actor)
+                   :method :post
+                   :content target-doc)))
 
 (defmethod submit-document ((client star-client) document document-type)
-  "Create a new document"
-  (api-request client (format nil "/new/document/~a" document-type) :method :post :content document))
+  "Create a new document."
+  (api-request client
+               (format nil "/new/document/~a" document-type)
+               :method :post
+               :content document))
 
 (defmethod bulk-submit ((client star-client) documents)
-  "Submit multiple documents in bulk. DOCUMENTS should be a JSON array string or list."
-  (let ((content (if (stringp documents) documents (jsown:to-json documents))))
+  "Submit multiple documents in bulk. DOCUMENTS may be a JSON string or list."
+  (let ((content (if (stringp documents)
+                     documents
+                     (jsown:to-json documents))))
     (api-request client "/documents/bulk" :method :post :content content)))
 
 (defmethod get-document ((client star-client) document-id)
-  "Get the document by id."
+  "Get a document by ID."
   (api-request client (format nil "/document/~a" document-id)))
 
-(defmethod fts ((client star-client) &key q (limit 25) (bookmark nil) (sort nil))
-  "Search documents using the full-text search (FTS) endpoint."
+(defmethod fts ((client star-client) &key q (limit 25) bookmark sort)
+  "Search documents using the full-text search endpoint."
   (let ((query (list (cons "q" q)
                      (cons "limit" (prin1-to-string limit))
                      (cons "include_docs" "true"))))
@@ -90,10 +55,10 @@
       (push (cons "sort" sort) query))
     (api-request client "/search" :query query)))
 
-
-
-(defmethod messages-by-user ((client star-client) &key user (limit 50) start-key end-key (descending nil) (skip 0))
-  "Retrieve messages by user using the 'messages_by_user' view."
+(defmethod messages-by-user ((client star-client)
+                             &key user (limit 50) start-key end-key
+                               (descending nil) (skip 0))
+  "Retrieve messages by user."
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "skip" (prin1-to-string skip)))))
@@ -105,22 +70,26 @@
       (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-user" :query query)))
 
-(defmethod messages-by-channel ((client star-client) group channel &key (limit 50) start-key end-key (descending nil) (skip 0) (reduce nil))
-  "Retrieve messages by group and channel using the 'by_channel' view."
+(defmethod messages-by-channel ((client star-client) group channel
+                                &key (limit 50) start-key end-key
+                                  (descending nil) (skip 0) (reduce nil))
+  "Retrieve messages by group and channel."
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "skip" (prin1-to-string skip))
                      (cons "reduce" (if reduce "true" "false"))
                      (cons "channel" channel)
-                     (cons "group" (if reduce "true" "false")))))
+                     (cons "group" group))))
     (when start-key
       (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
       (push (cons "end_key" (jsown:to-json end-key)) query))
-    (api-request client "/documents/messages/by-channel"  :query query)))
+    (api-request client "/documents/messages/by-channel" :query query)))
 
-(defmethod messages-by-platform ((client star-client) &key platform (limit 50) start-key end-key (descending nil) (skip 0))
-  "Retrieve messages by platform using the 'messages_by_platform' view."
+(defmethod messages-by-platform ((client star-client)
+                                 &key platform (limit 50) start-key end-key
+                                   (descending nil) (skip 0))
+  "Retrieve messages by platform."
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "skip" (prin1-to-string skip)))))
@@ -132,23 +101,26 @@
       (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-platform" :query query)))
 
-(defmethod messages-by-group ((client star-client) &key  (limit 50) start-key end-key (include-docs nil) (reduce nil) (descending nil) (skip 0))
-  "Retrieve messages by group using the 'messages_by_group' view."
+(defmethod messages-by-group ((client star-client)
+                              &key (limit 50) start-key end-key
+                                (include-docs nil) (reduce nil)
+                                (descending nil) (skip 0))
+  "Retrieve messages by group."
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "include-docs" (if include-docs "true" "false"))
                      (cons "reduce" (if reduce "true" "false"))
                      (cons "skip" (prin1-to-string skip)))))
-
-
     (when start-key
       (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
       (push (cons "end_key" (jsown:to-json end-key)) query))
     (api-request client "/documents/messages/by-group" :query query)))
 
-(defmethod social-posts-by-user ((client star-client) &key user (limit 50) start-key end-key (descending nil) (skip 0))
-  "Retrieve social media posts by user using the 'social_posts_by_user' view."
+(defmethod social-posts-by-user ((client star-client)
+                                 &key user (limit 50) start-key end-key
+                                   (descending nil) (skip 0))
+  "Retrieve social media posts by user."
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "skip" (prin1-to-string skip)))))
@@ -161,46 +133,22 @@
     (api-request client "/documents/socialmpost/by-user" :query query)))
 
 (defmethod dataset-size ((client star-client) dataset)
-  "Retrieve the size of a dataset using the 'dataset_size' view."
-  (let ((query (list (cons "dataset" dataset))))
-    (api-request client "/dataset-size" :query query)))
+  "Retrieve the size of a dataset."
+  (api-request client "/dataset-size" :query (list (cons "dataset" dataset))))
 
-
-(defmethod groups ((client star-client) &key  (limit 50)
-                                          (start-key nil) (end-key nil)
-                                          (update :lazy)
-                                          (descending nil) (skip 0))
-  "Retrieve messages by group using the 'messages_by_group' view.
-   The result of this api is [{\"key\": \"group-name\", \"value\": [\"chanel-list\"]}]"
+(defmethod groups ((client star-client)
+                   &key (limit 50) start-key end-key
+                     (update :lazy) (descending nil) (skip 0))
+  "Retrieve message groups and channels."
   (let ((query (list (cons "limit" (prin1-to-string limit))
                      (cons "descending" (if descending "true" "false"))
                      (cons "skip" (prin1-to-string skip)))))
-
-
     (case update
       (:lazy (push (cons "update" "lazy") query))
       (:false (push (cons "update" "false") query))
       (t (push (cons "update" "true") query)))
-
     (when start-key
       (push (cons "start_key" (jsown:to-json start-key)) query))
     (when end-key
       (push (cons "end_key" (jsown:to-json end-key)) query))
-
-
     (api-request client "/documents/messages/groups" :query query)))
-
-
-;; (defun do-view (client view-fn &key (batch-size 500) (reduce nil) (include-docs nil))
-;;   "Iterate over all keys in a view and apply the provided function to each batch of results."
-;;   (let ((start-key nil)
-;;         (end-key nil)
-;;         (results '())
-;;         (batch (funcall view-fn client
-;;                         :limit batch-size
-;;                         :include-docs (when (and (not reduce) include-docs) t)
-;;                         :reduce reduce)))
-;;     (let* ()
-;;
-;;
-;;       batch)))

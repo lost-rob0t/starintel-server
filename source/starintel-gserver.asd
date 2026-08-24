@@ -17,6 +17,12 @@
    (:file "consumers/retry-policy")
    (:file "producers/package")
    (:file "producers/producers")
+   (:file "http-contract-package"
+    :pathname "../cli/http-contract-package")
+   (:file "http-contract"
+    :pathname "../cli/http-contract")
+   (:file "http-contract-final"
+    :pathname "../cli/http-contract-final")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
@@ -55,10 +61,12 @@
    (:file "actor-systems/matcher-actor")
    (:file "rabbit")
    (:file "frontends/http-api")
+   (:file "couchdb-session-hardening")
    (:file "frontends/http-document-update")
    (:file "frontends/http-view-registry")
    (:file "frontends/http-status-message")
    (:file "frontends/http-boundary-core")
+   (:file "frontends/http-capabilities")
    (:file "frontends/http-auth")
    (:file "frontends/http-authorization")
    (:file "frontends/http-bulk-jobs")
@@ -67,8 +75,11 @@
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
+   (:file "frontends/http-contract-routes")
    (:file "security-hardening")
    (:file "runtime-lifecycle")
+   (:file "admin")
+   (:file "admin-final")
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
