@@ -38,6 +38,7 @@
      (:file "oauth-authorization-code-test")
      (:file "oauth-http-bearer-test")
      (:file "oauth-http-provider-test")
+     (:file "addon-system-test")
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")
