@@ -106,6 +106,36 @@
          (or (jsown:val-safe parsed "correlation_id")
              (jsown:val-safe parsed "correlationId")))))))
 
+(defun complete-json-container-framing-p (body)
+  "Reject obviously truncated JSON containers before the permissive JSOWN reader."
+  (let ((trimmed
+          (string-trim '(#\Space #\Tab #\Newline #\Return) body)))
+    (and
+     (plusp (length trimmed))
+     (case (char trimmed 0)
+       (#\{ (char= (char trimmed (1- (length trimmed))) #\}))
+       (#\[ (char= (char trimmed (1- (length trimmed))) #\]))
+       (otherwise t)))))
+
+(defun decode-json-body-strict (body operation-id)
+  "Parse one complete JSON response and classify malformed framing as protocol failure."
+  (unless (complete-json-container-framing-p body)
+    (error 'malformed-server-response
+           :message (format nil "Operation ~a returned truncated JSON"
+                            operation-id)
+           :operation-id operation-id))
+  (handler-case
+      (jsown:parse body)
+    (error (condition)
+      (error 'malformed-server-response
+             :message (format nil "Operation ~a returned malformed JSON: ~a"
+                              operation-id condition)
+             :operation-id operation-id))))
+
+(eval-when (:load-toplevel :execute)
+  (setf (symbol-function 'decode-json-body)
+        #'decode-json-body-strict))
+
 (defmethod perform-client-request ((transport dexador-transport) request)
   "Perform one HTTP request and normalize transport failures.
 
