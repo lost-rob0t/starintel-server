@@ -76,7 +76,9 @@ jobs:
         env:
           COUCHDB_USER: admin
           COUCHDB_PASSWORD: password
+          NODENAME: 127.0.0.1
           COUCHDB_ERLANG_COOKIE: starintel-ci-clouseau
+          ERL_FLAGS: -setcookie starintel-ci-clouseau
         options: >-
           --health-cmd "curl -f http://localhost:5984/_up || exit 1"
           --health-interval 10s
@@ -93,6 +95,33 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Prepare Clouseau 2.25.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          clouseau_dir="$RUNNER_TEMP/clouseau"
+          config_dir="$RUNNER_TEMP/clouseau-config"
+          data_dir="$RUNNER_TEMP/clouseau-data"
+          mkdir -p "$clouseau_dir" "$config_dir" "$data_dir"
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/clouseau.zip" \
+            https://github.com/cloudant-labs/clouseau/releases/download/2.25.0/clouseau-2.25.0-dist.zip
+          unzip -q "$RUNNER_TEMP/clouseau.zip" -d "$clouseau_dir"
+          cat >"$config_dir/clouseau.ini" <<'EOF'
+          [clouseau]
+          name=clouseau@127.0.0.1
+          cookie=starintel-ci-clouseau
+          dir=/data
+          max_indexes_open=500
+          EOF
+          cat >"$config_dir/log4j.properties" <<'EOF'
+          log4j.rootLogger=info, CONSOLE
+          log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender
+          log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout
+          log4j.appender.CONSOLE.layout.ConversionPattern=%d{ISO8601} %c [%p] %m%n
+          EOF
+          test -n "$(find "$clouseau_dir" -type f -name '*.jar' -print -quit)"
+
       - name: Start Clouseau search sidecar
         shell: bash
         run: |
@@ -102,10 +131,12 @@ jobs:
           docker run --detach \
             --name starintel-clouseau \
             --network "container:$couchdb_id" \
-            --env ERLANG_COOKIE=starintel-ci-clouseau \
+            --volume "$RUNNER_TEMP/clouseau:/opt/clouseau:ro" \
+            --volume "$RUNNER_TEMP/clouseau-config:/config:ro" \
+            --volume "$RUNNER_TEMP/clouseau-data:/data" \
             --entrypoint sh \
-            ghcr.io/jaydoane/clouseau:3.0.0 \
-            -c 'set -eu; printf "%s\n" "$ERLANG_COOKIE" > /opt/couchdb-search/.erlang.cookie; chmod 400 /opt/couchdb-search/.erlang.cookie; exec tini -- java -server -Dsun.net.inetaddr.ttl=30 -Dsun.net.inetaddr.negative.ttl=30 -classpath "/opt/couchdb-search/lib/*" com.cloudant.ziose.clouseau.Main /opt/couchdb-search/etc/app.conf'
+            eclipse-temurin:8-jre \
+            -c 'set -eu; classpath="$(find /opt/clouseau -type f -name "*.jar" -print | paste -sd: -)"; test -n "$classpath"; exec java -server -Xmx1G -Dsun.net.inetaddr.ttl=30 -Dsun.net.inetaddr.negative.ttl=30 -Dlog4j.configuration=file:/config/log4j.properties -XX:OnOutOfMemoryError="kill -9 %p" -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -classpath "$classpath" com.cloudant.clouseau.Main /config/clouseau.ini'
 
       - name: Wait for services and initialize
         run: |
