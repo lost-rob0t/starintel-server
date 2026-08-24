@@ -1,73 +1,93 @@
 #+title: StarIntel document specification in star-server
 #+options: toc:3
 
-* Document specification
+* Active document specification
 
-StarIntel Server currently sits between two document generations:
+StarIntel Server's canonical document format is *StarIntel 0.9.0*.
 
-1. *StarIntel 0.9.0*: the strict, schema-driven format implemented by the
-   validators in =lost-rob0t/star-cl= and =lost-rob0t/starintel-doc=.
-2. *Legacy flat 0.8.0*: Common Lisp classes and constructors still used by parts
-   of this server and its actor examples.
+The Common Lisp document model and strict validator are supplied by
+=lost-rob0t/star-cl=. This repository pins that runtime through both Nix and
+QLot and keeps a separate schema lock in =schema/starintel-schema.lock.json=.
+Those build paths must agree on the same v0.9-capable runtime.
 
-The server reports the =star-cl= document version from =GET /=, but the HTTP and
-RabbitMQ ingest handlers do not currently call the strict 0.9 validator. A
-=document= with a non-empty =dtype= can reach CouchDB even when it does not
-conform to 0.9.
+Canonical document ingest does not accept the older flat 0.7/0.8 envelope.
+Legacy target routing remains a narrow compatibility path and is documented
+separately below.
 
 ** StarIntel 0.9 envelope
 
-The 0.9 adapters require:
+The v0.9 schema distinguishes the specification revision from the document's own
+revision counter:
 
-- a JSON object;
-- =schema_version= exactly ="0.9.0"=;
-- a canonical =dtype= from the schema;
-- fields and data types defined by the schema;
-- RFC 3339 date-time strings where the schema requires =date-time=;
-- no undeclared fields in closed schema sections.
+- =schema_version= is a string and must be exactly ="0.9.0"=;
+- =version= is an integer document revision counter.
 
-The adapters preserve unknown extension data and missing optional fields when
-the schema permits them.
-
-Conceptual envelope:
+A representative envelope is:
 
 #+begin_src json
 {
-  "schema_version": "0.9.0",
-  "dtype": "person",
   "_id": "01J...",
   "dataset": "investigation-a",
-  "sources": ["manual"],
+  "dtype": "person",
+  "schema_version": "0.9.0",
+  "version": 1,
+  "date_added": "2026-08-24T09:00:00Z",
+  "date_updated": "2026-08-24T09:00:00Z",
+  "title": "Ada Lovelace",
+  "sources": [],
+  "evidence": [],
   "data": {
     "fname": "Ada",
     "lname": "Lovelace"
   },
-  "extensions": {
-    "star_server": {
-      "trace_id": "01J...",
-      "root_id": "01J...",
-      "parent_id": null,
-      "actor_path": []
-    }
-  }
+  "extensions": {}
 }
 #+end_src
 
-Use the canonical schema distributed by the StarIntel conformance/spec
-repository. The adapters locate it through:
+The exact required fields and per-dtype =data= contract come from the canonical
+JSON schema rather than this example.
 
-| Variable | Meaning |
-|----------+---------|
-| =STARINTEL_SCHEMA= | Explicit path to =starintel-doc-v0.9.0.schema.json= |
-| =STARINTEL_CONFORMANCE_ROOT= | Root containing =schemas/starintel-doc-v0.9.0.schema.json= |
+** Strict validation
 
-The current server does not consume either variable directly; =star-cl='s
-validator does.
+Canonical validation requires:
 
-** Rejected 0.9 aliases
+- a JSON object;
+- =schema_version= exactly ="0.9.0"=;
+- a canonical =dtype= from the schema;
+- required envelope and dtype-specific fields;
+- field types defined by the schema;
+- RFC 3339 date-time strings where =date-time= is required;
+- no undeclared fields in closed schema sections.
 
-The 0.9 adapters explicitly reject these dtype aliases rather than silently
-normalizing them:
+The validator preserves extension data where the schema permits it. It does not
+silently reinterpret a legacy flat document as v0.9.
+
+The server adapter is =star.documents:validate-v09-document=. It reuses the
+validator implemented in =star-cl= and locates the schema distributed with the
+loaded =starintel= ASDF system. The server intentionally does not maintain a
+second schema implementation.
+
+** Canonical ingest boundaries
+
+Strict v0.9 validation runs before publish or persistence on:
+
+- =POST /new/document/:dtype=;
+- =POST /documents/bulk=;
+- RabbitMQ =documents.ingest.#=;
+- RabbitMQ =documents.update.#=.
+
+HTTP validation failures are =422= responses. A missing =schema_version= uses
+=schema_version_required=, an unsupported revision uses
+=unsupported_schema_version=, and a full-schema violation uses
+=invalid_document_schema=.
+
+RabbitMQ schema-invalid deliveries are permanent processing failures and enter
+the existing settlement/quarantine policy instead of reaching CouchDB.
+
+** Canonical dtype spelling
+
+The strict v0.9 validator rejects non-canonical aliases. In particular, callers
+must not depend on transport normalization of aliases such as:
 
 #+begin_example
 organization
@@ -84,271 +104,52 @@ lobbying_filing
 campaign_finance
 #+end_example
 
-Use the canonical dtype from the schema inventory.
+Use the canonical dtype emitted by the schema inventory.
 
-** Legacy flat 0.8 common fields
+** Data placement
 
-The legacy Common Lisp =document= class serializes Lisp slot names to camelCase,
-while preserving leading underscore keys.
+v0.9 separates common envelope metadata from dtype-specific data.
 
-| JSON field | Type | Meaning |
-|------------+------+---------|
-| =_id= | string | Document identity; ULID or deterministic hash |
-| =_rev= | string, optional | CouchDB revision; emitted only when syntactically valid |
-| =dataset= | string | Logical corpus/dataset |
-| =dtype= | string | Object type |
-| =sources= | array | Provenance labels/URIs/actor names |
-| =version= | string | Legacy document version, normally ="0.8.0"= |
-| =dateAdded= | integer | Unix timestamp |
-| =dateUpdated= | integer | Unix timestamp |
+Common metadata belongs at the top level. Dtype-specific properties belong under
+=data=. Runtime- or actor-specific metadata belongs under a schema-permitted
+=extensions= namespace instead of adding arbitrary top-level keys.
 
-When encoding legacy classes, missing strings become =""=, integers become =0=,
-lists become =[]=, booleans become =false=, and unknown values may become JSON
-=null=.
+Relations use the canonical v0.9 relation representation under =data=, including
+=subject=, =predicate=, and =object=. Compatibility aliases in the Common Lisp
+object model do not change the wire contract.
 
-** Legacy object types
+** Identity and timestamps
 
-These are the concrete classes currently exported by =star-cl=. They are not a
-substitute for the canonical 0.9 schema.
+The current v0.9 =star-cl= runtime uses SHA-256 for deterministic document IDs
+where a document class has deterministic identity semantics. Other document
+classes can use ULIDs.
 
-*** person
+Canonical =date_added= and =date_updated= values are ISO/RFC 3339 strings, not
+the integer Unix timestamps used by the older flat envelope.
 
-| Field | Type |
-|-------+------|
-| =fname= | string |
-| =mname= | string |
-| =lname= | string |
-| =bio= | string |
-| =dob= | string |
-| =region= | string |
-| =misc= | array |
-| =etype= | string, default =person= |
-| =eid= | string |
+CouchDB remains responsible for =_rev=. Application-level =version= is separate
+from both CouchDB =_rev= and schema =schema_version=.
 
-ID strategy: ULID.
+** Legacy target compatibility
 
-*** org
+The historical target interface is not a general document-ingest escape hatch.
+The following paths remain explicitly legacy while the versioned target
+lifecycle API is completed:
 
-| Field | Type |
-|-------+------|
-| =reg= | string |
-| =name= | string |
-| =bio= | string |
-| =country= | string |
-| =website= | string |
-| =etype= | string, default =org= |
-| =eid= | string |
+- =POST /new/target/:actor=;
+- the target-dispatch Rabbit compatibility route.
 
-ID strategy: hash of name, registration, and country.
+They use the historical flat target shape and opt out of strict v0.9 document
+validation at that boundary only. Canonical document and bulk ingest remain
+strict.
 
-*** relation
+New producers should not model new document types after this compatibility
+shape.
 
-| Field | Type | Meaning |
-|-------+------+---------|
-| =source= | string | Source document ID |
-| =target= | string | Target document ID |
-| =predicate= | string | Directed edge label |
-| =note= | string | Human/actor note |
+** Recursive provenance
 
-ID strategy: ULID. Relations are directed.
-
-*** target
-
-| Field | Type |
-|-------+------|
-| =actor= | string | Local registered actor or external actor name |
-| =target= | string | Target value/document ID |
-| =delay= | integer | Recurrence interval in seconds |
-| =recurring= | boolean | Re-deliver on timer |
-| =options= | array | Actor-defined values |
-
-ID strategy: hash of dataset, target, and actor.
-
-*** domain
-
-| Field | Type |
-|-------+------|
-| =recordType= | string |
-| =record= | string |
-| =resolvedAddresses= | array |
-
-ID strategy: hash of record and record type.
-
-*** host
-
-| Field | Type |
-|-------+------|
-| =hostname= | string |
-| =ip= | string |
-| =os= | string |
-| =ports= | array of service-like values |
-
-ID strategy: hash of IP.
-
-*** service
-
-Embedded object fields: =port= integer, =name= string, =ver= string.
-
-*** network
-
-Fields: =org= string, =subnet= string, =asn= integer. ID is derived from ASN and
-organization.
-
-*** url
-
-Fields: =url= string, =path= string, =query= string, =content= string. ID is
-derived from URL and content.
-
-*** email
-
-Fields: =user= string, =domain= string, =password= string. ID includes password
-only when non-empty.
-
-#+begin_quote
-Do not store credential material unless the collection and storage are lawful,
-authorized, necessary, and access-controlled. The current server has no
-field-level encryption or authorization.
-#+end_quote
-
-*** emailmessage
-
-Fields: =body=, =subject=, =to=, =from=, =headers= strings; =cc= and =bcc=
-arrays.
-
-*** user
-
-Fields: =url=, =name=, =platform=, =bio= strings and =misc= array.
-
-*** breach
-
-Fields: =total= integer, =description= string, =url= string.
-
-*** message
-
-Fields:
-
-- =content= string
-- =platform= string
-- =user= string
-- =isReply= boolean
-- =media= array
-- =messageId= string
-- =replyTo= string
-- =group= string
-- =channel= string
-- =mentions= array
-
-*** socialmpost
-
-Fields:
-
-- =content=, =user=, =url=, =title=, =group=, =replyTo= strings
-- =replies=, =media=, =links=, =tags= arrays
-- =replyCount=, =repostCount= integers
-
-*** phone
-
-Fields: =number=, =carrier=, =status=, =phoneType= strings.
-
-*** geo and address
-
-=geo=: =lat=, =long=, =alt= numbers.
-
-=address= extends geo with =city=, =state=, =postal=, =country=, =street=, and
-=street2=.
-
-** Relation predicates
-
-The current =star-cl= relation constructor validates predicates against an
-allowlist. Groups include:
-
-- identity: =same-as=, =duplicate-of=, =aka=, =alias-of=, =username-of=,
-  =email-of=, =phone-of=, =account-of=;
-- people/org: =member-of=, =employed-by=, =contractor-for=, =works-with=,
-  =manages=, =reports-to=;
-- ownership/control: =owns=, =owned-by=, =controls=, =controlled-by=,
-  =operates=, =operated-by=, =administers=, =administered-by=;
-- registration: =registered-to=, =registrant-of=, =whois-registrant-of=,
-  =whois-admin-of=, =whois-tech-of=;
-- location: =located-at=, =geolocated-at=, =seen-at=;
-- communication: =communicates-with=, =contacted=, =contacted-by=, =mentions=,
-  =replies-to=, =follows=;
-- web: =links-to=, =redirects-to=, =canonical-url-of=, =hosts=, =hosted-by=,
-  =served-by=;
-- DNS/network: =resolves-to=, =ptr-to=, =has-a=, =has-aaaa=, =has-cname=,
-  =has-ns=, =has-mx=, =has-txt=, =has-spf=, =has-dkim=, =has-dmarc=,
-  =has-soa=, =behind-cdn=, =belongs-to-asn=, =served-from=,
-  =shares-ip-with=, =shares-asn-with=;
-- services: =hosts-service=, =listens-on=, =exposes-port=, =runs=, =runs-on=;
-- credential/breach: =leaked-in=, =credential-for=, =compromised-by=;
-- provenance/evidence: =observed-on=, =observed-by=, =collected-from=,
-  =extracted-from=, =derived-from=, =downloaded-from=, =uploaded-to=,
-  =created-by=, =modified-by=, =hashes-to=, =matches-hash=, =evidence-of=,
-  =indicates=;
-- security/research: =attributed-to=, =uses=, =targets=, =exploits=,
-  =mitigates=, =c2-for=, =in-scope-of=, =out-of-scope-of=,
-  =discovered-by=, =scanned-by=, =has-finding=, =vulnerable-to=;
-- generic: =related-to=.
-
-Constructor:
-
-#+begin_src lisp
-(spec:new-relation
- "dataset"
- "source-id"
- "target-id"
- :predicate "derived-from"
- :note "Generated by actor")
-#+end_src
-
-** ID strategies
-
-The legacy constructors mix two identity models:
-
-- *ULID*: person, relation, default document when the server normalizes a
-  missing ID.
-- *Deterministic hash*: org, domain, network, host, URL, email, user, message,
-  social post, phone, target, geo/address.
-
-Deterministic IDs support idempotent recursive actors, but the current default
-hash algorithm in =star-cl= is MD5. Treat it as a deduplication key, not a
-cryptographic integrity proof. Use SHA-256 in provenance extensions when
-integrity matters.
-
-** CouchDB fields
-
-The ingest handler:
-
-1. generates a ULID when =_id= is missing or empty;
-2. writes the JSON document;
-3. replaces/sets =_id= from CouchDB's response;
-4. adds =_rev=;
-5. republishes the enriched document as =documents.new.<dtype>=.
-
-The update handler requires =_id= and =dtype=. It fetches the current document,
-deep-merges the patch, applies the latest =_rev=, retries conflicts, and emits
-the new revision.
-
-** Actor event document
-
-Current actor-event fields:
-
-| Field | Type |
-|-------+------|
-| =_id= | ULID string |
-| =timestamp= | Unix integer |
-| =dtype= | intended =actorevent= |
-| =actorName= | string |
-| =eventType= | string |
-| =details= | string |
-| =sourceId= | string |
-
-Actor events are stored in the separate event database.
-
-** Recursive provenance convention
-
-No server component automatically adds recursive provenance. Use a stable
-extension contract across actors:
+Actor/runtime provenance that is not part of the canonical envelope should use
+a stable extension namespace, for example:
 
 #+begin_src json
 {
@@ -361,30 +162,28 @@ extension contract across actors:
       "actor_path": ["seed", "domain-enricher", "dns-resolver"],
       "depth": 2,
       "hop": 3,
-      "max_depth": 8,
-      "max_hops": 32,
       "derivation": "dns-resolution",
-      "input_hash": "sha256:...",
-      "output_hash": "sha256:...",
-      "emitted_at": "2026-07-26T20:00:00Z"
+      "emitted_at": "2026-08-24T09:00:00Z"
     }
   }
 }
 #+end_src
 
-Also emit a relation from source to derived output. Metadata alone does not
-replace graph edges.
+When provenance represents a graph relationship, also emit the canonical
+relation document. Extension metadata does not replace explicit graph edges.
 
-** Migration guidance
+** Producer guidance
 
 For new producers:
 
-1. emit strict 0.9 when the deployed server path validates it;
-2. keep one canonical dtype and field spelling;
-3. put actor/runtime-specific data under =extensions=;
-4. do not silently convert aliases;
-5. test round-trip preservation against every language adapter;
-6. document any legacy 0.8 bridge at the boundary.
+1. emit strict v0.9;
+2. send =schema_version: "0.9.0"= and keep =version= numeric;
+3. use one canonical dtype and field spelling;
+4. place dtype-specific data under =data=;
+5. put actor/runtime-specific data only under schema-permitted extensions;
+6. validate locally against the same canonical schema when practical;
+7. treat an HTTP =422= or Rabbit schema-invalid settlement as a producer bug,
+   not as a signal to downgrade to the old flat envelope.
 
-For the current server, verify downstream consumers before switching an active
-pipeline from flat 0.8 fields to nested 0.9 =data=.
+See [[file:v09-runtime.org][StarIntel v0.9 runtime]] for the server-side boundary and
+deployment consistency rules.
