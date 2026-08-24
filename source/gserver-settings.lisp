@@ -76,6 +76,11 @@
 (defparameter *http-cert-file* nil)
 (defparameter *http-key-file* nil)
 (defparameter *http-scheme* 'http)
+(defparameter *public-mode*
+  (not (null (environment-boolean "STAR_PUBLIC_MODE" t)))
+  "When true, safe v1 read endpoints such as search and aggregate stats may be
+used without credentials. Operators can set this to NIL in init.lisp (or set
+STAR_PUBLIC_MODE=false before init loads) for authenticated-only deployments.")
 (defparameter *http-cors-allowed-origins*
   (split-comma-setting (uiop:getenv "STAR_AUTH_ALLOWED_ORIGINS")))
 (defparameter *http-cors-allowed-methods*
