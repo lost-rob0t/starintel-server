@@ -31,6 +31,11 @@
     (let ((reloaded (star:reload-addon :starintel-bixby)))
       (is (eq :active (star:addon-state-status reloaded)))
       (is (> (star:addon-state-generation reloaded) generation)))
+    (let ((settings-after-reload (call-bixby :bixby-oauth-settings)))
+      (is (string= "https://api.starintel.example/oauth/authorize"
+                   (getf settings-after-reload :authorize-endpoint)))
+      (is (string= "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb"
+                   (getf settings-after-reload :redirect-uri))))
     (let ((stopped (star:unload-addon :starintel-bixby)))
       (is (eq :stopped (star:addon-state-status stopped))))))
 
