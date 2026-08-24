@@ -6,12 +6,15 @@
 (defun json-boolean (value)
   (if value :true :false))
 
-(defun capability-endpoint (id method path &key legacy)
+(defun capability-endpoint
+    (id method path &key legacy (authority "authenticated") scopes)
   (jsown:new-js
     ("id" id)
     ("method" method)
     ("path" path)
-    ("legacy" (json-boolean legacy))))
+    ("legacy" (json-boolean legacy))
+    ("authority" authority)
+    ("scopes" (or scopes nil))))
 
 (defun configured-auth-modes ()
   (let ((mode (string-downcase (or star:*auth-mode* ""))))
@@ -40,6 +43,7 @@
        ("documents" :true)
        ("bulk_ingest" :true)
        ("search" :true)
+       ("stats" :true)
        ("targets" :true)
        ("views"
         (jsown:new-js
@@ -49,10 +53,11 @@
        ("queue_ingest" :true)
        ("target_leases" :false)
        ("streams" :false)
-       ("openapi" :false)))
+       ("openapi" :true)))
     ("limits"
      (jsown:new-js
        ("bulk_documents" star:*bulk-max-documents*)
+       ("public_search_results" 50)
        ("default_request_timeout_ms"
         star:*auth-default-request-timeout-ms*)
        ("max_request_timeout_ms"
@@ -60,19 +65,32 @@
     ("endpoints"
      (list
       (capability-endpoint
-       "capabilities" "GET" +capabilities-path+)
+       "capabilities" "GET" +capabilities-path+
+       :authority "public")
       (capability-endpoint
-       "document_create" "POST" "/new/document/:dtype" :legacy t)
+       "public_search" "GET" "/api/v1/search"
+       :authority "public")
       (capability-endpoint
-       "document_read" "GET" "/document/:id" :legacy t)
+       "stats" "GET" "/api/v1/stats"
+       :authority "public")
       (capability-endpoint
-       "document_bulk" "POST" "/documents/bulk" :legacy t)
+       "document_create" "POST" "/new/document/:dtype"
+       :legacy t :scopes '("documents:write"))
       (capability-endpoint
-       "search" "GET" "/search" :legacy t)
+       "document_read" "GET" "/document/:id"
+       :legacy t :scopes '("documents:read"))
       (capability-endpoint
-       "target_create" "POST" "/new/target/:actor" :legacy t)
+       "document_bulk" "POST" "/documents/bulk"
+       :legacy t :scopes '("documents:bulk"))
       (capability-endpoint
-       "targets_by_actor" "GET" "/targets/:actor" :legacy t)))
+       "search" "GET" "/search"
+       :legacy t :scopes '("search:read"))
+      (capability-endpoint
+       "target_create" "POST" "/new/target/:actor"
+       :legacy t :scopes '("targets:dispatch"))
+      (capability-endpoint
+       "targets_by_actor" "GET" "/targets/:actor"
+       :legacy t :scopes '("targets:read"))))
     ("compatibility"
      (jsown:new-js
        ("legacy_routes" :true)
