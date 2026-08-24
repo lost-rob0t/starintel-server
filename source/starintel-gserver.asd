@@ -48,6 +48,7 @@
    (:file "auth/users")
    (:file "auth/oauth-package")
    (:file "auth/oauth")
+   (:file "auth/oauth-bearer")
    (:file "authorization/package")
    (:file "authorization/policy")
    (:file "authorization/quota-policy")
