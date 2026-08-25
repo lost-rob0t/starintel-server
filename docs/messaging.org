@@ -24,6 +24,13 @@ The target wildcard currently equals =documents.new.target.#=. A normal target
 is published to =documents.ingest.target=, persisted, republished as
 =documents.new.target=, then consumed by the target router.
 
+The legacy =POST /new/target/:actor= adapter is intentionally narrower: it
+skips strict document-schema validation and publishes directly to
+=documents.new.target.<actor>=. This keeps legacy target envelopes away from
+canonical ingest while preserving the target consumer's durable acceptance and
+dispatch handling. New canonical target producers should use
+=documents.ingest.target=.
+
 ** Events exchange
 
 Actor events can also enter through a separate exchange and queue:

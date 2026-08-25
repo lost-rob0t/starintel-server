@@ -45,17 +45,34 @@
     raw))
 
 (defun authorized-delete-document (document-id fetch-fn delete-fn
-                                   &key principal metadata)
+                                    &key principal metadata)
   "Fetch, authorize, and delete one document through explicit injected I/O."
   (let* ((raw (funcall fetch-fn document-id))
          (document (parse-document-value raw))
          (revision (jsown:val document "_rev")))
-    (authorize-document!
+   (authorize-document!
      "documents:delete"
      document
      :principal principal
      :metadata metadata)
     (funcall delete-fn document-id revision)))
+
+(defun authorized-update-document (document-id patch fetch-fn update-fn
+                                   &key principal metadata)
+  "Authorize an update against the current document before persistence.
+
+FETCH-FN returns the current document or NIL for an insert candidate. UPDATE-FN
+receives PATCH only after the resource decision has been made."
+  (let* ((raw (funcall fetch-fn document-id))
+         (document (parse-document-value (or raw patch)))
+         (decision
+           (authorize-document!
+            (document-action document)
+            document
+            :principal principal
+            :metadata metadata)))
+    (let ((*current-authorization-decision* decision))
+      (funcall update-fn patch))))
 
 (defun document-action (document &optional requested-action)
   (or requested-action

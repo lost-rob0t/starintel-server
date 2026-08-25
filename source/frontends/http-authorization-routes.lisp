@@ -31,10 +31,14 @@
            (document (require-json-object (parse-json-request))))
       (setf (jsown:val document "dtype") "target"
             (jsown:val document "actor") actor)
-      (validate-document-input document :path-dtype "target")
+      ;; Keep the historical target envelope as an explicit narrow exception.
+      (validate-document-input
+       document
+       :path-dtype "target"
+       :strict-schema-p nil)
       (star.authorization:authorized-publish-document
        document
-       #'publish-document-unchecked
+       #'publish-target-document-unchecked
        :principal (current-publish-service-context)
        :actor-name actor
        :action "targets:dispatch"
@@ -143,7 +147,31 @@
            (route-policy-metadata "/document/:id" "DELETE"))
           (status-msg
            (format nil "Document ~a deleted" document-id)
-           'success))))))
+            'success))))))
+
+(defun handle-authorized-document-update-route (params)
+  (with-http-boundary ()
+    (let* ((document-id (require-path-string params "id"))
+           (patch (request-json-body)))
+      (couchdb-handler (client *couchdb-pool*)
+        (star.authorization:authorized-update-document
+         document-id
+         patch
+         (lambda (id)
+           (handler-case
+               (cl-couch:get-document
+                client star:*couchdb-default-database* id)
+             (dex:http-request-not-found () nil)))
+         (lambda (candidate)
+           (document-update-response
+            (star.databases.couchdb:couchdb-upsert-document-update
+             client
+             star:*couchdb-default-database*
+             document-id
+             candidate)))
+         :principal (current-policy-principal)
+         :metadata
+         (route-policy-metadata "/document/:id" "PUT"))))))
 
 (defun handle-authorized-targets-route (params)
   (with-http-boundary ()
@@ -323,7 +351,9 @@
 (setf (ningle:route *app* "/search" :method :get)
       #'handle-authorized-search-route)
 (setf (ningle:route *app* "/document/:id" :method :get)
-      #'handle-authorized-document-get-route)
+       #'handle-authorized-document-get-route)
+(setf (ningle:route *app* "/document/:id" :method :put)
+      #'handle-authorized-document-update-route)
 (setf (ningle:route *app* "/document/:id" :method :delete)
       #'handle-authorized-document-delete-route)
 (setf (ningle:route *app* "/targets/:actor" :method :get)

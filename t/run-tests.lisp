@@ -13,6 +13,7 @@
     couchdb-view-request-tests
     lease-store-contract-tests
     http-boundary-tests
+    v09-runtime-tests
     http-auth-tests
     auth-users-tests
     oauth-authorization-code-tests

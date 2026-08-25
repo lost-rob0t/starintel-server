@@ -104,8 +104,17 @@ compatibility while they are migrated.
 | GET | =/targets/:actor= | Read persisted targets for an actor |
 | GET | =/search= | Full-text search |
 
-Document write routes validate bounded JSON input, required StarIntel document
-fields, and the supported document schema version before dispatch.
+Canonical document write routes validate bounded JSON input, required StarIntel
+document fields, the supported document schema version, and the canonical
+StarIntel 0.9 schema before dispatch. =PUT /document/:id= authorizes against
+the current document, deep-merges the patch, validates the merged candidate,
+and only then persists it. Invalid candidates return =422
+invalid_document_schema= and do not invoke persistence.
+
+The historical =POST /new/target/:actor= adapter is the exception. It retains
+transport identity checks, skips strict schema validation, and publishes
+directly to =documents.new.target.<actor>= so legacy target envelopes do not
+enter canonical ingest.
 
 * View query routes
 

@@ -31,6 +31,7 @@
     ((path-prefix-p "/document/" path)
      (case method
        (:get "documents:read")
+       (:put "documents:write")
        (:delete "documents:delete")
        (otherwise nil)))
     ((and (eq method :post)

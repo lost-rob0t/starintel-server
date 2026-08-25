@@ -61,16 +61,16 @@
    (:file "target-recovery")
    (:file "target-dispatch")
    (:file "target-dispatch-fixes")
-   (:file "actor-systems/event-actor")
-   (:file "actor-systems/matcher-actor")
-   (:file "rabbit")
-   (:file "frontends/http-api")
-   (:file "couchdb-session-hardening")
-   (:file "frontends/http-document-update")
-   (:file "frontends/http-view-registry")
-   (:file "frontends/http-status-message")
-   (:file "frontends/http-boundary-core")
-   (:file "frontends/http-capabilities")
+    (:file "actor-systems/event-actor")
+    (:file "actor-systems/matcher-actor")
+    (:file "rabbit")
+    (:file "frontends/http-api")
+    (:file "couchdb-session-hardening")
+    (:file "frontends/http-boundary-core")
+    (:file "frontends/http-document-update")
+    (:file "frontends/http-view-registry")
+    (:file "frontends/http-status-message")
+    (:file "frontends/http-capabilities")
    (:file "frontends/http-auth")
    (:file "frontends/http-oauth-provider")
    (:file "frontends/http-authorization")
@@ -88,6 +88,7 @@
    (:file "authorization/services-final"))
   :depends-on
   (#:starintel
+   #:com.inuoe.jzon
    #:cl-couch
    #:serapeum
    #:alexandria

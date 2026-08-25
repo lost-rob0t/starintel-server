@@ -2,19 +2,25 @@
 
 (defstruct (document-update-outcome
              (:constructor make-document-update-outcome
-                 (status &key document attempts reason)))
+                 (status &key document attempts reason code)))
   status
   document
   (attempts 0 :type (integer 0 *))
-  reason)
+  reason
+  code)
 
 (define-condition document-update-validation-error (error)
-  ((reason
+  ((code
+    :initarg :code
+    :initform "invalid_document_update"
+    :reader document-update-validation-code)
+   (reason
     :initarg :reason
     :reader document-update-validation-reason))
   (:report
    (lambda (condition stream)
-     (format stream "Document update validation failed: ~a"
+     (format stream "Document update validation failed (~a): ~a"
+             (document-update-validation-code condition)
              (document-update-validation-reason condition)))))
 
 (define-condition document-update-store-conflict (error) ())
@@ -119,10 +125,23 @@ fields remain controlled by persistence."
 
 (defun validated-document-update (candidate)
   (handler-case
-      (star.documents:ensure-document candidate)
-    (error (condition)
+      (progn
+        ;; Validate the merged candidate before ensure-document can normalize it.
+        (star.documents:validate-v09-document candidate)
+        (star.documents:ensure-document candidate))
+    (star.documents:document-schema-validation-error (condition)
       (error 'document-update-validation-error
-             :reason (princ-to-string condition)))))
+             :code "invalid_document_schema"
+             :reason
+             (format nil "~a: ~a"
+                     (star.documents:document-schema-validation-category
+                      condition)
+                     (star.documents:document-schema-validation-reason
+                      condition))))
+    (error (condition)
+       (error 'document-update-validation-error
+              :code "invalid_document_update"
+              :reason (princ-to-string condition)))))
 
 (defun document-update-wire-equal-p (left right)
   (string= (jsown:to-json left) (jsown:to-json right)))
@@ -153,6 +172,7 @@ fields remain controlled by persistence."
    :validation-failed
    :document existing
    :attempts attempt
+   :code (document-update-validation-code condition)
    :reason (document-update-validation-reason condition)))
 
 (defun upsert-document-update
@@ -225,13 +245,15 @@ when its CouchDB revision loses a compare-and-swap race."
 
 (defun document-update-outcome-json (outcome)
   (let ((object (jsown:empty-object)))
-    (setf (jsown:val object "status")
-          (string-downcase
-           (symbol-name (document-update-outcome-status outcome)))
-          (jsown:val object "attempts")
-          (document-update-outcome-attempts outcome)
-          (jsown:val object "reason")
-          (or (document-update-outcome-reason outcome) :null)
-          (jsown:val object "document")
-          (or (document-update-outcome-document outcome) :null))
+     (setf (jsown:val object "status")
+           (string-downcase
+            (symbol-name (document-update-outcome-status outcome)))
+           (jsown:val object "attempts")
+           (document-update-outcome-attempts outcome)
+           (jsown:val object "code")
+           (or (document-update-outcome-code outcome) :null)
+           (jsown:val object "reason")
+           (or (document-update-outcome-reason outcome) :null)
+           (jsown:val object "document")
+           (or (document-update-outcome-document outcome) :null))
     object))

@@ -75,6 +75,13 @@
 (defun compatibility-target-routing-keys (actor-name)
   (list (format nil "actors.~a.new.target" (string-downcase actor-name))))
 
+(defun compatibility-target-ingress-routing-key (actor-name)
+  "Return the routing key used by the legacy HTTP target adapter."
+  (unless (valid-target-actor-name-p actor-name)
+    (error 'invalid-target-dispatch
+           :reason (format nil "invalid actor identity ~s" actor-name)))
+  (format nil "documents.new.target.~a" (string-downcase actor-name)))
+
 (defun resolve-target-destination (actor-name &key (resolver #'get-dest-actor))
   "Resolve ACTOR-NAME into an explicit local or Rabbit component handle."
   (unless (valid-target-actor-name-p actor-name)

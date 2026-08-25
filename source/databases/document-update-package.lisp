@@ -5,8 +5,10 @@
    document-update-outcome-status
    document-update-outcome-document
    document-update-outcome-attempts
+   document-update-outcome-code
    document-update-outcome-reason
    document-update-validation-error
+   document-update-validation-code
    document-update-validation-reason
    document-update-store-conflict
    merge-document-update
