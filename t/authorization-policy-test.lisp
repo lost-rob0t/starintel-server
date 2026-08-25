@@ -398,6 +398,47 @@
     (signals star.authorization:authorization-error
       (star.authorization:authorize!
        "unmapped:http-route" :principal principal)))
-  (is (null
-       (star.frontends.http-api::route-action
-        :post "/not/a/registered/route"))))
+   (is (null
+        (star.frontends.http-api::route-action
+         :post "/not/a/registered/route"))))
+
+(test document-update-route-requires-write-capability
+  (is (string= "documents:write"
+               (star.frontends.http-api::route-action
+                :put "/document/document-1"))))
+
+(test update-service-authorizes-before-side-effect
+  (let* ((document (policy-document :dataset "dataset-a"))
+         (patch (jsown:new-js ("data" (jsown:new-js ("value" "updated")))))
+         (updated nil)
+         (reader
+           (make-policy-principal
+            "update-reader"
+            '("documents:read" "tenant:default" "dataset:dataset-a")))
+         (writer
+           (make-policy-principal
+            "update-writer"
+            '("documents:write" "tenant:default" "dataset:dataset-a"))))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorized-update-document
+       "doc-1"
+       patch
+       (lambda (document-id)
+         (declare (ignore document-id))
+         document)
+       (lambda (candidate)
+         (declare (ignore candidate))
+         (setf updated t))
+       :principal reader))
+    (is-false updated)
+    (is-true
+     (star.authorization:authorized-update-document
+      "doc-1"
+      patch
+      (lambda (document-id)
+        (declare (ignore document-id))
+        document)
+      (lambda (candidate)
+        (setf updated candidate))
+      :principal writer))
+    (is-true updated)))

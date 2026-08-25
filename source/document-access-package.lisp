@@ -1,6 +1,9 @@
 (uiop:define-package :star.documents
   (:use :cl)
   (:export
+   #:document-schema-validation-error
+   #:document-schema-validation-category
+   #:document-schema-validation-reason
    #:object-has-key-p
    #:object-value
    #:object-keys
@@ -15,6 +18,7 @@
    #:document-date-added
    #:document-date-updated
    #:document-transient-p
+   #:validate-v09-document
    #:ensure-document
    #:document-json
    #:utc-now))

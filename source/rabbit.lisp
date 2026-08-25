@@ -63,12 +63,19 @@
    :password password
    :vhost vhost))
 
-(defun decode-rabbit-document (message &key route-dtype)
-  "Parse one Rabbit delivery and convert malformed payloads to permanent errors."
+(defun decode-rabbit-document
+    (message &key route-dtype (strict-schema-p t))
+  "Parse one Rabbit delivery and classify malformed payloads permanently.
+
+Canonical document mutation queues validate before transport normalization.
+Legacy target adapters must opt out explicitly."
   (handler-case
-      (star.documents:ensure-document
-       (car message)
-       :route-dtype route-dtype)
+      (progn
+        (when strict-schema-p
+          (star.documents:validate-v09-document (car message)))
+        (star.documents:ensure-document
+         (car message)
+         :route-dtype route-dtype))
     (star.consumers:delivery-processing-error (condition)
       (error condition))
     (error (condition)
@@ -116,20 +123,24 @@
      #'publish-raw-message
      :corrected-body corrected-body)))
 
-(defun process-rabbit-document-mutation (message operation)
+(defun persist-rabbit-document-mutation (document operation)
+  (anypool:with-connection
+      (client star.databases.couchdb:*couchdb-pool*)
+    (star.databases.couchdb:couchdb-process-outbox-mutation
+     client
+     star:*couchdb-default-database*
+     #'publish-outbox-event
+     document
+     operation)))
+
+(defun process-rabbit-document-mutation
+    (message operation &key (persist-fn #'persist-rabbit-document-mutation))
   (let ((document (decode-rabbit-document message)))
     (if (star.documents:document-transient-p document)
         (settlement-filtered-ack
          "transient document intentionally not persisted")
         (progn
-          (anypool:with-connection
-              (client star.databases.couchdb:*couchdb-pool*)
-            (star.databases.couchdb:couchdb-process-outbox-mutation
-             client
-             star:*couchdb-default-database*
-             #'publish-outbox-event
-             document
-             operation))
+          (funcall persist-fn document operation)
           (settlement-ack
            "durable mutation and publication completed")))))
 
@@ -150,8 +161,9 @@
      #'publish-outbox-event)))
 
 (defun transient-p (message)
+  "Inspect transport metadata without weakening canonical mutation validation."
   (star.documents:document-transient-p
-   (decode-rabbit-document message)))
+   (decode-rabbit-document message :strict-schema-p nil)))
 
 (defun target-outcome-settlement (outcome)
   (case (star.actors:target-dispatch-outcome-status outcome)
@@ -182,7 +194,10 @@
   (target-outcome-settlement
    (star.actors:accept-target-delivery
     consumer
-    (decode-rabbit-document message :route-dtype "target"))))
+    (decode-rabbit-document
+     message
+     :route-dtype "target"
+     :strict-schema-p nil))))
 
 (defun consumer-retry-options ()
   (list

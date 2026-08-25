@@ -104,6 +104,22 @@
       context
       star.authorization:*current-authorization-decision*))))
 
+(defun publish-target-document-unchecked (document)
+  "Publish a legacy target directly to the target compatibility consumer."
+  (let* ((actor (jsown:val document "actor"))
+         (routing-key
+           (star.actors:compatibility-target-ingress-routing-key actor))
+         (context (current-publish-service-context)))
+    (star.actors:publish
+     star.actors:*producer-agent*
+     :body (jsown:to-json document)
+     :routing-key routing-key
+     :properties
+     (service-context-properties
+      "target"
+      context
+      star.authorization:*current-authorization-decision*))))
+
 (defun publish-document (document)
   "Authorize at the embedded publish boundary before any Rabbit side effect."
   (star.authorization:authorized-publish-document
@@ -279,5 +295,6 @@
             bulk-ingest-job-succeeded
             bulk-ingest-job-failed
             service-context-properties
-            publish-document)
+            publish-document
+            publish-target-document-unchecked)
           :star.frontends.http-api))

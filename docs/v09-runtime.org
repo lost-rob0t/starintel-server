@@ -1,0 +1,41 @@
+#+title: StarIntel v0.9 runtime boundary
+#+options: toc:2
+
+* Canonical mutation boundaries
+
+The following mutation paths validate a complete document with the canonical
+=star-cl= v0.9 validator before persistence or publication:
+
+- =POST /new/document/:dtype=
+- =POST /documents/bulk=
+- =PUT /document/:id=
+- RabbitMQ =documents.ingest.#=
+- RabbitMQ =documents.update.#=
+
+The schema revision is =schema_version="0.9.0"=. The independent document
+revision is the integer =version= field. A missing or unsupported schema version
+is rejected as =422 schema_version_required= or =422
+unsupported_schema_version=; a structurally invalid canonical document is
+=422 invalid_document_schema=.
+
+* Target compatibility
+
+=POST /new/target/:actor= and the target RabbitMQ consumer are explicit legacy
+compatibility adapters. They retain transport identity checks but skip strict
+schema validation. The HTTP adapter publishes directly to
+=documents.new.target.<actor>=, so a legacy target cannot enter the canonical
+ingest queue accidentally. The target consumer still performs its normal
+durable acceptance and dispatch processing.
+
+* Update ordering
+
+HTTP updates deep-merge the patch with the current document, preserve CouchDB
+revision and server-owned outbox fields, validate the merged candidate, and
+only then call the CouchDB save function. Validation failures do not invoke the
+save function. The route requires =documents:write= and authorizes the current
+document before the upsert.
+
+* Dependency lock
+
+The server's Nix and QLot locks converge on canonical =star-cl= revision
+=b8dfbe2f9f56065ace8c3313b92ca748a115cdfa=.

@@ -32,6 +32,7 @@
      (:file "couchdb-view-request-test")
      (:file "lease-store-contract-test")
      (:file "http-boundary-test")
+     (:file "v09-runtime-test")
      (:file "http-capabilities-test")
      (:file "http-auth-test")
      (:file "auth-users-test")

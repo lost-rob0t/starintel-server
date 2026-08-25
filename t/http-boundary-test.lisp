@@ -6,13 +6,20 @@
 (in-suite http-boundary-tests)
 
 (defun make-boundary-document (&key (dtype "host")
-                                    (version starintel:+starintel-doc-version+)
+                                    (schema-version starintel:+starintel-doc-version+)
+                                    (version 1)
                                     (id "boundary-doc-1"))
-  (jsown:new-js
-    ("_id" id)
-    ("dataset" "boundary-tests")
-    ("dtype" dtype)
-    ("version" version)))
+  (let ((document
+          (starintel:encode
+           (starintel:new-host
+            "boundary-tests"
+            :ip "192.0.2.10"
+            :os "linux"))))
+    (setf (jsown:val document "_id") id
+          (jsown:val document "dtype") dtype
+          (jsown:val document "schema_version") schema-version
+          (jsown:val document "version") version)
+    document))
 
 (defun capture-http-input-error (thunk)
   (handler-case
@@ -92,20 +99,91 @@
              (star.frontends.http-api:http-input-error-status
               mismatch-condition)))
       (is (string= "dtype_mismatch"
-                   (star.frontends.http-api:http-input-error-code
-                    mismatch-condition))))))
+                    (star.frontends.http-api:http-input-error-code
+                     mismatch-condition))))))
+
+(test canonical-v09-document-passes-strict-validation
+  (let ((document (make-boundary-document)))
+    (is (eq document
+            (star.frontends.http-api:validate-document-input
+             document
+             :path-dtype "host")))))
+
+(test document-revision-is-independent-from-schema-revision
+  (let ((document (make-boundary-document :version 7)))
+    (is (eq document
+            (star.frontends.http-api:validate-document-input
+             document
+             :path-dtype "host")))
+    (is (= 7 (jsown:val document "version")))
+    (is (string= "0.9.0" (jsown:val document "schema_version")))))
+
+(test version-string-does-not-substitute-for-schema-version
+  (let ((document (make-boundary-document)))
+    (jsown:remkey document "schema_version")
+    (setf (jsown:val document "version") "0.9.0")
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:validate-document-input
+                document
+                :path-dtype "host")))))
+      (is (= 422
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "schema_version_required"
+                   (star.frontends.http-api:http-input-error-code condition))))))
 
 (test unsupported-schema-version-is-rejected
   (let ((condition
           (capture-http-input-error
            (lambda ()
              (star.frontends.http-api:validate-document-input
-              (make-boundary-document :version "999.0")
+              (make-boundary-document :schema-version "999.0")
               :path-dtype "host")))))
     (is (= 422
            (star.frontends.http-api:http-input-error-status condition)))
     (is (string= "unsupported_schema_version"
                  (star.frontends.http-api:http-input-error-code condition)))))
+
+(test undeclared-top-level-field-is-rejected
+  (let ((document (make-boundary-document)))
+    (setf (jsown:val document "legacy_flat_field") "not-v09")
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:validate-document-input
+                document
+                :path-dtype "host")))))
+      (is (= 422
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "invalid_document_schema"
+                   (star.frontends.http-api:http-input-error-code condition))))))
+
+(test dtype-data-schema-mismatch-is-rejected
+  (let ((document (make-boundary-document :dtype "email")))
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:validate-document-input document)))))
+      (is (= 422
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "invalid_document_schema"
+                   (star.frontends.http-api:http-input-error-code condition))))))
+
+(test target-compatibility-adapter-can-skip-strict-schema
+  (let ((document (make-boundary-document :dtype "target")))
+    (jsown:remkey document "schema_version")
+    (setf (jsown:val document "legacy_flat_field") "allowed-at-adapter")
+    (is (eq document
+            (star.frontends.http-api:validate-document-input
+             document
+              :path-dtype "target"
+              :strict-schema-p nil)))))
+
+(test put-document-route-requires-write-capability
+  (is (string= "documents:write"
+               (star.frontends.http-api::route-action
+                :put "/document/example"))))
 
 (test client-status-envelopes-never-expose-tracebacks
   (let* ((star.frontends.http-api::*http-correlation-id* "corr-test")

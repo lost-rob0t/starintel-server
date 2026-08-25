@@ -374,11 +374,12 @@
    #:invalid-target-dispatch
    #:invalid-target-dispatch-reason
    #:target-ingress-overloaded
-   #:target-ingress-overloaded-reason
-   #:target-destination-unavailable
-   #:target-destination-unavailable-reason
+    #:target-ingress-overloaded-reason
+    #:target-destination-unavailable
+    #:target-destination-unavailable-reason
    #:canonical-target-routing-key
    #:compatibility-target-routing-keys
+   #:compatibility-target-ingress-routing-key
    #:resolve-target-destination
    #:validate-target-dispatch-record
    #:make-target-dispatch-envelope

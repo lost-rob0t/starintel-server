@@ -53,6 +53,7 @@
    #:authorize-document!
    #:authorized-fetch-document
    #:authorized-delete-document
+   #:authorized-update-document
    #:authorized-publish-document
    #:authorize-bulk-documents!
    #:authorized-target-documents

@@ -24,8 +24,13 @@
          "Route actor is required"))
       (setf (jsown:val document "dtype") "target"
             (jsown:val document "actor") actor)
-      (validate-document-input document :path-dtype "target")
-      (publish-document document)
+      ;; This route is the historical target compatibility adapter. Canonical
+      ;; document and bulk routes remain strict by default.
+      (validate-document-input
+       document
+       :path-dtype "target"
+       :strict-schema-p nil)
+      (publish-target-document-unchecked document)
       (jsown:to-json document))))
 
 (defun handle-bulk-route (params)

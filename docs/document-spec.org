@@ -10,10 +10,10 @@ StarIntel Server currently sits between two document generations:
 2. *Legacy flat 0.8.0*: Common Lisp classes and constructors still used by parts
    of this server and its actor examples.
 
-The server reports the =star-cl= document version from =GET /=, but the HTTP and
-RabbitMQ ingest handlers do not currently call the strict 0.9 validator. A
-=document= with a non-empty =dtype= can reach CouchDB even when it does not
-conform to 0.9.
+The server reports the =star-cl= document version from =GET /=. Canonical HTTP
+document, bulk, and update boundaries and RabbitMQ ingest/update consumers call
+the strict 0.9 validator before mutation. The historical target adapter is the
+only document ingress exception and is explicitly non-strict.
 
 ** StarIntel 0.9 envelope
 

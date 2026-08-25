@@ -245,6 +245,25 @@ instead of being mistaken for an expected broker failure."
     (spec:ulid-id doc)
     (spec:encode doc)))
 
+;; The view endpoints still read the legacy flat document shape until the
+;; versioned CouchDB view migration is implemented. Keep that compatibility
+;; explicit instead of weakening canonical HTTP fixtures.
+(defun legacy-view-key (key)
+  (cond
+    ((string= key "record_type") "recordType")
+    ((string= key "resolved_addresses") "resolvedAddresses")
+    (t key)))
+
+(defun make-legacy-view-document (document)
+  "Flatten a canonical DOCUMENT for a legacy CouchDB view fixture."
+  (let* ((object (jsown:parse (jsown:to-json document)))
+         (data (jsown:val object "data")))
+    (jsown:remkey object "data")
+    (when (and (consp data) (eq (first data) :obj))
+      (jsown:do-json-keys (key value) data
+        (setf (jsown:val object (legacy-view-key key)) value)))
+    object))
+
 
 
 ;;; Test document creation helpers for BBP/network/web types
@@ -260,16 +279,16 @@ instead of being mistaken for an expected broker failure."
     (spec:encode doc)))
 
 
-(defun make-test-email (&key (id nil) (user "testuser") (domain "example.com") (password nil))
+(defun make-test-email (&key (id nil) (user "testuser") (domain "example.com"))
   "Create a test email document. If id is provided, use it; otherwise generate ULID."
   (let ((doc (spec:new-email "testing" :user user :domain domain)))
     (if id
         (setf (spec:doc-id doc) id)
         (spec:ulid-id doc))
-    ;; Add password if provided for with_password view
-    (when password
-      (setf (spec:email-password doc) password))
-    (spec:encode doc)))
+    ;; Password is a legacy flat-view field, not part of the v0.9 email schema.
+    (let ((encoded (spec:encode doc)))
+      (jsown:remkey (jsown:val encoded "data") "password")
+      encoded)))
 
 
 (defun make-test-domain (&key (id nil) (record "example.com") (resolved '("1.2.3.4" "5.6.7.8")))
@@ -319,6 +338,33 @@ instead of being mistaken for an expected broker failure."
         (setf (spec:doc-id doc) id)
         (spec:ulid-id doc))
     (spec:encode doc)))
+
+(defun make-test-legacy-host (&rest args)
+  (make-legacy-view-document (apply #'make-test-host args)))
+
+(defun make-test-legacy-email (&key (id nil) (user "testuser")
+                                    (domain "example.com") (password nil))
+  (let ((document
+          (make-legacy-view-document
+           (make-test-email :id id :user user :domain domain))))
+    (when password
+      (setf (jsown:val document "password") password))
+    document))
+
+(defun make-test-legacy-domain (&rest args)
+  (make-legacy-view-document (apply #'make-test-domain args)))
+
+(defun make-test-legacy-user (&rest args)
+  (make-legacy-view-document (apply #'make-test-user args)))
+
+(defun make-test-legacy-network (&rest args)
+  (make-legacy-view-document (apply #'make-test-network args)))
+
+(defun make-test-legacy-url-doc (&rest args)
+  (make-legacy-view-document (apply #'make-test-url-doc args)))
+
+(defun make-test-legacy-breach (&rest args)
+  (make-legacy-view-document (apply #'make-test-breach args)))
 
 (defun make-test-email-message (&key (id nil) (from "sender@example.com") (to "recipient@example.com"))
   "Create a test email-message document. If id is provided, use it; otherwise generate ULID."
@@ -405,8 +451,8 @@ instead of being mistaken for an expected broker failure."
 (test test-hosts-by-ip
       "Test GET /documents/hosts/by-ip endpoint."
       (dbg "TEST: test-hosts-by-ip")
-      (insert-test-document (make-test-host :id "host-test-3" :ip "192.168.1.100"))
-      (insert-test-document (make-test-host :id "host-test-5" :ip "192.168.1.101"))
+      (insert-test-document (make-test-legacy-host :id "host-test-3" :ip "192.168.1.100"))
+      (insert-test-document (make-test-legacy-host :id "host-test-5" :ip "192.168.1.101"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/hosts/by-ip?ip=192.168.1.100"))
              (response (dex:get url)))
@@ -420,7 +466,7 @@ instead of being mistaken for an expected broker failure."
 (test test-hosts-by-port
       "Test GET /documents/hosts/by-port endpoint."
       (dbg "TEST: test-hosts-by-port")
-      (insert-test-document (make-test-host :id "host-test-1" :ip "192.168.1.100"))
+      (insert-test-document (make-test-legacy-host :id "host-test-1" :ip "192.168.1.100"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/hosts/by-port?port=22"))
              (response (dex:get url)))
@@ -432,7 +478,7 @@ instead of being mistaken for an expected broker failure."
 (test test-hosts-by-service
       "Test GET /documents/hosts/by-service endpoint."
       (dbg "TEST: test-hosts-by-service")
-      (insert-test-document (make-test-host :id "host-test-4" :ip "192.168.1.100"))
+      (insert-test-document (make-test-legacy-host :id "host-test-4" :ip "192.168.1.100"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/hosts/by-service?service=ssh"))
              (response (dex:get url)))
@@ -446,7 +492,7 @@ instead of being mistaken for an expected broker failure."
 (test test-emails-by-email
       "Test GET /documents/emails/by-email endpoint."
       (dbg "TEST: test-emails-by-email")
-      (insert-test-document (make-test-email :id "email-test-1" :user "testuser" :domain "example.com"))
+      (insert-test-document (make-test-legacy-email :id "email-test-1" :user "testuser" :domain "example.com"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/emails/by-email?email=testuser@example.com"))
              (response (dex:get url)))
@@ -461,9 +507,9 @@ instead of being mistaken for an expected broker failure."
 (test test-emails-by-domain
       "Test GET /documents/emails/by-domain endpoint."
       (dbg "TEST: test-emails-by-domain")
-      (insert-test-document (make-test-email :id "email-test-2" :user "user1" :domain "example.com"))
-      (insert-test-document (make-test-email :id "email-test-3" :user "user2" :domain "example.com"))
-      (insert-test-document (make-test-email :id "email-test-4" :user "user3" :domain "other.com"))
+      (insert-test-document (make-test-legacy-email :id "email-test-2" :user "user1" :domain "example.com"))
+      (insert-test-document (make-test-legacy-email :id "email-test-3" :user "user2" :domain "example.com"))
+      (insert-test-document (make-test-legacy-email :id "email-test-4" :user "user3" :domain "other.com"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/emails/by-domain?domain=example.com"))
              (response (dex:get url)))
@@ -475,7 +521,7 @@ instead of being mistaken for an expected broker failure."
 (test test-emails-with-password
       "Test GET /documents/emails/with-password endpoint."
       (dbg "TEST: test-emails-with-password")
-      (insert-test-document (make-test-email :id "email-test-5" :user "testuser" :domain "example.com" :password "secretpass123"))
+      (insert-test-document (make-test-legacy-email :id "email-test-5" :user "testuser" :domain "example.com" :password "secretpass123"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/emails/with-password"))
              (response (dex:get url)))
@@ -489,7 +535,7 @@ instead of being mistaken for an expected broker failure."
 (test test-domains-by-record
       "Test GET /documents/domains/by-record endpoint."
       (dbg "TEST: test-domains-by-record")
-      (insert-test-document (make-test-domain :id "domain-test-1" :record "example.com"))
+      (insert-test-document (make-test-legacy-domain :id "domain-test-1" :record "example.com"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/domains/by-record?record=example.com"))
              (response (dex:get url)))
@@ -503,7 +549,7 @@ instead of being mistaken for an expected broker failure."
 (test test-domains-by-resolved-address
       "Test GET /documents/domains/by-resolved-address endpoint."
       (dbg "TEST: test-domains-by-resolved-address")
-      (insert-test-document (make-test-domain :id "domain-test-2" :record "example.com"))
+      (insert-test-document (make-test-legacy-domain :id "domain-test-2" :record "example.com"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/domains/by-resolved-address?ip=1.2.3.4"))
              (response (dex:get url)))
@@ -517,7 +563,7 @@ instead of being mistaken for an expected broker failure."
 (test test-users-by-name
       "Test GET /documents/users/by-name endpoint."
       (dbg "TEST: test-users-by-name")
-      (insert-test-document (make-test-user :id "user-test-1" :name "testuser" :platform "github"))
+      (insert-test-document (make-test-legacy-user :id "user-test-1" :name "testuser" :platform "github"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/users/by-name?name=testuser"))
              (response (dex:get url)))
@@ -531,9 +577,9 @@ instead of being mistaken for an expected broker failure."
 (test test-users-by-platform
       "Test GET /documents/users/by-platform endpoint."
       (dbg "TEST: test-users-by-platform")
-      (insert-test-document (make-test-user :id "user-test-4" :name "user1" :platform "github"))
-      (insert-test-document (make-test-user :id "user-test-2" :name "user2" :platform "github"))
-      (insert-test-document (make-test-user :id "user-test-3" :name "user3" :platform "twitter"))
+      (insert-test-document (make-test-legacy-user :id "user-test-4" :name "user1" :platform "github"))
+      (insert-test-document (make-test-legacy-user :id "user-test-2" :name "user2" :platform "github"))
+      (insert-test-document (make-test-legacy-user :id "user-test-3" :name "user3" :platform "twitter"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/users/by-platform?platform=github"))
              (response (dex:get url)))
@@ -547,7 +593,7 @@ instead of being mistaken for an expected broker failure."
 (test test-networks-by-asn
       "Test GET /documents/networks/by-asn endpoint."
       (dbg "TEST: test-networks-by-asn")
-      (insert-test-document (make-test-network :id "network-test-1" :asn 12345))
+      (insert-test-document (make-test-legacy-network :id "network-test-1" :asn 12345))
       (sleep 2)
       (let* ((url (make-test-url "/documents/networks/by-asn?asn=12345"))
              (response (dex:get url)))
@@ -561,7 +607,7 @@ instead of being mistaken for an expected broker failure."
 (test test-networks-by-org
       "Test GET /documents/networks/by-org endpoint."
       (dbg "TEST: test-networks-by-org")
-      (insert-test-document (make-test-network :id "network-test-2" :asn 12345))
+      (insert-test-document (make-test-legacy-network :id "network-test-2" :asn 12345))
       (sleep 2)
       (let* ((url (make-test-url "/documents/networks/by-org?org=Test%20Organization"))
              (response (dex:get url)))
@@ -575,7 +621,7 @@ instead of being mistaken for an expected broker failure."
 (test test-urls-by-url
       "Test GET /documents/urls/by-url endpoint."
       (dbg "TEST: test-urls-by-url")
-      (insert-test-document (make-test-url-doc :id "url-test-1" :url "https://example.com/test"))
+      (insert-test-document (make-test-legacy-url-doc :id "url-test-1" :url "https://example.com/test"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/urls/by-url?url=https://example.com/test"))
              (response (dex:get url)))
@@ -589,7 +635,7 @@ instead of being mistaken for an expected broker failure."
 (test test-urls-by-domain
       "Test GET /documents/urls/by-domain endpoint."
       (dbg "TEST: test-urls-by-domain")
-      (insert-test-document (make-test-url-doc :id "url-test-2" :url "https://example.com/test"))
+      (insert-test-document (make-test-legacy-url-doc :id "url-test-2" :url "https://example.com/test"))
       (sleep 2)
       (let* ((url (make-test-url "/documents/urls/by-domain?domain=example.com"))
              (response (dex:get url)))
@@ -603,8 +649,8 @@ instead of being mistaken for an expected broker failure."
 (test test-breaches-by-size
       "Test GET /documents/breaches/by-size endpoint."
       (dbg "TEST: test-breaches-by-size")
-      (insert-test-document (make-test-breach :id "breach-test-1" :total 10000))
-      (insert-test-document (make-test-breach :id "breach-test-2" :total 50000))
+      (insert-test-document (make-test-legacy-breach :id "breach-test-1" :total 10000))
+      (insert-test-document (make-test-legacy-breach :id "breach-test-2" :total 50000))
       (sleep 2)
       (let* ((url (make-test-url "/documents/breaches/by-size?descending=true&limit=10"))
              (response (dex:get url)))
