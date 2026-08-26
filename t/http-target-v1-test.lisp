@@ -44,16 +44,19 @@
             request "human:alice"))
          (other-user
            (star.frontends.http-api::target-v1-document-from-request
-            request "human:bob")))
+            request "human:bob"))
+         (extensions (jsown:val first "extensions")))
     (is (string= (jsown:val first "_id")
                  (jsown:val retry "_id")))
-    (is (string= (jsown:val first "schedule_id")
-                 (jsown:val retry "schedule_id")))
     (is (not (string= (jsown:val first "_id")
                       (jsown:val other-user "_id"))))
     (is (string= "target" (jsown:val first "dtype")))
     (is (string= starintel:+starintel-doc-version+
-                 (jsown:val first "schema_version")))))
+                 (jsown:val first "schema_version")))
+    (is (stringp (jsown:val extensions "idempotency_key")))
+    (is (null (search "bixby-draft-123"
+                      (jsown:val extensions "idempotency_key")
+                      :test #'char-equal)))))
 
 (test v1-target-request-rejects-missing-idempotency-and-invalid-delay
   (let ((missing-key (make-v1-target-request))
@@ -82,6 +85,30 @@
                    (star.frontends.http-api:http-input-error-code
                     delay-condition))))))
 
+(test request-ledger-detects-content-change-under-same-idempotency-key
+  (let* ((left-request (make-v1-target-request :target "example.org"))
+         (right-request (make-v1-target-request :target "example.net"))
+         (left-document
+           (star.frontends.http-api::target-v1-document-from-request
+            left-request "human:alice"))
+         (right-document
+           (star.frontends.http-api::target-v1-document-from-request
+            right-request "human:alice"))
+         (left-ledger
+           (star.frontends.http-api::target-v1-request-ledger
+            left-request left-document "human:alice"))
+         (right-ledger
+           (star.frontends.http-api::target-v1-request-ledger
+            right-request right-document "human:alice")))
+    ;; The idempotency identity is stable, but its semantic fingerprint is not.
+    (is (string= (jsown:val left-ledger "_id")
+                 (jsown:val right-ledger "_id")))
+    (is (not (string= (jsown:val left-ledger "fingerprint")
+                      (jsown:val right-ledger "fingerprint"))))
+    (is-false
+     (star.frontends.http-api::target-v1-request-equivalent-p
+      left-ledger right-ledger))))
+
 (test durable-target-fingerprint-detects-content-change-under-same-key
   (let* ((left-doc
            (star.frontends.http-api::target-v1-document-from-request
@@ -108,36 +135,22 @@
               (star.actors::target-dispatch-fingerprint right-envelope))))))
 
 (test v1-target-receipt-is-narrow-and-retry-aware
-  (let* ((document
+  (let* ((request (make-v1-target-request))
+         (document
            (star.frontends.http-api::target-v1-document-from-request
-            (make-v1-target-request) "human:alice"))
-         (record (star.actors::parse-target-record document))
-         (destination
-           (star.actors::make-target-destination-handle
-            :rabbit "subfinder"
-            :routing-key "documents.target.dispatch.subfinder"))
-         (envelope
-           (star.actors::make-target-dispatch-envelope
-            record :destination destination))
-         (accepted
-           (star.actors::make-target-dispatch-outcome
-            :accepted
-            :acceptance-id "target-acceptance:test"
-            :envelope envelope))
-         (duplicate
-           (star.actors::make-target-dispatch-outcome
-            :duplicate
-            :acceptance-id "target-acceptance:test"
-            :envelope envelope))
+            request "human:alice"))
+         (ledger
+           (star.frontends.http-api::target-v1-request-ledger
+            request document "human:alice"))
          (accepted-json
-           (star.frontends.http-api::target-v1-receipt accepted))
+           (star.frontends.http-api::target-v1-receipt ledger :created))
          (duplicate-json
-           (star.frontends.http-api::target-v1-receipt duplicate)))
+           (star.frontends.http-api::target-v1-receipt ledger :duplicate)))
     (is (string= "accepted" (jsown:val accepted-json "status")))
     (is (string= "duplicate" (jsown:val duplicate-json "status")))
     (is (string= (jsown:val document "_id")
                  (jsown:val accepted-json "target_id")))
-    (is (string= "target-acceptance:test"
-                 (jsown:val accepted-json "acceptance_id")))
+    (is (string= (jsown:val ledger "_id")
+                 (jsown:val accepted-json "request_id")))
     (is-false (jsown:keyp accepted-json "target_document"))
-    (is-false (jsown:keyp accepted-json "routing_key"))))
+    (is-false (jsown:keyp accepted-json "principal_id"))))
