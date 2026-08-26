@@ -17,3 +17,17 @@
            (star.frontends.http-api:http-input-error-status condition)))
     (is (string= "malformed_json"
                  (star.frontends.http-api:http-input-error-code condition)))))
+
+(test trailing-comma-json-array-is-a-400-client-error
+  "Prove the same permissive-parser defect applies to JSON arrays, not just objects."
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api:parse-json-octets
+              (babel:string-to-octets "[1,]" :encoding :utf-8)
+              "application/json")))))
+    (is-true condition)
+    (is (= 400
+           (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "malformed_json"
+                 (star.frontends.http-api:http-input-error-code condition)))))
