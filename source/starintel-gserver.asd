@@ -23,6 +23,8 @@
     :pathname "../cli/http-contract")
    (:file "http-contract-final"
     :pathname "../cli/http-contract-final")
+   (:file "http-contract-targets"
+    :pathname "../cli/http-contract-targets")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
