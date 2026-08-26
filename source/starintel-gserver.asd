@@ -76,6 +76,7 @@
    (:file "frontends/http-boundary-routes")
    (:file "frontends/http-target-v1")
    (:file "frontends/http-target-v1-auth")
+   (:file "frontends/http-target-v1-route")
    (:file "frontends/http-auth-routes")
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
