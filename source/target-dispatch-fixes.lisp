@@ -39,4 +39,4 @@ conflict instead of being silently treated as a duplicate."
              (if (target-record-recurring-p record) "true" "false")
              (target-dispatch-fingerprint-json
               (target-record-options record))
-             (or (target-record-deadline record) "no-deadline"))))))
+             (or (target-record-deadline record) "no-deadline")))))
