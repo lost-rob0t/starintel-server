@@ -17,14 +17,10 @@
    (:file "consumers/retry-policy")
    (:file "producers/package")
    (:file "producers/producers")
-   (:file "http-contract-package"
-    :pathname "../cli/http-contract-package")
-   (:file "http-contract"
-    :pathname "../cli/http-contract")
-   (:file "http-contract-final"
-    :pathname "../cli/http-contract-final")
-   (:file "http-contract-targets"
-    :pathname "../cli/http-contract-targets")
+   (:file "http-contract-package" :pathname "../cli/http-contract-package")
+   (:file "http-contract" :pathname "../cli/http-contract")
+   (:file "http-contract-final" :pathname "../cli/http-contract-final")
+   (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
@@ -79,6 +75,7 @@
    (:file "frontends/http-bulk-jobs")
    (:file "frontends/http-boundary-routes")
    (:file "frontends/http-target-v1")
+   (:file "frontends/http-target-v1-auth")
    (:file "frontends/http-auth-routes")
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
@@ -90,36 +87,11 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel
-   #:com.inuoe.jzon
-   #:cl-couch
-   #:serapeum
-   #:alexandria
-   #:cl-rabbit
-   #:sento
-   #:babel
-   #:yason
-   #:ironclad
-   #:dexador
-   #:quri
-   #:uuid
-   #:anypool
-   #:clack
-   #:lack/middleware/accesslog
-   #:clack-handler-hunchentoot
-   #:ningle
-   #:clingon
-   #:slynk
-   #:nhooks
-   #:lparallel
-   #:cl-stream
-   #:cl-ppcre
-   #:cms-ulid
-   #:bordeaux-threads
-   #:usocket
-   #:cl+ssl
-   #:jsown
-   #:closer-mop))
+  (#:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
+   #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
+   #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
+   #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre
+   #:cms-ulid #:bordeaux-threads #:usocket #:cl+ssl #:jsown #:closer-mop))
 
 ;;;; StarIntel Gserver is a processing framework for StarIntel documents.
 ;;;; Runtime documentation lives in ../docs and must track behavior changes.
