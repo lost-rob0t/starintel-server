@@ -7,6 +7,7 @@
   :components   ((:file "http-contract-package")
                  (:file "http-contract")
                  (:file "http-contract-final")
+                 (:file "http-contract-targets")
                  (:file "client-package")
                  (:file "client-runtime")
                  (:file "client-compat")
