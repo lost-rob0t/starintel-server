@@ -219,11 +219,15 @@ scrub error text."
 (defun starintel-api-error-message (err)
   "Return the redacted message of a starintel-api error ERR.
 ERR is the condition data as captured by `condition-case' or
-`should-error': (SYMBOL . DATA)."
+`should-error': (SYMBOL . DATA).  Plain string data, as signaled by
+ordinary `user-error' calls at the UI boundary, is redacted too."
   (let ((data (cdr err)))
     (cond
-     ((and (listp data) data (plist-member (car data) :message))
+     ((and (listp data) data (listp (car data))
+           (plist-member (car data) :message))
       (plist-get (car data) :message))
+     ((and (listp data) (stringp (car data)))
+      (starintel-api--redact (car data)))
      ((stringp data) (starintel-api--redact data))
      (t (starintel-api--redact (format "%S" data))))))
 

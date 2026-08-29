@@ -1,0 +1,84 @@
+#+title: Emacs OSINT workbench: execution plan
+#+options: toc:2
+
+Long-horizon plan for evolving =client.el= into a native Emacs OSINT
+workbench. The workbench is a cockpit over the StarIntel server; the server
+stays authoritative. Update the status table in the same commit as behavior
+changes.
+
+* Dependency order
+
+1. transport/auth/server profiles            <- foundation slice (this PR)
+2. object/URI model                          <- foundation slice (this PR)
+3. generic object views                      <- foundation slice (this PR)
+4. search + documents + entities             <- foundation slice (this PR)
+5. targets
+6. investigations + Org integration
+7. graph (relation traversal)
+8. actors/jobs (blocked: server exposes nothing)
+9. ingest
+10. query/timeline/provenance
+11. dashboard/workbench polish
+
+* Module layout (additive; client.el keeps transport + legacy + compat UI)
+
+| File | Responsibility |
+|------+----------------|
+| =starintel-server.el= | Server profiles, current server, =auth-source=, switch/status |
+| =starintel-uri.el= | =star://= parse/format/open, Org link registration |
+| =starintel-object.el= | Object identity, dtype field maps, titles, object buffer mode |
+| =starintel-search.el= | Search results tabulated-list buffer, marking, pagination |
+| =starintel.el= | Workbench entry =M-x starintel=, soft transient menu |
+
+* star:// URI grammar
+
+: star://SERVER/KIND/ID
+
+- =SERVER=: server profile name; empty means the current server.
+- =KIND=: =document=, =person=, =org=, =target=, =relation=, =search=, ...
+  open set; unknown kinds still parse and open generically.
+- =ID=: remainder of the string (IDs may contain =/=); percent-decoded.
+
+Examples: =star://local/document/01JABC...=, =star:///person/01J...=,
+=star://remote/search/alice example.com=.
+
+* Server profile model
+
+Profiles live in =starintel-servers= as plists:
+
+#+begin_src elisp
+(setq starintel-servers
+      '((local :url "http://127.0.0.1:5000"
+               :auth-source (:host "starintel-local" :user "api"))))
+#+end_src
+
+Activating a profile sets the API layer base URL and token resolution,
+clears the capability cache, and stamps every object reference with the
+profile name. Secrets come from =auth-source=, never plain config.
+
+* Status
+
+| Slice | Status | Evidence |
+|-------+--------+----------|
+| 1. inventory + plan | done | this file + emacs-workbench-inventory.org |
+| 2. profiles | done | starintel-server.el + ERT |
+| 3. URI model | done | starintel-uri.el + ERT |
+| 4. object identity + buffer | done | starintel-object.el + ERT |
+| 5. search buffer | done | starintel-search.el + ERT |
+| 6. targets workbench | pending | view routes + =/targets/:actor= exist server-side |
+| 7. investigations/org | pending | after object model proven in use |
+| 8. graph traversal | pending | relation documents |
+| 9. actors/jobs | blocked | server feature absent; render unavailable |
+| 10. ingest | pending | POST /new/document/:dtype |
+| 11. query/timeline/provenance | pending | |
+| 12. dashboard polish | pending | after real features land |
+
+Live validation against the development deployment (127.0.0.1:5000):
+capabilities discovery, search round-trip, stats, and typed timeout
+handling verified. Authenticated document fetch and target routes are
+pending validation with a local API credential.
+
+* TDD gate
+
+=make test-emacs= runs all ERT suites (client + workbench) with the fake
+transport. New behavior lands with red/green evidence in commit history.
