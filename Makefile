@@ -19,7 +19,7 @@ integration-test:
 	nix run .#star-integration-tests
 
 test-emacs:
-	$(EMACS) -Q --batch -L . -l client-test.el -f ert-run-tests-batch-and-exit
+	$(EMACS) -Q --batch -L . -l client-test.el -l starintel-workbench-test.el -f ert-run-tests-batch-and-exit
 
 images:
 	nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
