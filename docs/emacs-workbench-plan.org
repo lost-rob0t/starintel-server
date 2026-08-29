@@ -54,7 +54,24 @@ Profiles live in =starintel-servers= as plists:
 
 Activating a profile sets the API layer base URL and token resolution,
 clears the capability cache, and stamps every object reference with the
-profile name. Secrets come from =auth-source=, never plain config.
+profile name.
+
+* Secret handling
+
+- Preferred: =:auth-source= in a profile. Credentials resolve per
+  request through =auth-source-search=; nothing is cached or written
+  by the client. Use an encrypted =~/.authinfo.gpg=:
+
+  #+begin_src text
+  machine starintel-remote login api password star_sk_v1_...
+  #+end_src
+
+- =:auth-source= accepts a host string (login defaults to =api=) or
+  =(:host HOST :user USER)=.
+- A session =:token= keeps the secret in memory for the session only
+  and is never persisted through Customize.
+- Bearer tokens never appear in URLs; error text and messages are
+  redacted by the API layer against the active token. Secrets come from =auth-source=, never plain config.
 
 * Status
 

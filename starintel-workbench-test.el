@@ -241,6 +241,21 @@
       (should (equal "starintel-remote" (plist-get (car lookups) :host)))
       (should (equal "api" (plist-get (car lookups) :user))))))
 
+(ert-deftest starintel-server-activate-with-auth-source-shorthand ()
+  (let* ((starintel-servers '((remote :url "https://si.example.com"
+                                      :auth-source "starintel-remote")))
+         (lookups nil))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest keys)
+                 (push keys lookups)
+                 (list (list :secret (lambda () "star_sk_v1_shorthand"))))))
+      (starintel-server-activate 'remote)
+      (should (null starintel-api-token))
+      (should (equal "star_sk_v1_shorthand"
+                     (funcall starintel-api-token-function)))
+      (should (equal "starintel-remote" (plist-get (car lookups) :host)))
+      (should (equal "api" (plist-get (car lookups) :user))))))
+
 (ert-deftest starintel-server-activate-unknown-profile-signals ()
   (should-error (starintel-server-activate 'does-not-exist)))
 

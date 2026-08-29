@@ -16,10 +16,17 @@
 ;; server.  Activating a profile configures the transport layer base
 ;; URL and credential resolution and clears the capability cache.
 ;;
-;; Secrets never live in plain configuration: prefer :auth-source
-;; (:host HOST :user USER) which resolves through `auth-source-search'
-;; per request.  A session :token is accepted for transient use and is
-;; never persisted through Customize.
+;; Secrets never live in plain configuration: prefer :auth-source,
+;; either a host string (user defaults to \"api\") or a plist
+;; (:host HOST :user USER).  Credentials resolve per request through
+;; `auth-source-search' against your authinfo file -- put the entry in
+;; ~/.authinfo.gpg (encrypted) rather than plain ~/.authinfo:
+;;
+;;     machine starintel-remote login api password star_sk_v1_...
+;;
+;; A session :token is accepted for transient use and lives only in
+;; memory; it is never persisted through Customize.  Error text and
+;; messages are redacted against the token by the API layer.
 
 ;;; Code:
 
@@ -63,21 +70,36 @@ Example:
   "Return the plist of profile NAME."
   (cdr (starintel-server--spec name)))
 
+(defun starintel-server--auth-source-spec (spec)
+  "Normalize an :auth-source SPEC to (HOST . USER).
+SPEC is either a host string or a plist (:host HOST :user USER).
+The user defaults to \"api\"."
+  (cond
+   ((stringp spec) (cons spec "api"))
+   ((listp spec)
+    (cons (plist-get spec :host) (or (plist-get spec :user) "api")))
+   (t nil)))
+
 (defun starintel-server--activate-token (name)
   "Configure credential resolution for profile NAME.
 Tokens from :auth-source are resolved per request through
-`auth-source-search'; plain :token values are stored in the session
-variable only."
+`auth-source-search' against the user's authinfo file (prefer
+~/.authinfo.gpg); the secret is never cached in configuration or
+written to disk.  A plain :token value is kept in the session
+variable only and never persisted through Customize."
   (let ((plist (starintel-server--plist name)))
     (if (plist-get plist :auth-source)
-        (let ((host (plist-get (plist-get plist :auth-source) :host))
-              (user (plist-get (plist-get plist :auth-source) :user)))
+        (let* ((spec (starintel-server--auth-source-spec
+                      (plist-get plist :auth-source)))
+               (host (car spec))
+               (user (cdr spec)))
           (setq starintel-api-token nil)
           (setq starintel-api-token-function
                 (lambda ()
                   (let ((entry (car (ignore-errors
                                       (auth-source-search
-                                       :max 1 :host host :user user :require '(:secret))))))
+                                       :max 1 :host host :user user
+                                       :require '(:secret))))))
                     (when entry
                       (let ((secret (plist-get entry :secret)))
                         (cond
