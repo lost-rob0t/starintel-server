@@ -136,8 +136,13 @@
       (let ((text (babel:octets-to-string octets :encoding :utf-8)))
         ;; Validate with the packaged standards-oriented parser, then retain
         ;; JSOWN as the service's existing internal document representation.
+        ;; The injective reader binds jsown's parsed-value slots so JSON
+        ;; false/null survive the internal representation and every later
+        ;; jsown:to-json re-serialization (wire, validation, CouchDB) emits
+        ;; the original literals instead of conflating them with [] / null.
         (yason:parse text)
-        (jsown:parse text))
+        (jsown:with-injective-reader
+          (jsown:parse text)))
     (error ()
       (signal-http-input-error
        400

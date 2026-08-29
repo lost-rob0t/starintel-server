@@ -166,10 +166,11 @@
       #'(lambda (params)
           (set-default-headers)
           (let* ((actor (cdr (assoc :actor params :test #'string=)))
-                 (body (jsown:parse
-                        (babel:octets-to-string
-                         (lack.request:request-content (ningle:context :request))
-                         :encoding :utf-8))))
+                 (body (jsown:with-injective-reader
+                         (jsown:parse
+                          (babel:octets-to-string
+                           (lack.request:request-content (ningle:context :request))
+                           :encoding :utf-8)))))
             (assert (and actor (stringp actor) (> (length actor) 0)) (actor)
                     "URL is missing :actor")
             (setf (jsown:val body "dtype") "target")
@@ -198,7 +199,8 @@
       #'(lambda (params)
           (set-default-headers)
           (let* ((dtype  (cdr (assoc :dtype params :test #'string=)))
-                 (body (jsown:parse (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8)))
+                 (body (jsown:with-injective-reader
+                         (jsown:parse (babel:octets-to-string  (lack.request:request-content (ningle:context :request)) :encoding :utf-8))))
                  (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype)))
             (log:info "POST /new/document/:dtype - dtype: ~a routing-key: ~a" dtype routing-key)
             (log:debug "Document body length: ~a" (length body))
@@ -225,7 +227,8 @@
           (set-default-headers)
           (handler-case
               (let* ((body-str (babel:octets-to-string (lack.request:request-content (ningle:context :request)) :encoding :utf-8))
-                     (documents (jsown:parse body-str)))
+                     (documents (jsown:with-injective-reader
+                                  (jsown:parse body-str))))
                 (log:info "POST /bulk - received request")
                 (cond
                   ((not (listp documents))
