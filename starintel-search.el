@@ -135,6 +135,7 @@ ROW carries `doc' and optionally a score."
                (length entries) query
                (if bookmark "  [more pages available: n]" "")))))
 
+;;;###autoload
 (cl-defun starintel-search-open (query &key limit bookmark)
   "Search StarIntel for QUERY and render actionable results.
 LIMIT bounds the page size; BOOKMARK continues a previous page.  The
@@ -149,6 +150,7 @@ error instead of breaking the workbench."
    :on-success (lambda (data) (starintel-search--render query data))
    :on-error #'starintel-ui--report-error))
 
+;;;###autoload
 (defun starintel-search-refresh ()
   "Re-run the current query."
   (interactive)
@@ -156,6 +158,7 @@ error instead of breaking the workbench."
       (starintel-search-open starintel-search--query)
     (user-error "StarIntel: no query in this search buffer")))
 
+;;;###autoload
 (defun starintel-search-next-page ()
   "Render the next page using the server bookmark."
   (interactive)
@@ -174,6 +177,7 @@ error instead of breaking the workbench."
          (let ((doc (cdr (assoc id starintel-search--docs))))
            (and doc (starintel-search--object-from-doc doc))))))
 
+;;;###autoload
 (defun starintel-search-copy-uri ()
   "Copy the star:// URI of the entry at point."
   (interactive)
@@ -184,6 +188,7 @@ error instead of breaking the workbench."
           (message "StarIntel: copied %s" (starintel-object-uri obj)))
       (user-error "StarIntel: no StarIntel object at point"))))
 
+;;;###autoload
 (defun starintel-search-toggle-mark ()
   "Toggle the mark on the entry at point."
   (interactive)

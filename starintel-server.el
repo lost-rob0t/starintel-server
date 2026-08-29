@@ -129,6 +129,7 @@ The active profile name when one is active, otherwise \"default\"."
       (symbol-name starintel-server-current-name)
     "default"))
 
+;;;###autoload
 (defun starintel-server-switch (&optional name)
   "Switch to the StarIntel server profile NAME.
 Uses completion when called interactively.  Activates the profile and
@@ -140,6 +141,7 @@ shows the status buffer."
     (starintel-server-activate (intern choice))
     (starintel-status)))
 
+;;;###autoload
 (defun starintel-server-status ()
   "Show the status of the current StarIntel server."
   (interactive)

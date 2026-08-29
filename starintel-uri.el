@@ -86,6 +86,7 @@ form the object path."
           "/" (format "%s" kind)
           "/" (starintel-uri--encode id)))
 
+;;;###autoload
 (defun starintel-uri-open (uri)
   "Open the StarIntel object referenced by URI.
 Dispatches on the URI kind.  When the URI names a server profile

@@ -28,7 +28,7 @@ changes.
 | =starintel-uri.el= | =star://= parse/format/open, Org link registration |
 | =starintel-object.el= | Object identity, dtype field maps, titles, object buffer mode |
 | =starintel-search.el= | Search results tabulated-list buffer, marking, pagination |
-| =starintel.el= | Workbench entry =M-x starintel=, soft transient menu |
+| =starintel-ui.el= | Workbench package =starintel-ui=, entry =M-x starintel=, soft transient menu |
 
 * star:// URI grammar
 

@@ -28,7 +28,7 @@
 (require 'starintel-uri)
 (require 'starintel-object)
 (require 'starintel-search)
-(require 'starintel)
+(require 'starintel-ui)
 
 ;;; ------------------------------------------------------------------
 ;;; Fake transport harness (same contract as client-test.el)

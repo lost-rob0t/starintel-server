@@ -497,6 +497,33 @@ PY
         starServer = star-server-bin;
       };
 
+      # Native Emacs OSINT workbench (package name starintel-ui, entry
+      # command M-x starintel). Only runtime elisp is compiled: test
+      # files stay out of the installed site-lisp. Autoloads are
+      # generated so M-x can discover the interactive commands.
+      starintel-ui-src = pkgs.runCommand "starintel-ui-src" { } ''
+        mkdir -p $out
+        cp ${./client.el} $out/client.el
+        cp ${./starintel-server.el} $out/starintel-server.el
+        cp ${./starintel-uri.el} $out/starintel-uri.el
+        cp ${./starintel-object.el} $out/starintel-object.el
+        cp ${./starintel-search.el} $out/starintel-search.el
+        cp ${./starintel-ui.el} $out/starintel-ui.el
+      '';
+
+      starintel-ui = pkgs.emacsPackages.trivialBuild {
+        pname = "starintel-ui";
+        version = "2.0.0";
+        src = starintel-ui-src;
+        postInstall = ''
+          cd "$out/share/emacs/site-lisp"
+          ${pkgs.emacs}/bin/emacs --batch \
+            --eval '(progn
+                       (require (quote package))
+                       (package-generate-autoloads "starintel-ui" "."))'
+        '';
+      };
+
     in {
       packages.${system} = {
         default = star-server-bin;
@@ -511,6 +538,8 @@ PY
         valkey-image = containerImages.valkeyImage;
         container-images = containerImages.allImages;
         load-images = containerImages.loadImages;
+
+        starintel-ui = starintel-ui;
 
         star-cli = pkgs.stdenv.mkDerivation {
           pname = "star-cli";

@@ -268,6 +268,7 @@ typed errors surface through the usual StarIntel error reporting."
        (starintel-object--render obj)))
    :on-error #'starintel-ui--report-error))
 
+;;;###autoload
 (defun starintel-object-refresh ()
   "Refresh the object buffer at point from the server."
   (interactive)
@@ -278,6 +279,7 @@ typed errors surface through the usual StarIntel error reporting."
         (message "StarIntel: refreshed %s" uri))
     (user-error "StarIntel: buffer does not reference a StarIntel object")))
 
+;;;###autoload
 (defun starintel-object-copy-id ()
   "Copy the current object's ID."
   (interactive)
@@ -285,6 +287,7 @@ typed errors surface through the usual StarIntel error reporting."
     (kill-new (starintel-object-id obj))
     (message "StarIntel: copied %s" (starintel-object-id obj))))
 
+;;;###autoload
 (defun starintel-object-copy-uri ()
   "Copy the current object's star:// URI."
   (interactive)
@@ -292,6 +295,7 @@ typed errors surface through the usual StarIntel error reporting."
     (kill-new (starintel-object-uri obj))
     (message "StarIntel: copied %s" (starintel-object-uri obj))))
 
+;;;###autoload
 (defun starintel-object-show-raw ()
   "Show the raw JSON document of the current object."
   (interactive)
