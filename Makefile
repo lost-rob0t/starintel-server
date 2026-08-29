@@ -6,8 +6,9 @@
 # @version 0.1
 
 LISP ?= sbcl
+EMACS ?= emacs
 
-.PHONY: all test integration-test images load-images compose-config stack-test
+.PHONY: all test integration-test test-emacs images load-images compose-config stack-test
 
 all: test
 
@@ -16,6 +17,9 @@ test:
 
 integration-test:
 	nix run .#star-integration-tests
+
+test-emacs:
+	$(EMACS) -Q --batch -L . -l client-test.el -f ert-run-tests-batch-and-exit
 
 images:
 	nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
