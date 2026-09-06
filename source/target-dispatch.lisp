@@ -198,7 +198,16 @@
 
 (defun target-record-schedule-id (record)
   (or (target-value (target-record-document record) "schedule_id" nil)
+      (target-record-extensions-schedule-id record)
       (target-record-id record)))
+
+(defun target-record-extensions-schedule-id (record)
+  "Schedule identity carried in the schema-valid extensions envelope."
+  (let ((extensions
+          (star.documents:object-value
+           (target-record-document record) "extensions" nil)))
+    (and extensions
+         (star.documents:object-value extensions "schedule_id" nil))))
 
 (defun target-record-transient-p (record)
   (star.documents:document-transient-p

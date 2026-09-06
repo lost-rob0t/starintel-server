@@ -170,15 +170,74 @@
       (is (string= "invalid_document_schema"
                    (star.frontends.http-api:http-input-error-code condition))))))
 
-(test target-compatibility-adapter-can-skip-strict-schema
-  (let ((document (make-boundary-document :dtype "target")))
-    (jsown:remkey document "schema_version")
-    (setf (jsown:val document "legacy_flat_field") "allowed-at-adapter")
+(test target-boundary-folds-legacy-envelope-and-validates-strictly
+  (let* ((document
+           (jsown:new-js
+             ("_id" "legacy-target-1")
+             ("dataset" "star-intel")
+             ("target" "example.invalid")
+             ("delay" 30)
+             ("recurring" :false)))
+         (normalized
+           (star.frontends.http-api::normalize-legacy-target-document
+            document "nmap")))
+    (is (eq document normalized))
     (is (eq document
             (star.frontends.http-api:validate-document-input
-             document
-              :path-dtype "target"
-              :strict-schema-p nil)))))
+             document :path-dtype "target")))
+    (let ((data (jsown:val document "data")))
+      (is (string= "nmap" (jsown:val data "actor")))
+      (is (string= "example.invalid" (jsown:val data "target")))
+      (is (= 30 (jsown:val data "delay")))
+      (is (eq :false (jsown:val data "recurring"))))
+    ;; The historical top-level fields are gone from the closed envelope.
+    (dolist (key '("actor" "target" "delay" "recurring" "options"))
+      (is-false (jsown:keyp document key)))
+    ;; Missing envelope fields were defaulted to schema-valid values.
+    (is (string= "0.9.0" (jsown:val document "schema_version")))
+    (is (= 1 (jsown:val document "version")))
+    (is (stringp (jsown:val document "date_added")))
+    (is (stringp (jsown:val document "date_updated")))
+    (is (vectorp (jsown:val document "sources")))
+    (is (vectorp (jsown:val document "evidence")))
+    (is (string= "target" (jsown:val document "dtype")))))
+
+(test target-boundary-preserves-caller-provided-data
+  (let* ((document
+           (jsown:new-js
+             ("_id" "legacy-target-2")
+             ("dataset" "star-intel")
+             ("target" "caller-top-level.invalid")
+             ("data" (jsown:new-js ("target" "caller-data.invalid")
+                                   ("options" #("opt-a")))))))
+    (star.frontends.http-api::normalize-legacy-target-document
+     document "subfinder")
+    ;; Explicit data wins over the historical top-level field; the URL
+    ;; actor remains authoritative.
+    (let ((data (jsown:val document "data")))
+      (is (string= "caller-data.invalid" (jsown:val data "target")))
+      (is (string= "subfinder" (jsown:val data "actor")))
+      (is (= 1 (length (jsown:val data "options")))))
+    (is-false (jsown:keyp document "target"))))
+
+(test target-boundary-rejects-undeclared-legacy-fields
+  (let ((document
+          (jsown:new-js
+            ("_id" "legacy-target-3")
+            ("dataset" "star-intel")
+            ("target" "example.invalid")
+            ("legacy_flat_field" "not-v09"))))
+    (star.frontends.http-api::normalize-legacy-target-document
+     document "nmap")
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api:validate-document-input
+                document :path-dtype "target")))))
+      (is (= 422
+             (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "invalid_document_schema"
+                   (star.frontends.http-api:http-input-error-code condition))))))
 
 (test put-document-route-requires-write-capability
   (is (string= "documents:write"

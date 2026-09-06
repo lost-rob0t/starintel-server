@@ -81,7 +81,8 @@
   "Parse one Rabbit delivery and classify malformed payloads permanently.
 
 Canonical document mutation queues validate before transport normalization.
-Legacy target adapters must opt out explicitly."
+The remaining non-strict decode is transport-metadata inspection
+(=transient-p=); target deliveries validate like every other dtype."
   (handler-case
       (progn
         (when strict-schema-p
@@ -218,8 +219,7 @@ is re-published exactly once per entry sequence."
     consumer
     (decode-rabbit-document
      message
-     :route-dtype "target"
-     :strict-schema-p nil))))
+     :route-dtype "target"))))
 
 (defun consumer-retry-options ()
   (list

@@ -78,14 +78,21 @@
          (delay (target-v1-delay request))
          (recurring-p (target-v1-recurring-p request))
          (options (target-v1-options request))
+         (data (jsown:empty-object))
          (extensions (jsown:empty-object))
          (document (jsown:empty-object))
          (now (star.documents:utc-now)))
     (unless (star.actors::valid-target-actor-name-p actor)
       (signal-http-input-error
        422 "invalid_target_actor" "actor contains invalid characters"))
-    (setf (jsown:val extensions "idempotency_key") identity
+    (setf (jsown:val data "actor") actor
+          (jsown:val data "target") target
+          (jsown:val data "delay") delay
+          (jsown:val data "recurring") (if recurring-p :true :false)
+          (jsown:val data "options") options
+          (jsown:val extensions "idempotency_key") identity
           (jsown:val extensions "submitted_by") (target-v1-digest principal)
+          (jsown:val extensions "schedule_id") (format nil "target-request:~a" identity)
           (jsown:val document "_id") (format nil "target:~a" identity)
           (jsown:val document "dataset") dataset
           (jsown:val document "dtype") "target"
@@ -93,12 +100,9 @@
           (jsown:val document "version") 1
           (jsown:val document "date_added") now
           (jsown:val document "date_updated") now
-          (jsown:val document "actor") actor
-          (jsown:val document "target") target
-          (jsown:val document "delay") delay
-          (jsown:val document "recurring") (if recurring-p :true :false)
-          (jsown:val document "options") options
-          (jsown:val document "schedule_id") (format nil "target-request:~a" identity)
+          (jsown:val document "sources") #()
+          (jsown:val document "evidence") #()
+          (jsown:val document "data") data
           (jsown:val document "extensions") extensions)
     document))
 

@@ -58,6 +58,60 @@
                       (jsown:val extensions "idempotency_key")
                       :test #'char-equal)))))
 
+(test v1-target-document-is-data-shaped-and-schema-valid
+  (let* ((document
+           (star.frontends.http-api::target-v1-document-from-request
+            (make-v1-target-request) "human:alice"))
+         (data (jsown:val document "data"))
+         (extensions (jsown:val document "extensions")))
+    ;; The closed v0.9 top level carries envelope fields only.
+    (dolist (key '("actor" "target" "delay" "recurring" "options"
+                   "schedule_id"))
+      (is-false (jsown:keyp document key)))
+    ;; Target semantics live inside data.
+    (is (string= "subfinder" (jsown:val data "actor")))
+    (is (string= "example.org" (jsown:val data "target")))
+    (is (= 1 (jsown:val data "delay")))
+    (is (eq :false (jsown:val data "recurring")))
+    (is (vectorp (jsown:val data "options")))
+    ;; Schedule and idempotency identity live in the extensions envelope.
+    (is (string= "target-request:"
+                 (subseq (jsown:val extensions "schedule_id") 0 15)))
+    ;; The schema-required envelope collections exist.
+    (is (vectorp (jsown:val document "sources")))
+    (is (vectorp (jsown:val document "evidence")))
+    ;; The built document is accepted by the canonical strict validator.
+    (is (eq document
+             (star.documents:validate-v09-document document)))))
+
+(test v1-schedule-identity-is-read-from-extensions
+  (let* ((document
+           (star.frontends.http-api::target-v1-document-from-request
+            (make-v1-target-request) "human:alice"))
+         (record (star.actors::parse-target-record document)))
+    (is (string= (jsown:val (jsown:val document "extensions") "schedule_id")
+                 (star.actors::target-record-schedule-id record)))
+    (is (string= (jsown:val document "_id")
+                 (star.actors::target-record-id record)))))
+
+(test legacy-persisted-target-keeps-its-schedule-identity
+  ;; Recovery of pre-fix persisted documents still reads top-level fields.
+  (let* ((document
+           (jsown:new-js
+             ("_id" "legacy-persisted-target")
+             ("dataset" "star-intel")
+             ("dtype" "target")
+             ("actor" "subfinder")
+             ("target" "legacy.example.invalid")
+             ("delay" 60)
+             ("schedule_id" "legacy-schedule-1")))
+         (record (star.actors::parse-target-record document)))
+    (is (string= "subfinder" (star.actors::target-record-actor record)))
+    (is (string= "legacy.example.invalid" (star.actors::target-record-target record)))
+    (is (= 60 (star.actors::target-record-delay record)))
+    (is (string= "legacy-schedule-1"
+                 (star.actors::target-record-schedule-id record)))))
+
 (test v1-target-request-rejects-missing-idempotency-and-invalid-delay
   (let ((missing-key (make-v1-target-request))
         (zero-delay (make-v1-target-request :delay 0)))

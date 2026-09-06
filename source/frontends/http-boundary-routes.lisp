@@ -22,14 +22,11 @@
          400
          "missing_path_parameter"
          "Route actor is required"))
-      (setf (jsown:val document "dtype") "target"
-            (jsown:val document "actor") actor)
-      ;; This route is the historical target compatibility adapter. Canonical
-      ;; document and bulk routes remain strict by default.
-      (validate-document-input
-       document
-       :path-dtype "target"
-       :strict-schema-p nil)
+      ;; This route is the historical target compatibility adapter. It
+      ;; folds the historical envelope and then applies the same strict
+      ;; v0.9 validation as the canonical document and bulk routes.
+      (normalize-legacy-target-document document actor)
+      (validate-document-input document :path-dtype "target")
       (publish-target-document-unchecked document)
       (jsown:to-json document))))
 

@@ -176,8 +176,7 @@
                            :encoding :utf-8)))))
             (assert (and actor (stringp actor) (> (length actor) 0)) (actor)
                     "URL is missing :actor")
-            (setf (jsown:val body "dtype") "target")
-            (setf (jsown:val body "actor") actor)
+            (normalize-legacy-target-document body actor)
 
             (let ((routing-key (format nil star.rabbit:+ingest-fmt-key+ "target")))
               (log:info "POST /new/target/:actor - actor: ~a routing-key: ~a" actor routing-key)
