@@ -3,11 +3,28 @@
 (defstruct (document-update-outcome
              (:constructor make-document-update-outcome
                  (status &key document attempts reason code)))
+  "Result of applying one document update."
   status
   document
   (attempts 0 :type (integer 0 *))
   reason
   code)
+
+;; Accessor documentation for document-update-outcome
+(setf (documentation 'DOCUMENT-UPDATE-OUTCOME-ATTEMPTS 'function)
+"The =attempts= slot of =document-update-outcome=.")
+(setf (documentation 'DOCUMENT-UPDATE-OUTCOME-CODE 'function)
+"Outcome code such as =:applied= or =:conflict=.")
+(setf (documentation 'DOCUMENT-UPDATE-OUTCOME-DOCUMENT 'function)
+"The =document= slot of =document-update-outcome=.")
+(setf (documentation 'DOCUMENT-UPDATE-OUTCOME-JSON 'function)
+"Serialize a document update outcome to JSON.")
+(setf (documentation 'DOCUMENT-UPDATE-OUTCOME-REASON 'function)
+"The =reason= slot of =document-update-outcome=.")
+(setf (documentation 'DOCUMENT-UPDATE-OUTCOME-STATUS 'function)
+"The =status= slot of =document-update-outcome=.")
+
+
 
 (define-condition document-update-validation-error (error)
   ((code
@@ -21,9 +38,19 @@
    (lambda (condition stream)
      (format stream "Document update validation failed (~a): ~a"
              (document-update-validation-code condition)
-             (document-update-validation-reason condition)))))
+             (document-update-validation-reason condition))))
+  (:documentation "Signalled when a document update payload is invalid."))
 
-(define-condition document-update-store-conflict (error) ())
+;; Accessor documentation for document-update-validation-error
+(setf (documentation 'DOCUMENT-UPDATE-VALIDATION-CODE 'function)
+"The =code= slot of =document-update-validation-error=.")
+(setf (documentation 'DOCUMENT-UPDATE-VALIDATION-REASON 'function)
+"The =reason= slot of =document-update-validation-error=.")
+
+
+
+(define-condition document-update-store-conflict (error) ()
+  (:documentation "Signalled when a document update loses a revision race."))
 
 (defparameter +document-update-persistence-keys+
   '("_id" "_rev")
@@ -244,6 +271,7 @@ when its CouchDB revision loses a compare-and-swap race."
    :max-attempts max-attempts))
 
 (defun document-update-outcome-json (outcome)
+  "Serialize a document update outcome to JSON."
   (let ((object (jsown:empty-object)))
      (setf (jsown:val object "status")
            (string-downcase

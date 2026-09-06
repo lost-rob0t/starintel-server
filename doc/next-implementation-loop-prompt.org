@@ -58,7 +58,7 @@ Required behavior:
 - credential and metadata redaction at logging, audit, and error boundaries;
 - no GET-then-SET or other client-side race for lease transitions;
 - documented persistence, replication, failover, and fencing assumptions.
-- update `docs/lease-store-usage.org` with the real Valkey constructor,
+- update `doc/lease-store-usage.org` with the real Valkey constructor,
   configuration, secret, TLS, and shutdown examples before #31 is merged; remove
   its pre-#31 availability warning once those examples are executable.
 

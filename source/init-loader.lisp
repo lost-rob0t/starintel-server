@@ -1,7 +1,10 @@
 (in-package :starintel-gserver)
 
 (defun ensure-init-file-exists (init-path)
-  "Ensure init file exists, copy from example_configs if not."
+  "Ensure INIT-PATH exists, copying =example_configs/init.lisp= if absent.
+
+Falls back to a minimal template when the example config itself is
+missing.  Call before =load-init-file= on first boot."
   (let ((example-config (uiop:merge-pathnames*
                          "example_configs/init.lisp"
                          (asdf:system-source-directory :starintel-gserver))))
@@ -22,7 +25,12 @@
          (format stream ";; See example_configs/init.lisp for examples~%"))))))
 
 (defun load-init-file (init-path)
-  "Load a single init file with error handling."
+  "Load the init file INIT-PATH with error handling.
+
+The file is evaluated in whatever package it declares; the stock
+template uses =(in-package :star)= so settings like
+=star:*http-api-port*= are directly assignable.  Signals on failure
+after logging."
   (handler-case
       (progn
         (log:info (format nil "Loading init file: ~a" init-path))
@@ -35,9 +43,10 @@
 
 
 (defun safe-load-init (init-path)
-  "Safely load initialization configuration.
+  "Load INIT-PATH, creating it first if it does not exist yet.
 
-  Returns T on success, signals an error on failure."
+Returns T on success, signals an error on failure.  This is the
+idempotent entry point used by the runtime startup."
   (let ((resolved-path (uiop:ensure-pathname init-path)))
     (cond
       ((probe-file resolved-path)

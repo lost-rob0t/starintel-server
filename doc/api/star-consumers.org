@@ -1,0 +1,969 @@
+#+TITLE: API Reference — STAR.CONSUMERS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+Owner-thread Rabbit consumers with bounded retries and quarantine.
+
+* Variables and Constants
+*** *retry-sleep-function*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.CONSUMERS
+:END:
+Function used to sleep between retries; swapped in tests.
+
+* Types and Classes
+*** consumer-settlement
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.CONSUMERS
+:END:
+Settlement action applied to one delivery (ack/reject/...).
+- Slots: =action=, =reason=, =condition=
+*** retry-policy
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.CONSUMERS
+:END:
+Bounded exponential backoff parameters for redeliveries.
+- Slots: =max-retries=, =base-delay-ms=, =max-delay-ms=, =jitter-ratio=
+*** consumer
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.CONSUMERS
+:END:
+A stream consumer whose worker owns its stream and settlement lifecycle.
+- Slots: =name=, =predicate=, =workers=, =fn=, =take=, =worker-channel=, =state=, =consumer-stream=, =lock=, =metrics-lock=, =in-flight=, =unsettled=, =failures=, =settlement-counts=, =failure-action=, =filtered-action=, =worker-instances=, =threads=, =running-p=
+*** rabbit-consumer
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.CONSUMERS
+:END:
+A Rabbit consumer configuration or channel-owning worker.
+*** rabbit-queue-stream
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.CONSUMERS
+:END:
+A Rabbit queue/channel owned by exactly one thread.
+- Slots: =exchange=, =exchange-type=, =exchange-durable=, =routing-key=, =user=, =password=, =vhost=, =port=, =host=, =queue-durable-p=, =queue-name=, =prefetch-count=, =conn=, =chan=, =owner-thread=, =open=
+*** retrying-rabbit-consumer
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.CONSUMERS
+:END:
+RabbitMQ consumer with bounded retry and quarantine.
+- Slots: =retry-policy=, =quarantine-fn=, =quarantine-exchange=, =quarantine-queue=
+*** retrying-rabbit-queue-stream
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.CONSUMERS
+:END:
+Queue stream abstraction the retrying consumer reads from.
+- Slots: =retry-policy=, =quarantine-fn=, =quarantine-exchange=, =quarantine-queue=, =current-body=, =current-properties=, =current-routing-key=, =current-exchange=, =current-received-at=
+
+* Conditions
+*** conflict-delivery-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled when a delivery conflicts with committed state.
+*** delivery-processing-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Base condition for failures while processing a delivery.
+- Slots: =cause=, =reason=
+*** internal-delivery-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled when the consumer itself fails (retryable).
+*** permanent-delivery-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled for deliveries that must never be retried.
+*** schema-invalid-delivery-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled when a delivery fails schema validation (permanent).
+*** transient-delivery-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled for transient failures (retryable).
+*** unauthorized-delivery-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled when a delivery fails authorization (permanent).
+*** wrong-stream-owner
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled when a worker touches a stream owned by another worker.
+- Slots: =expected=, =actual=
+
+* Functions
+*** classify-delivery-condition
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(classify-delivery-condition (CONDITION))
+#+end_src
+Convert arbitrary handler conditions to the server failure taxonomy.
+*** consumer-metrics
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-metrics (STAR.CONSUMERS:CONSUMER))
+#+end_src
+In-flight, unsettled and failure counters for a consumer.
+*** consumer-process-delivery
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-process-delivery (STAR.CONSUMERS:CONSUMER STAR.CONSUMERS::DELIVERY))
+#+end_src
+Run filter/handler and settle DELIVERY exactly once on the owner thread.
+*** consumer-settlement-action
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-settlement-action (SB-KERNEL:INSTANCE))
+#+end_src
+The =action= slot of =consumer-settlement=.
+*** consumer-settlement-condition
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-settlement-condition (SB-KERNEL:INSTANCE))
+#+end_src
+Signalled to settle the delivery currently being processed.
+*** consumer-settlement-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-settlement-count (STAR.CONSUMERS:CONSUMER STAR.CONSUMERS::ACTION))
+#+end_src
+Number of settlements applied per settlement kind.
+*** consumer-settlement-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-settlement-reason (SB-KERNEL:INSTANCE))
+#+end_src
+The =reason= slot of =consumer-settlement=.
+*** create-rabbit-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(create-rabbit-consumer (&KEY (STAR.CONSUMERS::NAME (ERROR "Consumer name is required"))
+ (STAR.CONSUMERS::N 1)
+ (STAR.CONSUMERS::QUEUE-NAME (ERROR "Queue name is required"))
+ (STAR.CONSUMERS::EXCHANGE-NAME "documents")
+ (STAR.CONSUMERS::EXCHANGE-TYPE "topic") (STAR.CONSUMERS::EXCHANGE-DURABLE T)
+ (STAR.CONSUMERS::ROUTING-KEY (ERROR "Routing key is required"))
+ (STAR.CONSUMERS::HOST "localhost") (STAR.CONSUMERS::PORT 5672)
+ (STAR.CONSUMERS::USERNAME "guest") (STAR.CONSUMERS::PASSWORD "guest")
+ (STAR.CONSUMERS::VHOST "/") (STAR.CONSUMERS::QUEUE-DURABLE T)
+ (STAR.CONSUMERS::PREFETCH-COUNT 200) (STAR.CONSUMERS::ON-ERROR :RETRY)
+ (STAR.CONSUMERS::ON-FILTER :FILTERED-ACK) (STAR.CONSUMERS::MAX-RETRIES 4)
+ (STAR.CONSUMERS::RETRY-BASE-DELAY-MS 250)
+ (STAR.CONSUMERS::RETRY-MAX-DELAY-MS 30000)
+ (STAR.CONSUMERS::RETRY-JITTER-RATIO 0.2d0) STAR.CONSUMERS::QUARANTINE-FN
+ (STAR.CONSUMERS::QUARANTINE-EXCHANGE "starintel.quarantine")
+ (STAR.CONSUMERS::QUARANTINE-QUEUE "starintel-quarantine")
+ (STAR.CONSUMERS::TEST-FN #'IDENTITY)
+ (STAR.CONSUMERS::HANDLER-FN (ERROR "Handler function is required"))))
+#+end_src
+Create and register a RabbitMQ backed consumer.
+*** delivery-attempt
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-attempt (STAR.CONSUMERS::PROPERTIES))
+#+end_src
+Which attempt number this delivery is on.
+*** delivery-error-class
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-error-class (CONDITION))
+#+end_src
+Classify an error into a delivery error condition class.
+*** delivery-error-retryable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-error-retryable-p (CONDITION))
+#+end_src
+True when the delivery error permits another attempt.
+*** delivery-first-seen-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-first-seen-at (STAR.CONSUMERS::PROPERTIES))
+#+end_src
+Timestamp when this delivery was first observed.
+*** delivery-message-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-message-id (STAR.CONSUMERS::PROPERTIES))
+#+end_src
+Stable message identity used for deduplication.
+*** delivery-trace-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-trace-id (STAR.CONSUMERS::PROPERTIES))
+#+end_src
+Trace id propagated with the delivery.
+*** make-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(make-consumer (&REST STAR.CONSUMERS::ARGS))
+#+end_src
+Construct a consumer over a stream with retry and settlement policy.
+*** make-retry-policy
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(make-retry-policy (&KEY (STAR.CONSUMERS::MAX-RETRIES 4) (STAR.CONSUMERS::BASE-DELAY-MS 250)
+ (STAR.CONSUMERS::MAX-DELAY-MS 30000) (STAR.CONSUMERS::JITTER-RATIO 0.2d0)))
+#+end_src
+Build a retry policy with MAX-RETRIES, exponential BASE-DELAY-MS up to
+MAX-DELAY-MS and symmetric JITTER-RATIO.
+*** normalize-settlement
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(normalize-settlement (STAR.CONSUMERS::VALUE))
+#+end_src
+Convert handler results to a structured settlement.
+
+Known settlement keywords are accepted. NIL and ordinary success values remain
+backward-compatible ACK results, while unknown keywords fail closed so a typo
+cannot silently acknowledge a Rabbit delivery.
+*** quarantine-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(quarantine-record (STREAM STAR.CONSUMERS::SETTLEMENT))
+#+end_src
+Structured record persisted when a message is quarantined.
+*** quarantine-replay-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(quarantine-replay-envelope (STAR.CONSUMERS::RECORD &KEY STAR.CONSUMERS::CORRECTED-BODY))
+#+end_src
+Return BODY, PROPERTIES, EXCHANGE, and ROUTING-KEY for explicit replay.
+*** rabbit-header
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-header (STAR.CONSUMERS::PROPERTIES STAR.CONSUMERS::NAME &OPTIONAL
+ STAR.CONSUMERS::DEFAULT))
+#+end_src
+RabbitMQ message header accessor.
+*** rabbit-property
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-property (STAR.CONSUMERS::PROPERTIES STAR.CONSUMERS::KEY &OPTIONAL
+ STAR.CONSUMERS::DEFAULT))
+#+end_src
+RabbitMQ message property accessor.
+*** retry-action-for
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-action-for (STAR.CONSUMERS::POLICY STAR.CONSUMERS::FAILURE STAR.CONSUMERS::ATTEMPT))
+#+end_src
+Decide the retry action for a failed delivery attempt.
+*** retry-delay-ms
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-delay-ms (STAR.CONSUMERS::POLICY STAR.CONSUMERS::ATTEMPT &OPTIONAL
+ STAR.CONSUMERS::RANDOM-UNIT))
+#+end_src
+Return capped exponential delay with symmetric jitter.
+
+ATTEMPT is the zero-based attempt that just failed. RANDOM-UNIT may be supplied
+by tests and must be between zero and one.
+*** retry-policy-base-delay-ms
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-policy-base-delay-ms (SB-KERNEL:INSTANCE))
+#+end_src
+The =base-delay-ms= slot of =retry-policy=.
+*** retry-policy-jitter-ratio
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-policy-jitter-ratio (SB-KERNEL:INSTANCE))
+#+end_src
+The =jitter-ratio= slot of =retry-policy=.
+*** retry-policy-max-delay-ms
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-policy-max-delay-ms (SB-KERNEL:INSTANCE))
+#+end_src
+The =max-delay-ms= slot of =retry-policy=.
+*** retry-policy-max-retries
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-policy-max-retries (SB-KERNEL:INSTANCE))
+#+end_src
+The =max-retries= slot of =retry-policy=.
+*** retry-properties
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-properties (STAR.CONSUMERS::PROPERTIES STREAM STAR.CONSUMERS::NEXT-ATTEMPT
+ STAR.CONSUMERS::DELAY-MS))
+#+end_src
+RabbitMQ properties carrying retry metadata across republish.
+*** run-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(run-consumer (STAR.CONSUMERS:CONSUMER))
+#+end_src
+Run a consumer on its owner thread while periodically observing stop state.
+*** settlement-ack
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(settlement-ack (&OPTIONAL STAR.CONSUMERS::REASON))
+#+end_src
+Settle a delivery as acknowledged.
+*** settlement-dead-letter
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(settlement-dead-letter (&OPTIONAL STAR.CONSUMERS::REASON CONDITION))
+#+end_src
+Settle a delivery by sending it to the dead letter queue.
+*** settlement-filtered-ack
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(settlement-filtered-ack (&OPTIONAL (STAR.CONSUMERS::REASON "filtered")))
+#+end_src
+Settle a delivery as filtered (ack without processing).
+*** settlement-reject
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(settlement-reject (&OPTIONAL STAR.CONSUMERS::REASON CONDITION))
+#+end_src
+Settle a delivery as rejected.
+*** settlement-retry
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(settlement-retry (&OPTIONAL STAR.CONSUMERS::REASON CONDITION))
+#+end_src
+Settle a delivery by scheduling a retry.
+
+* Generic Functions
+*** close-stream
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(close-stream (STREAM))
+#+end_src
+Protocol: release the transport resources of STREAM.
+*** consume
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consume (STAR.CONSUMERS:CONSUMER STAR.CONSUMERS::DATA))
+#+end_src
+Protocol: deliver one decoded message to the consumer.
+*** consumer-channel
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-channel (SB-PCL::OBJECT))
+#+end_src
+The =worker-channel= slot of =consumer=.
+*** consumer-cleanup
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-cleanup (STAR.CONSUMERS:CONSUMER))
+#+end_src
+Protocol: release consumer resources on shutdown.
+*** consumer-failure-action
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-failure-action (SB-PCL::OBJECT))
+#+end_src
+The =failure-action= slot of =consumer=.
+*** consumer-failures
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-failures (SB-PCL::OBJECT))
+#+end_src
+The =failures= slot of =consumer=.
+*** consumer-filter
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-filter (SB-PCL::OBJECT))
+#+end_src
+The =predicate= slot of =consumer=.
+*** consumer-filtered-action
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-filtered-action (SB-PCL::OBJECT))
+#+end_src
+The =filtered-action= slot of =consumer=.
+*** consumer-fn
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-fn (SB-PCL::OBJECT))
+#+end_src
+The =consumer-fn= slot of =consumer=.
+*** consumer-in-flight
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-in-flight (SB-PCL::OBJECT))
+#+end_src
+The =in-flight= slot of =consumer=.
+*** consumer-lock
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-lock (SB-PCL::OBJECT))
+#+end_src
+The =lock= slot of =consumer=.
+*** consumer-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-name (SB-PCL::OBJECT))
+#+end_src
+The =name= slot of =consumer=.
+*** consumer-read
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-read (STAR.CONSUMERS:CONSUMER))
+#+end_src
+Protocol: read the next delivery from the consumer stream.
+*** consumer-running-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-running-p (SB-PCL::OBJECT))
+#+end_src
+The =running-p= slot of =consumer=.
+*** consumer-state
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-state (SB-PCL::OBJECT))
+#+end_src
+The =state= slot of =consumer=.
+*** consumer-stream
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-stream (SB-PCL::OBJECT))
+#+end_src
+The =consumer-stream= slot of =consumer=.
+*** consumer-take
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-take (SB-PCL::OBJECT))
+#+end_src
+The =take= slot of =consumer=.
+*** consumer-threads
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-threads (SB-PCL::OBJECT))
+#+end_src
+The =threads= slot of =consumer=.
+*** consumer-unsettled
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-unsettled (SB-PCL::OBJECT))
+#+end_src
+The =unsettled= slot of =consumer=.
+*** consumer-update
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-update (STAR.CONSUMERS:CONSUMER STAR.CONSUMERS::NEW-STATE))
+#+end_src
+Protocol: persist a new consumer state snapshot.
+*** consumer-update-state
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-update-state (STAR.CONSUMERS:CONSUMER STAR.CONSUMERS::NEW-STATE))
+#+end_src
+Update the consumer state under its lock.
+*** consumer-worker-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-worker-count (SB-PCL::OBJECT))
+#+end_src
+The =workers= slot of =consumer=.
+*** consumer-worker-instances
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(consumer-worker-instances (SB-PCL::OBJECT))
+#+end_src
+The =worker-instances= slot of =consumer=.
+*** delivery-error-cause
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-error-cause (CONDITION))
+#+end_src
+The =cause= slot of =delivery-processing-error=.
+*** delivery-error-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(delivery-error-reason (CONDITION))
+#+end_src
+The =reason= slot of =delivery-processing-error=.
+*** make-rabbit-worker-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(make-rabbit-worker-consumer (STAR.CONSUMERS:CONSUMER STAR.CONSUMERS::WORKER-NUMBER))
+#+end_src
+Create one worker consumer instance for a multi-worker consumer.
+*** open-stream
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(open-stream (STREAM))
+#+end_src
+Protocol: acquire the transport resources of STREAM.
+*** rabbit-exchange-durable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-exchange-durable-p (SB-PCL::OBJECT))
+#+end_src
+The =exchange-durable= slot of =rabbit-queue-stream=.
+*** rabbit-exchange-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-exchange-type (SB-PCL::OBJECT))
+#+end_src
+The =exchange-type= slot of =rabbit-queue-stream=.
+*** rabbit-stream-channel
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-channel (SB-PCL::OBJECT))
+#+end_src
+The =chan= slot of =rabbit-queue-stream=.
+*** rabbit-stream-connection
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-connection (SB-PCL::OBJECT))
+#+end_src
+The =conn= slot of =rabbit-queue-stream=.
+*** rabbit-stream-exchange
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-exchange (SB-PCL::OBJECT))
+#+end_src
+The =exchange= slot of =rabbit-queue-stream=.
+*** rabbit-stream-host
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-host (SB-PCL::OBJECT))
+#+end_src
+The =host= slot of =rabbit-queue-stream=.
+*** rabbit-stream-open-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-open-p (SB-PCL::OBJECT))
+#+end_src
+The =open= slot of =rabbit-queue-stream=.
+*** rabbit-stream-owner-thread
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-owner-thread (SB-PCL::OBJECT))
+#+end_src
+The =owner-thread= slot of =rabbit-queue-stream=.
+*** rabbit-stream-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-password (SB-PCL::OBJECT))
+#+end_src
+The =password= slot of =rabbit-queue-stream=.
+*** rabbit-stream-port
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-port (SB-PCL::OBJECT))
+#+end_src
+The =port= slot of =rabbit-queue-stream=.
+*** rabbit-stream-prefetch-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-prefetch-count (SB-PCL::OBJECT))
+#+end_src
+The =prefetch-count= slot of =rabbit-queue-stream=.
+*** rabbit-stream-queue-durable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-queue-durable-p (SB-PCL::OBJECT))
+#+end_src
+The =queue-durable-p= slot of =rabbit-queue-stream=.
+*** rabbit-stream-queue-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-queue-name (SB-PCL::OBJECT))
+#+end_src
+The =queue-name= slot of =rabbit-queue-stream=.
+*** rabbit-stream-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-routing-key (SB-PCL::OBJECT))
+#+end_src
+The =routing-key= slot of =rabbit-queue-stream=.
+*** rabbit-stream-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-user (SB-PCL::OBJECT))
+#+end_src
+The =user= slot of =rabbit-queue-stream=.
+*** rabbit-stream-vhost
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-vhost (SB-PCL::OBJECT))
+#+end_src
+The =vhost= slot of =rabbit-queue-stream=.
+*** retry-consumer-policy
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-consumer-policy (SB-PCL::OBJECT))
+#+end_src
+The =retry-policy= slot of =retrying-rabbit-consumer=.
+*** retry-stream-current-body
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-current-body (SB-PCL::OBJECT))
+#+end_src
+The =current-body= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-current-exchange
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-current-exchange (SB-PCL::OBJECT))
+#+end_src
+The =current-exchange= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-current-properties
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-current-properties (SB-PCL::OBJECT))
+#+end_src
+The =current-properties= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-current-received-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-current-received-at (SB-PCL::OBJECT))
+#+end_src
+The =current-received-at= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-current-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-current-routing-key (SB-PCL::OBJECT))
+#+end_src
+The =current-routing-key= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-policy
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-policy (SB-PCL::OBJECT))
+#+end_src
+The =retry-policy= slot of =retrying-rabbit-queue-stream=.
+*** start-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(start-consumer (STAR.CONSUMERS:CONSUMER))
+#+end_src
+Start a consumer and its worker threads.
+*** stop-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(stop-consumer (STAR.CONSUMERS:CONSUMER))
+#+end_src
+Stop a consumer and join its worker threads.
+*** stream-read
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(stream-read (STREAM))
+#+end_src
+Protocol: read one delivery from the stream.
+*** stream-settle
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(stream-settle (STREAM STAR.CONSUMERS::DELIVERY STAR.CONSUMERS::SETTLEMENT))
+#+end_src
+Protocol: apply a settlement to one delivery on the stream.
+*** wrong-stream-owner-actual
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(wrong-stream-owner-actual (CONDITION))
+#+end_src
+The =actual= slot of =wrong-stream-owner=.
+*** wrong-stream-owner-expected
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(wrong-stream-owner-expected (CONDITION))
+#+end_src
+The =expected= slot of =wrong-stream-owner=.
+
+* Macros
+*** with-consumer-lock
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(with-consumer-lock ((STAR.CONSUMERS:CONSUMER) &BODY STAR.CONSUMERS::BODY))
+#+end_src
+Evaluate BODY while holding the consumer lock.

@@ -15,12 +15,22 @@
     :reader oauth-error-message))
   (:report
    (lambda (condition stream)
-     (format stream "~a" (oauth-error-message condition)))))
+     (format stream "~a" (oauth-error-message condition))))
+  (:documentation "Signalled for OAuth protocol failures."))
+
+;; Accessor documentation for oauth-error
+(setf (documentation 'OAUTH-ERROR-CODE 'function)
+"The =code= slot of =oauth-error=.")
+(setf (documentation 'OAUTH-ERROR-MESSAGE 'function)
+"The =message= slot of =oauth-error=.")
+
+
 
 (defun signal-oauth-error (code message)
   (error 'oauth-error :code code :message message))
 
 (defstruct oauth-client-record
+  "Registered OAuth client application."
   id
   status
   allowed-scopes
@@ -30,7 +40,22 @@
   created-at
   revision)
 
+;; Accessor documentation for oauth-client-record
+(setf (documentation 'OAUTH-CLIENT-RECORD-ALLOWED-SCOPES 'function)
+"The =allowed-scopes= slot of =oauth-client-record=.")
+(setf (documentation 'OAUTH-CLIENT-RECORD-CREATED-AT 'function)
+"The =created-at= slot of =oauth-client-record=.")
+(setf (documentation 'OAUTH-CLIENT-RECORD-ID 'function)
+"The =id= slot of =oauth-client-record=.")
+(setf (documentation 'OAUTH-CLIENT-RECORD-REDIRECT-URIS 'function)
+"The =redirect-uris= slot of =oauth-client-record=.")
+(setf (documentation 'OAUTH-CLIENT-RECORD-STATUS 'function)
+"The =status= slot of =oauth-client-record=.")
+
+
+
 (defstruct oauth-authorization-code-record
+  "Issued OAuth authorization code and its constraints."
   id
   status
   client-id
@@ -46,7 +71,24 @@
   consumed-at
   revision)
 
+;; Accessor documentation for oauth-authorization-code-record
+(setf (documentation 'OAUTH-AUTHORIZATION-CODE-RECORD-CLIENT-ID 'function)
+"The =client-id= slot of =oauth-authorization-code-record=.")
+(setf (documentation 'OAUTH-AUTHORIZATION-CODE-RECORD-CONSUMED-AT 'function)
+"The =consumed-at= slot of =oauth-authorization-code-record=.")
+(setf (documentation 'OAUTH-AUTHORIZATION-CODE-RECORD-EXPIRES-AT 'function)
+"The =expires-at= slot of =oauth-authorization-code-record=.")
+(setf (documentation 'OAUTH-AUTHORIZATION-CODE-RECORD-ID 'function)
+"The =id= slot of =oauth-authorization-code-record=.")
+(setf (documentation 'OAUTH-AUTHORIZATION-CODE-RECORD-OWNER 'function)
+"The =owner= slot of =oauth-authorization-code-record=.")
+(setf (documentation 'OAUTH-AUTHORIZATION-CODE-RECORD-SCOPES 'function)
+"The =scopes= slot of =oauth-authorization-code-record=.")
+
+
+
 (defstruct oauth-access-token-record
+  "Issued OAuth access token and its metadata."
   id
   status
   client-id
@@ -59,6 +101,24 @@
   expires-at
   revoked-at
   revision)
+
+;; Accessor documentation for oauth-access-token-record
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-CLIENT-ID 'function)
+"The =client-id= slot of =oauth-access-token-record=.")
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-EXPIRES-AT 'function)
+"The =expires-at= slot of =oauth-access-token-record=.")
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-ID 'function)
+"The =id= slot of =oauth-access-token-record=.")
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-OWNER 'function)
+"The =owner= slot of =oauth-access-token-record=.")
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-PRINCIPAL-TYPE 'function)
+"The =principal-type= slot of =oauth-access-token-record=.")
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-REVOKED-AT 'function)
+"The =revoked-at= slot of =oauth-access-token-record=.")
+(setf (documentation 'OAUTH-ACCESS-TOKEN-RECORD-SCOPES 'function)
+"The =scopes= slot of =oauth-access-token-record=.")
+
+
 
 (defgeneric oauth-client-store-get (store client-id))
 (defgeneric oauth-client-store-put (store record))
@@ -354,6 +414,7 @@
   record)
 
 (defun valid-https-redirect-uri-p (uri)
+  "True when a redirect URI is acceptable for the client."
   (and (stringp uri)
        (<= 1 (length uri) 2048)
        (let ((parsed (ignore-errors (quri:uri uri))))
@@ -363,6 +424,7 @@
               (null (quri:uri-fragment parsed))))))
 
 (defun normalize-oauth-scopes (scopes)
+  "Normalize a scope list into its canonical string form."
   (let ((normalized (normalize-scopes scopes)))
     (unless normalized
       (signal-oauth-error "invalid_scope" "At least one OAuth scope is required"))
@@ -372,6 +434,7 @@
   (every (lambda (scope) (member scope allowed :test #'string=)) requested))
 
 (defun create-oauth-client (redirect-uris allowed-scopes &key (store *credential-store*))
+  "Register an OAuth client with its redirect URIs and scopes."
   (unless store
     (signal-oauth-error "server_error" "OAuth store is unavailable"))
   (unless (and (listp redirect-uris) redirect-uris
@@ -393,6 +456,7 @@
     (values record secret)))
 
 (defun oauth-client-metadata-json (record)
+  "Serialize OAuth client metadata (no secrets) to JSON."
   (jsown:new-js
     ("client_id" (oauth-client-record-id record))
     ("status" (status-string (oauth-client-record-status record)))
@@ -442,6 +506,7 @@
                  (write-char (char alphabet (ldb (byte 6 0) bits)) stream))))))
 
 (defun pkce-s256-challenge (verifier)
+  "Derive the PKCE S256 challenge for a verifier."
   (unless (valid-pkce-verifier-p verifier)
     (signal-oauth-error "invalid_grant" "Authorization code is invalid"))
   (base64url-encode-octets (sha256 (string-octets verifier))))
@@ -474,6 +539,7 @@
 (defun issue-oauth-authorization-code
     (client-id redirect-uri owner requested-scopes code-challenge code-challenge-method
      &key (store *credential-store*))
+  "Issue a short-lived authorization code for a client."
   (let* ((client (active-oauth-client client-id store))
          (scopes (normalize-oauth-scopes requested-scopes))
          (user (and store (user-store-get store (normalize-username owner)))))
@@ -543,6 +609,7 @@
 (defun exchange-oauth-authorization-code
     (raw-code client-id client-secret redirect-uri code-verifier
      &key (store *credential-store*))
+  "Redeem an authorization code for an access token."
   (let ((client (active-oauth-client client-id store)))
     (unless (oauth-client-secret-valid-p client client-secret)
       (signal-oauth-error "invalid_client" "OAuth client authentication failed"))
@@ -592,6 +659,7 @@
 
 (defun authenticate-oauth-access-token
     (raw-token correlation-id deadline &key (store *credential-store*))
+  "Validate a presented OAuth access token; return its record."
   (unless store (signal-authentication-failure))
   (multiple-value-bind (token-id secret)
       (parse-oauth-access-token raw-token)
@@ -622,6 +690,7 @@
          :authenticated-at now)))))
 
 (defun revoke-oauth-access-token (token-id &key (store *credential-store*))
+  "Revoke an issued OAuth access token."
   (let ((record (and store (oauth-access-token-store-get store token-id))))
     (unless record
       (signal-oauth-error "invalid_token" "OAuth access token was not found"))

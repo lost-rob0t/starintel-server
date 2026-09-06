@@ -42,7 +42,8 @@
    (idle-connections :initform nil :accessor valkey-store-idle-connections)
    (all-connections :initform nil :accessor valkey-store-all-connections)
    (open-count :initform 0 :accessor valkey-store-open-count)
-   (closed-p :initform nil :accessor valkey-store-closed-p)))
+   (closed-p :initform nil :accessor valkey-store-closed-p))
+  (:documentation "Valkey (Redis compatible) lease backend."))
 
 (defun valkey-unix-milliseconds ()
   (multiple-value-bind (seconds microseconds)
@@ -86,6 +87,7 @@
        (reconnect-backoff-ms 25) (idempotency-ttl-ms 86400000)
        (key-prefix "starintel:target-lease:v1") audit-hook metrics-hook
        after-submit-hook)
+  "Build a Valkey backed lease store."
   (unless (and (non-empty-string-p host)
                (integerp port) (<= 1 port 65535)
                (positive-integer-p pool-size)

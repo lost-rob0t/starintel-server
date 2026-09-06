@@ -7,6 +7,7 @@
                     (default-reduce nil)
                     (default-include-docs t)
                     accepted-keywords)))
+  "Validated specification of one CouchDB view."
   name
   design-document
   view-name
@@ -15,18 +16,59 @@
   (default-include-docs t)
   accepted-keywords)
 
+;; Accessor documentation for view-spec
+(setf (documentation 'VIEW-SPEC-ACCEPTED-KEYWORDS 'function)
+"Keywords accepted for a given view kind.")
+(setf (documentation 'VIEW-SPEC-DEFAULT-INCLUDE-DOCS 'function)
+"The =default-include-docs= slot of =view-spec=.")
+(setf (documentation 'VIEW-SPEC-DEFAULT-REDUCE 'function)
+"The =default-reduce= slot of =view-spec=.")
+(setf (documentation 'VIEW-SPEC-DESIGN-DOCUMENT 'function)
+"The =design-document= slot of =view-spec=.")
+(setf (documentation 'VIEW-SPEC-NAME 'function)
+"The =name= slot of =view-spec=.")
+(setf (documentation 'VIEW-SPEC-REDUCER-P 'function)
+"The =reducer-p= slot of =view-spec=.")
+(setf (documentation 'VIEW-SPEC-VIEW-NAME 'function)
+"The =view-name= slot of =view-spec=.")
+
+
+
 (defstruct (view-map-result
              (:constructor make-view-map-result (rows)))
+  "View result holding map rows (key/value pairs)."
   rows)
+
+;; Accessor documentation for view-map-result
+(setf (documentation 'VIEW-MAP-RESULT-ROWS 'function)
+"Raw rows of a map view result.")
+
+
 
 (defstruct (view-document-result
              (:constructor make-view-document-result (documents rows)))
+  "View result holding included documents."
   documents
   rows)
 
+;; Accessor documentation for view-document-result
+(setf (documentation 'VIEW-DOCUMENT-RESULT-DOCUMENTS 'function)
+"The =documents= slot of =view-document-result=.")
+(setf (documentation 'VIEW-DOCUMENT-RESULT-ROWS 'function)
+"Raw rows of a document view result.")
+
+
+
 (defstruct (view-reduced-result
              (:constructor make-view-reduced-result (rows)))
+  "View result holding reduced values."
   rows)
+
+;; Accessor documentation for view-reduced-result
+(setf (documentation 'VIEW-REDUCED-RESULT-ROWS 'function)
+"Raw rows of a reduced view result.")
+
+
 
 (define-condition view-registry-error (error)
   ((reason
@@ -35,7 +77,16 @@
   (:report
    (lambda (condition stream)
      (format stream "CouchDB view registry error: ~a"
-             (view-registry-error-reason condition)))))
+             (view-registry-error-reason condition))))
+  (:documentation "Base condition for view registry failures."))
+
+;; Accessor documentation for view-registry-error
+(setf (documentation 'VIEW-REGISTRY-ERROR-REASON 'function)
+"The =reason= slot of =view-registry-error=.")
+
+
+(setf (documentation 'VIEW-REGISTRY-ERROR-REASON 'function)
+"The =view-registry-error-reason= slot of =view-registry-error=.")
 
 (defparameter +view-wrapper-keywords+
   '(:limit :start-key :end-key :keys :key :descending
@@ -56,11 +107,13 @@
          :accepted-keywords accepted-keywords)))
 
 (defun registered-view-spec (name)
+  "The registered spec for a view name, or nil."
   (or (gethash name *view-registry*)
       (error 'view-registry-error
              :reason (format nil "view wrapper ~s is not registered" name))))
 
 (defun registered-view-names ()
+  "Names of all views known to the registry."
   (sort
    (loop for name being the hash-keys of *view-registry* collect name)
    #'string< :key #'symbol-name))
@@ -243,6 +296,7 @@
            (make-view-map-result rows)))))))
 
 (defun view-result-value (result)
+  "Extract the value cell of a view result row."
   (etypecase result
     (view-document-result
      (view-document-result-documents result))
@@ -251,36 +305,60 @@
     (view-reduced-result
      (view-reduced-result-rows result))))
 
-(defmacro define-registered-view-wrapper (name)
+(defmacro define-registered-view-wrapper (name &optional docstring)
   `(defun ,name (client database &rest arguments)
+     ,@(when docstring (list docstring))
      (view-result-value
       (apply #'execute-registered-view
              ',name client database arguments))))
 
-(define-registered-view-wrapper messages-by-user)
-(define-registered-view-wrapper messages-by-platform)
-(define-registered-view-wrapper messages-by-group)
-(define-registered-view-wrapper social-posts-by-user)
-(define-registered-view-wrapper social-posts-by-group)
-(define-registered-view-wrapper social-posts-by-platform)
-(define-registered-view-wrapper by-channel)
-(define-registered-view-wrapper groups)
-(define-registered-view-wrapper count-by-dtype)
-(define-registered-view-wrapper dataset-size)
-(define-registered-view-wrapper documents-by-dataset)
-(define-registered-view-wrapper orgs-by-country)
-(define-registered-view-wrapper orgs-by-name)
-(define-registered-view-wrapper persons-by-name)
-(define-registered-view-wrapper persons-by-region)
-(define-registered-view-wrapper relations-edges)
-(define-registered-view-wrapper relations-incoming-count)
-(define-registered-view-wrapper relations-outgoing-count)
-(define-registered-view-wrapper targets-actor-counts)
-(define-registered-view-wrapper targets-by-actor)
-(define-registered-view-wrapper targets-target-count)
-(define-registered-view-wrapper users-by-platform)
+(define-registered-view-wrapper messages-by-user
+  "Query the messages_by_user view: messages belonging to one user.")
+(define-registered-view-wrapper messages-by-platform
+  "Query the messages_by_platform view: messages on one platform.")
+(define-registered-view-wrapper messages-by-group
+  "Query the messages_by_group view: messages in one group.")
+(define-registered-view-wrapper social-posts-by-user
+  "Query the social_posts_by_user view: social posts by one user.")
+(define-registered-view-wrapper social-posts-by-group
+  "Query the social_posts_by_group view: social posts in one group.")
+(define-registered-view-wrapper social-posts-by-platform
+  "Query the social_posts_by_platform view: social posts on one platform.")
+(define-registered-view-wrapper by-channel
+  "Query the by-channel view: documents grouped by channel.")
+(define-registered-view-wrapper groups
+  "Run the grouped reduce view and return its group rows.")
+(define-registered-view-wrapper count-by-dtype
+  "Count documents grouped by their =dtype=.")
+(define-registered-view-wrapper dataset-size
+  "Count the documents in one dataset.")
+(define-registered-view-wrapper documents-by-dataset
+  "List the documents belonging to one dataset.")
+(define-registered-view-wrapper orgs-by-country
+  "Query organizations grouped by country.")
+(define-registered-view-wrapper orgs-by-name
+  "Query organizations by name.")
+(define-registered-view-wrapper persons-by-name
+  "Query persons by name.")
+(define-registered-view-wrapper persons-by-region
+  "Query persons grouped by region.")
+(define-registered-view-wrapper relations-edges
+  "Return relation edges as view rows.")
+(define-registered-view-wrapper relations-incoming-count
+  "Count incoming relations for a node.")
+(define-registered-view-wrapper relations-outgoing-count
+  "Count outgoing relations for a node.")
+(define-registered-view-wrapper targets-actor-counts
+  "Count targets grouped by owning actor.")
+(define-registered-view-wrapper targets-by-actor
+  "List targets owned by an actor.")
+(define-registered-view-wrapper targets-target-count
+  "Count targets for a given target id.")
+(define-registered-view-wrapper users-by-platform
+  "Query users on one platform.")
 
 (defun get-targets* (client database &rest actors)
+  "Fetch target documents, optionally filtered by actor."
   (let ((documents
           (targets-by-actor
            client database
@@ -331,6 +409,7 @@
                        name design-name (view-spec-view-name spec)))))))
 
 (defun view-registry-matrix ()
+  "Allowed keyword/verb combinations per view kind."
   (loop for name in (registered-view-names)
         for spec = (registered-view-spec name)
         collect

@@ -1,0 +1,109 @@
+#+TITLE: API Reference — STAR.ACTORS.MATCHER
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+A actor that implements a simple way to run code against documents matching a condition.
+
+* Variables and Constants
+*** *url-extractor*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+
+*** *url-extractor-fields*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+Document fields scanned by the URL extractor.
+*** *url-regex*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+Regular expression used by the URL extractor to find URLs in documents.
+
+* Types and Classes
+*** pattern
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+Document pattern matcher, based on a match-fn you supply. When the handler returns non nill, the subs actors are then sent a message with the message being the document
+- Slots: =name=, =transient=, =match-fn=, =subs=
+
+* Functions
+*** add-pattern
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(add-pattern (STAR.ACTORS.MATCHER:PATTERN))
+#+end_src
+Register PATTERN with the matcher actor so extracted fields are routed.
+*** start-url-extractor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+Start the URL extractor actor over every registered pattern.
+
+* Generic Functions
+*** match-fn
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(match-fn (SB-PCL::OBJECT))
+#+end_src
+The =match-fn= slot of =pattern=.
+*** notify-subs
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(notify-subs (STAR.ACTORS.MATCHER::SELF STAR.ACTORS.MATCHER::MESSAGE))
+#+end_src
+Notify subscribers about matched documents.
+*** pattern-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(pattern-name (SB-PCL::OBJECT))
+#+end_src
+The =pattern-name= slot of =pattern=.
+*** subcriptions
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(subcriptions (SB-PCL::OBJECT))
+#+end_src
+The =subs= slot of =pattern=.
+*** transientp
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(transientp (SB-PCL::OBJECT))
+#+end_src
+The =transient= slot of =pattern=.
+
+* Macros
+*** define-pattern
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.ACTORS.MATCHER
+:END:
+#+begin_src lisp
+(define-pattern ((STAR.ACTORS.MATCHER::NAME STAR.ACTORS.MATCHER::SUBS) &BODY
+ STAR.ACTORS.MATCHER::BODY))
+#+end_src
+Define a named pattern: NAME with SUBS substitutions; BODY builds the document.

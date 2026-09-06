@@ -1,0 +1,215 @@
+#+TITLE: API Reference — STAR.RABBIT
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+RabbitMQ namespace
+
+* Variables and Constants
+*** +documents-exchange+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Name of the durable documents topic exchange.
+*** +documents-exchange-type+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Exchange type for documents (topic).
+*** +ingest-fmt-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Format-specific ingest routing key.
+*** +ingest-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Canonical ingest routing key.
+*** +ingest-queue+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Queue consuming canonical new-document events.
+*** +new-documents-fmt-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Format-specific new-document routing key.
+*** +new-documents-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Canonical new-document routing key.
+*** +targets-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Canonical target routing key.
+*** +targets-queue+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Queue consuming target messages.
+*** +update-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Canonical update routing key.
+*** +updated-documents-fmt-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Format-specific update routing key.
+*** +updated-documents-key+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Canonical updated-document routing key.
+*** +updates-queue+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.RABBIT
+:END:
+Queue consuming document update events.
+
+* Functions
+*** decode-rabbit-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(decode-rabbit-document (STAR.RABBIT::MESSAGE &KEY STAR.RABBIT::ROUTE-DTYPE
+ (STAR.RABBIT::STRICT-SCHEMA-P T)))
+#+end_src
+Parse one Rabbit delivery and classify malformed payloads permanently.
+
+Canonical document mutation queues validate before transport normalization.
+Legacy target adapters must opt out explicitly.
+*** emit-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(emit-document (STAR.RABBIT::EXCHANGE STAR.RABBIT::ROUTING-KEY STAR.RABBIT::BODY &KEY
+ STAR.RABBIT::PROPERTIES (STAR.RABBIT::PORT STARINTEL-GSERVER:*RABBIT-PORT*)
+ (STAR.RABBIT::HOST STARINTEL-GSERVER:*RABBIT-ADDRESS*)
+ (STAR.RABBIT::USERNAME STARINTEL-GSERVER:*RABBIT-USER*)
+ (STAR.RABBIT::PASSWORD STARINTEL-GSERVER:*RABBIT-PASSWORD*)
+ (STAR.RABBIT::VHOST "/")))
+#+end_src
+Publish one StarIntel document after transport-level normalization.
+*** handle-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(handle-document (STAR.CONSUMERS:CONSUMER STAR.RABBIT::MESSAGE))
+#+end_src
+Ingest consumer entry point: process MESSAGE as a =:new= document.
+*** handle-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(handle-target (STAR.CONSUMERS:CONSUMER STAR.RABBIT::MESSAGE))
+#+end_src
+Process one RabbitMQ target message.
+*** handle-update-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(handle-update-document (STAR.CONSUMERS:CONSUMER STAR.RABBIT::MESSAGE))
+#+end_src
+Ingest consumer entry point: process MESSAGE as =:updated=.
+*** inspect-quarantine
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(inspect-quarantine (&KEY (STAR.RABBIT::STATUS "quarantined") (STAR.RABBIT::LIMIT 100)))
+#+end_src
+List or show quarantined messages for operator inspection.
+*** persist-quarantine-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(persist-quarantine-record (STAR.RABBIT::RECORD))
+#+end_src
+Persist RECORD before its original Rabbit delivery is acknowledged.
+*** publish-outbox-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(publish-outbox-event (STAR.RABBIT::ROUTING-KEY STAR.RABBIT::PAYLOAD STAR.RABBIT::EVENT-ID))
+#+end_src
+Publish one physical delivery carrying a stable logical EVENT-ID.
+*** publish-raw-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(publish-raw-message (STAR.RABBIT::EXCHANGE STAR.RABBIT::ROUTING-KEY STAR.RABBIT::BODY
+ STAR.RABBIT::PROPERTIES &KEY
+ (STAR.RABBIT::PORT STARINTEL-GSERVER:*RABBIT-PORT*)
+ (STAR.RABBIT::HOST STARINTEL-GSERVER:*RABBIT-ADDRESS*)
+ (STAR.RABBIT::USERNAME STARINTEL-GSERVER:*RABBIT-USER*)
+ (STAR.RABBIT::PASSWORD STARINTEL-GSERVER:*RABBIT-PASSWORD*)
+ (STAR.RABBIT::VHOST "/")))
+#+end_src
+Publish raw Rabbit content with caller-supplied provenance properties.
+*** recover-pending-publications
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+Replay outbox entries whose publication was interrupted.
+
+Runs at startup and after failures: every unpublished outbox mutation
+is re-published exactly once per entry sequence.
+*** replay-quarantined-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(replay-quarantined-message (STAR.RABBIT::QUARANTINE-ID &KEY STAR.RABBIT::CORRECTED-BODY))
+#+end_src
+Replay one quarantined message through its original route.
+*** start-consumers
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+Start owner-thread Rabbit consumers and recover pending outbox events.
+*** transient-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.RABBIT
+:END:
+#+begin_src lisp
+(transient-p (STAR.RABBIT::MESSAGE))
+#+end_src
+Inspect transport metadata without weakening canonical mutation validation.

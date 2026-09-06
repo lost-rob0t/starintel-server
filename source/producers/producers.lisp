@@ -17,11 +17,44 @@
    (lock :initform (bt:make-lock) :accessor producer-lock))
   (:documentation "Producers emit data onto the rabbitmq queue."))
 
+;; Accessor documentation for producer
+(setf (documentation 'EXCHANGE-DURABLE-P 'function)
+"The =exchange-durable= slot of =producer=.")
+(setf (documentation 'PRODUCER-CONN 'function)
+"The =connection= slot of =producer=.")
+(setf (documentation 'PRODUCER-CONNECT 'function)
+"Open (or reuse) the producer connection.")
+(setf (documentation 'PRODUCER-EXCHANGE 'function)
+"The =exchange-name= slot of =producer=.")
+(setf (documentation 'PRODUCER-EXCHANGE-TYPE 'function)
+"The =exchange-type= slot of =producer=.")
+(setf (documentation 'PRODUCER-HOST 'function)
+"The =host= slot of =producer=.")
+(setf (documentation 'PRODUCER-LOCK 'function)
+"The =lock= slot of =producer=.")
+(setf (documentation 'PRODUCER-MAX-SIZE 'function)
+"The =max-queue-size= slot of =producer=.")
+(setf (documentation 'PRODUCER-NAME 'function)
+"The =name= slot of =producer=.")
+(setf (documentation 'PRODUCER-OPEN-P 'function)
+"The =open= slot of =producer=.")
+(setf (documentation 'PRODUCER-PASSWORD 'function)
+"The =password= slot of =producer=.")
+(setf (documentation 'PRODUCER-PORT 'function)
+"The =port= slot of =producer=.")
+(setf (documentation 'PRODUCER-USER 'function)
+"The =user= slot of =producer=.")
+(setf (documentation 'PRODUCER-VHOST 'function)
+"The =vhost= slot of =producer=.")
+
+
+
 
 (defgeneric destroy (producer)
   (:documentation "Close any streams and de-init the producer"))
 
 (defmacro with-producer-lock ((producer) &body body)
+  "Evaluate BODY while holding the producer lock."
   `(bt:with-lock-held ((producer-lock ,producer))
      ,@body))
 
@@ -45,6 +78,10 @@
     (setf (producer-open-p producer) t)))
 
 
+(defgeneric publish (producer &key body routing-key properties)
+  (:documentation "Publish BODY to the producer exchange under ROUTING-KEY,
+applying PROPERTIES; the producer serializes from a single pinned thread."))
+
 (defmethod publish ((producer producer) &key body routing-key (properties nil))
   (with-producer-lock (producer)
     (cl-rabbit:basic-publish (producer-conn producer) 1
@@ -57,4 +94,5 @@
 
 
 (defun make-producer (&rest args)
+  "Build a RabbitMQ producer bound to an exchange and broker."
   (apply #'make-instance 'producer args))

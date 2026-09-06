@@ -10,17 +10,20 @@
                   star.auth:*request-security-context*)))))
 
 (defun principal-has-capability-p (action &optional principal)
+  "True when the principal record grants CAPABILITY."
   (let* ((candidate (candidate-principal principal))
          (scopes (principal-scopes candidate)))
     (capability-granted-p scopes action)))
 
 (defun principal-has-wildcard-dataset-p (&optional principal)
+  "True when the principal may access any dataset."
   (let* ((candidate (candidate-principal principal))
          (scopes (principal-scopes candidate)))
     (or (administrator-scopes-p scopes)
         (member "*" (scope-values scopes "dataset:") :test #'string=))))
 
 (defun authorize-document! (action document &key principal actor-name metadata)
+  "Authorize an action on a document resource."
   (authorize!
    action
    :principal principal

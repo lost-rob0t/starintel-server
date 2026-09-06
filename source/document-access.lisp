@@ -11,12 +11,22 @@
    (lambda (condition stream)
      (format stream "StarIntel v0.9 validation failed (~a): ~a"
              (document-schema-validation-category condition)
-             (document-schema-validation-reason condition)))))
+             (document-schema-validation-reason condition))))
+  (:documentation "Signalled when a document fails v0.9 schema validation."))
+
+;; Accessor documentation for document-schema-validation-error
+(setf (documentation 'DOCUMENT-SCHEMA-VALIDATION-CATEGORY 'function)
+"The =category= slot of =document-schema-validation-error=.")
+(setf (documentation 'DOCUMENT-SCHEMA-VALIDATION-REASON 'function)
+"The =reason= slot of =document-schema-validation-error=.")
+
+
 
 (defvar *v09-schema* nil)
 (defvar *v09-schema-lock* (bt:make-lock "starintel-v09-schema"))
 
 (defun object-has-key-p (object key)
+  "True when a parsed JSON object contains KEY."
   (and object
        (handler-case
            (progn
@@ -25,11 +35,13 @@
          (error () nil))))
 
 (defun object-value (object key &optional default)
+  "Fetch the value at KEY of a parsed JSON object."
   (if (object-has-key-p object key)
       (jsown:val object key)
       default))
 
 (defun object-keys (object)
+  "Keywords of a parsed JSON object."
   (let ((keys nil))
     (when object
       (jsown:do-json-keys (key value) object
@@ -37,6 +49,7 @@
     (nreverse keys)))
 
 (defun parse-document-object (document)
+  "Parse a document payload into the internal JSOWN form."
   (etypecase document
     (string
      (jsown:with-injective-reader
@@ -44,10 +57,12 @@
     (list document)))
 
 (defun clone-document-object (document)
+  "Deep copy a parsed document object."
   (jsown:with-injective-reader
     (jsown:parse (jsown:to-json (parse-document-object document)))))
 
 (defun canonical-dtype (dtype)
+  "Canonical string form of a document dtype."
   (let ((token
           (substitute #\- #\_
                       (string-downcase (string dtype)))))
@@ -59,9 +74,11 @@
       (t token))))
 
 (defun document-id (document)
+  "The =_id= of a document object."
   (object-value (parse-document-object document) "_id" nil))
 
 (defun document-data (document)
+  "The =data= payload of a document object."
   (let* ((object (parse-document-object document))
          (data (object-value object "data" nil)))
     (if (and (consp data) (eq (first data) :obj))
@@ -69,6 +86,7 @@
         object)))
 
 (defun document-value (document key &optional default)
+  "Generic accessor into a document object cell."
   (let* ((object (parse-document-object document))
          (data (document-data object)))
     (cond
@@ -77,23 +95,28 @@
       (t default))))
 
 (defun document-dtype (document)
+  "The =dtype= field of a document object."
   (let ((dtype (object-value (parse-document-object document) "dtype" nil)))
     (and dtype (canonical-dtype dtype))))
 
 (defun document-dataset (document)
+  "The =dataset= field of a document object."
   (object-value (parse-document-object document) "dataset" nil))
 
 (defun document-date-added (document)
+  "The =dateAdded= field of a document object."
   (let ((object (parse-document-object document)))
     (or (object-value object "date_added" nil)
         (object-value object "dateAdded" nil))))
 
 (defun document-date-updated (document)
+  "The =dateUpdated= field of a document object."
   (let ((object (parse-document-object document)))
     (or (object-value object "date_updated" nil)
         (object-value object "dateUpdated" nil))))
 
 (defun document-transient-p (document)
+  "True when the document is marked transient."
   (let ((value (document-value document "transient" nil)))
     (or (eq value t) (eq value :true))))
 
@@ -156,9 +179,14 @@ compatibility adapters can opt out without weakening canonical ingest."
     object))
 
 (defun document-json (document &key route-dtype)
+  "Serialize DOCUMENT to canonical JSON, enforcing identity invariants.
+
+Applies =ensure-document= (dtype routing, id stamping) then renders
+the JSON string sent over the wire and into CouchDB."
   (jsown:to-json (ensure-document document :route-dtype route-dtype)))
 
 (defun utc-now ()
+  "Current UTC timestamp as an ISO-8601 string."
   (multiple-value-bind (second minute hour day month year)
       (decode-universal-time (get-universal-time) 0)
     (format nil "~4,'0d-~2,'0d-~2,'0dT~2,'0d:~2,'0d:~2,'0dZ"

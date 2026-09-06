@@ -1,0 +1,183 @@
+#+TITLE: API Reference — STAR.PRODUCERS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+doc
+
+* Types and Classes
+*** producer
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.PRODUCERS
+:END:
+Producers emit data onto the rabbitmq queue.
+- Slots: =name=, =exchange-name=, =exchange-type=, =exchange-durable=, =max-queue-size=, =connection=, =user=, =password=, =vhost=, =port=, =host=, =open=, =lock=
+
+* Functions
+*** make-producer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(make-producer (&REST STAR.PRODUCERS::ARGS))
+#+end_src
+Build a RabbitMQ producer bound to an exchange and broker.
+
+* Generic Functions
+*** destroy
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(destroy (STAR.PRODUCERS:PRODUCER))
+#+end_src
+Close any streams and de-init the producer
+*** exchange-durable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(exchange-durable-p (SB-PCL::OBJECT))
+#+end_src
+The =exchange-durable= slot of =producer=.
+*** producer-conn
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-conn (SB-PCL::OBJECT))
+#+end_src
+The =connection= slot of =producer=.
+*** producer-connect
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-connect (STAR.PRODUCERS:PRODUCER))
+#+end_src
+Open (or reuse) the producer connection.
+*** producer-exchange
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-exchange (SB-PCL::OBJECT))
+#+end_src
+The =exchange-name= slot of =producer=.
+*** producer-exchange-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-exchange-type (SB-PCL::OBJECT))
+#+end_src
+The =exchange-type= slot of =producer=.
+*** producer-host
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-host (SB-PCL::OBJECT))
+#+end_src
+The =host= slot of =producer=.
+*** producer-lock
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-lock (SB-PCL::OBJECT))
+#+end_src
+The =lock= slot of =producer=.
+*** producer-max-size
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-max-size (SB-PCL::OBJECT))
+#+end_src
+The =max-queue-size= slot of =producer=.
+*** producer-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-name (SB-PCL::OBJECT))
+#+end_src
+The =name= slot of =producer=.
+*** producer-open-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-open-p (SB-PCL::OBJECT))
+#+end_src
+The =open= slot of =producer=.
+*** producer-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-password (SB-PCL::OBJECT))
+#+end_src
+The =password= slot of =producer=.
+*** producer-port
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-port (SB-PCL::OBJECT))
+#+end_src
+The =port= slot of =producer=.
+*** producer-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-user (SB-PCL::OBJECT))
+#+end_src
+The =user= slot of =producer=.
+*** producer-vhost
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(producer-vhost (SB-PCL::OBJECT))
+#+end_src
+The =vhost= slot of =producer=.
+*** publish
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(publish (STAR.PRODUCERS:PRODUCER &KEY STAR.PRODUCERS::BODY STAR.PRODUCERS::ROUTING-KEY
+ STAR.PRODUCERS::PROPERTIES))
+#+end_src
+Publish BODY to the producer exchange under ROUTING-KEY,
+applying PROPERTIES; the producer serializes from a single pinned thread.
+
+* Macros
+*** with-producer-lock
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src lisp
+(with-producer-lock ((STAR.PRODUCERS:PRODUCER) &BODY STAR.PRODUCERS::BODY))
+#+end_src
+Evaluate BODY while holding the producer lock.

@@ -59,6 +59,7 @@
                     &key (principal-type "user")
                       (must-change-password t)
                       request-options)
+  "Create a human user with a hashed password."
   (request-auth-create-user
    client
    :body (jsown:new-js

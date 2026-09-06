@@ -24,3 +24,4 @@ stack-test-artifacts/
 # Local deployment configuration and secrets
 .env
 secrets/
+.prolog/

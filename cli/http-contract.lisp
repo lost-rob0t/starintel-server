@@ -4,6 +4,7 @@
             (:constructor make-http-operation
                 (&key id client-name method path summary tags authority scopes
                       path-parameters request-schema responses idempotency)))
+  "One documented HTTP operation of the client contract."
   id
   client-name
   method
@@ -16,6 +17,32 @@
   request-schema
   responses
   idempotency)
+
+;; Accessor documentation for http-operation
+(setf (documentation 'HTTP-OPERATION-AUTHORITY 'function)
+"Authority (host base) of the operation.")
+(setf (documentation 'HTTP-OPERATION-CLIENT-NAME 'function)
+"Client library this operation belongs to.")
+(setf (documentation 'HTTP-OPERATION-ID 'function)
+"Stable id of the operation.")
+(setf (documentation 'HTTP-OPERATION-IDEMPOTENCY 'function)
+"Idempotency classification of the operation.")
+(setf (documentation 'HTTP-OPERATION-METHOD 'function)
+"HTTP method of the operation.")
+(setf (documentation 'HTTP-OPERATION-PATH 'function)
+"Path template of the operation.")
+(setf (documentation 'HTTP-OPERATION-PATH-PARAMETERS 'function)
+"Path parameters and their constraints.")
+(setf (documentation 'HTTP-OPERATION-REQUEST-SCHEMA 'function)
+"JSON schema of the request body, or nil.")
+(setf (documentation 'HTTP-OPERATION-RESPONSES 'function)
+"Response schema/status map of the operation.")
+(setf (documentation 'HTTP-OPERATION-SCOPES 'function)
+"Scopes required to call the operation.")
+(setf (documentation 'HTTP-OPERATION-SUMMARY 'function)
+"Human summary of the operation.")
+(setf (documentation 'HTTP-OPERATION-TAGS 'function)
+"Tags grouping the operation.")
 
 (defun json-object (&rest pairs)
   (let ((object (list :obj)))
@@ -407,9 +434,11 @@
                 (standard-errors)))))
 
 (defun all-http-operations ()
+  "Every operation in the client contract manifest."
   (copy-list *http-operations*))
 
 (defun find-http-operation (operation-id &key (errorp t))
+  "Look up one contract operation by id."
   (or (find operation-id *http-operations*
             :key #'http-operation-id
             :test #'string=)
@@ -417,6 +446,7 @@
         (error "Unknown StarIntel HTTP operation: ~a" operation-id))))
 
 (defun operation-request-symbol-name (operation)
+  "Client symbol name generated for the operation."
   (format nil "REQUEST-~a"
           (string-upcase (http-operation-client-name operation))))
 
@@ -433,6 +463,7 @@
         path)))
 
 (defun openapi-path (operation)
+  "Path entry of the OpenAPI document."
   (reduce #'replace-path-parameter
           (http-operation-path-parameters operation)
           :initial-value (http-operation-path operation)))
@@ -495,6 +526,7 @@
     object))
 
 (defun openapi-document ()
+  "The OpenAPI document for the client contract."
   (let ((paths (list :obj)))
     (dolist (operation *http-operations*)
       (let* ((path (openapi-path operation))
@@ -526,6 +558,7 @@
                           (cons "bearerFormat" "StarIntel API key"))))))))))
 
 (defun openapi-json ()
+  "The OpenAPI document serialized to JSON."
   (jsown:to-json (openapi-document)))
 
 (defun response-manifest-object (response)
@@ -556,6 +589,7 @@
          (or (http-operation-idempotency operation) :null))))
 
 (defun client-manifest-document ()
+  "The full client manifest as a JSON document."
   (json-object
    (cons "schema" "starintel-client-manifest-v1")
    (cons "openapi" "3.1.2")
@@ -563,4 +597,5 @@
          (mapcar #'operation-manifest-object *http-operations*))))
 
 (defun client-manifest-json ()
+  "The full client manifest serialized to JSON."
   (jsown:to-json (client-manifest-document)))

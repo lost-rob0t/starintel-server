@@ -21,9 +21,21 @@
              "Mutation ~a conflicts for document ~a: ~a"
              (mutation-conflict-id condition)
              (mutation-conflict-document-id condition)
-             (mutation-conflict-reason condition)))))
+             (mutation-conflict-reason condition))))
+  (:documentation "Signalled when an outbox mutation conflicts with store state."))
 
-(define-condition outbox-store-conflict (error) ())
+;; Accessor documentation for mutation-conflict
+(setf (documentation 'MUTATION-CONFLICT-DOCUMENT-ID 'function)
+"The =document-id= slot of =mutation-conflict=.")
+(setf (documentation 'MUTATION-CONFLICT-ID 'function)
+"The =mutation-id= slot of =mutation-conflict=.")
+(setf (documentation 'MUTATION-CONFLICT-REASON 'function)
+"The =reason= slot of =mutation-conflict=.")
+
+
+
+(define-condition outbox-store-conflict (error) ()
+  (:documentation "Signalled when writing an outbox entry conflicts."))
 
 (define-condition missing-document-for-update (error)
   ((document-id
@@ -33,7 +45,8 @@
    (lambda (condition stream)
      (format stream
              "Cannot apply update mutation: document ~a does not exist"
-             (missing-update-document-id condition)))))
+             (missing-update-document-id condition))))
+  (:documentation "Signalled when an update targets a nonexistent document."))
 
 (defun outbox-object-has-key-p (object key)
   (handler-case
@@ -48,6 +61,7 @@
       default))
 
 (defun json-object-p (value)
+  "True when the parsed payload is a JSON object."
   (and (consp value)
        (eq (first value) :obj)))
 
@@ -131,6 +145,7 @@
      (error "Expected JSON array, got ~s" value))))
 
 (defun document-outbox-entries (document)
+  "List outbox entries attached to a document."
   (sequence-list
    (outbox-object-value
     (document-extensions document)
@@ -148,16 +163,20 @@
     ledger))
 
 (defun outbox-entry-mutation-id (entry)
+  "Stable id of the mutation carried by the outbox entry."
   (jsown:val entry "mutation_id"))
 
 (defun outbox-entry-sequence (entry)
+  "Per-document monotonic sequence of the outbox entry."
   (jsown:val entry "sequence"))
 
 (defun outbox-entry-published-p (entry)
+  "True when the outbox entry has been published."
   (and entry
        (string= "published" (jsown:val entry "status"))))
 
 (defun find-outbox-entry (document mutation-id)
+  "Find a specific outbox entry on a document."
   (find mutation-id
         (document-outbox-entries document)
         :key #'outbox-entry-mutation-id
@@ -287,6 +306,7 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
 
 (defun persist-outbox-mutation (load-fn save-fn incoming operation
                                 &key (max-attempts 8))
+  "Persist a mutation into the document outbox before publishing."
   (let ((document-id (jsown:val incoming "_id")))
     (loop for attempt from 1 to max-attempts
           do
@@ -438,6 +458,7 @@ If publication fails, the durable pending entry remains recoverable."
 
 (defun couchdb-process-outbox-mutation
     (client database publish-fn document operation)
+  "Apply one outbox mutation to the document store."
   (process-outbox-mutation
    (lambda (document-id)
      (couchdb-load-outbox-document client database document-id))
@@ -448,6 +469,7 @@ If publication fails, the durable pending entry remains recoverable."
    operation))
 
 (defun couchdb-pending-outbox-documents (client database)
+  "Outbox documents whose publication is still pending."
   (let* ((result
            (query-view
             client
@@ -469,6 +491,7 @@ If publication fails, the durable pending entry remains recoverable."
               document))))
 
 (defun recover-couchdb-outbox (client database publish-fn)
+  "Replay every pending outbox mutation after a crash."
   (recover-outbox-documents
    (lambda (document-id)
      (couchdb-load-outbox-document client database document-id))

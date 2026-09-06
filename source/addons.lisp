@@ -8,7 +8,18 @@
    (lambda (condition stream)
      (format stream "Add-on ~a: ~a"
              (addon-error-name condition)
-             (addon-error-message condition)))))
+             (addon-error-message condition))))
+  (:documentation "Signalled when an addon fails to load or start."))
+
+;; Accessor documentation for addon-error
+(setf (documentation 'ADDON-ERROR-CAUSE 'function)
+"The =cause= slot of =addon-error=.")
+(setf (documentation 'ADDON-ERROR-MESSAGE 'function)
+"The =message= slot of =addon-error=.")
+(setf (documentation 'ADDON-ERROR-NAME 'function)
+"The =name= slot of =addon-error=.")
+
+
 
 (defstruct addon-definition
   name
@@ -17,6 +28,7 @@
   stop)
 
 (defstruct addon-state
+  "Runtime state of one loaded addon."
   name
   system
   (status :registered)
@@ -24,6 +36,24 @@
   started-at
   stopped-at
   last-error)
+
+;; Accessor documentation for addon-state
+(setf (documentation 'ADDON-STATE-GENERATION 'function)
+"The =generation= slot of =addon-state=.")
+(setf (documentation 'ADDON-STATE-LAST-ERROR 'function)
+"The last error raised by the addon, or nil.")
+(setf (documentation 'ADDON-STATE-NAME 'function)
+"The =name= slot of =addon-state=.")
+(setf (documentation 'ADDON-STATE-STARTED-AT 'function)
+"The =started-at= slot of =addon-state=.")
+(setf (documentation 'ADDON-STATE-STATUS 'function)
+"The =status= slot of =addon-state=.")
+(setf (documentation 'ADDON-STATE-STOPPED-AT 'function)
+"The =stopped-at= slot of =addon-state=.")
+(setf (documentation 'ADDON-STATE-SYSTEM 'function)
+"The =system= slot of =addon-state=.")
+
+
 
 (defvar *addon-definitions* (make-hash-table :test #'equal))
 (defvar *addon-states* (make-hash-table :test #'equal))
@@ -262,12 +292,14 @@ START/STOP hooks must not recursively invoke add-on lifecycle operations."
     (%reload-addon system)))
 
 (defun addon-status (system)
+  "Status keyword of the addon (loaded, failed, ...)."
   (let ((canonical-system (canonical-addon-system system)))
     (bt:with-lock-held (*addon-lock*)
       (let ((state (gethash canonical-system *addon-states*)))
         (and state (copy-addon-state state))))))
 
 (defun list-addons ()
+  "List every registered addon and its state."
   (bt:with-lock-held (*addon-lock*)
     (sort
      (loop for state being the hash-values of *addon-states*

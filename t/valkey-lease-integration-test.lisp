@@ -862,7 +862,7 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
 (defun lease-org-lisp-blocks ()
   (let ((path
           (merge-pathnames
-           "docs/lease-store-usage.org"
+           "doc/lease-store-usage.org"
            (uiop:ensure-directory-pathname
             (or (uiop:getenv "STARINTEL_SOURCE_ROOT")
                 (uiop:pathname-parent-directory-pathname

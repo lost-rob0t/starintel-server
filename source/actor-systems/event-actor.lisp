@@ -19,7 +19,16 @@
    (lambda (condition stream)
      (format stream
              "Invalid actor event: ~a"
-             (invalid-actor-event-reason condition)))))
+             (invalid-actor-event-reason condition))))
+  (:documentation "Signalled when an actor event fails validation."))
+
+;; Accessor documentation for invalid-actor-event
+(setf (documentation 'INVALID-ACTOR-EVENT-REASON 'function)
+"The =reason= slot of =invalid-actor-event=.")
+
+
+(setf (documentation 'INVALID-ACTOR-EVENT-REASON 'function)
+"The =invalid-actor-event-reason= slot of =invalid-actor-event=.")
 
 (defclass actor-event ()
   ((_id
@@ -71,10 +80,34 @@
     :initarg :generation
     :accessor event-generation
     :initform 0
-    :type integer)))
+    :type integer))
+  (:documentation "Event record emitted by the actor runtime for observability."))
+
+;; Accessor documentation for actor-event
+(setf (documentation 'EVENT-ACTOR-NAME 'function)
+"The =actor-name= slot of =actor-event=.")
+(setf (documentation 'EVENT-COMPONENT 'function)
+"The =component= slot of =actor-event=.")
+(setf (documentation 'EVENT-DETAILS 'function)
+"The =details= slot of =actor-event=.")
+(setf (documentation 'EVENT-GENERATION 'function)
+"The =generation= slot of =actor-event=.")
+(setf (documentation 'EVENT-ID 'function)
+"The =event-id= slot of =actor-event=.")
+(setf (documentation 'EVENT-SOURCE-DOCUMENT 'function)
+"The =source-id= slot of =actor-event=.")
+(setf (documentation 'EVENT-TIMESTAMP 'function)
+"The =timestamp= slot of =actor-event=.")
+(setf (documentation 'EVENT-TRACE-ID 'function)
+"The =trace-id= slot of =actor-event=.")
+(setf (documentation 'EVENT-TYPE 'function)
+"The =event-type= slot of =actor-event=.")
+
+
 
 (defun make-actor-event (&key actor-name component event-type details source-id
                            trace-id (generation 0) timestamp dtype id)
+  "Construct a validated actor event record."
   (make-instance
    'actor-event
    :id (or id (cms-ulid:ulid))
@@ -92,6 +125,7 @@
   (and (stringp value) (plusp (length value))))
 
 (defun validate-actor-event (event &optional payload)
+  "Validate an actor event; signal invalid-actor-event on failure."
   (flet ((invalid (reason)
            (error 'invalid-actor-event
                   :reason reason
@@ -145,6 +179,7 @@
              :payload payload))))
 
 (defun encode-actor-event (event)
+  "Serialize an actor event to its wire JSON representation."
   (jsown:to-json
    (star.databases.couchdb:as-json
     (validate-actor-event event))))
@@ -198,6 +233,7 @@
     (tell *couchdb-inserts* (actor-event-insert-request event))))
 
 (defun handle-event-message (consumer message)
+  "Process one RabbitMQ event message inside the event consumer."
   (declare (ignore consumer))
   (process-event-delivery (car message)))
 
@@ -232,6 +268,7 @@
 
 (defun log-actor-event (actor-name &key event-type details source-id trace-id
                                      component (generation 0))
+  "Emit an actor event through the configured receiver and log it."
   (tell
    *actor-event-receiver*
    (make-actor-event
@@ -263,3 +300,7 @@
             event-trace-id
             event-generation)
           :star.actors))
+
+;; Variable documentation for the actor-event receiver defined above
+(setf (documentation '*actor-event-receiver* 'variable)
+  "Actor receiving every emitted actor event and persisting it to CouchDB.")

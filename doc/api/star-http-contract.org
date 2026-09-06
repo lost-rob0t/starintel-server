@@ -1,0 +1,179 @@
+#+TITLE: API Reference — STAR.HTTP.CONTRACT
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Types and Classes
+*** http-operation
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+One documented HTTP operation of the client contract.
+- Slots: =id=, =client-name=, =method=, =path=, =summary=, =tags=, =authority=, =scopes=, =path-parameters=, =request-schema=, =responses=, =idempotency=
+
+* Functions
+*** all-http-operations
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Every operation in the client contract manifest.
+*** client-manifest-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+The full client manifest as a JSON document.
+*** client-manifest-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+The full client manifest serialized to JSON.
+*** find-http-operation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(find-http-operation (STAR.HTTP.CONTRACT::OPERATION-ID &KEY (STAR.HTTP.CONTRACT::ERRORP T)))
+#+end_src
+Look up one contract operation by id.
+*** http-operation-authority
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-authority (SB-KERNEL:INSTANCE))
+#+end_src
+Authority (host base) of the operation.
+*** http-operation-client-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-client-name (SB-KERNEL:INSTANCE))
+#+end_src
+Client library this operation belongs to.
+*** http-operation-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-id (SB-KERNEL:INSTANCE))
+#+end_src
+Stable id of the operation.
+*** http-operation-idempotency
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-idempotency (SB-KERNEL:INSTANCE))
+#+end_src
+Idempotency classification of the operation.
+*** http-operation-method
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-method (SB-KERNEL:INSTANCE))
+#+end_src
+HTTP method of the operation.
+*** http-operation-path
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-path (SB-KERNEL:INSTANCE))
+#+end_src
+Path template of the operation.
+*** http-operation-path-parameters
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-path-parameters (SB-KERNEL:INSTANCE))
+#+end_src
+Path parameters and their constraints.
+*** http-operation-request-schema
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-request-schema (SB-KERNEL:INSTANCE))
+#+end_src
+JSON schema of the request body, or nil.
+*** http-operation-responses
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-responses (SB-KERNEL:INSTANCE))
+#+end_src
+Response schema/status map of the operation.
+*** http-operation-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-scopes (SB-KERNEL:INSTANCE))
+#+end_src
+Scopes required to call the operation.
+*** http-operation-summary
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-summary (SB-KERNEL:INSTANCE))
+#+end_src
+Human summary of the operation.
+*** http-operation-tags
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-tags (SB-KERNEL:INSTANCE))
+#+end_src
+Tags grouping the operation.
+*** openapi-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+The OpenAPI document for the client contract.
+*** openapi-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+The OpenAPI document serialized to JSON.
+*** openapi-path
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(openapi-path (STAR.HTTP.CONTRACT::OPERATION))
+#+end_src
+Path entry of the OpenAPI document.
+*** operation-request-symbol-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(operation-request-symbol-name (STAR.HTTP.CONTRACT::OPERATION))
+#+end_src
+Client symbol name generated for the operation.
