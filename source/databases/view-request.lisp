@@ -2,16 +2,34 @@
 
 (defstruct (couchdb-view-request
              (:constructor make-couchdb-view-request (method uri body)))
+  "A fully built CouchDB view HTTP request."
   method
   uri
   body)
+
+;; Accessor documentation for couchdb-view-request
+(setf (documentation 'COUCHDB-VIEW-REQUEST-BODY 'function)
+"JSON body of the view request, or nil for GET.")
+(setf (documentation 'COUCHDB-VIEW-REQUEST-METHOD 'function)
+"The =method= slot of =couchdb-view-request=.")
+(setf (documentation 'COUCHDB-VIEW-REQUEST-URI 'function)
+"The =uri= slot of =couchdb-view-request=.")
+
+
 
 (define-condition view-query-error (error)
   ((reason :initarg :reason :reader view-query-error-reason))
   (:report
    (lambda (condition stream)
      (format stream "Invalid CouchDB view query: ~a"
-             (view-query-error-reason condition)))))
+             (view-query-error-reason condition))))
+  (:documentation "Signalled when a view query fails."))
+
+;; Accessor documentation for view-query-error
+(setf (documentation 'VIEW-QUERY-ERROR-REASON 'function)
+"The =reason= slot of =view-query-error=.")
+
+
 
 (defun reject-view-query (control &rest arguments)
   (error 'view-query-error :reason (apply #'format nil control arguments)))
@@ -137,7 +155,11 @@
    :cookie-jar (cl-couch:couchdb-cookie client)
    :keep-alive t))
 
-(defparameter *couchdb-view-transport* #'perform-couchdb-view-request)
+(defparameter *couchdb-view-transport* #'perform-couchdb-view-request
+  "Transport used by =query-view= to execute a built request.
+
+A function of (CLIENT REQUEST) returning the raw JSON body.  Tests
+swap this to fake the CouchDB round trip.")
 
 (defun query-view
     (client database design-document view-name
@@ -156,7 +178,13 @@
        (group nil)
        group-level
      &allow-other-keys)
-  "Execute a validated view request and return its decoded CouchDB response."
+  "Execute a validated view query against a CouchDB design document.
+
+ARGUMENTS are standard CouchDB query parameters (=:limit=, =:skip=,
+=:descending=, =:include-docs=, =:reduce=, =:update=, =:key=, =:keys=,
+=:start-key=, =:end-key=, =:group=, =:group-level=).  The request is
+validated and built by =build-couchdb-view-request=, then executed via
+=*couchdb-view-transport*=.  Returns the decoded JSON response."
   (declare (ignore limit skip descending include-docs reduce update
                    key keys start-key end-key group group-level))
   (let* ((request
@@ -169,7 +197,11 @@
     (function client database design-document view-name
      &rest arguments
      &key (include-docs nil) &allow-other-keys)
-  "Compatibility mapper for callers that consume key/value callback results."
+  "Run a view query and call FUNCTION on each row.
+
+FUNCTION receives the row's key and value (and document when
+=:include-docs= is set).  Compatibility mapper for callers that
+consume key/value callback results; prefer =query-view= for new code."
   (validate-view-boolean "include-docs" include-docs)
   (let ((rows
           (jsown:val

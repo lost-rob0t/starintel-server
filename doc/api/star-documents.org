@@ -1,0 +1,202 @@
+#+TITLE: API Reference — STAR.DOCUMENTS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Conditions
+*** document-schema-validation-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DOCUMENTS
+:END:
+Signalled when a document fails v0.9 schema validation.
+- Slots: =category=, =reason=
+
+* Functions
+*** canonical-dtype
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(canonical-dtype (STAR.DOCUMENTS::DTYPE))
+#+end_src
+Canonical string form of a document dtype.
+*** clone-document-object
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(clone-document-object (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+Deep copy a parsed document object.
+*** document-data
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-data (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+The =data= payload of a document object.
+*** document-dataset
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-dataset (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+The =dataset= field of a document object.
+*** document-date-added
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-date-added (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+The =dateAdded= field of a document object.
+*** document-date-updated
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-date-updated (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+The =dateUpdated= field of a document object.
+*** document-dtype
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-dtype (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+The =dtype= field of a document object.
+*** document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-id (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+The =_id= of a document object.
+*** document-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-json (STAR.DOCUMENTS::DOCUMENT &KEY STAR.DOCUMENTS::ROUTE-DTYPE))
+#+end_src
+Serialize DOCUMENT to canonical JSON, enforcing identity invariants.
+
+Applies =ensure-document= (dtype routing, id stamping) then renders
+the JSON string sent over the wire and into CouchDB.
+*** document-transient-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-transient-p (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+True when the document is marked transient.
+*** document-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-value (STAR.DOCUMENTS::DOCUMENT STAR.DOCUMENTS::KEY &OPTIONAL STAR.DOCUMENTS::DEFAULT))
+#+end_src
+Generic accessor into a document object cell.
+*** ensure-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(ensure-document (STAR.DOCUMENTS::DOCUMENT &KEY STAR.DOCUMENTS::ROUTE-DTYPE))
+#+end_src
+Parse DOCUMENT and enforce transport-level identity invariants.
+
+Strict canonical validation is an explicit boundary operation so legacy target
+compatibility adapters can opt out without weakening canonical ingest.
+*** object-has-key-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(object-has-key-p (STAR.DOCUMENTS::OBJECT STAR.DOCUMENTS::KEY))
+#+end_src
+True when a parsed JSON object contains KEY.
+*** object-keys
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(object-keys (STAR.DOCUMENTS::OBJECT))
+#+end_src
+Keywords of a parsed JSON object.
+*** object-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(object-value (STAR.DOCUMENTS::OBJECT STAR.DOCUMENTS::KEY &OPTIONAL STAR.DOCUMENTS::DEFAULT))
+#+end_src
+Fetch the value at KEY of a parsed JSON object.
+*** parse-document-object
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(parse-document-object (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+Parse a document payload into the internal JSOWN form.
+*** utc-now
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+Current UTC timestamp as an ISO-8601 string.
+*** validate-v09-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(validate-v09-document (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+Validate DOCUMENT with star-cl's canonical StarIntel v0.9 validator.
+
+The server owns only schema discovery, JSOWN-to-Jzon conversion, and a stable
+condition. The schema rules and validator remain owned by star-cl.
+
+* Generic Functions
+*** document-schema-validation-category
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-schema-validation-category (CONDITION))
+#+end_src
+The =category= slot of =document-schema-validation-error=.
+*** document-schema-validation-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-schema-validation-reason (CONDITION))
+#+end_src
+The =reason= slot of =document-schema-validation-error=.

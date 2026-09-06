@@ -4,7 +4,8 @@
 (defparameter *ui-port* 8080)
 (defparameter *api-backend-url* "http://localhost:5000")
 
-(defparameter *app* (make-instance 'ningle:app))
+(defparameter *app* (make-instance 'ningle:app)
+  "The Ningle application instance serving the HTTP API.")
 
 (defun set-default-headers ()
   (setf (lack.response:response-headers *response*)

@@ -9,9 +9,20 @@
                    (database star:*couchdb-default-database*)
                    document-id
                    revision)))
+  "Deferred CouchDB GET command executed by the couchdb service actor."
   database
   document-id
   revision)
+
+;; Accessor documentation for couchdb-get-request
+(setf (documentation 'COUCHDB-GET-REQUEST-DATABASE 'function)
+"The =database= slot of =couchdb-get-request=.")
+(setf (documentation 'COUCHDB-GET-REQUEST-DOCUMENT-ID 'function)
+"The =document-id= slot of =couchdb-get-request=.")
+(setf (documentation 'COUCHDB-GET-REQUEST-REVISION 'function)
+"Expected revision carried by the deferred get, or nil.")
+
+
 
 (defstruct (couchdb-insert-request
             (:constructor make-couchdb-insert-request
@@ -19,9 +30,20 @@
                    (database star:*couchdb-default-database*)
                    document-id
                    document)))
+  "Deferred CouchDB insert command executed by the couchdb service actor."
   database
   document-id
   document)
+
+;; Accessor documentation for couchdb-insert-request
+(setf (documentation 'COUCHDB-INSERT-REQUEST-DATABASE 'function)
+"The =database= slot of =couchdb-insert-request=.")
+(setf (documentation 'COUCHDB-INSERT-REQUEST-DOCUMENT 'function)
+"The JSON document payload for the deferred insert.")
+(setf (documentation 'COUCHDB-INSERT-REQUEST-DOCUMENT-ID 'function)
+"The =document-id= slot of =couchdb-insert-request=.")
+
+
 
 (defstruct (couchdb-delete-request
             (:constructor make-couchdb-delete-request
@@ -29,14 +51,26 @@
                    (database star:*couchdb-default-database*)
                    document-id
                    revision)))
+  "Deferred CouchDB DELETE command executed by the couchdb service actor."
   database
   document-id
   revision)
+
+;; Accessor documentation for couchdb-delete-request
+(setf (documentation 'COUCHDB-DELETE-REQUEST-DATABASE 'function)
+"The =database= slot of =couchdb-delete-request=.")
+(setf (documentation 'COUCHDB-DELETE-REQUEST-DOCUMENT-ID 'function)
+"The =document-id= slot of =couchdb-delete-request=.")
+(setf (documentation 'COUCHDB-DELETE-REQUEST-REVISION 'function)
+"Optimistic concurrency revision for the deferred delete.")
+
+
 
 (defstruct (couchdb-result
             (:constructor make-couchdb-result
                 (&key status operation database document-id revision value
                       error-type error-message)))
+  "Result envelope returned by couchdb service actor handlers."
   status
   operation
   database
@@ -45,6 +79,26 @@
   value
   error-type
   error-message)
+
+;; Accessor documentation for couchdb-result
+(setf (documentation 'COUCHDB-RESULT-DATABASE 'function)
+"The =database= slot of =couchdb-result=.")
+(setf (documentation 'COUCHDB-RESULT-DOCUMENT-ID 'function)
+"The =document-id= slot of =couchdb-result=.")
+(setf (documentation 'COUCHDB-RESULT-ERROR-MESSAGE 'function)
+"Human readable failure reason, when the result failed.")
+(setf (documentation 'COUCHDB-RESULT-ERROR-TYPE 'function)
+"The =error-type= slot of =couchdb-result=.")
+(setf (documentation 'COUCHDB-RESULT-OPERATION 'function)
+"The =operation= slot of =couchdb-result=.")
+(setf (documentation 'COUCHDB-RESULT-REVISION 'function)
+"The =revision= slot of =couchdb-result=.")
+(setf (documentation 'COUCHDB-RESULT-STATUS 'function)
+"The =status= slot of =couchdb-result=.")
+(setf (documentation 'COUCHDB-RESULT-VALUE 'function)
+"The =value= slot of =couchdb-result=.")
+
+
 
 (defun make-couchdb-agent (context pool
                            &key error-fun
@@ -158,6 +212,7 @@
   result)
 
 (defun make-couchdb-get-handler (agent &key (get-fn #'couchdb-agent-get))
+  "Actor handler for deferred CouchDB reads."
   (lambda (message)
     (let ((request nil))
       (complete-couchdb-request
@@ -197,6 +252,7 @@
      &key
        (exists-fn #'couchdb-document-exists-p)
        (insert-fn #'couchdb-agent-insert))
+  "Actor handler for deferred CouchDB inserts."
   (lambda (message)
     (let ((request nil))
       (complete-couchdb-request
@@ -241,6 +297,7 @@
             condition)))))))
 
 (defun make-couchdb-delete-handler (agent &key (delete-fn #'couchdb-agent-delete))
+  "Actor handler for deferred CouchDB deletes."
   (lambda (message)
     (let ((request nil))
       (complete-couchdb-request
@@ -304,6 +361,7 @@
   "Actor responsible for deterministic CouchDB delete requests.")
 
 (defun start-couchdb-deletes (system)
+  "Start the actor handling deferred CouchDB deletes."
   (setf *couchdb-deletes*
         (actor-of system
                   :name "*couchdb-deletes*"
@@ -347,3 +405,12 @@
             *couchdb-deletes*
             start-couchdb-deletes)
           :star.actors))
+
+(setf (documentation 'MAKE-COUCHDB-GET-REQUEST 'function)
+  "Build a deferred CouchDB get request for DATABASE and DOCUMENT-ID.")
+
+(setf (documentation 'MAKE-COUCHDB-INSERT-REQUEST 'function)
+  "Build a deferred CouchDB insert request carrying DOCUMENT.")
+
+(setf (documentation 'MAKE-COUCHDB-DELETE-REQUEST 'function)
+  "Build a deferred CouchDB delete request for DOCUMENT-ID at REVISION.")

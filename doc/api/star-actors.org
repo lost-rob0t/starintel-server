@@ -1,0 +1,1265 @@
+#+TITLE: API Reference — STAR.ACTORS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+Actor runtime namespace
+
+* Variables and Constants
+*** *active-target-schedules*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Table of live target schedules keyed by schedule id.
+*** *actor-event-receiver*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor receiving every emitted actor event and persisting it to CouchDB.
+*** *actor-index-agent*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor index agent is responsible for registering actors for targets.
+*** *couchdb-deletes*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor responsible for deterministic CouchDB delete requests.
+*** *couchdb-gets*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+The Couchdb actor responsible for handling document gets.
+*** *couchdb-inserts*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor responsible for handling couchdb inserts
+*** *producer-agent*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Sento agent pinning the RabbitMQ producer connection to one thread.
+*** *recovered-target-fingerprints*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Process-local ledger preventing duplicate timer/execution recovery passes.
+*** *sys*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+the main actor system
+*** *target-max-delay-seconds*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Upper bound on a scheduled target delay.
+*** *target-timer*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+simple wheel timer for targets
+*** *targets*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+The Target actor.
+It is responsble for routing TARGET documents to actors. Actors can reside over rabbitmq or in same-process with lisp.
+*** *url-extractor*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+
+
+* Types and Classes
+*** actor-event
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.ACTORS
+:END:
+Event record emitted by the actor runtime for observability.
+- Slots: =_id=, =timestamp=, =dtype=, =actor-name=, =component=, =event-type=, =details=, =source-id=, =trace-id=, =generation=
+*** couchdb-delete-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Deferred CouchDB DELETE command executed by the couchdb service actor.
+- Slots: =database=, =document-id=, =revision=
+*** couchdb-get-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Deferred CouchDB GET command executed by the couchdb service actor.
+- Slots: =database=, =document-id=, =revision=
+*** couchdb-insert-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Deferred CouchDB insert command executed by the couchdb service actor.
+- Slots: =database=, =document-id=, =document=
+*** couchdb-result
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Result envelope returned by couchdb service actor handlers.
+- Slots: =status=, =operation=, =database=, =document-id=, =revision=, =value=, =error-type=, =error-message=
+*** target-command
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Command message consumed by target actors.
+- Slots: =record=, =first-time-p=, =recovered-p=
+*** target-destination-handle
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Resolved destination for a target dispatch (kind + address).
+- Slots: =kind=, =name=, =component=, =routing-key=, =compatibility-routing-keys=
+*** target-dispatch-envelope
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Envelope carrying one target dispatch through the runtime.
+- Slots: =record=, =destination=, =schedule-id=, =execution-id=, =attempt=, =trace-id=, =lease-id=, =fencing-token=, =deadline=
+*** target-dispatch-outcome
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Outcome record of one dispatch attempt.
+- Slots: =status=, =reason=, =acceptance-id=, =envelope=, =retryable-p=
+*** target-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+A scheduled target: what to run, where, and when.
+- Slots: =id=, =actor=, =target=, =delay=, =recurring-p=, =options=, =document=, =revision=, =lease-owner=, =lease-expires-at=
+
+* Conditions
+*** invalid-actor-event
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Signalled when an actor event fails validation.
+- Slots: =reason=, =payload=
+*** invalid-persisted-target
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Signalled when a persisted target document cannot be reloaded safely.
+- Slots: =document-id=, =reason=
+*** invalid-target-dispatch
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Signalled when a target dispatch envelope fails validation.
+- Slots: =reason=
+*** target-destination-unavailable
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Signalled when the resolved destination cannot accept work.
+- Slots: =reason=
+*** target-ingress-overloaded
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Signalled when the target ingress is above its load threshold.
+- Slots: =reason=
+
+* Functions
+*** accept-target-delivery
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(accept-target-delivery (STAR.ACTORS::CONSUMER STAR.ACTORS::DOCUMENT))
+#+end_src
+Record an acceptance decision for a target delivery.
+*** accept-target-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(accept-target-record (STAR.ACTORS::RECORD &KEY (STAR.ACTORS::ATTEMPT 0) STAR.ACTORS::TRACE-ID
+ STAR.ACTORS::DESTINATION STAR.ACTORS::PERSIST-FN STAR.ACTORS::UPDATE-FN
+ STAR.ACTORS::DISPATCH-FN STAR.ACTORS::SCHEDULE-ONCE-FN
+ STAR.ACTORS::SCHEDULE-RECURRING-FN))
+#+end_src
+Synchronously durably accept a target and return a structured outcome.
+*** canonical-target-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(canonical-target-routing-key (STAR.ACTORS::ACTOR-NAME))
+#+end_src
+Compute the canonical RabbitMQ routing key for a target.
+*** compatibility-target-ingress-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(compatibility-target-ingress-routing-key (STAR.ACTORS::ACTOR-NAME))
+#+end_src
+Return the routing key used by the legacy HTTP target adapter.
+*** compatibility-target-routing-keys
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(compatibility-target-routing-keys (STAR.ACTORS::ACTOR-NAME))
+#+end_src
+Legacy routing keys accepted alongside the canonical key.
+*** couchdb-delete-request-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-delete-request-database (SB-KERNEL:INSTANCE))
+#+end_src
+The =database= slot of =couchdb-delete-request=.
+*** couchdb-delete-request-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-delete-request-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =document-id= slot of =couchdb-delete-request=.
+*** couchdb-delete-request-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-delete-request-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Optimistic concurrency revision for the deferred delete.
+*** couchdb-get-request-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-get-request-database (SB-KERNEL:INSTANCE))
+#+end_src
+The =database= slot of =couchdb-get-request=.
+*** couchdb-get-request-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-get-request-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =document-id= slot of =couchdb-get-request=.
+*** couchdb-get-request-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-get-request-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Expected revision carried by the deferred get, or nil.
+*** couchdb-insert-request-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-insert-request-database (SB-KERNEL:INSTANCE))
+#+end_src
+The =database= slot of =couchdb-insert-request=.
+*** couchdb-insert-request-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-insert-request-document (SB-KERNEL:INSTANCE))
+#+end_src
+The JSON document payload for the deferred insert.
+*** couchdb-insert-request-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-insert-request-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =document-id= slot of =couchdb-insert-request=.
+*** couchdb-result-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-database (SB-KERNEL:INSTANCE))
+#+end_src
+The =database= slot of =couchdb-result=.
+*** couchdb-result-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =document-id= slot of =couchdb-result=.
+*** couchdb-result-error-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-error-message (SB-KERNEL:INSTANCE))
+#+end_src
+Human readable failure reason, when the result failed.
+*** couchdb-result-error-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-error-type (SB-KERNEL:INSTANCE))
+#+end_src
+The =error-type= slot of =couchdb-result=.
+*** couchdb-result-operation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-operation (SB-KERNEL:INSTANCE))
+#+end_src
+The =operation= slot of =couchdb-result=.
+*** couchdb-result-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-revision (SB-KERNEL:INSTANCE))
+#+end_src
+The =revision= slot of =couchdb-result=.
+*** couchdb-result-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-status (SB-KERNEL:INSTANCE))
+#+end_src
+The =status= slot of =couchdb-result=.
+*** couchdb-result-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(couchdb-result-value (SB-KERNEL:INSTANCE))
+#+end_src
+The =value= slot of =couchdb-result=.
+*** decode-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(decode-actor-event (STAR.ACTORS::PAYLOAD))
+#+end_src
+Decode and validate an event through the StarIntel object codec.
+*** delete-couchdb-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(delete-couchdb-document (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE STAR.ACTORS::DOCUMENT-ID &OPTIONAL
+ STAR.ACTORS::REVISION &KEY (STAR.ACTORS::GET-FN #'CL-COUCH:GET-DOCUMENT)
+ (STAR.ACTORS::DELETE-FN #'CL-COUCH:DELETE-DOCUMENT)))
+#+end_src
+Delete DOCUMENT-ID using REVISION, fetching the current revision when absent.
+*** dispatch-target-envelope-now
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(dispatch-target-envelope-now (STAR.ACTORS::ENVELOPE &KEY
+ (STAR.ACTORS::LOCAL-SEND-FN
+  (LAMBDA (STAR.ACTORS::COMPONENT STAR.ACTORS::PAYLOAD)
+    (SENTO.ACTOR:TELL STAR.ACTORS::COMPONENT STAR.ACTORS::PAYLOAD)))
+ (STAR.ACTORS::REMOTE-SEND-FN
+  (LAMBDA (STAR.ACTORS::ROUTING-KEY STAR.ACTORS::DOCUMENT)
+    (STAR.RABBIT:EMIT-DOCUMENT "documents" STAR.ACTORS::ROUTING-KEY
+                               STAR.ACTORS::DOCUMENT)))))
+#+end_src
+Dispatch one occurrence through an explicit destination handle.
+*** encode-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(encode-actor-event (STAR.ACTORS::EVENT))
+#+end_src
+Serialize an actor event to its wire JSON representation.
+*** get-dest-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(get-dest-actor (SENTO.ACTOR:ACTOR))
+#+end_src
+Resolve a destination actor symbol by its registered name.
+*** handle-event-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(handle-event-message (STAR.ACTORS::CONSUMER STAR.ACTORS::MESSAGE))
+#+end_src
+Process one RabbitMQ event message inside the event consumer.
+*** load-persisted-target-records
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(load-persisted-target-records (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
+ (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)
+ (STAR.ACTORS::QUARANTINE-FN
+  #'STAR.ACTORS::QUARANTINE-INVALID-PERSISTED-TARGET)))
+#+end_src
+Return valid typed records and quarantine invalid persisted documents.
+*** log-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(log-actor-event (STAR.ACTORS::ACTOR-NAME &KEY STAR.ACTORS:EVENT-TYPE STAR.ACTORS::DETAILS
+ STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID STAR.ACTORS::COMPONENT
+ (STAR.ACTORS::GENERATION 0)))
+#+end_src
+Emit an actor event through the configured receiver and log it.
+*** make-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-actor-event (&KEY STAR.ACTORS::ACTOR-NAME STAR.ACTORS::COMPONENT STAR.ACTORS:EVENT-TYPE
+ STAR.ACTORS::DETAILS STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID
+ (STAR.ACTORS::GENERATION 0) STAR.ACTORS::TIMESTAMP STAR.ACTORS::DTYPE
+ SENTO.ACTOR-CONTEXT:ID))
+#+end_src
+Construct a validated actor event record.
+*** make-couchdb-delete-handler
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-couchdb-delete-handler (SENTO.AGENT:AGENT &KEY
+ (STAR.ACTORS::DELETE-FN #'STAR.ACTORS::COUCHDB-AGENT-DELETE)))
+#+end_src
+Actor handler for deferred CouchDB deletes.
+*** make-couchdb-delete-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-couchdb-delete-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
+#+end_src
+Build a deferred CouchDB delete request for DOCUMENT-ID at REVISION.
+*** make-couchdb-get-handler
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-couchdb-get-handler (SENTO.AGENT:AGENT &KEY (STAR.ACTORS::GET-FN #'STAR.ACTORS::COUCHDB-AGENT-GET)))
+#+end_src
+Actor handler for deferred CouchDB reads.
+*** make-couchdb-get-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-couchdb-get-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
+#+end_src
+Build a deferred CouchDB get request for DATABASE and DOCUMENT-ID.
+*** make-couchdb-insert-handler
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-couchdb-insert-handler (SENTO.AGENT:AGENT &KEY
+ (STAR.ACTORS::EXISTS-FN #'STAR.ACTORS::COUCHDB-DOCUMENT-EXISTS-P)
+ (STAR.ACTORS::INSERT-FN #'STAR.ACTORS::COUCHDB-AGENT-INSERT)))
+#+end_src
+Actor handler for deferred CouchDB inserts.
+*** make-couchdb-insert-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-couchdb-insert-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::DOCUMENT))
+#+end_src
+Build a deferred CouchDB insert request carrying DOCUMENT.
+*** make-remote-target-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-remote-target-consumer (STAR.ACTORS::ACTOR-NAME STAR.ACTORS::HANDLER-FN &KEY
+ (STAR.ACTORS::QUEUE-NAME
+  (FORMAT NIL "actor-~a-targets" (STRING-DOWNCASE STAR.ACTORS::ACTOR-NAME)))
+ (STAR.ACTORS::N 1)))
+#+end_src
+Create a consumer bound to the canonical remote target route.
+*** make-target-dispatch-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(make-target-dispatch-envelope (STAR.ACTORS::RECORD &KEY STAR.ACTORS::DESTINATION (STAR.ACTORS::ATTEMPT 0)
+ STAR.ACTORS::TRACE-ID STAR.ACTORS::LEASE-ID (STAR.ACTORS::FENCING-TOKEN 1)))
+#+end_src
+Build a validated dispatch envelope for a target.
+*** parse-target-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(parse-target-record (STAR.ACTORS::DOCUMENT))
+#+end_src
+Validate one v0.9 target document and return a typed recovery record.
+*** process-event-delivery
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(process-event-delivery (STAR.ACTORS::PAYLOAD &KEY
+ (STAR.ACTORS::PERSIST-FN #'STAR.ACTORS::PERSIST-ACTOR-EVENT)))
+#+end_src
+Decode, validate, persist idempotently, and return an owner-thread settlement.
+*** process-target-dispatch-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(process-target-dispatch-envelope (STAR.ACTORS::ENVELOPE STAR.ACTORS::PERSIST-FN STAR.ACTORS::UPDATE-FN &KEY
+ (STAR.ACTORS::DISPATCH-FN #'STAR.ACTORS:DISPATCH-TARGET-ENVELOPE-NOW)
+ (STAR.ACTORS::SCHEDULE-ONCE-FN #'STAR.ACTORS::WHEEL-SCHEDULE-TARGET-ONCE)
+ (STAR.ACTORS::SCHEDULE-RECURRING-FN
+  #'STAR.ACTORS::WHEEL-SCHEDULE-TARGET-RECURRING)))
+#+end_src
+Persist acceptance, establish schedule, and return a structured outcome.
+*** publish
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(publish (SENTO.AGENT:AGENT &KEY STAR.ACTORS::BODY (STAR.ACTORS::PROPERTIES NIL)
+ STAR.ACTORS::ROUTING-KEY))
+#+end_src
+Publish a message to RabbitMQ.
+
+Sento agent semantics: do the publish *inside* the agent via `agent-get`, so the
+producer state (connection/channel) is touched from one pinned thread.
+
+BODY is expected to be a JSON string, but accept a JSOWN object as a convenience
+and normalize it to JSON.
+
+
+*** query-persisted-target-documents
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(query-persisted-target-documents (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
+ (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
+#+end_src
+Query DATABASE through targets/by_actor and accept either JSOWN array form.
+*** recover-persisted-targets
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(recover-persisted-targets (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::ACTORS))
+#+end_src
+Recover valid persisted targets after actor startup and before Rabbit ingest.
+*** recover-target-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(recover-target-record (STAR.ACTORS::RECORD))
+#+end_src
+Recover one record once per persisted revision in this process.
+*** register-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(register-actor (STAR.ACTORS::ACTOR-NAME STAR.ACTORS::ACTOR-SYMBOL))
+#+end_src
+Register ACTOR-SYMBOL under ACTOR-NAME in the actor index.
+
+Actors must be registered here before they receive any target
+messages; the target router resolves destinations through
+=get-dest-actor=.
+*** register-target-schedule
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(register-target-schedule (STAR.ACTORS::ENVELOPE STAR.ACTORS::DISPATCH-FN STAR.ACTORS::SCHEDULE-ONCE-FN
+ STAR.ACTORS::SCHEDULE-RECURRING-FN))
+#+end_src
+Register one active schedule identity regardless of destination transport.
+*** resolve-target-destination
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(resolve-target-destination (STAR.ACTORS::ACTOR-NAME &KEY
+ (STAR.ACTORS::RESOLVER #'STAR.ACTORS:GET-DEST-ACTOR)))
+#+end_src
+Resolve ACTOR-NAME into an explicit local or Rabbit component handle.
+*** start-actors
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(start-actors (&KEY STAR.ACTORS::RABBIT-USER STAR.ACTORS::RABBIT-HOST
+ STAR.ACTORS::RABBIT-PASSWORD STAR.ACTORS::RABBIT-VHOST
+ STAR.ACTORS::RABBIT-PORT))
+#+end_src
+Start the actor runtime and retain every process-owned timer/system handle.
+*** start-couchdb-deletes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(start-couchdb-deletes (SENTO.ACTOR-CONTEXT:SYSTEM))
+#+end_src
+Start the actor handling deferred CouchDB deletes.
+*** start-event-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(start-event-consumer (STAR.ACTORS::N))
+#+end_src
+Start durable owner-thread event consumers with bounded retry and quarantine.
+*** start-target-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(start-target-actor (SENTO.ACTOR-CONTEXT:SYSTEM))
+#+end_src
+Start a typed compatibility ingress actor over the durable coordinator.
+*** start-target-timer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+Start the wheel timer backing recurring targets.
+
+Resolution 10s, max size 1000 scheduled entries.  See also
+=*target-timer*=.
+*** submit-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(submit-target (STAR.ACTORS::TARGET &KEY (STAR.ACTORS::FIRST-TIME-P T)
+ (STAR.ACTORS::RECOVERED-P NIL)))
+#+end_src
+Compatibility submission API backed by durable synchronous acceptance.
+*** sumbit-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(sumbit-target (STAR.ACTORS::TARGET &OPTIONAL (STAR.ACTORS::FIRST-TIME T)))
+#+end_src
+Compatibility alias for the historical misspelling.
+*** target-acceptance-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-acceptance-document (STAR.ACTORS::ENVELOPE))
+#+end_src
+The persisted acceptance document for a target.
+*** target-acceptance-equivalent-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-acceptance-equivalent-p (STAR.ACTORS::LEFT STAR.ACTORS::RIGHT))
+#+end_src
+True when two acceptance documents describe the same target.
+*** target-acceptance-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-acceptance-id (STAR.ACTORS::SCHEDULE-ID))
+#+end_src
+Stable identifier of a target acceptance record.
+*** target-active-lease-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-active-lease-p (STAR.ACTORS::RECORD &OPTIONAL (STAR.ACTORS::NOW (STAR.DOCUMENTS:UTC-NOW))))
+#+end_src
+Return true when RECORD has a non-expired persisted execution lease.
+*** target-command-first-time-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-command-first-time-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =first-time-p= slot of =target-command=.
+*** target-command-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-command-record (SB-KERNEL:INSTANCE))
+#+end_src
+The =record= slot of =target-command=.
+*** target-command-recovered-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-command-recovered-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =recovered-p= slot of =target-command=.
+*** target-destination-handle-compatibility-routing-keys
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-destination-handle-compatibility-routing-keys (SB-KERNEL:INSTANCE))
+#+end_src
+Legacy routing keys kept for the destination handle.
+*** target-destination-handle-component
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-destination-handle-component (SB-KERNEL:INSTANCE))
+#+end_src
+The =component= slot of =target-destination-handle=.
+*** target-destination-handle-kind
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-destination-handle-kind (SB-KERNEL:INSTANCE))
+#+end_src
+The =kind= slot of =target-destination-handle=.
+*** target-destination-handle-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-destination-handle-name (SB-KERNEL:INSTANCE))
+#+end_src
+The =name= slot of =target-destination-handle=.
+*** target-destination-handle-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-destination-handle-routing-key (SB-KERNEL:INSTANCE))
+#+end_src
+The =routing-key= slot of =target-destination-handle=.
+*** target-dispatch-envelope-attempt
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-attempt (SB-KERNEL:INSTANCE))
+#+end_src
+The =attempt= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-deadline
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-deadline (SB-KERNEL:INSTANCE))
+#+end_src
+Latest acceptable execution time for the envelope.
+*** target-dispatch-envelope-destination
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-destination (SB-KERNEL:INSTANCE))
+#+end_src
+The =destination= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-execution-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-execution-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =execution-id= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-fencing-token
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-fencing-token (SB-KERNEL:INSTANCE))
+#+end_src
+The =fencing-token= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-lease-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-lease-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =lease-id= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-record (SB-KERNEL:INSTANCE))
+#+end_src
+The =record= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-schedule-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-schedule-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =schedule-id= slot of =target-dispatch-envelope=.
+*** target-dispatch-envelope-trace-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-envelope-trace-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =trace-id= slot of =target-dispatch-envelope=.
+*** target-dispatch-outcome-acceptance-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-outcome-acceptance-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =acceptance-id= slot of =target-dispatch-outcome=.
+*** target-dispatch-outcome-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-outcome-envelope (SB-KERNEL:INSTANCE))
+#+end_src
+The =envelope= slot of =target-dispatch-outcome=.
+*** target-dispatch-outcome-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-outcome-reason (SB-KERNEL:INSTANCE))
+#+end_src
+The =reason= slot of =target-dispatch-outcome=.
+*** target-dispatch-outcome-retryable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-outcome-retryable-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =retryable-p= slot of =target-dispatch-outcome=.
+*** target-dispatch-outcome-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-dispatch-outcome-status (SB-KERNEL:INSTANCE))
+#+end_src
+The =status= slot of =target-dispatch-outcome=.
+*** target-outcome-success-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-outcome-success-p (STAR.ACTORS::OUTCOME))
+#+end_src
+True when a dispatch outcome counts as successful.
+*** target-record-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-actor (SB-KERNEL:INSTANCE))
+#+end_src
+The =actor= slot of =target-record=.
+*** target-record-delay
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-delay (SB-KERNEL:INSTANCE))
+#+end_src
+The =delay= slot of =target-record=.
+*** target-record-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-document (SB-KERNEL:INSTANCE))
+#+end_src
+The =document= slot of =target-record=.
+*** target-record-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =id= slot of =target-record=.
+*** target-record-lease-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-lease-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+Expiration of the lease guarding this target record.
+*** target-record-lease-owner
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-lease-owner (SB-KERNEL:INSTANCE))
+#+end_src
+The =lease-owner= slot of =target-record=.
+*** target-record-options
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-options (SB-KERNEL:INSTANCE))
+#+end_src
+The =options= slot of =target-record=.
+*** target-record-recurring-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-recurring-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =recurring-p= slot of =target-record=.
+*** target-record-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-revision (SB-KERNEL:INSTANCE))
+#+end_src
+The =revision= slot of =target-record=.
+*** target-record-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-record-target (SB-KERNEL:INSTANCE))
+#+end_src
+The =target= slot of =target-record=.
+*** validate-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(validate-actor-event (STAR.ACTORS::EVENT &OPTIONAL STAR.ACTORS::PAYLOAD))
+#+end_src
+Validate an actor event; signal invalid-actor-event on failure.
+*** validate-target-dispatch-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(validate-target-dispatch-record (STAR.ACTORS::RECORD &KEY (STAR.ACTORS::NOW (STAR.DOCUMENTS:UTC-NOW))
+ (STAR.ACTORS::MAX-DELAY STAR.ACTORS:*TARGET-MAX-DELAY-SECONDS*)))
+#+end_src
+Validate identity, schedule, recurrence, transient policy, and deadline.
+
+* Generic Functions
+*** event-actor-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-actor-name (SB-PCL::OBJECT))
+#+end_src
+The =actor-name= slot of =actor-event=.
+*** event-component
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-component (SB-PCL::OBJECT))
+#+end_src
+The =component= slot of =actor-event=.
+*** event-details
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-details (SB-PCL::OBJECT))
+#+end_src
+The =details= slot of =actor-event=.
+*** event-generation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-generation (SB-PCL::OBJECT))
+#+end_src
+The =generation= slot of =actor-event=.
+*** event-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-id (SB-PCL::OBJECT))
+#+end_src
+The =event-id= slot of =actor-event=.
+*** event-source-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-source-document (SB-PCL::OBJECT))
+#+end_src
+The =source-id= slot of =actor-event=.
+*** event-timestamp
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-timestamp (SB-PCL::OBJECT))
+#+end_src
+The =timestamp= slot of =actor-event=.
+*** event-trace-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-trace-id (SB-PCL::OBJECT))
+#+end_src
+The =trace-id= slot of =actor-event=.
+*** event-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(event-type (SB-PCL::OBJECT))
+#+end_src
+The =event-type= slot of =actor-event=.
+*** invalid-actor-event-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(invalid-actor-event-reason (CONDITION))
+#+end_src
+The =invalid-actor-event-reason= slot of =invalid-actor-event=.
+*** invalid-target-dispatch-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(invalid-target-dispatch-reason (CONDITION))
+#+end_src
+The =invalid-target-dispatch-reason= slot of =invalid-target-dispatch=.
+*** invalid-target-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(invalid-target-document-id (CONDITION))
+#+end_src
+The =document-id= slot of =invalid-persisted-target=.
+*** invalid-target-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(invalid-target-reason (CONDITION))
+#+end_src
+The =reason= slot of =invalid-persisted-target=.
+*** target-destination-unavailable-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-destination-unavailable-reason (CONDITION))
+#+end_src
+The =target-destination-unavailable-reason= slot of =target-destination-unavailable=.
+*** target-ingress-overloaded-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(target-ingress-overloaded-reason (CONDITION))
+#+end_src
+The =target-ingress-overloaded-reason= slot of =target-ingress-overloaded=.
+
+* Macros
+*** define-actor
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(define-actor ((STAR.ACTORS::NAME SENTO.ACTOR-CONTEXT:SYSTEM &KEY (STAR.ACTORS::REGISTER T))
+ &BODY STAR.ACTORS::BODY))
+#+end_src
+Define an actor message handler and register it in the actor index.
+*** with-json
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(with-json (STAR.ACTORS::JOBJECT &BODY STAR.ACTORS::BODY))
+#+end_src
+Macro exposing =val=, =dataset=, =dtype= readers over a JSON object.

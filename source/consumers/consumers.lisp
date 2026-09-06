@@ -3,9 +3,22 @@
 (defstruct (consumer-settlement
              (:constructor %make-consumer-settlement
                  (action &key reason condition)))
+  "Settlement action applied to one delivery (ack/reject/...)."
   action
   reason
   condition)
+
+;; Accessor documentation for consumer-settlement
+(setf (documentation 'CONSUMER-SETTLEMENT-ACTION 'function)
+"The =action= slot of =consumer-settlement=.")
+(setf (documentation 'CONSUMER-SETTLEMENT-CONDITION 'function)
+"Signalled to settle the delivery currently being processed.")
+(setf (documentation 'CONSUMER-SETTLEMENT-COUNT 'function)
+"Number of settlements applied per settlement kind.")
+(setf (documentation 'CONSUMER-SETTLEMENT-REASON 'function)
+"The =reason= slot of =consumer-settlement=.")
+
+
 
 (defun valid-settlement-action-p (action)
   (member action
@@ -20,18 +33,23 @@
                              :condition condition))
 
 (defun settlement-ack (&optional reason)
+  "Settle a delivery as acknowledged."
   (make-settlement :ack :reason reason))
 
 (defun settlement-filtered-ack (&optional (reason "filtered"))
+  "Settle a delivery as filtered (ack without processing)."
   (make-settlement :filtered-ack :reason reason))
 
 (defun settlement-retry (&optional reason condition)
+  "Settle a delivery by scheduling a retry."
   (make-settlement :retry :reason reason :condition condition))
 
 (defun settlement-dead-letter (&optional reason condition)
+  "Settle a delivery by sending it to the dead letter queue."
   (make-settlement :dead-letter :reason reason :condition condition))
 
 (defun settlement-reject (&optional reason condition)
+  "Settle a delivery as rejected."
   (make-settlement :reject :reason reason :condition condition))
 
 (defun normalize-settlement (value)
@@ -55,7 +73,16 @@ NIL and non-settlement success values remain backward-compatible ACK results."
      (format stream
              "Rabbit stream operation ran on ~s; owner is ~s"
              (wrong-stream-owner-actual condition)
-             (wrong-stream-owner-expected condition)))))
+             (wrong-stream-owner-expected condition))))
+  (:documentation "Signalled when a worker touches a stream owned by another worker."))
+
+;; Accessor documentation for wrong-stream-owner
+(setf (documentation 'WRONG-STREAM-OWNER-ACTUAL 'function)
+"The =actual= slot of =wrong-stream-owner=.")
+(setf (documentation 'WRONG-STREAM-OWNER-EXPECTED 'function)
+"The =expected= slot of =wrong-stream-owner=.")
+
+
 
 (defclass consumer ()
   ((name
@@ -129,20 +156,91 @@ NIL and non-settlement success values remain backward-compatible ACK results."
   (:documentation
    "A stream consumer whose worker owns its stream and settlement lifecycle."))
 
-(defgeneric consumer-update-state (consumer new-state))
-(defgeneric consumer-cleanup (consumer))
-(defgeneric consumer-update (consumer new-state))
-(defgeneric consumer-read (consumer))
-(defgeneric consume (consumer data))
-(defgeneric start-consumer (consumer))
-(defgeneric stop-consumer (consumer))
-(defgeneric open-stream (stream))
-(defgeneric close-stream (stream))
-(defgeneric stream-read (stream))
-(defgeneric stream-settle (stream delivery settlement))
-(defgeneric make-rabbit-worker-consumer (consumer worker-number))
+;; Accessor documentation for consumer
+(setf (documentation 'CONSUMER-CHANNEL 'function)
+"The =worker-channel= slot of =consumer=.")
+(setf (documentation 'CONSUMER-CLEANUP 'function)
+"Protocol: release consumer resources on shutdown.")
+(setf (documentation 'CONSUMER-FAILURE-ACTION 'function)
+"The =failure-action= slot of =consumer=.")
+(setf (documentation 'CONSUMER-FAILURES 'function)
+"The =failures= slot of =consumer=.")
+(setf (documentation 'CONSUMER-FILTER 'function)
+"The =predicate= slot of =consumer=.")
+(setf (documentation 'CONSUMER-FILTERED-ACTION 'function)
+"The =filtered-action= slot of =consumer=.")
+(setf (documentation 'CONSUMER-FN 'function)
+"The =consumer-fn= slot of =consumer=.")
+(setf (documentation 'CONSUMER-IN-FLIGHT 'function)
+"The =in-flight= slot of =consumer=.")
+(setf (documentation 'CONSUMER-LOCK 'function)
+"The =lock= slot of =consumer=.")
+(setf (documentation 'CONSUMER-METRICS 'function)
+"In-flight, unsettled and failure counters for a consumer.")
+(setf (documentation 'CONSUMER-NAME 'function)
+"The =name= slot of =consumer=.")
+(setf (documentation 'CONSUMER-READ 'function)
+"Protocol: read the next delivery from the consumer stream.")
+(setf (documentation 'CONSUMER-RUNNING-P 'function)
+"The =running-p= slot of =consumer=.")
+(setf (documentation 'CONSUMER-SETTLEMENT 'function)
+"Settlement action applied to one delivery (ack/reject/...).")
+(setf (documentation 'CONSUMER-SETTLEMENT-ACTION 'function)
+"The =action= slot of =consumer-settlement=.")
+(setf (documentation 'CONSUMER-SETTLEMENT-CONDITION 'function)
+"Signalled to settle the delivery currently being processed.")
+(setf (documentation 'CONSUMER-SETTLEMENT-COUNT 'function)
+"Number of settlements applied per settlement kind.")
+(setf (documentation 'CONSUMER-SETTLEMENT-REASON 'function)
+"The =reason= slot of =consumer-settlement=.")
+(setf (documentation 'CONSUMER-STATE 'function)
+"The =state= slot of =consumer=.")
+(setf (documentation 'CONSUMER-STREAM 'function)
+"The =consumer-stream= slot of =consumer=.")
+(setf (documentation 'CONSUMER-TAKE 'function)
+"The =take= slot of =consumer=.")
+(setf (documentation 'CONSUMER-THREADS 'function)
+"The =threads= slot of =consumer=.")
+(setf (documentation 'CONSUMER-UNSETTLED 'function)
+"The =unsettled= slot of =consumer=.")
+(setf (documentation 'CONSUMER-UPDATE 'function)
+"Protocol: persist a new consumer state snapshot.")
+(setf (documentation 'CONSUMER-UPDATE-STATE 'function)
+"Update the consumer state under its lock.")
+(setf (documentation 'CONSUMER-WORKER-COUNT 'function)
+"The =workers= slot of =consumer=.")
+(setf (documentation 'CONSUMER-WORKER-INSTANCES 'function)
+"The =worker-instances= slot of =consumer=.")
+
+
+
+(defgeneric consumer-update-state (consumer new-state)
+  (:documentation "Update the consumer state under its lock."))
+(defgeneric consumer-cleanup (consumer)
+  (:documentation "Protocol: release consumer resources on shutdown."))
+(defgeneric consumer-update (consumer new-state)
+  (:documentation "Protocol: persist a new consumer state snapshot."))
+(defgeneric consumer-read (consumer)
+  (:documentation "Protocol: read the next delivery from the consumer stream."))
+(defgeneric consume (consumer data)
+  (:documentation "Protocol: deliver one decoded message to the consumer."))
+(defgeneric start-consumer (consumer)
+  (:documentation "Start a consumer and its worker threads."))
+(defgeneric stop-consumer (consumer)
+  (:documentation "Stop a consumer and join its worker threads."))
+(defgeneric open-stream (stream)
+  (:documentation "Protocol: acquire the transport resources of STREAM."))
+(defgeneric close-stream (stream)
+  (:documentation "Protocol: release the transport resources of STREAM."))
+(defgeneric stream-read (stream)
+  (:documentation "Protocol: read one delivery from the stream."))
+(defgeneric stream-settle (stream delivery settlement)
+  (:documentation "Protocol: apply a settlement to one delivery on the stream."))
+(defgeneric make-rabbit-worker-consumer (consumer worker-number)
+  (:documentation "Create one worker consumer instance for a multi-worker consumer."))
 
 (defmacro with-consumer-lock ((consumer) &body body)
+  "Evaluate BODY while holding the consumer lock."
   `(bt:with-lock-held ((consumer-lock ,consumer))
      ,@body))
 
@@ -191,10 +289,12 @@ NIL and non-settlement success values remain backward-compatible ACK results."
     (incf (gethash action (consumer-settlement-counts consumer) 0))))
 
 (defun consumer-settlement-count (consumer action)
+  "Number of settlements applied per settlement kind."
   (bt:with-lock-held ((consumer-metrics-lock consumer))
     (gethash action (consumer-settlement-counts consumer) 0)))
 
 (defun consumer-metrics (consumer)
+  "In-flight, unsettled and failure counters for a consumer."
   (bt:with-lock-held ((consumer-metrics-lock consumer))
     (list :in-flight (consumer-in-flight consumer)
           :unsettled (consumer-unsettled consumer)
@@ -288,6 +388,7 @@ NIL and non-settlement success values remain backward-compatible ACK results."
   consumer)
 
 (defun make-consumer (&rest args)
+  "Construct a consumer over a stream with retry and settlement policy."
   (apply #'make-instance 'consumer args))
 
 (defclass rabbit-queue-stream (cl-stream:sequence-input-stream)
@@ -351,6 +452,42 @@ NIL and non-settlement success values remain backward-compatible ACK results."
     :initform nil
     :accessor rabbit-stream-open-p))
   (:documentation "A Rabbit queue/channel owned by exactly one thread."))
+
+;; Accessor documentation for rabbit-queue-stream
+(setf (documentation 'RABBIT-EXCHANGE-DURABLE-P 'function)
+"The =exchange-durable= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-EXCHANGE-TYPE 'function)
+"The =exchange-type= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-CHANNEL 'function)
+"The =chan= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-CONNECTION 'function)
+"The =conn= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-EXCHANGE 'function)
+"The =exchange= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-HOST 'function)
+"The =host= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-OPEN-P 'function)
+"The =open= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-OWNER-THREAD 'function)
+"The =owner-thread= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-PASSWORD 'function)
+"The =password= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-PORT 'function)
+"The =port= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-PREFETCH-COUNT 'function)
+"The =prefetch-count= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-QUEUE-DURABLE-P 'function)
+"The =queue-durable-p= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-QUEUE-NAME 'function)
+"The =queue-name= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-ROUTING-KEY 'function)
+"The =routing-key= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-USER 'function)
+"The =user= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-VHOST 'function)
+"The =vhost= slot of =rabbit-queue-stream=.")
+
+
 
 (defun assert-rabbit-stream-owner (stream)
   (let ((actual (bt:current-thread))

@@ -1,6 +1,7 @@
 (in-package :star.consumers)
 
-(defparameter *retry-sleep-function* #'sleep)
+(defparameter *retry-sleep-function* #'sleep
+  "Function used to sleep between retries; swapped in tests.")
 
 (defstruct (retry-policy
              (:constructor make-retry-policy
@@ -9,10 +10,23 @@
                     (base-delay-ms 250)
                     (max-delay-ms 30000)
                     (jitter-ratio 0.20d0))))
+  "Bounded exponential backoff parameters for redeliveries."
   (max-retries 4 :type (integer 0 *))
   (base-delay-ms 250 :type (integer 0 *))
   (max-delay-ms 30000 :type (integer 0 *))
   (jitter-ratio 0.20d0 :type (real 0 1)))
+
+;; Accessor documentation for retry-policy
+(setf (documentation 'RETRY-POLICY-BASE-DELAY-MS 'function)
+"The =base-delay-ms= slot of =retry-policy=.")
+(setf (documentation 'RETRY-POLICY-JITTER-RATIO 'function)
+"The =jitter-ratio= slot of =retry-policy=.")
+(setf (documentation 'RETRY-POLICY-MAX-DELAY-MS 'function)
+"The =max-delay-ms= slot of =retry-policy=.")
+(setf (documentation 'RETRY-POLICY-MAX-RETRIES 'function)
+"The =max-retries= slot of =retry-policy=.")
+
+
 
 (define-condition delivery-processing-error (error)
   ((cause
@@ -25,16 +39,32 @@
     :initform "delivery processing failed"))
   (:report
    (lambda (condition stream)
-     (format stream "~a" (delivery-error-reason condition)))))
+     (format stream "~a" (delivery-error-reason condition))))
+  (:documentation "Base condition for failures while processing a delivery."))
 
-(define-condition transient-delivery-error (delivery-processing-error) ())
-(define-condition permanent-delivery-error (delivery-processing-error) ())
-(define-condition conflict-delivery-error (permanent-delivery-error) ())
-(define-condition unauthorized-delivery-error (permanent-delivery-error) ())
-(define-condition schema-invalid-delivery-error (permanent-delivery-error) ())
-(define-condition internal-delivery-error (transient-delivery-error) ())
+;; Accessor documentation for delivery-processing-error
+(setf (documentation 'DELIVERY-ERROR-CAUSE 'function)
+"The =cause= slot of =delivery-processing-error=.")
+(setf (documentation 'DELIVERY-ERROR-REASON 'function)
+"The =reason= slot of =delivery-processing-error=.")
+
+
+
+(define-condition transient-delivery-error (delivery-processing-error) ()
+  (:documentation "Signalled for transient failures (retryable)."))
+(define-condition permanent-delivery-error (delivery-processing-error) ()
+  (:documentation "Signalled for deliveries that must never be retried."))
+(define-condition conflict-delivery-error (permanent-delivery-error) ()
+  (:documentation "Signalled when a delivery conflicts with committed state."))
+(define-condition unauthorized-delivery-error (permanent-delivery-error) ()
+  (:documentation "Signalled when a delivery fails authorization (permanent)."))
+(define-condition schema-invalid-delivery-error (permanent-delivery-error) ()
+  (:documentation "Signalled when a delivery fails schema validation (permanent)."))
+(define-condition internal-delivery-error (transient-delivery-error) ()
+  (:documentation "Signalled when the consumer itself fails (retryable)."))
 
 (defun delivery-error-class (condition)
+  "Classify an error into a delivery error condition class."
   (etypecase condition
     (schema-invalid-delivery-error :schema-invalid)
     (unauthorized-delivery-error :unauthorized)
@@ -45,6 +75,7 @@
     (delivery-processing-error :internal)))
 
 (defun delivery-error-retryable-p (condition)
+  "True when the delivery error permits another attempt."
   (typep condition 'transient-delivery-error))
 
 (defun condition-class-name (condition)
@@ -90,6 +121,7 @@
                      :reason (princ-to-string condition)))))
 
 (defun rabbit-property (properties key &optional default)
+  "RabbitMQ message property accessor."
   (let ((entry (assoc key properties :test #'eq)))
     (if entry (cdr entry) default)))
 
@@ -107,6 +139,7 @@
   (string-equal (string left) (string right)))
 
 (defun rabbit-header (properties name &optional default)
+  "RabbitMQ message header accessor."
   (let ((entry (assoc name (rabbit-headers properties) :test #'header-name=)))
     (if entry (cdr entry) default)))
 
@@ -132,19 +165,23 @@
     copy))
 
 (defun delivery-attempt (properties)
+  "Which attempt number this delivery is on."
   (let ((value (rabbit-header properties "x-starintel-attempt" 0)))
     (if (and (integerp value) (not (minusp value))) value 0)))
 
 (defun delivery-trace-id (properties)
+  "Trace id propagated with the delivery."
   (or (rabbit-header properties "x-starintel-trace-id")
       (rabbit-property properties :correlation-id)
       (cms-ulid:ulid)))
 
 (defun delivery-message-id (properties)
+  "Stable message identity used for deduplication."
   (or (rabbit-property properties :message-id)
       (cms-ulid:ulid)))
 
 (defun delivery-first-seen-at (properties)
+  "Timestamp when this delivery was first observed."
   (or (rabbit-header properties "x-starintel-first-seen-at")
       (star.documents:utc-now)))
 
@@ -158,6 +195,7 @@
     (set-rabbit-header properties "x-starintel-attempt-history" value)))
 
 (defun retry-properties (properties stream next-attempt delay-ms)
+  "RabbitMQ properties carrying retry metadata across republish."
   (let* ((timestamp (star.documents:utc-now))
          (trace-id (delivery-trace-id properties))
          (message-id (delivery-message-id properties))
@@ -190,6 +228,7 @@ by tests and must be between zero and one."
     (round (max 0 (* raw factor)))))
 
 (defun retry-action-for (policy failure attempt)
+  "Decide the retry action for a failed delivery attempt."
   (if (and (delivery-error-retryable-p failure)
            (< attempt (retry-policy-max-retries policy)))
       :retry
@@ -226,7 +265,24 @@ by tests and must be between zero and one."
     :initform "")
    (current-received-at
     :accessor retry-stream-current-received-at
-    :initform nil)))
+    :initform nil))
+  (:documentation "Queue stream abstraction the retrying consumer reads from."))
+
+;; Accessor documentation for retrying-rabbit-queue-stream
+(setf (documentation 'RETRY-STREAM-CURRENT-BODY 'function)
+"The =current-body= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-CURRENT-EXCHANGE 'function)
+"The =current-exchange= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-CURRENT-PROPERTIES 'function)
+"The =current-properties= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-CURRENT-RECEIVED-AT 'function)
+"The =current-received-at= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-CURRENT-ROUTING-KEY 'function)
+"The =current-routing-key= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-POLICY 'function)
+"The =retry-policy= slot of =retrying-rabbit-queue-stream=.")
+
+
 
 (defclass retrying-rabbit-consumer (rabbit-consumer)
   ((retry-policy
@@ -244,7 +300,14 @@ by tests and must be between zero and one."
    (quarantine-queue
     :initarg :quarantine-queue
     :accessor retry-consumer-quarantine-queue
-    :initform "starintel-quarantine")))
+    :initform "starintel-quarantine"))
+  (:documentation "RabbitMQ consumer with bounded retry and quarantine."))
+
+;; Accessor documentation for retrying-rabbit-consumer
+(setf (documentation 'RETRY-CONSUMER-POLICY 'function)
+"The =retry-policy= slot of =retrying-rabbit-consumer=.")
+
+
 
 (defmethod open-stream ((stream retrying-rabbit-queue-stream))
   (call-next-method)
@@ -329,6 +392,7 @@ by tests and must be between zero and one."
             (setf (jsown:val object key) (json-safe-value value)))))))
 
 (defun quarantine-record (stream settlement)
+  "Structured record persisted when a message is quarantined."
   (let* ((properties (retry-stream-current-properties stream))
          (failure
            (classify-delivery-condition
@@ -491,6 +555,7 @@ by tests and must be between zero and one."
        (quarantine-queue "starintel-quarantine")
        (test-fn #'identity)
        (handler-fn (error "Handler function is required")))
+  "Create and register a RabbitMQ backed consumer."
   (unless (plusp n)
     (error "Rabbit consumer worker count must be positive"))
   (let ((policy
@@ -558,3 +623,7 @@ by tests and must be between zero and one."
      properties
      (jsown:val record "original_exchange")
      (jsown:val record "original_routing_key"))))
+
+(setf (documentation 'MAKE-RETRY-POLICY 'function)
+  "Build a retry policy with MAX-RETRIES, exponential BASE-DELAY-MS up to
+MAX-DELAY-MS and symmetric JITTER-RATIO.")

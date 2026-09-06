@@ -1,0 +1,1333 @@
+#+TITLE: API Reference — STAR.DATABASES.COUCHDB
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+CouchDB persistence and query helpers.
+
+* Variables and Constants
+*** *couchdb-pool*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Connection pool of CouchDB clients.
+*** *couchdb-view-transport*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Transport used by =query-view= to execute a built request.
+
+A function of (CLIENT REQUEST) returning the raw JSON body.  Tests
+swap this to fake the CouchDB round trip.
+
+* Types and Classes
+*** couchdb-view-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+A fully built CouchDB view HTTP request.
+- Slots: =method=, =uri=, =body=
+*** document-update-outcome
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Result of applying one document update.
+- Slots: =status=, =document=, =attempts=, =reason=, =code=
+*** view-document-result
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+View result holding included documents.
+- Slots: =documents=, =rows=
+*** view-map-result
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+View result holding map rows (key/value pairs).
+- Slots: =rows=
+*** view-reduced-result
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+View result holding reduced values.
+- Slots: =rows=
+*** view-spec
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Validated specification of one CouchDB view.
+- Slots: =name=, =design-document=, =view-name=, =reducer-p=, =default-reduce=, =default-include-docs=, =accepted-keywords=
+
+* Conditions
+*** document-update-store-conflict
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when a document update loses a revision race.
+*** document-update-validation-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when a document update payload is invalid.
+- Slots: =code=, =reason=
+*** missing-document-for-update
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when an update targets a nonexistent document.
+- Slots: =document-id=
+*** mutation-conflict
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when an outbox mutation conflicts with store state.
+- Slots: =mutation-id=, =document-id=, =reason=
+*** outbox-store-conflict
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when writing an outbox entry conflicts.
+*** target-acceptance-store-conflict
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when writing target acceptance state conflicts.
+*** view-query-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Signalled when a view query fails.
+- Slots: =reason=
+*** view-registry-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Base condition for view registry failures.
+- Slots: =reason=
+
+* Functions
+*** as-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(as-json (STAR.DATABASES.COUCHDB::OBJECT &KEY
+ (STAR.DATABASES.COUCHDB::FORMAT-FN #'STAR.DATABASES.COUCHDB:FORMAT-KEY)))
+#+end_src
+Serialize a spec object into its JSON document form.
+*** breaches-by-size
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(breaches-by-size (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_size view in the breaches design document.
+*** build-couchdb-view-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(build-couchdb-view-request (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DESIGN-DOCUMENT STAR.DATABASES.COUCHDB::VIEW-NAME &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::SKIP 0)
+ (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS NIL) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::UPDATE T) STAR.DATABASES.COUCHDB::KEY
+ STAR.DATABASES.COUCHDB::KEYS STAR.DATABASES.COUCHDB::START-KEY
+ STAR.DATABASES.COUCHDB::END-KEY (STAR.DATABASES.COUCHDB::GROUP NIL)
+ STAR.DATABASES.COUCHDB::GROUP-LEVEL))
+#+end_src
+Build one validated CouchDB view request without performing network I/O.
+*** by-channel
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(by-channel (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the by-channel view: documents grouped by channel.
+*** couchdb-get-quarantine-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-get-quarantine-record (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::QUARANTINE-ID))
+#+end_src
+Load one quarantine record by id.
+*** couchdb-list-quarantine-records
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-list-quarantine-records (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::STATUS "quarantined")
+ (STAR.DATABASES.COUCHDB::LIMIT 100)))
+#+end_src
+Return quarantine documents through the checked-in status view.
+*** couchdb-load-target-acceptance
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-load-target-acceptance (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::ACCEPTANCE-ID))
+#+end_src
+Load the acceptance state for a target.
+*** couchdb-pending-outbox-documents
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-pending-outbox-documents (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE))
+#+end_src
+Outbox documents whose publication is still pending.
+*** couchdb-persist-target-acceptance
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-persist-target-acceptance (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DESIRED STAR.DATABASES.COUCHDB::DUPLICATE-PREDICATE
+ &KEY (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+#+end_src
+Persist DESIRED or return the existing equivalent record.
+
+Returns DOCUMENT and one of :CREATED, :RESUMED, :DUPLICATE, or :CONFLICT.
+*** couchdb-process-outbox-mutation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-process-outbox-mutation (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::PUBLISH-FN STAR.DATABASES.COUCHDB::DOCUMENT
+ STAR.DATABASES.COUCHDB::OPERATION))
+#+end_src
+Apply one outbox mutation to the document store.
+*** couchdb-save-quarantine-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-save-quarantine-record (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::RECORD))
+#+end_src
+Persist one server-internal quarantine record before Rabbit settlement.
+*** couchdb-save-target-acceptance
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-save-target-acceptance (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DOCUMENT))
+#+end_src
+Create or update one durable target acceptance document.
+*** couchdb-update-target-acceptance
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-update-target-acceptance (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::ACCEPTANCE-ID STAR.DATABASES.COUCHDB::UPDATER &KEY
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+#+end_src
+Apply an update to persisted target acceptance state.
+*** couchdb-upsert-document-update
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-upsert-document-update (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DOCUMENT-ID STAR.DATABASES.COUCHDB::PATCH &KEY
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+#+end_src
+CouchDB adapter for UPSERT-DOCUMENT-UPDATE.
+*** couchdb-view-request-body
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-view-request-body (SB-KERNEL:INSTANCE))
+#+end_src
+JSON body of the view request, or nil for GET.
+*** couchdb-view-request-method
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-view-request-method (SB-KERNEL:INSTANCE))
+#+end_src
+The =method= slot of =couchdb-view-request=.
+*** couchdb-view-request-uri
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-view-request-uri (SB-KERNEL:INSTANCE))
+#+end_src
+The =uri= slot of =couchdb-view-request=.
+*** count-by-dtype
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(count-by-dtype (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Count documents grouped by their =dtype=.
+*** dataset-size
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(dataset-size (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Count the documents in one dataset.
+*** document-outbox-entries
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-outbox-entries (STAR.DATABASES.COUCHDB::DOCUMENT))
+#+end_src
+List outbox entries attached to a document.
+*** document-update-outcome-attempts
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-outcome-attempts (SB-KERNEL:INSTANCE))
+#+end_src
+The =attempts= slot of =document-update-outcome=.
+*** document-update-outcome-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-outcome-code (SB-KERNEL:INSTANCE))
+#+end_src
+Outcome code such as =:applied= or =:conflict=.
+*** document-update-outcome-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-outcome-document (SB-KERNEL:INSTANCE))
+#+end_src
+The =document= slot of =document-update-outcome=.
+*** document-update-outcome-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-outcome-json (STAR.DATABASES.COUCHDB::OUTCOME))
+#+end_src
+Serialize a document update outcome to JSON.
+*** document-update-outcome-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-outcome-reason (SB-KERNEL:INSTANCE))
+#+end_src
+The =reason= slot of =document-update-outcome=.
+*** document-update-outcome-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-outcome-status (SB-KERNEL:INSTANCE))
+#+end_src
+The =status= slot of =document-update-outcome=.
+*** documents-by-dataset
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(documents-by-dataset (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+List the documents belonging to one dataset.
+*** domains-by-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(domains-by-record (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_record view in the domains design document.
+*** domains-by-resolved-address
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(domains-by-resolved-address (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_resolved_address view in the domains design document.
+*** emails-by-domain
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(emails-by-domain (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_domain view in the emails design document.
+*** emails-by-email
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(emails-by-email (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_email view in the emails design document.
+*** emails-with-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(emails-with-password (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the with_password view in the emails design document.
+*** execute-registered-view
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(execute-registered-view (STAR.DATABASES.COUCHDB::NAME STAR.DATABASES.COUCHDB::CLIENT
+ STAR.DATABASES.COUCHDB::DATABASE &REST STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Validate and execute one registered view, returning a typed result.
+*** export-by-dataset*
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(export-by-dataset* (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DATASET STAR.DATABASES.COUCHDB::PATH &KEY
+ (STAR.DATABASES.COUCHDB::PAGE-SIZE
+  STAR.DATABASES.COUCHDB::+DATASET-EXPORT-PAGE-SIZE+)
+ (STAR.DATABASES.COUCHDB::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
+#+end_src
+Export DATASET as JSON Lines using bounded, key-based CouchDB pagination.
+
+The export is a monotonic key scan rather than a database snapshot. Documents
+created after the current cursor may be included; documents deleted before they
+are read are omitted. A document key is emitted at most once per export.
+
+The target file is replaced only after the complete export has been flushed.
+The return value is a plist containing :OK, counts, path, consistency mode, and
+structured error details when the export fails.
+*** find-outbox-entry
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(find-outbox-entry (STAR.DATABASES.COUCHDB::DOCUMENT STAR.DATABASES.COUCHDB::MUTATION-ID))
+#+end_src
+Find a specific outbox entry on a document.
+*** format-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(format-key (STAR.DATABASES.COUCHDB::KEY))
+#+end_src
+Convert a slot name into its CouchDB JSON key.
+*** from-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(from-json (STAR.DATABASES.COUCHDB::JSON-OBJ CLASS-NAME &KEY
+ (STAR.DATABASES.COUCHDB::FORMAT-FN #'STAR.DATABASES.COUCHDB:FORMAT-KEY)))
+#+end_src
+Populate a spec object from its JSON document form.
+*** get-neighbors
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(get-neighbors (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DDOC STAR.DATABASES.COUCHDB::VIEW-NAME
+ STAR.DATABASES.COUCHDB::N &REST STAR.DATABASES.COUCHDB::KEYS))
+#+end_src
+Expand a relation graph N hops outwards around KEYS.
+
+Queries the grouped reduce view (DDOC/VIEW-NAME) repeatedly, feeding
+discovered keys back in as the frontier.  Returns an assoc graph of
+(key . values) suitable for drawing edges.
+*** get-targets*
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(get-targets* (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ACTORS))
+#+end_src
+Fetch target documents, optionally filtered by actor.
+*** get-view-docs
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(get-view-docs (STAR.DATABASES.COUCHDB::JOBJ))
+#+end_src
+Return included documents from view rows or a complete view response.
+*** groups
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(groups (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Run the grouped reduce view and return its group rows.
+*** hosts-by-ip
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(hosts-by-ip (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_ip view in the hosts design document.
+*** hosts-by-port
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(hosts-by-port (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_port view in the hosts design document.
+*** hosts-by-service
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(hosts-by-service (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_service view in the hosts design document.
+*** init-db
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Create the intelligence database if needed and install all views.
+
+Connects using the =star:*couchdb-*= settings, authenticates, creates
+=*couchdb-default-database*= on 404, then calls =init-views=.  Idempotent;
+safe to call at every boot.
+*** init-event-db
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Create the event source database (=*couchdb-event-log-database*=)
+if needed.  Idempotent; outbox and settlement events are stored here.
+*** init-views
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(init-views (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE))
+#+end_src
+Create or update all view documents in DATABASE.
+
+Documents come from =star:*couchdb-views*= (the =views/= directory).
+Existing views are updated in place using their current =_rev=;
+missing views are created.  Conflicts are logged and re-signalled.
+*** map-view-results
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(map-view-results (FUNCTION STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DESIGN-DOCUMENT STAR.DATABASES.COUCHDB::VIEW-NAME
+ &REST STAR.DATABASES.COUCHDB::ARGUMENTS &KEY
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS NIL) &ALLOW-OTHER-KEYS))
+#+end_src
+Run a view query and call FUNCTION on each row.
+
+FUNCTION receives the row's key and value (and document when
+=:include-docs= is set).  Compatibility mapper for callers that
+consume key/value callback results; prefer =query-view= for new code.
+*** mark-quarantine-replayed
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(mark-quarantine-replayed (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::QUARANTINE-ID STAR.DATABASES.COUCHDB::NEW-TRACE-ID))
+#+end_src
+Mark a quarantine record as successfully replayed.
+*** merge-document-update
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(merge-document-update (STAR.DATABASES.COUCHDB::DOCUMENT-ID STAR.DATABASES.COUCHDB::EXISTING
+ STAR.DATABASES.COUCHDB::PATCH))
+#+end_src
+Return a new merged document; EXISTING and PATCH remain unchanged.
+
+Caller `_rev` is never copied. The current `_rev` and server-private extension
+fields remain controlled by persistence.
+*** messages-by-group
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(messages-by-group (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the messages_by_group view: messages in one group.
+*** messages-by-platform
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(messages-by-platform (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the messages_by_platform view: messages on one platform.
+*** messages-by-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(messages-by-user (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the messages_by_user view: messages belonging to one user.
+*** networks-by-asn
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(networks-by-asn (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_asn view in the networks design document.
+*** networks-by-org
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(networks-by-org (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_org view in the networks design document.
+*** orgs-by-country
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(orgs-by-country (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query organizations grouped by country.
+*** orgs-by-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(orgs-by-name (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query organizations by name.
+*** outbox-entry-mutation-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(outbox-entry-mutation-id (STAR.DATABASES.COUCHDB::ENTRY))
+#+end_src
+Stable id of the mutation carried by the outbox entry.
+*** outbox-entry-published-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(outbox-entry-published-p (STAR.DATABASES.COUCHDB::ENTRY))
+#+end_src
+True when the outbox entry has been published.
+*** outbox-entry-sequence
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(outbox-entry-sequence (STAR.DATABASES.COUCHDB::ENTRY))
+#+end_src
+Per-document monotonic sequence of the outbox entry.
+*** persist-outbox-mutation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(persist-outbox-mutation (STAR.DATABASES.COUCHDB::LOAD-FN STAR.DATABASES.COUCHDB::SAVE-FN
+ STAR.DATABASES.COUCHDB::INCOMING STAR.DATABASES.COUCHDB::OPERATION &KEY
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+#+end_src
+Persist a mutation into the document outbox before publishing.
+*** persons-by-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(persons-by-name (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query persons by name.
+*** persons-by-region
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(persons-by-region (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query persons grouped by region.
+*** prepare-document-insert
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(prepare-document-insert (STAR.DATABASES.COUCHDB::DOCUMENT-ID STAR.DATABASES.COUCHDB::PATCH))
+#+end_src
+Return a new insert candidate with caller `_rev` removed.
+*** prepare-outbox-mutation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(prepare-outbox-mutation (STAR.DATABASES.COUCHDB::EXISTING STAR.DATABASES.COUCHDB::INCOMING
+ STAR.DATABASES.COUCHDB::OPERATION))
+#+end_src
+Prepare one atomic document revision containing document and pending event state.
+
+Returns STATE, ENTRY, and either :CREATED or :DUPLICATE.
+*** process-outbox-mutation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(process-outbox-mutation (STAR.DATABASES.COUCHDB::LOAD-FN STAR.DATABASES.COUCHDB::SAVE-FN
+ STAR.DATABASES.COUCHDB::PUBLISH-FN STAR.DATABASES.COUCHDB::INCOMING
+ STAR.DATABASES.COUCHDB::OPERATION))
+#+end_src
+Persist mutation state, publish at least once, then mark the logical event.
+
+If publication fails, the durable pending entry remains recoverable.
+*** query-view
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(query-view (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DESIGN-DOCUMENT STAR.DATABASES.COUCHDB::VIEW-NAME
+ &REST STAR.DATABASES.COUCHDB::ARGUMENTS &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::SKIP 0)
+ (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS NIL) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::UPDATE T) STAR.DATABASES.COUCHDB::KEY
+ STAR.DATABASES.COUCHDB::KEYS STAR.DATABASES.COUCHDB::START-KEY
+ STAR.DATABASES.COUCHDB::END-KEY (STAR.DATABASES.COUCHDB::GROUP NIL)
+ STAR.DATABASES.COUCHDB::GROUP-LEVEL &ALLOW-OTHER-KEYS))
+#+end_src
+Execute a validated view query against a CouchDB design document.
+
+ARGUMENTS are standard CouchDB query parameters (=:limit=, =:skip=,
+=:descending=, =:include-docs=, =:reduce=, =:update=, =:key=, =:keys=,
+=:start-key=, =:end-key=, =:group=, =:group-level=).  The request is
+validated and built by =build-couchdb-view-request=, then executed via
+=*couchdb-view-transport*=.  Returns the decoded JSON response.
+*** recover-couchdb-outbox
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(recover-couchdb-outbox (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::PUBLISH-FN))
+#+end_src
+Replay every pending outbox mutation after a crash.
+*** recover-outbox-documents
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(recover-outbox-documents (STAR.DATABASES.COUCHDB::LOAD-FN STAR.DATABASES.COUCHDB::SAVE-FN
+ STAR.DATABASES.COUCHDB::PUBLISH-FN STAR.DATABASES.COUCHDB::DOCUMENTS))
+#+end_src
+Publish all pending entries in stable per-document sequence order.
+*** registered-view-names
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Names of all views known to the registry.
+*** registered-view-spec
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(registered-view-spec (STAR.DATABASES.COUCHDB::NAME))
+#+end_src
+The registered spec for a view name, or nil.
+*** relations-edges
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(relations-edges (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Return relation edges as view rows.
+*** relations-incoming-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(relations-incoming-count (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Count incoming relations for a node.
+*** relations-outgoing-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(relations-outgoing-count (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Count outgoing relations for a node.
+*** replay-quarantine-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(replay-quarantine-record (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::QUARANTINE-ID STAR.DATABASES.COUCHDB::PUBLISH-FN &KEY
+ STAR.DATABASES.COUCHDB::CORRECTED-BODY))
+#+end_src
+Explicitly replay a quarantined delivery with fresh attempt history.
+
+PUBLISH-FN receives EXCHANGE, ROUTING-KEY, BODY, and PROPERTIES. The stored
+record is marked replayed only after publishing returns successfully.
+*** social-posts-by-group
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(social-posts-by-group (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the social_posts_by_group view: social posts in one group.
+*** social-posts-by-platform
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(social-posts-by-platform (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the social_posts_by_platform view: social posts on one platform.
+*** social-posts-by-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(social-posts-by-user (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query the social_posts_by_user view: social posts by one user.
+*** sort-docs-by-date
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(sort-docs-by-date (STAR.DATABASES.COUCHDB::DOCS))
+#+end_src
+Sort documents newest-first across legacy numeric and current ISO dates.
+*** targets-actor-counts
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(targets-actor-counts (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Count targets grouped by owning actor.
+*** targets-by-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(targets-by-actor (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+List targets owned by an actor.
+*** targets-target-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(targets-target-count (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Count targets for a given target id.
+*** total-documents-since
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(total-documents-since (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::SECONDS &KEY
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS NIL) (REDUCE NIL)))
+#+end_src
+Query the time/dateAdded view for documents added in the last n seconds.
+*** update-quarantine-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(update-quarantine-record (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::QUARANTINE-ID STAR.DATABASES.COUCHDB::UPDATER &KEY
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+#+end_src
+Update a quarantine record in place.
+*** upsert-document-update
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(upsert-document-update (STAR.DATABASES.COUCHDB::LOAD-FN STAR.DATABASES.COUCHDB::SAVE-FN
+ STAR.DATABASES.COUCHDB::DOCUMENT-ID STAR.DATABASES.COUCHDB::PATCH &KEY
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+#+end_src
+Create or update DOCUMENT-ID with immutable, bounded optimistic retries.
+
+LOAD-FN receives DOCUMENT-ID and returns the latest document or NIL. SAVE-FN
+receives the validated candidate and must signal DOCUMENT-UPDATE-STORE-CONFLICT
+when its CouchDB revision loses a compare-and-swap race.
+*** urls-by-domain
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(urls-by-domain (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_domain view in the urls design document.
+*** urls-by-path
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(urls-by-path (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_path view in the urls design document.
+*** urls-by-url
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(urls-by-url (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_url view in the urls design document.
+*** users-by-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(users-by-name (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &KEY
+ (STAR.DATABASES.COUCHDB::LIMIT 50) (STAR.DATABASES.COUCHDB::START-KEY NIL)
+ (STAR.DATABASES.COUCHDB::END-KEY NIL) (STAR.DATABASES.COUCHDB::KEYS NIL)
+ (STAR.DATABASES.COUCHDB::KEY NIL) (STAR.DATABASES.COUCHDB::DESCENDING NIL)
+ (STAR.DATABASES.COUCHDB::INCLUDE-DOCS T) (STAR.DATABASES.COUCHDB::UPDATE T)
+ (STAR.DATABASES.COUCHDB::SKIP 0) (REDUCE NIL)
+ (STAR.DATABASES.COUCHDB::SORT-FN #'STAR.DATABASES.COUCHDB:SORT-DOCS-BY-DATE)))
+#+end_src
+Query the by_name view in the users design document.
+*** users-by-platform
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(users-by-platform (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE &REST
+ STAR.DATABASES.COUCHDB::ARGUMENTS))
+#+end_src
+Query users on one platform.
+*** validate-view-registry
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(validate-view-registry (&OPTIONAL
+ (STAR.DATABASES.COUCHDB::DOCUMENTS
+  (STAR.DATABASES.COUCHDB::CHECKED-IN-DESIGN-DOCUMENT-MAP))))
+#+end_src
+Fail before serving traffic when a registered design/view is absent.
+*** view-document-result-documents
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-document-result-documents (SB-KERNEL:INSTANCE))
+#+end_src
+The =documents= slot of =view-document-result=.
+*** view-document-result-rows
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-document-result-rows (SB-KERNEL:INSTANCE))
+#+end_src
+Raw rows of a document view result.
+*** view-map-result-rows
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-map-result-rows (SB-KERNEL:INSTANCE))
+#+end_src
+Raw rows of a map view result.
+*** view-reduced-result-rows
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-reduced-result-rows (SB-KERNEL:INSTANCE))
+#+end_src
+Raw rows of a reduced view result.
+*** view-registry-matrix
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+Allowed keyword/verb combinations per view kind.
+*** view-result-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-result-value (STAR.DATABASES.COUCHDB::RESULT))
+#+end_src
+Extract the value cell of a view result row.
+*** view-spec-accepted-keywords
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-accepted-keywords (SB-KERNEL:INSTANCE))
+#+end_src
+Keywords accepted for a given view kind.
+*** view-spec-default-include-docs
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-default-include-docs (SB-KERNEL:INSTANCE))
+#+end_src
+The =default-include-docs= slot of =view-spec=.
+*** view-spec-default-reduce
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-default-reduce (SB-KERNEL:INSTANCE))
+#+end_src
+The =default-reduce= slot of =view-spec=.
+*** view-spec-design-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-design-document (SB-KERNEL:INSTANCE))
+#+end_src
+The =design-document= slot of =view-spec=.
+*** view-spec-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-name (SB-KERNEL:INSTANCE))
+#+end_src
+The =name= slot of =view-spec=.
+*** view-spec-reducer-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-reducer-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =reducer-p= slot of =view-spec=.
+*** view-spec-view-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-spec-view-name (SB-KERNEL:INSTANCE))
+#+end_src
+The =view-name= slot of =view-spec=.
+
+* Generic Functions
+*** document-update-validation-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-validation-code (CONDITION))
+#+end_src
+The =code= slot of =document-update-validation-error=.
+*** document-update-validation-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(document-update-validation-reason (CONDITION))
+#+end_src
+The =reason= slot of =document-update-validation-error=.
+*** mutation-conflict-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(mutation-conflict-document-id (CONDITION))
+#+end_src
+The =document-id= slot of =mutation-conflict=.
+*** mutation-conflict-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(mutation-conflict-id (CONDITION))
+#+end_src
+The =mutation-id= slot of =mutation-conflict=.
+*** mutation-conflict-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(mutation-conflict-reason (CONDITION))
+#+end_src
+The =reason= slot of =mutation-conflict=.
+*** view-query-error-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-query-error-reason (CONDITION))
+#+end_src
+The =reason= slot of =view-query-error=.
+*** view-registry-error-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(view-registry-error-reason (CONDITION))
+#+end_src
+The =view-registry-error-reason= slot of =view-registry-error=.

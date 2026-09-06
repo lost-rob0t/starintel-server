@@ -20,6 +20,7 @@
                 (&key id principal documents correlation-id service-context
                       submitted-at (status :queued) (succeeded 0) (failed 0)
                       error-code)))
+  "One bulk ingest job: documents plus options."
   id
   principal
   documents
@@ -30,6 +31,20 @@
   succeeded
   failed
   error-code)
+
+;; Accessor documentation for bulk-ingest-job
+(setf (documentation 'BULK-INGEST-JOB-FAILED 'function)
+"The =failed= slot of =bulk-ingest-job=.")
+(setf (documentation 'BULK-INGEST-JOB-PRINCIPAL 'function)
+"The =principal= slot of =bulk-ingest-job=.")
+(setf (documentation 'BULK-INGEST-JOB-SERVICE-CONTEXT 'function)
+"The =service-context= slot of =bulk-ingest-job=.")
+(setf (documentation 'BULK-INGEST-JOB-STATUS 'function)
+"The =status= slot of =bulk-ingest-job=.")
+(setf (documentation 'BULK-INGEST-JOB-SUCCEEDED 'function)
+"The =succeeded= slot of =bulk-ingest-job=.")
+
+
 
 (defun bulk-job-info-json (job)
   (jsown:new-js
@@ -132,6 +147,7 @@
          :correlation-id (current-correlation-id))))
 
 (defun execute-bulk-job (job &key (publish-fn #'publish-document))
+  "Apply every document of a bulk job; returns per-document outcomes."
   (setf (bulk-ingest-job-status job) :running)
   (let ((*service-call-context* (bulk-ingest-job-service-context job)))
     (handler-case
@@ -257,6 +273,7 @@
     job))
 
 (defun bulk-request-mode (document-count)
+  "How a bulk request behaves on failure (atomic or best effort)."
   (if (<= document-count +bulk-inline-document-limit+)
       :inline
       :async))
