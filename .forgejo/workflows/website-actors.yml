@@ -22,7 +22,9 @@ jobs:
         run: docker build -t starintel/actor-wef-ygl:ci actors/website
       - name: Fixture tests in image
         run: |
-          docker run --rm --entrypoint /bin/bash \
+          # The shipped image remains unprivileged; root is used only in this
+          # disposable CI container to install test-only dependencies.
+          docker run --rm --user root --entrypoint /bin/bash \
             -v "$PWD/actors/website/tests:/tests:ro" \
             starintel/actor-wef-ygl:ci \
             -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -q /tests'
