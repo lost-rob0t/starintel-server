@@ -28,6 +28,19 @@ the corresponding controls are implemented.
 14. [[file:lease-store-usage.org][Lease-store protocol usage]] — Common Lisp examples for canonical identity, acquire, renew, inspect, list, release, serialization, typed outcomes, and owned shutdown.
 15. [[file:http-principal-capability-contract.org][HTTP principal and capability contract]] — principal classes, credentials, capabilities, scopes, decisions, and route mapping. Design contract.
 
+** Generated API reference
+
+The exported API of every package is documented where it is defined: as
+Org markup inside Common Lisp docstrings.  The reference is rendered
+into [[file:api/index.org][doc/api/index.org]] — one page per package plus a symbol index.
+
+Regenerate it with:
+
+: make docs-api
+
+Coverage is enforced in CI: =make doc-coverage= fails when any exported
+symbol lacks a docstring.
+
 ** Development workflow
 
 - [[file:next-implementation-loop-prompt.org][Next ordered implementation-loop prompt]] — copy-ready continuation prompt for issue #31 and the transition to #32.

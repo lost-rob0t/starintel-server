@@ -150,7 +150,7 @@ Clouseau indexes are derived data. The Compose stack persists them in
 | =docker/=, =docker-compose.yml= | Runtime images, entrypoints, and local stack | Deployment |
 | =scripts/= | Stack acceptance test and utilities | Operations |
 | =example_configs/= | Init-file examples | Operator input |
-| =docs/= | Operator and developer documentation | Documentation |
+| =doc/= | Operator and developer documentation plus generated API reference | Documentation |
 
 ** Loaded actor systems
 

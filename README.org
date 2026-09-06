@@ -189,7 +189,7 @@ Full Nix image, health, FTS, restart, and persistence test:
 ./scripts/stack-test.sh
 #+end_src
 
-See [[file:docs/testing.md][docs/testing.md]].
+See [[file:doc/testing.md][doc/testing.md]].
 
 ** Run from Common Lisp
 
@@ -221,16 +221,16 @@ The same path can be supplied through =STAR_SERVER_INIT_FILE=.
 
 | Document | Contents |
 |----------+----------|
-| [[file:docs/index.org][docs/index.org]] | Documentation index and implementation status |
-| [[file:docs/architecture.org][docs/architecture.org]] | Runtime structure, startup order, concurrency, and repository layout |
-| [[file:docs/actors.org][docs/actors.org]] | Creating, registering, targeting, scheduling, and operating actors |
-| [[file:docs/messaging.org][docs/messaging.org]] | RabbitMQ exchanges, queues, routing keys, recursion, delivery, and loop control |
-| [[file:docs/document-spec.org][docs/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
-| [[file:docs/configuration.org][docs/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
-| [[file:docs/http-api-docs.org][docs/http-api-docs.org]] | HTTP endpoint reference and examples |
-| [[file:docs/lease-store-usage.org][docs/lease-store-usage.org]] | Backend-neutral target lease protocol examples and lifecycle |
+| [[file:doc/index.org][doc/index.org]] | Documentation index and implementation status |
+| [[file:doc/architecture.org][doc/architecture.org]] | Runtime structure, startup order, concurrency, and repository layout |
+| [[file:doc/actors.org][doc/actors.org]] | Creating, registering, targeting, scheduling, and operating actors |
+| [[file:doc/messaging.org][doc/messaging.org]] | RabbitMQ exchanges, queues, routing keys, recursion, delivery, and loop control |
+| [[file:doc/document-spec.org][doc/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
+| [[file:doc/configuration.org][doc/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
+| [[file:doc/http-api-docs.org][doc/http-api-docs.org]] | HTTP endpoint reference and examples |
+| [[file:doc/lease-store-usage.org][doc/lease-store-usage.org]] | Backend-neutral target lease protocol examples and lifecycle |
 | [[file:DOCKER.md][DOCKER.md]] | Nix-built container stack and operations |
-| [[file:docs/testing.md][docs/testing.md]] | Unit, integration, and stack tests |
+| [[file:doc/testing.md][doc/testing.md]] | Unit, integration, and stack tests |
 
 ** Runtime status
 
