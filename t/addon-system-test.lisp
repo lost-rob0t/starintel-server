@@ -43,7 +43,9 @@
       (is (string= "https://api.starintel.example/oauth/token"
                    (getf settings :token-endpoint)))
       (is (equal '("documents:read" "search:read")
-                 (getf settings :read-scopes))))
+                 (getf settings :read-scopes)))
+      (is (equal '("targets:dispatch")
+                 (getf settings :operations-scopes))))
     (let ((reloaded (reload-bixby-addon-or-report-cause)))
       (is (eq :active (star:addon-state-status reloaded)))
       (is (> (star:addon-state-generation reloaded) generation)))
@@ -51,7 +53,9 @@
       (is (string= "https://api.starintel.example/oauth/authorize"
                    (getf settings-after-reload :authorize-endpoint)))
       (is (string= "https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb"
-                   (getf settings-after-reload :redirect-uri))))
+                   (getf settings-after-reload :redirect-uri)))
+      (is (equal '("targets:dispatch")
+                 (getf settings-after-reload :operations-scopes))))
     (let ((stopped (star:unload-addon :starintel-bixby)))
       (is (eq :stopped (star:addon-state-status stopped))))))
 

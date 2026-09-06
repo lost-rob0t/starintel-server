@@ -1,6 +1,38 @@
 #+title: StarIntel v0.9 runtime boundary
 #+options: toc:2
 
+* Implementation conformance approval
+
+| Approval area | Required authority | State | Evidence required | Evidence reference |
+|---------------+--------------------+-------+-------------------+--------------------|
+| StarIntel v0.9 canonical runtime boundary | project owner | APPROVED | Human approval plus implemented boundary and executed conformance tests | Project-owner instruction 2026-08-28; merged PR #119; merge commit =52948721d8981e9aa5ccad4efd77185e52af845b=; current master =0caed07ff6ca31ca488c369c79fb1c1a8ff0f78d= |
+
+This approval is **implementation/conformance approval** for the canonical v0.9
+runtime boundary described in this file. It does not approve unrelated draft
+research, future schema design, or unreviewed manifest changes.
+
+PR #119 recorded the following executed verification before merge:
+
+- Python contract tests: 18 passed;
+- Lisp HTTP boundary: 29/29 passed;
+- Lisp v0.9 runtime: 7/7 passed;
+- authorization policy: 20/20 passed;
+- schema lock check: passed;
+- =nix flake check --show-trace=: passed;
+- =nix build .#default --no-link --print-build-logs=: passed;
+- =docker compose config --quiet=: passed;
+- =./scripts/stack-test.sh=: passed;
+- V4 quality gate =nix develop --command bash scripts/check=: passed;
+- Prolog =verify/0=: passed.
+
+Current =master= is 18 commits ahead of the v0.9 merge. Comparison from the
+v0.9 merge to current master shows no changes to the canonical v0.9 validation
+implementation files documented below; later changes add target-v1 functionality
+and adjust system/test loading. Therefore the approved v0.9 runtime boundary
+remains the implementation baseline on current master. A later change to the
+canonical validation boundary requires re-verification before carrying this
+approval forward.
+
 * Canonical mutation boundaries
 
 The following mutation paths validate a complete document with the canonical

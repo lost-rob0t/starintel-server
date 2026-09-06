@@ -3,8 +3,7 @@
 (defvar *public-base-url* nil)
 (defvar *redirect-uri* nil)
 (defvar *read-scopes* '("documents:read" "search:read"))
-(defvar *operations-scopes*
-  '("starintel.targets.write" "starintel.autodig.read" "starintel.autodig.control"))
+(defvar *operations-scopes* '("targets:dispatch"))
 
 (defun normalize-base-url (value)
   (unless (and (stringp value)
