@@ -1,0 +1,4 @@
+services:
+  wef-ygl:
+    security_opt:
+      - seccomp=./seccomp_profile.json

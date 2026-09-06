@@ -1,0 +1,30 @@
+name: Website actors
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "actors/**"
+      - ".forgejo/workflows/website-actors.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "actors/**"
+      - ".forgejo/workflows/website-actors.yml"
+  workflow_dispatch:
+
+jobs:
+  test-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runtime image
+        run: docker build -t starintel/actor-wef-ygl:ci actors/website
+      - name: Fixture tests in image
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            -v "$PWD/actors/website/tests:/tests:ro" \
+            starintel/actor-wef-ygl:ci \
+            -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -q /tests'
+      - name: Registry smoke
+        run: docker run --rm starintel/actor-wef-ygl:ci sites

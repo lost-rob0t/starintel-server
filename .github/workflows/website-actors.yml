@@ -1,0 +1,53 @@
+name: Website actors
+
+on:
+  pull_request:
+    paths:
+      - "actors/**"
+      - ".github/workflows/website-actors.yml"
+  push:
+    branches: [master]
+    paths:
+      - "actors/**"
+      - ".github/workflows/website-actors.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "23 11 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  test-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runtime image
+        run: docker build -t starintel/actor-wef-ygl:ci actors/website
+      - name: Registry smoke
+        run: docker run --rm starintel/actor-wef-ygl:ci sites
+      - name: Fixture tests
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            -v "$PWD/actors/website/tests:/tests:ro" \
+            starintel/actor-wef-ygl:ci \
+            -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -q /tests'
+      - name: Compose model
+        run: |
+          mkdir -p secrets
+          printf 'ci-only\n' > secrets/rabbitmq_password
+          docker network create starintel_backend
+          docker compose -f actors/compose.yaml config --quiet
+
+  live-wef:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t starintel/actor-wef-ygl:live actors/website
+      - name: Live current-site verification
+        run: |
+          docker run --rm --init --ipc=host --user root \
+            starintel/actor-wef-ygl:live \
+            verify wef-ygl --browser auto --min-people 100
