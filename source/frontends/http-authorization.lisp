@@ -28,6 +28,16 @@
        ((path-suffix-p "/revoke" path) "credentials:revoke")
        ((path-suffix-p "/disable" path) "credentials:disable")
        (t nil)))
+    ((string= path "/auth/users")
+     (case method
+       ((:get :post) "principals:manage")
+       (otherwise nil)))
+    ((and (eq method :post)
+          (path-prefix-p "/auth/users/" path)
+          (path-suffix-p "/password" path))
+     "principals:manage")
+    ((and (eq method :post) (string= path "/auth/password"))
+     "identity:read")
     ((path-prefix-p "/document/" path)
      (case method
        (:get "documents:read")

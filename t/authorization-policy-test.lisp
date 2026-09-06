@@ -407,6 +407,17 @@
                (star.frontends.http-api::route-action
                 :put "/document/document-1"))))
 
+(test user-management-routes-have-explicit-policy-actions
+  (is (string= "principals:manage"
+               (star.frontends.http-api::route-action :get "/auth/users")))
+  (is (string= "principals:manage"
+               (star.frontends.http-api::route-action :post "/auth/users")))
+  (is (string= "principals:manage"
+               (star.frontends.http-api::route-action
+                :post "/auth/users/alice/password")))
+  (is (string= "identity:read"
+               (star.frontends.http-api::route-action :post "/auth/password"))))
+
 (test update-service-authorizes-before-side-effect
   (let* ((document (policy-document :dataset "dataset-a"))
          (patch (jsown:new-js ("data" (jsown:new-js ("value" "updated")))))
