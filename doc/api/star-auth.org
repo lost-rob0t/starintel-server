@@ -141,7 +141,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (admin-set-user-password (STAR.AUTH::USERNAME STAR.AUTH::NEW-PASSWORD &KEY
  (STAR.AUTH::MUST-CHANGE-PASSWORD T)
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
@@ -154,7 +154,7 @@ By default forces a change at next login via =:must-change-password=.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (administrator-principal-p (&OPTIONAL (STAR.AUTH::PRINCIPAL (STAR.AUTH:CURRENT-REQUEST-PRINCIPAL))))
 #+end_src
 Undocumented.
@@ -163,7 +163,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-metadata-json (STAR.AUTH::RECORD))
 #+end_src
 Undocumented.
@@ -172,7 +172,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-created-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -181,7 +181,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-disabled-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -190,7 +190,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-expires-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -199,7 +199,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -208,7 +208,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-overlap-expires-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -217,7 +217,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-owner (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -226,7 +226,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-principal-type (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -235,7 +235,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-revision (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -244,7 +244,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-revoked-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -253,7 +253,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-rotation-parent-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -262,7 +262,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-salt (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -271,7 +271,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-scopes (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -280,7 +280,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-status (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -289,7 +289,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-superseded-by (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -298,7 +298,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (api-key-record-verifier (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -313,7 +313,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authenticate-api-key (STAR.AUTH::API-KEY STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -323,7 +323,7 @@ Authenticate through one verifier-comparison path for known and unknown ids.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authenticate-authorization-header (STAR.AUTH::AUTHORIZATION-HEADER STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE
  &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -337,7 +337,7 @@ Extracts the token with =bearer-token= and delegates to
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authenticate-bearer-authorization-header (STAR.AUTH::AUTHORIZATION-HEADER STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE
  &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -348,7 +348,7 @@ Both credential families produce the same request security-context boundary.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authenticate-oauth-access-token (STAR.AUTH::RAW-TOKEN STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -358,7 +358,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authenticate-user-password (STAR.AUTH::USERNAME STAR.AUTH::PASSWORD &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -368,7 +368,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (bearer-token (STAR.AUTH::AUTHORIZATION-HEADER))
 #+end_src
 Undocumented.
@@ -377,7 +377,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (bootstrap-api-key (STAR.AUTH::PRESENTED-SECRET STAR.AUTH::OWNER &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -392,7 +392,7 @@ Returns (VALUES RECORD RAW-KEY) like =create-api-key=.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (change-user-password (STAR.AUTH::USERNAME STAR.AUTH::CURRENT-PASSWORD STAR.AUTH::NEW-PASSWORD &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -403,7 +403,7 @@ correct.  Delegates to =set-user-password= after re-authentication.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (constant-time-octets= (STAR.AUTH::LEFT STAR.AUTH::RIGHT))
 #+end_src
 Compare octet vectors without data-dependent early return.
@@ -413,7 +413,7 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (constant-time-secret= (STAR.AUTH::LEFT STAR.AUTH::RIGHT))
 #+end_src
 Undocumented.
@@ -422,7 +422,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (create-api-key (STAR.AUTH::OWNER STAR.AUTH::PRINCIPAL-TYPE STAR.AUTH::SCOPES &KEY
  STAR.AUTH::EXPIRES-IN-SECONDS STAR.AUTH::ROTATION-PARENT-ID
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
@@ -438,7 +438,7 @@ for invalid owner, expiry or missing store.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (create-oauth-client (STAR.AUTH::REDIRECT-URIS STAR.AUTH::ALLOWED-SCOPES &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -448,7 +448,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (create-user (STAR.AUTH::USERNAME STAR.AUTH::PASSWORD STAR.AUTH::PRINCIPAL-TYPE
  STAR.AUTH::SCOPES &KEY (STAR.AUTH::MUST-CHANGE-PASSWORD T)
  STAR.AUTH::ALLOW-WEAK-PASSWORD (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
@@ -477,7 +477,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (disable-api-key (STAR.AUTH::CREDENTIAL-ID &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
 Temporarily suspend the credential CREDENTIAL-ID.
@@ -489,7 +489,7 @@ A disabled key can be re-enabled by returning its status to
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (ensure-initial-user (&KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
 Undocumented.
@@ -498,7 +498,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (exchange-oauth-authorization-code (STAR.AUTH::RAW-CODE STAR.AUTH::CLIENT-ID STAR.AUTH::CLIENT-SECRET
  STAR.AUTH::REDIRECT-URI STAR.AUTH::CODE-VERIFIER &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
@@ -509,7 +509,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (initialize-auth-store (&KEY STAR.AUTH::FORCE))
 #+end_src
 Build and install the global =*credential-store*=.
@@ -522,7 +522,7 @@ replaces an existing store.  Returns the store.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (issue-oauth-authorization-code (STAR.AUTH::CLIENT-ID STAR.AUTH::REDIRECT-URI STAR.AUTH::OWNER
  STAR.AUTH::REQUESTED-SCOPES STAR.AUTH::CODE-CHALLENGE
  STAR.AUTH::CODE-CHALLENGE-METHOD &KEY
@@ -534,7 +534,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (list-api-key-metadata (&KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
 Undocumented.
@@ -543,7 +543,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (list-user-metadata (&KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
 Undocumented.
@@ -552,7 +552,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (login-user (STAR.AUTH::USERNAME STAR.AUTH::PASSWORD &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -577,7 +577,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (normalize-oauth-scopes (STAR.AUTH::SCOPES))
 #+end_src
 Undocumented.
@@ -586,7 +586,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (normalize-username (STAR.AUTH::USERNAME))
 #+end_src
 Undocumented.
@@ -595,7 +595,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-client-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -604,7 +604,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-expires-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -613,7 +613,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -622,7 +622,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-owner (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -631,7 +631,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-principal-type (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -640,7 +640,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-revoked-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -649,7 +649,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-access-token-record-scopes (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -658,7 +658,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-authorization-code-record-client-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -667,7 +667,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-authorization-code-record-consumed-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -676,7 +676,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-authorization-code-record-expires-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -685,7 +685,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-authorization-code-record-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -694,7 +694,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-authorization-code-record-owner (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -703,7 +703,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-authorization-code-record-scopes (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -712,7 +712,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-client-metadata-json (STAR.AUTH::RECORD))
 #+end_src
 Undocumented.
@@ -721,7 +721,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-client-record-allowed-scopes (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -730,7 +730,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-client-record-created-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -739,7 +739,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-client-record-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -748,7 +748,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-client-record-redirect-uris (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -757,7 +757,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-client-record-status (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -766,7 +766,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (parse-api-key (STAR.AUTH::API-KEY))
 #+end_src
 Parse a presented API key string into (VALUES CREDENTIAL-ID SECRET-OCTETS).
@@ -779,7 +779,7 @@ error shapes do not leak which part failed.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (pkce-s256-challenge (STAR.AUTH::VERIFIER))
 #+end_src
 Undocumented.
@@ -788,7 +788,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-principal-credential-id (STAR.AUTH::PRINCIPAL))
 #+end_src
 Undocumented.
@@ -797,7 +797,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-principal-id (STAR.AUTH::PRINCIPAL))
 #+end_src
 Undocumented.
@@ -806,7 +806,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-principal-scopes (STAR.AUTH::PRINCIPAL))
 #+end_src
 Undocumented.
@@ -815,7 +815,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-principal-type (STAR.AUTH::PRINCIPAL))
 #+end_src
 Undocumented.
@@ -824,7 +824,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-security-context-authenticated-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -833,7 +833,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-security-context-correlation-id (STAR.AUTH::CONTEXT))
 #+end_src
 Undocumented.
@@ -842,7 +842,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-security-context-deadline (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -851,7 +851,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (request-security-context-principal (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -860,7 +860,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (revoke-api-key (STAR.AUTH::CREDENTIAL-ID &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
 Immediately revoke the credential CREDENTIAL-ID.
@@ -872,7 +872,7 @@ which permits temporary suspension.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (revoke-oauth-access-token (STAR.AUTH::TOKEN-ID &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
 Undocumented.
@@ -881,7 +881,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (rotate-api-key (STAR.AUTH::CREDENTIAL-ID STAR.AUTH::OVERLAP-SECONDS &KEY
  (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
 #+end_src
@@ -896,7 +896,7 @@ survives.  Returns (VALUES REPLACEMENT-RECORD RAW-KEY).
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (scope-granted-p (STAR.AUTH::SCOPE &OPTIONAL
  (STAR.AUTH::PRINCIPAL (STAR.AUTH:CURRENT-REQUEST-PRINCIPAL))))
 #+end_src
@@ -906,7 +906,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (service-call-context-correlation-id (STAR.AUTH::CONTEXT))
 #+end_src
 Undocumented.
@@ -915,7 +915,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (service-call-context-credential-id (STAR.AUTH::CONTEXT))
 #+end_src
 Undocumented.
@@ -924,7 +924,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (service-call-context-deadline (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -933,7 +933,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (service-call-context-principal-id (STAR.AUTH::CONTEXT))
 #+end_src
 Undocumented.
@@ -942,7 +942,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (service-call-context-principal-type (STAR.AUTH::CONTEXT))
 #+end_src
 Undocumented.
@@ -951,7 +951,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (service-call-context-scopes (STAR.AUTH::CONTEXT))
 #+end_src
 Undocumented.
@@ -966,7 +966,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-metadata-json (STAR.AUTH::RECORD))
 #+end_src
 Undocumented.
@@ -975,7 +975,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-created-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -984,7 +984,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-must-change-password (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -993,7 +993,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-password-updated-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1002,7 +1002,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-principal-type (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1011,7 +1011,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-scopes (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1020,7 +1020,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-status (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1029,7 +1029,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-record-username (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1038,7 +1038,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (valid-https-redirect-uri-p (STAR.AUTH::URI))
 #+end_src
 Undocumented.
@@ -1061,7 +1061,7 @@ Signals a descriptive error on the first bad setting.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authentication-error-code (CONDITION))
 #+end_src
 Undocumented.
@@ -1070,7 +1070,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (authentication-error-message (CONDITION))
 #+end_src
 Undocumented.
@@ -1079,7 +1079,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-lifecycle-error-code (CONDITION))
 #+end_src
 Undocumented.
@@ -1088,7 +1088,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-lifecycle-error-message (CONDITION))
 #+end_src
 Undocumented.
@@ -1097,7 +1097,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-store-count (STAR.AUTH::STORE))
 #+end_src
 Undocumented.
@@ -1106,7 +1106,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-store-get (STAR.AUTH::STORE STAR.AUTH::CREDENTIAL-ID))
 #+end_src
 Undocumented.
@@ -1115,7 +1115,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-store-list (STAR.AUTH::STORE))
 #+end_src
 Undocumented.
@@ -1124,7 +1124,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-store-put (STAR.AUTH::STORE STAR.AUTH::RECORD))
 #+end_src
 Undocumented.
@@ -1133,7 +1133,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (credential-store-update (STAR.AUTH::STORE STAR.AUTH::RECORD))
 #+end_src
 Undocumented.
@@ -1142,7 +1142,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-error-code (CONDITION))
 #+end_src
 Undocumented.
@@ -1151,7 +1151,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (oauth-error-message (CONDITION))
 #+end_src
 Undocumented.
@@ -1160,7 +1160,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-store-count (STAR.AUTH::STORE))
 #+end_src
 Undocumented.
@@ -1169,7 +1169,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-store-get (STAR.AUTH::STORE STAR.AUTH::USERNAME))
 #+end_src
 Undocumented.
@@ -1178,7 +1178,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-store-list (STAR.AUTH::STORE))
 #+end_src
 Undocumented.
@@ -1187,7 +1187,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-store-put (STAR.AUTH::STORE STAR.AUTH::RECORD))
 #+end_src
 Undocumented.
@@ -1196,7 +1196,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.AUTH
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (user-store-update (STAR.AUTH::STORE STAR.AUTH::RECORD))
 #+end_src
 Undocumented.

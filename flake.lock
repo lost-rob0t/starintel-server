@@ -42,11 +42,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1788704007,
-        "narHash": "sha256-QAcfXFbAukVo5WVN7WpbIwedpfFvW+2nTQtYZ2zJnDY=",
+        "lastModified": 1788707172,
+        "narHash": "sha256-Fnblnh5Psoh81Ye0V8Ao4gKLeexJ0QiJow4aUfnmCLM=",
         "ref": "refs/heads/master",
-        "rev": "78f01068428d3be70eb99b5b48187beb205632a0",
-        "revCount": 3,
+        "rev": "47f9c6d8b597874c0707a1802e4e532321da57a1",
+        "revCount": 4,
         "type": "git",
         "url": "https://git.starintel.actor/nsaspy/org-doc"
       },

@@ -38,7 +38,7 @@ Document pattern matcher, based on a match-fn you supply. When the handler retur
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (add-pattern (STAR.ACTORS.MATCHER:PATTERN))
 #+end_src
 Undocumented.
@@ -55,7 +55,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (match-fn (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -64,7 +64,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (notify-subs (STAR.ACTORS.MATCHER::SELF STAR.ACTORS.MATCHER::MESSAGE))
 #+end_src
 Notify subscribers about matched documents.
@@ -73,7 +73,7 @@ Notify subscribers about matched documents.
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (pattern-name (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -82,7 +82,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (subcriptions (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -91,7 +91,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (transientp (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -102,7 +102,7 @@ Undocumented.
 :KIND: macro
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (define-pattern ((STAR.ACTORS.MATCHER::NAME STAR.ACTORS.MATCHER::SUBS) &BODY
  STAR.ACTORS.MATCHER::BODY))
 #+end_src

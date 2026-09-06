@@ -199,7 +199,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (accept-target-delivery (STAR.ACTORS::CONSUMER STAR.ACTORS::DOCUMENT))
 #+end_src
 Undocumented.
@@ -208,7 +208,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (accept-target-record (STAR.ACTORS::RECORD &KEY (STAR.ACTORS::ATTEMPT 0) STAR.ACTORS::TRACE-ID
  STAR.ACTORS::DESTINATION STAR.ACTORS::PERSIST-FN STAR.ACTORS::UPDATE-FN
  STAR.ACTORS::DISPATCH-FN STAR.ACTORS::SCHEDULE-ONCE-FN
@@ -220,7 +220,7 @@ Synchronously durably accept a target and return a structured outcome.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (canonical-target-routing-key (STAR.ACTORS::ACTOR-NAME))
 #+end_src
 Undocumented.
@@ -229,7 +229,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (compatibility-target-ingress-routing-key (STAR.ACTORS::ACTOR-NAME))
 #+end_src
 Return the routing key used by the legacy HTTP target adapter.
@@ -238,7 +238,7 @@ Return the routing key used by the legacy HTTP target adapter.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (compatibility-target-routing-keys (STAR.ACTORS::ACTOR-NAME))
 #+end_src
 Undocumented.
@@ -247,7 +247,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-delete-request-database (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -256,7 +256,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-delete-request-document-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -265,7 +265,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-delete-request-revision (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -274,7 +274,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-get-request-database (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -283,7 +283,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-get-request-document-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -292,7 +292,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-get-request-revision (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -301,7 +301,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-insert-request-database (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -310,7 +310,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-insert-request-document (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -319,7 +319,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-insert-request-document-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -328,7 +328,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-database (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -337,7 +337,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-document-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -346,7 +346,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-error-message (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -355,7 +355,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-error-type (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -364,7 +364,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-operation (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -373,7 +373,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-revision (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -382,7 +382,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-status (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -391,7 +391,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (couchdb-result-value (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -400,7 +400,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (decode-actor-event (STAR.ACTORS::PAYLOAD))
 #+end_src
 Decode and validate an event through the StarIntel object codec.
@@ -409,7 +409,7 @@ Decode and validate an event through the StarIntel object codec.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (delete-couchdb-document (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE STAR.ACTORS::DOCUMENT-ID &OPTIONAL
  STAR.ACTORS::REVISION &KEY (STAR.ACTORS::GET-FN #'CL-COUCH:GET-DOCUMENT)
  (STAR.ACTORS::DELETE-FN #'CL-COUCH:DELETE-DOCUMENT)))
@@ -420,7 +420,7 @@ Delete DOCUMENT-ID using REVISION, fetching the current revision when absent.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (dispatch-target-envelope-now (STAR.ACTORS::ENVELOPE &KEY
  (STAR.ACTORS::LOCAL-SEND-FN
   (LAMBDA (STAR.ACTORS::COMPONENT STAR.ACTORS::PAYLOAD)
@@ -436,7 +436,7 @@ Dispatch one occurrence through an explicit destination handle.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (encode-actor-event (STAR.ACTORS::EVENT))
 #+end_src
 Undocumented.
@@ -445,7 +445,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (get-dest-actor (SENTO.ACTOR:ACTOR))
 #+end_src
 Undocumented.
@@ -454,7 +454,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (handle-event-message (STAR.ACTORS::CONSUMER STAR.ACTORS::MESSAGE))
 #+end_src
 Undocumented.
@@ -463,7 +463,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (load-persisted-target-records (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
  (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)
  (STAR.ACTORS::QUARANTINE-FN
@@ -475,7 +475,7 @@ Return valid typed records and quarantine invalid persisted documents.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (log-actor-event (STAR.ACTORS::ACTOR-NAME &KEY STAR.ACTORS:EVENT-TYPE STAR.ACTORS::DETAILS
  STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID STAR.ACTORS::COMPONENT
  (STAR.ACTORS::GENERATION 0)))
@@ -486,7 +486,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-actor-event (&KEY STAR.ACTORS::ACTOR-NAME STAR.ACTORS::COMPONENT STAR.ACTORS:EVENT-TYPE
  STAR.ACTORS::DETAILS STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID
  (STAR.ACTORS::GENERATION 0) STAR.ACTORS::TIMESTAMP STAR.ACTORS::DTYPE
@@ -498,7 +498,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-couchdb-delete-handler (SENTO.AGENT:AGENT &KEY
  (STAR.ACTORS::DELETE-FN #'STAR.ACTORS::COUCHDB-AGENT-DELETE)))
 #+end_src
@@ -508,7 +508,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-couchdb-delete-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
 #+end_src
@@ -518,7 +518,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-couchdb-get-handler (SENTO.AGENT:AGENT &KEY (STAR.ACTORS::GET-FN #'STAR.ACTORS::COUCHDB-AGENT-GET)))
 #+end_src
 Undocumented.
@@ -527,7 +527,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-couchdb-get-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
 #+end_src
@@ -537,7 +537,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-couchdb-insert-handler (SENTO.AGENT:AGENT &KEY
  (STAR.ACTORS::EXISTS-FN #'STAR.ACTORS::COUCHDB-DOCUMENT-EXISTS-P)
  (STAR.ACTORS::INSERT-FN #'STAR.ACTORS::COUCHDB-AGENT-INSERT)))
@@ -548,7 +548,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-couchdb-insert-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::DOCUMENT))
 #+end_src
@@ -558,7 +558,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-remote-target-consumer (STAR.ACTORS::ACTOR-NAME STAR.ACTORS::HANDLER-FN &KEY
  (STAR.ACTORS::QUEUE-NAME
   (FORMAT NIL "actor-~a-targets" (STRING-DOWNCASE STAR.ACTORS::ACTOR-NAME)))
@@ -570,7 +570,7 @@ Create a consumer bound to the canonical remote target route.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (make-target-dispatch-envelope (STAR.ACTORS::RECORD &KEY STAR.ACTORS::DESTINATION (STAR.ACTORS::ATTEMPT 0)
  STAR.ACTORS::TRACE-ID STAR.ACTORS::LEASE-ID (STAR.ACTORS::FENCING-TOKEN 1)))
 #+end_src
@@ -580,7 +580,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (parse-target-record (STAR.ACTORS::DOCUMENT))
 #+end_src
 Validate one v0.9 target document and return a typed recovery record.
@@ -589,7 +589,7 @@ Validate one v0.9 target document and return a typed recovery record.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (process-event-delivery (STAR.ACTORS::PAYLOAD &KEY
  (STAR.ACTORS::PERSIST-FN #'STAR.ACTORS::PERSIST-ACTOR-EVENT)))
 #+end_src
@@ -599,7 +599,7 @@ Decode, validate, persist idempotently, and return an owner-thread settlement.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (process-target-dispatch-envelope (STAR.ACTORS::ENVELOPE STAR.ACTORS::PERSIST-FN STAR.ACTORS::UPDATE-FN &KEY
  (STAR.ACTORS::DISPATCH-FN #'STAR.ACTORS:DISPATCH-TARGET-ENVELOPE-NOW)
  (STAR.ACTORS::SCHEDULE-ONCE-FN #'STAR.ACTORS::WHEEL-SCHEDULE-TARGET-ONCE)
@@ -612,7 +612,7 @@ Persist acceptance, establish schedule, and return a structured outcome.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (publish (SENTO.AGENT:AGENT &KEY STAR.ACTORS::BODY (STAR.ACTORS::PROPERTIES NIL)
  STAR.ACTORS::ROUTING-KEY))
 #+end_src
@@ -630,7 +630,7 @@ and normalize it to JSON.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (query-persisted-target-documents (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
  (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
 #+end_src
@@ -640,7 +640,7 @@ Query DATABASE through targets/by_actor and accept either JSOWN array form.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (recover-persisted-targets (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::ACTORS))
 #+end_src
@@ -650,7 +650,7 @@ Recover valid persisted targets after actor startup and before Rabbit ingest.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (recover-target-record (STAR.ACTORS::RECORD))
 #+end_src
 Recover one record once per persisted revision in this process.
@@ -659,7 +659,7 @@ Recover one record once per persisted revision in this process.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (register-actor (STAR.ACTORS::ACTOR-NAME STAR.ACTORS::ACTOR-SYMBOL))
 #+end_src
 Register ACTOR-SYMBOL under ACTOR-NAME in the actor index.
@@ -672,7 +672,7 @@ messages; the target router resolves destinations through
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (register-target-schedule (STAR.ACTORS::ENVELOPE STAR.ACTORS::DISPATCH-FN STAR.ACTORS::SCHEDULE-ONCE-FN
  STAR.ACTORS::SCHEDULE-RECURRING-FN))
 #+end_src
@@ -682,7 +682,7 @@ Register one active schedule identity regardless of destination transport.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (resolve-target-destination (STAR.ACTORS::ACTOR-NAME &KEY
  (STAR.ACTORS::RESOLVER #'STAR.ACTORS:GET-DEST-ACTOR)))
 #+end_src
@@ -692,7 +692,7 @@ Resolve ACTOR-NAME into an explicit local or Rabbit component handle.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (start-actors (&KEY STAR.ACTORS::RABBIT-USER STAR.ACTORS::RABBIT-HOST
  STAR.ACTORS::RABBIT-PASSWORD STAR.ACTORS::RABBIT-VHOST
  STAR.ACTORS::RABBIT-PORT))
@@ -703,7 +703,7 @@ Start the actor runtime and retain every process-owned timer/system handle.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (start-couchdb-deletes (SENTO.ACTOR-CONTEXT:SYSTEM))
 #+end_src
 Undocumented.
@@ -712,7 +712,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (start-event-consumer (STAR.ACTORS::N))
 #+end_src
 Start durable owner-thread event consumers with bounded retry and quarantine.
@@ -721,7 +721,7 @@ Start durable owner-thread event consumers with bounded retry and quarantine.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (start-target-actor (SENTO.ACTOR-CONTEXT:SYSTEM))
 #+end_src
 Start a typed compatibility ingress actor over the durable coordinator.
@@ -739,7 +739,7 @@ Resolution 10s, max size 1000 scheduled entries.  See also
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (submit-target (STAR.ACTORS::TARGET &KEY (STAR.ACTORS::FIRST-TIME-P T)
  (STAR.ACTORS::RECOVERED-P NIL)))
 #+end_src
@@ -749,7 +749,7 @@ Compatibility submission API backed by durable synchronous acceptance.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (sumbit-target (STAR.ACTORS::TARGET &OPTIONAL (STAR.ACTORS::FIRST-TIME T)))
 #+end_src
 Compatibility alias for the historical misspelling.
@@ -758,7 +758,7 @@ Compatibility alias for the historical misspelling.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-acceptance-document (STAR.ACTORS::ENVELOPE))
 #+end_src
 Undocumented.
@@ -767,7 +767,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-acceptance-equivalent-p (STAR.ACTORS::LEFT STAR.ACTORS::RIGHT))
 #+end_src
 Undocumented.
@@ -776,7 +776,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-acceptance-id (STAR.ACTORS::SCHEDULE-ID))
 #+end_src
 Undocumented.
@@ -785,7 +785,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-active-lease-p (STAR.ACTORS::RECORD &OPTIONAL (STAR.ACTORS::NOW (STAR.DOCUMENTS:UTC-NOW))))
 #+end_src
 Return true when RECORD has a non-expired persisted execution lease.
@@ -794,7 +794,7 @@ Return true when RECORD has a non-expired persisted execution lease.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-command-first-time-p (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -803,7 +803,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-command-record (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -812,7 +812,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-command-recovered-p (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -821,7 +821,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-destination-handle-compatibility-routing-keys (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -830,7 +830,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-destination-handle-component (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -839,7 +839,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-destination-handle-kind (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -848,7 +848,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-destination-handle-name (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -857,7 +857,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-destination-handle-routing-key (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -866,7 +866,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-attempt (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -875,7 +875,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-deadline (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -884,7 +884,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-destination (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -893,7 +893,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-execution-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -902,7 +902,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-fencing-token (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -911,7 +911,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-lease-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -920,7 +920,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-record (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -929,7 +929,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-schedule-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -938,7 +938,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-envelope-trace-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -947,7 +947,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-outcome-acceptance-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -956,7 +956,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-outcome-envelope (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -965,7 +965,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-outcome-reason (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -974,7 +974,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-outcome-retryable-p (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -983,7 +983,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-dispatch-outcome-status (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -992,7 +992,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-outcome-success-p (STAR.ACTORS::OUTCOME))
 #+end_src
 Undocumented.
@@ -1001,7 +1001,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-actor (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1010,7 +1010,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-delay (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1019,7 +1019,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-document (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1028,7 +1028,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-id (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1037,7 +1037,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-lease-expires-at (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1046,7 +1046,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-lease-owner (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1055,7 +1055,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-options (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1064,7 +1064,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-recurring-p (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1073,7 +1073,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-revision (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1082,7 +1082,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-record-target (SB-KERNEL:INSTANCE))
 #+end_src
 Undocumented.
@@ -1091,7 +1091,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (validate-actor-event (STAR.ACTORS::EVENT &OPTIONAL STAR.ACTORS::PAYLOAD))
 #+end_src
 Undocumented.
@@ -1100,7 +1100,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (validate-target-dispatch-record (STAR.ACTORS::RECORD &KEY (STAR.ACTORS::NOW (STAR.DOCUMENTS:UTC-NOW))
  (STAR.ACTORS::MAX-DELAY STAR.ACTORS:*TARGET-MAX-DELAY-SECONDS*)))
 #+end_src
@@ -1112,7 +1112,7 @@ Validate identity, schedule, recurrence, transient policy, and deadline.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-actor-name (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1121,7 +1121,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-component (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1130,7 +1130,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-details (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1139,7 +1139,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-generation (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1148,7 +1148,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-id (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1157,7 +1157,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-source-document (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1166,7 +1166,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-timestamp (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1175,7 +1175,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-trace-id (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1184,7 +1184,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (event-type (SB-PCL::OBJECT))
 #+end_src
 Undocumented.
@@ -1193,7 +1193,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (invalid-actor-event-reason (CONDITION))
 #+end_src
 Undocumented.
@@ -1202,7 +1202,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (invalid-target-dispatch-reason (CONDITION))
 #+end_src
 Undocumented.
@@ -1211,7 +1211,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (invalid-target-document-id (CONDITION))
 #+end_src
 Undocumented.
@@ -1220,7 +1220,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (invalid-target-reason (CONDITION))
 #+end_src
 Undocumented.
@@ -1229,7 +1229,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-destination-unavailable-reason (CONDITION))
 #+end_src
 Undocumented.
@@ -1238,7 +1238,7 @@ Undocumented.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (target-ingress-overloaded-reason (CONDITION))
 #+end_src
 Undocumented.
@@ -1249,7 +1249,7 @@ Undocumented.
 :KIND: macro
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (define-actor ((STAR.ACTORS::NAME SENTO.ACTOR-CONTEXT:SYSTEM &KEY (STAR.ACTORS::REGISTER T))
  &BODY STAR.ACTORS::BODY))
 #+end_src
@@ -1259,7 +1259,7 @@ Undocumented.
 :KIND: macro
 :PACKAGE: STAR.ACTORS
 :END:
-#+begin_src common-lisp
+#+begin_src lisp
 (with-json (STAR.ACTORS::JOBJECT &BODY STAR.ACTORS::BODY))
 #+end_src
 Undocumented.
