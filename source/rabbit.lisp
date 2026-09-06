@@ -145,6 +145,7 @@ Legacy target adapters must opt out explicitly."
            "durable mutation and publication completed")))))
 
 (defun handle-document (consumer message)
+  "Ingest consumer entry point: process MESSAGE as a =:new= document."
   (declare (ignore consumer))
   (process-rabbit-document-mutation message :new))
 
@@ -153,6 +154,10 @@ Legacy target adapters must opt out explicitly."
   (process-rabbit-document-mutation message :updated))
 
 (defun recover-pending-publications ()
+  "Replay outbox entries whose publication was interrupted.
+
+Runs at startup and after failures: every unpublished outbox mutation
+is re-published exactly once per entry sequence."
   (anypool:with-connection
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:recover-couchdb-outbox

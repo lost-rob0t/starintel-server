@@ -1,0 +1,1202 @@
+#+TITLE: API Reference — STAR.AUTH
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Variables and Constants
+*** *auth-clock*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** *credential-store*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** *request-security-context*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** *verifier-compare-function*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** +api-key-prefix+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+
+* Types and Classes
+*** couchdb-credential-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =pool=, =database=
+*** credential-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** memory-credential-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =records=, =users=, =oauth-clients=, =oauth-codes=, =oauth-access-tokens=, =lock=
+*** api-key-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =id=, =owner=, =principal-type=, =scopes=, =status=, =salt=, =verifier=, =created-at=, =expires-at=, =disabled-at=, =revoked-at=, =rotation-parent-id=, =superseded-by=, =overlap-expires-at=, =revision=
+*** oauth-access-token-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =id=, =status=, =client-id=, =owner=, =principal-type=, =scopes=, =salt=, =verifier=, =created-at=, =expires-at=, =revoked-at=, =revision=
+*** oauth-authorization-code-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =id=, =status=, =client-id=, =owner=, =scopes=, =redirect-uri=, =code-challenge=, =code-challenge-method=, =salt=, =verifier=, =created-at=, =expires-at=, =consumed-at=, =revision=
+*** oauth-client-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =id=, =status=, =allowed-scopes=, =redirect-uris=, =secret-salt=, =secret-verifier=, =created-at=, =revision=
+*** request-principal
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =id=, =type=, =scopes=, =credential-id=
+*** request-security-context
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =principal=, =correlation-id=, =deadline=, =authenticated-at=
+*** service-call-context
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =principal-id=, =principal-type=, =credential-id=, =scopes=, =correlation-id=, =deadline=
+*** user-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =username=, =principal-type=, =scopes=, =status=, =password-hash=, =created-at=, =password-updated-at=, =must-change-password=, =revision=
+
+* Conditions
+*** authentication-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =code=, =message=
+*** credential-lifecycle-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =code=, =message=
+*** oauth-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+- Slots: =code=, =message=
+
+* Functions
+*** admin-set-user-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(admin-set-user-password (STAR.AUTH::USERNAME STAR.AUTH::NEW-PASSWORD &KEY
+ (STAR.AUTH::MUST-CHANGE-PASSWORD T)
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Administratively reset USERNAME's password to NEW-PASSWORD.
+
+By default forces a change at next login via =:must-change-password=.
+*** administrator-principal-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(administrator-principal-p (&OPTIONAL (STAR.AUTH::PRINCIPAL (STAR.AUTH:CURRENT-REQUEST-PRINCIPAL))))
+#+end_src
+Undocumented.
+*** api-key-metadata-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-metadata-json (STAR.AUTH::RECORD))
+#+end_src
+Undocumented.
+*** api-key-record-created-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-created-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-disabled-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-disabled-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-overlap-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-overlap-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-owner
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-owner (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-principal-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-principal-type (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-revoked-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-revoked-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-rotation-parent-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-rotation-parent-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-salt
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-salt (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-scopes (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-status (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-superseded-by
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-superseded-by (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** api-key-record-verifier
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(api-key-record-verifier (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** auth-now
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** authenticate-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authenticate-api-key (STAR.AUTH::API-KEY STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Authenticate through one verifier-comparison path for known and unknown ids.
+*** authenticate-authorization-header
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authenticate-authorization-header (STAR.AUTH::AUTHORIZATION-HEADER STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE
+ &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Authenticate an =Authorization: Bearer ...= header value.
+
+Extracts the token with =bearer-token= and delegates to
+=authenticate-api-key=.  Returns the security context or signals
+=authentication-error=.
+*** authenticate-bearer-authorization-header
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authenticate-bearer-authorization-header (STAR.AUTH::AUTHORIZATION-HEADER STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE
+ &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Authenticate either a StarIntel OAuth access token or legacy API key.
+Both credential families produce the same request security-context boundary.
+*** authenticate-oauth-access-token
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authenticate-oauth-access-token (STAR.AUTH::RAW-TOKEN STAR.AUTH::CORRELATION-ID STAR.AUTH::DEADLINE &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** authenticate-user-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authenticate-user-password (STAR.AUTH::USERNAME STAR.AUTH::PASSWORD &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** bearer-token
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(bearer-token (STAR.AUTH::AUTHORIZATION-HEADER))
+#+end_src
+Undocumented.
+*** bootstrap-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(bootstrap-api-key (STAR.AUTH::PRESENTED-SECRET STAR.AUTH::OWNER &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Create the first administrator key, guarded by the bootstrap secret.
+
+- PRESENTED-SECRET must constant-time-match =*auth-bootstrap-secret*=
+- fails with =bootstrap_complete= once any credential exists
+
+Returns (VALUES RECORD RAW-KEY) like =create-api-key=.
+*** change-user-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(change-user-password (STAR.AUTH::USERNAME STAR.AUTH::CURRENT-PASSWORD STAR.AUTH::NEW-PASSWORD &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Self-service password change; requires the CURRENT-PASSWORD to be
+correct.  Delegates to =set-user-password= after re-authentication.
+*** constant-time-octets=
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(constant-time-octets= (STAR.AUTH::LEFT STAR.AUTH::RIGHT))
+#+end_src
+Compare octet vectors without data-dependent early return.
+Verifier inputs are fixed-length SHA-256 values at the authentication boundary.
+*** constant-time-secret=
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(constant-time-secret= (STAR.AUTH::LEFT STAR.AUTH::RIGHT))
+#+end_src
+Undocumented.
+*** create-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(create-api-key (STAR.AUTH::OWNER STAR.AUTH::PRINCIPAL-TYPE STAR.AUTH::SCOPES &KEY
+ STAR.AUTH::EXPIRES-IN-SECONDS STAR.AUTH::ROTATION-PARENT-ID
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Mint a new API key for OWNER.
+
+Returns (VALUES RECORD RAW-KEY); the raw key is the full
+=star_sk_v1_...= string, shown once and never stored verbatim (only a
+peppered verifier is persisted).  Signals =credential-lifecycle-error=
+for invalid owner, expiry or missing store.
+*** create-oauth-client
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(create-oauth-client (STAR.AUTH::REDIRECT-URIS STAR.AUTH::ALLOWED-SCOPES &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** create-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(create-user (STAR.AUTH::USERNAME STAR.AUTH::PASSWORD STAR.AUTH::PRINCIPAL-TYPE
+ STAR.AUTH::SCOPES &KEY (STAR.AUTH::MUST-CHANGE-PASSWORD T)
+ STAR.AUTH::ALLOW-WEAK-PASSWORD (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** current-principal-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** current-request-principal
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** current-service-call-context
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** disable-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(disable-api-key (STAR.AUTH::CREDENTIAL-ID &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Temporarily suspend the credential CREDENTIAL-ID.
+
+A disabled key can be re-enabled by returning its status to
+=active= via the store; use =revoke-api-key= for permanent removal.
+*** ensure-initial-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(ensure-initial-user (&KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** exchange-oauth-authorization-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(exchange-oauth-authorization-code (STAR.AUTH::RAW-CODE STAR.AUTH::CLIENT-ID STAR.AUTH::CLIENT-SECRET
+ STAR.AUTH::REDIRECT-URI STAR.AUTH::CODE-VERIFIER &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** initialize-auth-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(initialize-auth-store (&KEY STAR.AUTH::FORCE))
+#+end_src
+Build and install the global =*credential-store*=.
+
+Validates configuration, creates the CouchDB credential store,
+ensures the auth database and design document exist.  With =:force t=
+replaces an existing store.  Returns the store.
+*** issue-oauth-authorization-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(issue-oauth-authorization-code (STAR.AUTH::CLIENT-ID STAR.AUTH::REDIRECT-URI STAR.AUTH::OWNER
+ STAR.AUTH::REQUESTED-SCOPES STAR.AUTH::CODE-CHALLENGE
+ STAR.AUTH::CODE-CHALLENGE-METHOD &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** list-api-key-metadata
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(list-api-key-metadata (&KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** list-user-metadata
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(list-user-metadata (&KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** login-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(login-user (STAR.AUTH::USERNAME STAR.AUTH::PASSWORD &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Authenticate USERNAME with PASSWORD and mint a session API key.
+
+Returns (VALUES USER-RECORD API-KEY-RECORD RAW-KEY).  The key expires
+after =*auth-login-session-seconds*=.
+*** make-couchdb-credential-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** make-memory-credential-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** normalize-oauth-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(normalize-oauth-scopes (STAR.AUTH::SCOPES))
+#+end_src
+Undocumented.
+*** normalize-username
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(normalize-username (STAR.AUTH::USERNAME))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-client-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-client-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-owner
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-owner (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-principal-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-principal-type (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-revoked-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-revoked-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-access-token-record-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-access-token-record-scopes (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-authorization-code-record-client-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-authorization-code-record-client-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-authorization-code-record-consumed-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-authorization-code-record-consumed-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-authorization-code-record-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-authorization-code-record-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-authorization-code-record-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-authorization-code-record-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-authorization-code-record-owner
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-authorization-code-record-owner (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-authorization-code-record-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-authorization-code-record-scopes (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-client-metadata-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-client-metadata-json (STAR.AUTH::RECORD))
+#+end_src
+Undocumented.
+*** oauth-client-record-allowed-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-client-record-allowed-scopes (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-client-record-created-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-client-record-created-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-client-record-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-client-record-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-client-record-redirect-uris
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-client-record-redirect-uris (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** oauth-client-record-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-client-record-status (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** parse-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(parse-api-key (STAR.AUTH::API-KEY))
+#+end_src
+Parse a presented API key string into (VALUES CREDENTIAL-ID SECRET-OCTETS).
+
+Key format: =star_sk_v1_<credential-id>_<hex-secret>=.  Any malformed
+input signals the same uniform =authentication-error=, so timing and
+error shapes do not leak which part failed.
+*** pkce-s256-challenge
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(pkce-s256-challenge (STAR.AUTH::VERIFIER))
+#+end_src
+Undocumented.
+*** request-principal-credential-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-principal-credential-id (STAR.AUTH::PRINCIPAL))
+#+end_src
+Undocumented.
+*** request-principal-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-principal-id (STAR.AUTH::PRINCIPAL))
+#+end_src
+Undocumented.
+*** request-principal-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-principal-scopes (STAR.AUTH::PRINCIPAL))
+#+end_src
+Undocumented.
+*** request-principal-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-principal-type (STAR.AUTH::PRINCIPAL))
+#+end_src
+Undocumented.
+*** request-security-context-authenticated-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-security-context-authenticated-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** request-security-context-correlation-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-security-context-correlation-id (STAR.AUTH::CONTEXT))
+#+end_src
+Undocumented.
+*** request-security-context-deadline
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-security-context-deadline (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** request-security-context-principal
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(request-security-context-principal (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** revoke-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(revoke-api-key (STAR.AUTH::CREDENTIAL-ID &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Immediately revoke the credential CREDENTIAL-ID.
+
+Revoked keys never authenticate again; contrast =disable-api-key=,
+which permits temporary suspension.
+*** revoke-oauth-access-token
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(revoke-oauth-access-token (STAR.AUTH::TOKEN-ID &KEY (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Undocumented.
+*** rotate-api-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(rotate-api-key (STAR.AUTH::CREDENTIAL-ID STAR.AUTH::OVERLAP-SECONDS &KEY
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Rotate CREDENTIAL-ID: mint a replacement and phase out the old key.
+
+The old key stays valid for OVERLAP-SECONDS (bounded by
+=*auth-rotation-overlap-max-seconds*=) then is superseded.  If the
+store update fails the replacement is revoked so no untracked key
+survives.  Returns (VALUES REPLACEMENT-RECORD RAW-KEY).
+*** scope-granted-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(scope-granted-p (STAR.AUTH::SCOPE &OPTIONAL
+ (STAR.AUTH::PRINCIPAL (STAR.AUTH:CURRENT-REQUEST-PRINCIPAL))))
+#+end_src
+Undocumented.
+*** service-call-context-correlation-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(service-call-context-correlation-id (STAR.AUTH::CONTEXT))
+#+end_src
+Undocumented.
+*** service-call-context-credential-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(service-call-context-credential-id (STAR.AUTH::CONTEXT))
+#+end_src
+Undocumented.
+*** service-call-context-deadline
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(service-call-context-deadline (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** service-call-context-principal-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(service-call-context-principal-id (STAR.AUTH::CONTEXT))
+#+end_src
+Undocumented.
+*** service-call-context-principal-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(service-call-context-principal-type (STAR.AUTH::CONTEXT))
+#+end_src
+Undocumented.
+*** service-call-context-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(service-call-context-scopes (STAR.AUTH::CONTEXT))
+#+end_src
+Undocumented.
+*** signal-authentication-failure
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Undocumented.
+*** user-metadata-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-metadata-json (STAR.AUTH::RECORD))
+#+end_src
+Undocumented.
+*** user-record-created-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-created-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** user-record-must-change-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-must-change-password (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** user-record-password-updated-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-password-updated-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** user-record-principal-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-principal-type (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** user-record-scopes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-scopes (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** user-record-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-status (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** user-record-username
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-record-username (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** valid-https-redirect-uri-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(valid-https-redirect-uri-p (STAR.AUTH::URI))
+#+end_src
+Undocumented.
+*** validate-auth-configuration
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+Validate the auth settings and fail fast at boot.
+
+- =api-key= mode requires a pepper
+- =disabled= mode additionally requires =*auth-dev-bypass*= AND a
+  loopback bind address
+
+Signals a descriptive error on the first bad setting.
+
+* Generic Functions
+*** authentication-error-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authentication-error-code (CONDITION))
+#+end_src
+Undocumented.
+*** authentication-error-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(authentication-error-message (CONDITION))
+#+end_src
+Undocumented.
+*** credential-lifecycle-error-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-lifecycle-error-code (CONDITION))
+#+end_src
+Undocumented.
+*** credential-lifecycle-error-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-lifecycle-error-message (CONDITION))
+#+end_src
+Undocumented.
+*** credential-store-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-store-count (STAR.AUTH::STORE))
+#+end_src
+Undocumented.
+*** credential-store-get
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-store-get (STAR.AUTH::STORE STAR.AUTH::CREDENTIAL-ID))
+#+end_src
+Undocumented.
+*** credential-store-list
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-store-list (STAR.AUTH::STORE))
+#+end_src
+Undocumented.
+*** credential-store-put
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-store-put (STAR.AUTH::STORE STAR.AUTH::RECORD))
+#+end_src
+Undocumented.
+*** credential-store-update
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(credential-store-update (STAR.AUTH::STORE STAR.AUTH::RECORD))
+#+end_src
+Undocumented.
+*** oauth-error-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-error-code (CONDITION))
+#+end_src
+Undocumented.
+*** oauth-error-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(oauth-error-message (CONDITION))
+#+end_src
+Undocumented.
+*** user-store-count
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-store-count (STAR.AUTH::STORE))
+#+end_src
+Undocumented.
+*** user-store-get
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-store-get (STAR.AUTH::STORE STAR.AUTH::USERNAME))
+#+end_src
+Undocumented.
+*** user-store-list
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-store-list (STAR.AUTH::STORE))
+#+end_src
+Undocumented.
+*** user-store-put
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-store-put (STAR.AUTH::STORE STAR.AUTH::RECORD))
+#+end_src
+Undocumented.
+*** user-store-update
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src common-lisp
+(user-store-update (STAR.AUTH::STORE STAR.AUTH::RECORD))
+#+end_src
+Undocumented.

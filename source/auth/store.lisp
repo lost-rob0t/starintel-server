@@ -285,6 +285,13 @@
           :test #'string=))
 
 (defun validate-auth-configuration ()
+  "Validate the auth settings and fail fast at boot.
+
+- =api-key= mode requires a pepper
+- =disabled= mode additionally requires =*auth-dev-bypass*= AND a
+  loopback bind address
+
+Signals a descriptive error on the first bad setting."
   (let ((mode (string-downcase star:*auth-mode*)))
     (cond
       ((string= mode "api-key")
@@ -300,6 +307,11 @@
   t)
 
 (defun initialize-auth-store (&key force)
+  "Build and install the global =*credential-store*=.
+
+Validates configuration, creates the CouchDB credential store,
+ensures the auth database and design document exist.  With =:force t=
+replaces an existing store.  Returns the store."
   (validate-auth-configuration)
   (when (or force (null *credential-store*))
     (setf *credential-store* (make-couchdb-credential-store)))

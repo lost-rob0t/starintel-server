@@ -156,6 +156,10 @@ compatibility adapters can opt out without weakening canonical ingest."
     object))
 
 (defun document-json (document &key route-dtype)
+  "Serialize DOCUMENT to canonical JSON, enforcing identity invariants.
+
+Applies =ensure-document= (dtype routing, id stamping) then renders
+the JSON string sent over the wire and into CouchDB."
   (jsown:to-json (ensure-document document :route-dtype route-dtype)))
 
 (defun utc-now ()

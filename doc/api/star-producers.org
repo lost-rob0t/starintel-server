@@ -1,0 +1,182 @@
+#+TITLE: API Reference — STAR.PRODUCERS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+doc
+
+* Types and Classes
+*** producer
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.PRODUCERS
+:END:
+Producers emit data onto the rabbitmq queue.
+- Slots: =name=, =exchange-name=, =exchange-type=, =exchange-durable=, =max-queue-size=, =connection=, =user=, =password=, =vhost=, =port=, =host=, =open=, =lock=
+
+* Functions
+*** make-producer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(make-producer (&REST STAR.PRODUCERS::ARGS))
+#+end_src
+Undocumented.
+
+* Generic Functions
+*** destroy
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(destroy (STAR.PRODUCERS:PRODUCER))
+#+end_src
+Close any streams and de-init the producer
+*** exchange-durable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(exchange-durable-p (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-conn
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-conn (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-connect
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-connect (STAR.PRODUCERS:PRODUCER))
+#+end_src
+Undocumented.
+*** producer-exchange
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-exchange (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-exchange-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-exchange-type (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-host
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-host (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-lock
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-lock (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-max-size
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-max-size (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-name (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-open-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-open-p (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-password
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-password (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-port
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-port (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-user (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** producer-vhost
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(producer-vhost (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** publish
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(publish (STAR.PRODUCERS:PRODUCER &KEY STAR.PRODUCERS::BODY STAR.PRODUCERS::ROUTING-KEY
+ STAR.PRODUCERS::PROPERTIES))
+#+end_src
+Undocumented.
+
+* Macros
+*** with-producer-lock
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.PRODUCERS
+:END:
+#+begin_src common-lisp
+(with-producer-lock ((STAR.PRODUCERS:PRODUCER) &BODY STAR.PRODUCERS::BODY))
+#+end_src
+Undocumented.

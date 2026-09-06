@@ -135,6 +135,10 @@
       (signal-authentication-failure))))
 
 (defun login-user (username password &key (store *credential-store*))
+  "Authenticate USERNAME with PASSWORD and mint a session API key.
+
+Returns (VALUES USER-RECORD API-KEY-RECORD RAW-KEY).  The key expires
+after =*auth-login-session-seconds*=."
   (let ((user (authenticate-user-password username password :store store)))
     (multiple-value-bind (credential raw-key)
         (create-api-key
@@ -161,6 +165,8 @@
 
 (defun change-user-password (username current-password new-password
                              &key (store *credential-store*))
+  "Self-service password change; requires the CURRENT-PASSWORD to be
+correct.  Delegates to =set-user-password= after re-authentication."
   (let ((record
           (authenticate-user-password
            username current-password :store store)))
@@ -170,6 +176,9 @@
                                 &key
                                   (must-change-password t)
                                   (store *credential-store*))
+  "Administratively reset USERNAME's password to NEW-PASSWORD.
+
+By default forces a change at next login via =:must-change-password=."
   (let ((record
           (user-store-get store (normalize-username username))))
     (unless record

@@ -49,12 +49,25 @@
    :sub-commands (main/commands)))
 
 (defun start-debugger ()
+  "Start a SLY/Slynk server on =*slynk-port*= for live debugging.
+
+Connect from Emacs with =M-x sly-connect= and the port configured by
+=STAR_SLYNK_PORT= (default 4009)."
   (format t "Creating slynk server on port: ~a" star:*slynk-port*)
   (slynk:create-server :port star:*slynk-port*))
 
 (defun main ()
+  "Binary entry point; parses argv via clingon and dispatches subcommands.
+
+Subcommands:
+- =start= :: run the server runtime loop until interrupted
+- =admin= :: administrative utilities"
   (clingon:run (main/command)))
 
 (defun repl/main (init-file)
-  "Load and start the server from the REPL."
+  "Load and start the server from the REPL.
+
+Unlike =main= this returns after the runtime stops instead of exiting
+the image, so callers can inspect state afterwards.  INIT-FILE is the
+init script path, usually =./init.lisp=."
   (initialize-runtime init-file))

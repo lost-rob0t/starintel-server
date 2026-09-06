@@ -1,0 +1,216 @@
+#+TITLE: API Reference — STARINTEL-GSERVER-HTTP-API
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+StarIntel HTTP API.
+
+* Variables and Constants
+*** *app*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+Undocumented.
+*** *default-headers*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+Undocumented.
+
+* Types and Classes
+*** bulk-ingest-job
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+Undocumented.
+- Slots: =id=, =principal=, =documents=, =correlation-id=, =service-context=, =submitted-at=, =status=, =succeeded=, =failed=, =error-code=
+
+* Conditions
+*** http-input-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+Undocumented.
+- Slots: =status=, =code=, =message=, =info=
+
+* Functions
+*** bounded-query-integer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bounded-query-integer (STARINTEL-GSERVER-HTTP-API::PARAMS STARINTEL-GSERVER-HTTP-API::NAME &KEY
+ STARINTEL-GSERVER-HTTP-API::DEFAULT (STARINTEL-GSERVER-HTTP-API::MINIMUM 0)
+ (STARINTEL-GSERVER-HTTP-API::MAXIMUM
+  STARINTEL-GSERVER-HTTP-API::+HTTP-MAX-QUERY-LIMIT+)))
+#+end_src
+Undocumented.
+*** bulk-ingest-job-failed
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bulk-ingest-job-failed (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** bulk-ingest-job-principal
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bulk-ingest-job-principal (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** bulk-ingest-job-service-context
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bulk-ingest-job-service-context (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** bulk-ingest-job-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bulk-ingest-job-status (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** bulk-ingest-job-succeeded
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bulk-ingest-job-succeeded (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** bulk-request-mode
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(bulk-request-mode (STARINTEL-GSERVER-HTTP-API::DOCUMENT-COUNT))
+#+end_src
+Undocumented.
+*** execute-bulk-job
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(execute-bulk-job (STARINTEL-GSERVER-HTTP-API::JOB &KEY
+ (STARINTEL-GSERVER-HTTP-API::PUBLISH-FN
+  #'STARINTEL-GSERVER-HTTP-API:PUBLISH-DOCUMENT)))
+#+end_src
+Undocumented.
+*** json-array-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(json-array-p (STARINTEL-GSERVER-HTTP-API::VALUE))
+#+end_src
+Undocumented.
+*** json-object-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(json-object-p (STARINTEL-GSERVER-HTTP-API::VALUE))
+#+end_src
+Undocumented.
+*** parse-json-octets
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(parse-json-octets (STARINTEL-GSERVER-HTTP-API::OCTETS STARINTEL-GSERVER-HTTP-API::CONTENT-TYPE
+ &KEY
+ (STARINTEL-GSERVER-HTTP-API::MAX-BYTES
+  STARINTEL-GSERVER-HTTP-API::+HTTP-MAX-BODY-BYTES+)))
+#+end_src
+Undocumented.
+*** publish-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(publish-document (STARINTEL-GSERVER-HTTP-API::DOCUMENT))
+#+end_src
+Authorize at the embedded publish boundary before any Rabbit side effect.
+*** publish-target-document-unchecked
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(publish-target-document-unchecked (STARINTEL-GSERVER-HTTP-API::DOCUMENT))
+#+end_src
+Publish a legacy target directly to the target compatibility consumer.
+*** service-context-properties
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(service-context-properties (STARINTEL-GSERVER-HTTP-API::DTYPE NINGLE/CONTEXT:CONTEXT &OPTIONAL
+ STAR.AUTHORIZATION:*CURRENT-AUTHORIZATION-DECISION*))
+#+end_src
+Build server-owned Rabbit properties. Caller-supplied document fields are ignored.
+*** submit-bulk-ingest-job
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(submit-bulk-ingest-job (STARINTEL-GSERVER-HTTP-API::DOCUMENTS STARINTEL-GSERVER-HTTP-API::PRINCIPAL
+ &KEY (STARINTEL-GSERVER-HTTP-API::TELL-FN #'SENTO.ACTOR:TELL)
+ (STARINTEL-GSERVER-HTTP-API::ENSURE-WORKERS-FN
+  #'STARINTEL-GSERVER-HTTP-API::START-BULK-INGEST-WORKERS)))
+#+end_src
+Reserve bounded queue capacity and enqueue one authenticated job.
+*** validate-document-input
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(validate-document-input (STARINTEL-GSERVER-HTTP-API::DOCUMENT &KEY
+ STARINTEL-GSERVER-HTTP-API::PATH-DTYPE STARINTEL-GSERVER-HTTP-API::INDEX
+ (STARINTEL-GSERVER-HTTP-API::STRICT-SCHEMA-P T)))
+#+end_src
+Undocumented.
+
+* Generic Functions
+*** http-input-error-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(http-input-error-code (CONDITION))
+#+end_src
+Undocumented.
+*** http-input-error-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src common-lisp
+(http-input-error-status (CONDITION))
+#+end_src
+Undocumented.

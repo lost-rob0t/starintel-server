@@ -1,0 +1,1265 @@
+#+TITLE: API Reference — STAR.ACTORS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+Actor runtime namespace
+
+* Variables and Constants
+*** *active-target-schedules*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+*** *actor-event-receiver*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+*** *actor-index-agent*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor index agent is responsible for registering actors for targets.
+*** *couchdb-deletes*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor responsible for deterministic CouchDB delete requests.
+*** *couchdb-gets*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+The Couchdb actor responsible for handling document gets.
+*** *couchdb-inserts*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Actor responsible for handling couchdb inserts
+*** *producer-agent*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+*** *recovered-target-fingerprints*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Process-local ledger preventing duplicate timer/execution recovery passes.
+*** *sys*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+the main actor system
+*** *target-max-delay-seconds*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+*** *target-timer*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+simple wheel timer for targets
+*** *targets*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+The Target actor.
+It is responsble for routing TARGET documents to actors. Actors can reside over rabbitmq or in same-process with lisp.
+*** *url-extractor*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS
+:END:
+
+
+* Types and Classes
+*** actor-event
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =_id=, =timestamp=, =dtype=, =actor-name=, =component=, =event-type=, =details=, =source-id=, =trace-id=, =generation=
+*** couchdb-delete-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =database=, =document-id=, =revision=
+*** couchdb-get-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =database=, =document-id=, =revision=
+*** couchdb-insert-request
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =database=, =document-id=, =document=
+*** couchdb-result
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =status=, =operation=, =database=, =document-id=, =revision=, =value=, =error-type=, =error-message=
+*** target-command
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =record=, =first-time-p=, =recovered-p=
+*** target-destination-handle
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =kind=, =name=, =component=, =routing-key=, =compatibility-routing-keys=
+*** target-dispatch-envelope
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =record=, =destination=, =schedule-id=, =execution-id=, =attempt=, =trace-id=, =lease-id=, =fencing-token=, =deadline=
+*** target-dispatch-outcome
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =status=, =reason=, =acceptance-id=, =envelope=, =retryable-p=
+*** target-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =id=, =actor=, =target=, =delay=, =recurring-p=, =options=, =document=, =revision=, =lease-owner=, =lease-expires-at=
+
+* Conditions
+*** invalid-actor-event
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =reason=, =payload=
+*** invalid-persisted-target
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =document-id=, =reason=
+*** invalid-target-dispatch
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =reason=
+*** target-destination-unavailable
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =reason=
+*** target-ingress-overloaded
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Undocumented.
+- Slots: =reason=
+
+* Functions
+*** accept-target-delivery
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(accept-target-delivery (STAR.ACTORS::CONSUMER STAR.ACTORS::DOCUMENT))
+#+end_src
+Undocumented.
+*** accept-target-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(accept-target-record (STAR.ACTORS::RECORD &KEY (STAR.ACTORS::ATTEMPT 0) STAR.ACTORS::TRACE-ID
+ STAR.ACTORS::DESTINATION STAR.ACTORS::PERSIST-FN STAR.ACTORS::UPDATE-FN
+ STAR.ACTORS::DISPATCH-FN STAR.ACTORS::SCHEDULE-ONCE-FN
+ STAR.ACTORS::SCHEDULE-RECURRING-FN))
+#+end_src
+Synchronously durably accept a target and return a structured outcome.
+*** canonical-target-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(canonical-target-routing-key (STAR.ACTORS::ACTOR-NAME))
+#+end_src
+Undocumented.
+*** compatibility-target-ingress-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(compatibility-target-ingress-routing-key (STAR.ACTORS::ACTOR-NAME))
+#+end_src
+Return the routing key used by the legacy HTTP target adapter.
+*** compatibility-target-routing-keys
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(compatibility-target-routing-keys (STAR.ACTORS::ACTOR-NAME))
+#+end_src
+Undocumented.
+*** couchdb-delete-request-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-delete-request-database (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-delete-request-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-delete-request-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-delete-request-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-delete-request-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-get-request-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-get-request-database (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-get-request-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-get-request-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-get-request-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-get-request-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-insert-request-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-insert-request-database (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-insert-request-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-insert-request-document (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-insert-request-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-insert-request-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-database
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-database (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-document-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-error-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-error-message (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-error-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-error-type (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-operation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-operation (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-status (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** couchdb-result-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(couchdb-result-value (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** decode-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(decode-actor-event (STAR.ACTORS::PAYLOAD))
+#+end_src
+Decode and validate an event through the StarIntel object codec.
+*** delete-couchdb-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(delete-couchdb-document (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE STAR.ACTORS::DOCUMENT-ID &OPTIONAL
+ STAR.ACTORS::REVISION &KEY (STAR.ACTORS::GET-FN #'CL-COUCH:GET-DOCUMENT)
+ (STAR.ACTORS::DELETE-FN #'CL-COUCH:DELETE-DOCUMENT)))
+#+end_src
+Delete DOCUMENT-ID using REVISION, fetching the current revision when absent.
+*** dispatch-target-envelope-now
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(dispatch-target-envelope-now (STAR.ACTORS::ENVELOPE &KEY
+ (STAR.ACTORS::LOCAL-SEND-FN
+  (LAMBDA (STAR.ACTORS::COMPONENT STAR.ACTORS::PAYLOAD)
+    (SENTO.ACTOR:TELL STAR.ACTORS::COMPONENT STAR.ACTORS::PAYLOAD)))
+ (STAR.ACTORS::REMOTE-SEND-FN
+  (LAMBDA (STAR.ACTORS::ROUTING-KEY STAR.ACTORS::DOCUMENT)
+    (STAR.RABBIT:EMIT-DOCUMENT "documents" STAR.ACTORS::ROUTING-KEY
+                               STAR.ACTORS::DOCUMENT)))))
+#+end_src
+Dispatch one occurrence through an explicit destination handle.
+*** encode-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(encode-actor-event (STAR.ACTORS::EVENT))
+#+end_src
+Undocumented.
+*** get-dest-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(get-dest-actor (SENTO.ACTOR:ACTOR))
+#+end_src
+Undocumented.
+*** handle-event-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(handle-event-message (STAR.ACTORS::CONSUMER STAR.ACTORS::MESSAGE))
+#+end_src
+Undocumented.
+*** load-persisted-target-records
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(load-persisted-target-records (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
+ (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)
+ (STAR.ACTORS::QUARANTINE-FN
+  #'STAR.ACTORS::QUARANTINE-INVALID-PERSISTED-TARGET)))
+#+end_src
+Return valid typed records and quarantine invalid persisted documents.
+*** log-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(log-actor-event (STAR.ACTORS::ACTOR-NAME &KEY STAR.ACTORS:EVENT-TYPE STAR.ACTORS::DETAILS
+ STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID STAR.ACTORS::COMPONENT
+ (STAR.ACTORS::GENERATION 0)))
+#+end_src
+Undocumented.
+*** make-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-actor-event (&KEY STAR.ACTORS::ACTOR-NAME STAR.ACTORS::COMPONENT STAR.ACTORS:EVENT-TYPE
+ STAR.ACTORS::DETAILS STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID
+ (STAR.ACTORS::GENERATION 0) STAR.ACTORS::TIMESTAMP STAR.ACTORS::DTYPE
+ SENTO.ACTOR-CONTEXT:ID))
+#+end_src
+Undocumented.
+*** make-couchdb-delete-handler
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-couchdb-delete-handler (SENTO.AGENT:AGENT &KEY
+ (STAR.ACTORS::DELETE-FN #'STAR.ACTORS::COUCHDB-AGENT-DELETE)))
+#+end_src
+Undocumented.
+*** make-couchdb-delete-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-couchdb-delete-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
+#+end_src
+Undocumented.
+*** make-couchdb-get-handler
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-couchdb-get-handler (SENTO.AGENT:AGENT &KEY (STAR.ACTORS::GET-FN #'STAR.ACTORS::COUCHDB-AGENT-GET)))
+#+end_src
+Undocumented.
+*** make-couchdb-get-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-couchdb-get-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
+#+end_src
+Undocumented.
+*** make-couchdb-insert-handler
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-couchdb-insert-handler (SENTO.AGENT:AGENT &KEY
+ (STAR.ACTORS::EXISTS-FN #'STAR.ACTORS::COUCHDB-DOCUMENT-EXISTS-P)
+ (STAR.ACTORS::INSERT-FN #'STAR.ACTORS::COUCHDB-AGENT-INSERT)))
+#+end_src
+Undocumented.
+*** make-couchdb-insert-request
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-couchdb-insert-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::DOCUMENT))
+#+end_src
+Undocumented.
+*** make-remote-target-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-remote-target-consumer (STAR.ACTORS::ACTOR-NAME STAR.ACTORS::HANDLER-FN &KEY
+ (STAR.ACTORS::QUEUE-NAME
+  (FORMAT NIL "actor-~a-targets" (STRING-DOWNCASE STAR.ACTORS::ACTOR-NAME)))
+ (STAR.ACTORS::N 1)))
+#+end_src
+Create a consumer bound to the canonical remote target route.
+*** make-target-dispatch-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(make-target-dispatch-envelope (STAR.ACTORS::RECORD &KEY STAR.ACTORS::DESTINATION (STAR.ACTORS::ATTEMPT 0)
+ STAR.ACTORS::TRACE-ID STAR.ACTORS::LEASE-ID (STAR.ACTORS::FENCING-TOKEN 1)))
+#+end_src
+Undocumented.
+*** parse-target-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(parse-target-record (STAR.ACTORS::DOCUMENT))
+#+end_src
+Validate one v0.9 target document and return a typed recovery record.
+*** process-event-delivery
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(process-event-delivery (STAR.ACTORS::PAYLOAD &KEY
+ (STAR.ACTORS::PERSIST-FN #'STAR.ACTORS::PERSIST-ACTOR-EVENT)))
+#+end_src
+Decode, validate, persist idempotently, and return an owner-thread settlement.
+*** process-target-dispatch-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(process-target-dispatch-envelope (STAR.ACTORS::ENVELOPE STAR.ACTORS::PERSIST-FN STAR.ACTORS::UPDATE-FN &KEY
+ (STAR.ACTORS::DISPATCH-FN #'STAR.ACTORS:DISPATCH-TARGET-ENVELOPE-NOW)
+ (STAR.ACTORS::SCHEDULE-ONCE-FN #'STAR.ACTORS::WHEEL-SCHEDULE-TARGET-ONCE)
+ (STAR.ACTORS::SCHEDULE-RECURRING-FN
+  #'STAR.ACTORS::WHEEL-SCHEDULE-TARGET-RECURRING)))
+#+end_src
+Persist acceptance, establish schedule, and return a structured outcome.
+*** publish
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(publish (SENTO.AGENT:AGENT &KEY STAR.ACTORS::BODY (STAR.ACTORS::PROPERTIES NIL)
+ STAR.ACTORS::ROUTING-KEY))
+#+end_src
+Publish a message to RabbitMQ.
+
+Sento agent semantics: do the publish *inside* the agent via `agent-get`, so the
+producer state (connection/channel) is touched from one pinned thread.
+
+BODY is expected to be a JSON string, but accept a JSOWN object as a convenience
+and normalize it to JSON.
+
+
+*** query-persisted-target-documents
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(query-persisted-target-documents (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
+ (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
+#+end_src
+Query DATABASE through targets/by_actor and accept either JSOWN array form.
+*** recover-persisted-targets
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(recover-persisted-targets (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
+ STAR.ACTORS::ACTORS))
+#+end_src
+Recover valid persisted targets after actor startup and before Rabbit ingest.
+*** recover-target-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(recover-target-record (STAR.ACTORS::RECORD))
+#+end_src
+Recover one record once per persisted revision in this process.
+*** register-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(register-actor (STAR.ACTORS::ACTOR-NAME STAR.ACTORS::ACTOR-SYMBOL))
+#+end_src
+Register ACTOR-SYMBOL under ACTOR-NAME in the actor index.
+
+Actors must be registered here before they receive any target
+messages; the target router resolves destinations through
+=get-dest-actor=.
+*** register-target-schedule
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(register-target-schedule (STAR.ACTORS::ENVELOPE STAR.ACTORS::DISPATCH-FN STAR.ACTORS::SCHEDULE-ONCE-FN
+ STAR.ACTORS::SCHEDULE-RECURRING-FN))
+#+end_src
+Register one active schedule identity regardless of destination transport.
+*** resolve-target-destination
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(resolve-target-destination (STAR.ACTORS::ACTOR-NAME &KEY
+ (STAR.ACTORS::RESOLVER #'STAR.ACTORS:GET-DEST-ACTOR)))
+#+end_src
+Resolve ACTOR-NAME into an explicit local or Rabbit component handle.
+*** start-actors
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(start-actors (&KEY STAR.ACTORS::RABBIT-USER STAR.ACTORS::RABBIT-HOST
+ STAR.ACTORS::RABBIT-PASSWORD STAR.ACTORS::RABBIT-VHOST
+ STAR.ACTORS::RABBIT-PORT))
+#+end_src
+Start the actor runtime and retain every process-owned timer/system handle.
+*** start-couchdb-deletes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(start-couchdb-deletes (SENTO.ACTOR-CONTEXT:SYSTEM))
+#+end_src
+Undocumented.
+*** start-event-consumer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(start-event-consumer (STAR.ACTORS::N))
+#+end_src
+Start durable owner-thread event consumers with bounded retry and quarantine.
+*** start-target-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(start-target-actor (SENTO.ACTOR-CONTEXT:SYSTEM))
+#+end_src
+Start a typed compatibility ingress actor over the durable coordinator.
+*** start-target-timer
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+Start the wheel timer backing recurring targets.
+
+Resolution 10s, max size 1000 scheduled entries.  See also
+=*target-timer*=.
+*** submit-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(submit-target (STAR.ACTORS::TARGET &KEY (STAR.ACTORS::FIRST-TIME-P T)
+ (STAR.ACTORS::RECOVERED-P NIL)))
+#+end_src
+Compatibility submission API backed by durable synchronous acceptance.
+*** sumbit-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(sumbit-target (STAR.ACTORS::TARGET &OPTIONAL (STAR.ACTORS::FIRST-TIME T)))
+#+end_src
+Compatibility alias for the historical misspelling.
+*** target-acceptance-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-acceptance-document (STAR.ACTORS::ENVELOPE))
+#+end_src
+Undocumented.
+*** target-acceptance-equivalent-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-acceptance-equivalent-p (STAR.ACTORS::LEFT STAR.ACTORS::RIGHT))
+#+end_src
+Undocumented.
+*** target-acceptance-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-acceptance-id (STAR.ACTORS::SCHEDULE-ID))
+#+end_src
+Undocumented.
+*** target-active-lease-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-active-lease-p (STAR.ACTORS::RECORD &OPTIONAL (STAR.ACTORS::NOW (STAR.DOCUMENTS:UTC-NOW))))
+#+end_src
+Return true when RECORD has a non-expired persisted execution lease.
+*** target-command-first-time-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-command-first-time-p (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-command-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-command-record (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-command-recovered-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-command-recovered-p (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-destination-handle-compatibility-routing-keys
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-destination-handle-compatibility-routing-keys (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-destination-handle-component
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-destination-handle-component (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-destination-handle-kind
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-destination-handle-kind (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-destination-handle-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-destination-handle-name (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-destination-handle-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-destination-handle-routing-key (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-attempt
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-attempt (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-deadline
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-deadline (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-destination
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-destination (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-execution-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-execution-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-fencing-token
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-fencing-token (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-lease-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-lease-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-record (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-schedule-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-schedule-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-envelope-trace-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-envelope-trace-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-outcome-acceptance-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-outcome-acceptance-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-outcome-envelope
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-outcome-envelope (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-outcome-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-outcome-reason (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-outcome-retryable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-outcome-retryable-p (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-dispatch-outcome-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-dispatch-outcome-status (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-outcome-success-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-outcome-success-p (STAR.ACTORS::OUTCOME))
+#+end_src
+Undocumented.
+*** target-record-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-actor (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-delay
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-delay (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-document (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-id (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-lease-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-lease-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-lease-owner
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-lease-owner (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-options
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-options (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-recurring-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-recurring-p (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-revision
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-revision (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** target-record-target
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-record-target (SB-KERNEL:INSTANCE))
+#+end_src
+Undocumented.
+*** validate-actor-event
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(validate-actor-event (STAR.ACTORS::EVENT &OPTIONAL STAR.ACTORS::PAYLOAD))
+#+end_src
+Undocumented.
+*** validate-target-dispatch-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(validate-target-dispatch-record (STAR.ACTORS::RECORD &KEY (STAR.ACTORS::NOW (STAR.DOCUMENTS:UTC-NOW))
+ (STAR.ACTORS::MAX-DELAY STAR.ACTORS:*TARGET-MAX-DELAY-SECONDS*)))
+#+end_src
+Validate identity, schedule, recurrence, transient policy, and deadline.
+
+* Generic Functions
+*** event-actor-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-actor-name (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-component
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-component (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-details
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-details (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-generation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-generation (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-id (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-source-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-source-document (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-timestamp
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-timestamp (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-trace-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-trace-id (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** event-type
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(event-type (SB-PCL::OBJECT))
+#+end_src
+Undocumented.
+*** invalid-actor-event-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(invalid-actor-event-reason (CONDITION))
+#+end_src
+Undocumented.
+*** invalid-target-dispatch-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(invalid-target-dispatch-reason (CONDITION))
+#+end_src
+Undocumented.
+*** invalid-target-document-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(invalid-target-document-id (CONDITION))
+#+end_src
+Undocumented.
+*** invalid-target-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(invalid-target-reason (CONDITION))
+#+end_src
+Undocumented.
+*** target-destination-unavailable-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-destination-unavailable-reason (CONDITION))
+#+end_src
+Undocumented.
+*** target-ingress-overloaded-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(target-ingress-overloaded-reason (CONDITION))
+#+end_src
+Undocumented.
+
+* Macros
+*** define-actor
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(define-actor ((STAR.ACTORS::NAME SENTO.ACTOR-CONTEXT:SYSTEM &KEY (STAR.ACTORS::REGISTER T))
+ &BODY STAR.ACTORS::BODY))
+#+end_src
+Undocumented.
+*** with-json
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src common-lisp
+(with-json (STAR.ACTORS::JOBJECT &BODY STAR.ACTORS::BODY))
+#+end_src
+Undocumented.

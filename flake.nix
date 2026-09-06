@@ -7,9 +7,13 @@
       url = "github:lost-rob0t/star-cl";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    org-doc = {
+      url = "git+https://git.starintel.actor/nsaspy/org-doc";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, star-cl }:
+  outputs = { self, nixpkgs, star-cl, org-doc }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
@@ -20,6 +24,14 @@
 
       starintel = star-cl.packages.${system}.starintel;
       cms-ulid  = star-cl.packages.${system}.cms-ulid;
+
+      org-doc-lib = pkgs.sbcl.buildASDFSystem rec {
+        pname = "org-doc";
+        version = "0.1.0";
+        lispSystems = [ "org-doc" "org-doc/cli" ];
+        src = org-doc;
+        lispLibs = [ ];
+      };
 
       cl-couch = pkgs.sbcl.buildASDFSystem rec {
         pname = "cl-couch";
@@ -103,6 +115,7 @@ EOF
 
       sbcl' = pkgs.sbcl.withOverrides (self: super: {
         inherit starintel cms-ulid cl-couch cl-rabbit nhooks lack-middleware-accesslog;
+        inherit org-doc-lib;
 
         # expose both names to the package set
         sento     = sentoPkg;
@@ -283,6 +296,29 @@ EOF
       sbcl-integration-test-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-gserver-integration-tests ]);
       sbcl-cli-wrapped = sbcl'.withPackages (ps: with ps; [ star-cli-lib ]);
+      sbcl-docs-wrapped = sbcl'.withPackages
+        (ps: with ps; [ starintel-gserver org-doc-lib ]);
+
+      gen-api-docs = pkgs.writeShellApplication {
+        name = "gen-api-docs";
+        runtimeInputs = [ sbcl-docs-wrapped ];
+        text = ''
+          export ORG_DOC_SYSTEM="starintel-gserver"
+          export ORG_DOC_OUT="''${ORG_DOC_OUT:-doc/api}"
+          export STARINTEL_SOURCE_ROOT="${./.}"
+          HOME="$(mktemp -d)"
+          export HOME
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export TMPDIR="/tmp"
+          export TMP="/tmp"
+          export TEMP="/tmp"
+          export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval "(require :asdf)" \
+            --eval "(asdf:load-system :org-doc)" \
+            --eval "(org-doc/cli:main)"
+        '';
+      };
 
       make-test-runner = name: wrapped: asdfSystem: extraRuntimeInputs: prelude:
         pkgs.writeShellApplication {
@@ -501,6 +537,8 @@ PY
       packages.${system} = {
         default = star-server-bin;
 
+        gen-api-docs = gen-api-docs;
+        sbcl-docs-wrapped = sbcl-docs-wrapped;
         star-unit-tests = unit-test-runner;
         star-smoke = unit-test-runner;
         star-integration-tests = integration-test-runner;
@@ -550,10 +588,18 @@ PY
         star-migrations-lib = star-migrations-lib;
       };
 
-      apps.${system}.load-images = {
-        type = "app";
-        program = "${containerImages.loadImages}/bin/load-starintel-images";
+      apps.${system} = {
+        load-images = {
+          type = "app";
+          program = "${containerImages.loadImages}/bin/load-starintel-images";
+        };
+
+        gen-api-docs = {
+          type = "app";
+          program = "${gen-api-docs}/bin/gen-api-docs";
+        };
       };
+
 
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [ sbcl-wrapped pkg-config ] ++ runtimeLibs;

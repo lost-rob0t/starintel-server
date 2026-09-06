@@ -170,7 +170,11 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
               value)))
 
 (defun parse-api-key (api-key)
-  "Return credential id and decoded secret. Signal one uniform failure otherwise."
+  "Parse a presented API key string into (VALUES CREDENTIAL-ID SECRET-OCTETS).
+
+Key format: =star_sk_v1_<credential-id>_<hex-secret>=.  Any malformed
+input signals the same uniform =authentication-error=, so timing and
+error shapes do not leak which part failed."
   (handler-case
       (let ((parts (and (stringp api-key)
                         (split-on-character api-key #\_))))
@@ -237,6 +241,15 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
 
 (defun authenticate-api-key (api-key correlation-id deadline
                               &key (store *credential-store*))
+  "Authenticate a presented API key; return a security context on success.
+
+- API-KEY :: the raw =star_sk_v1_...= string
+- CORRELATION-ID :: request trace id carried into the context
+- DEADLINE :: request deadline (universal time or nil)
+- STORE :: credential store; defaults to =*credential-store*=
+
+On any failure signals a uniform =authentication-error= (never a plain
+error), so callers can map it to 401 without leaking detail."
   (unless store
     (signal-authentication-failure))
   (multiple-value-bind (credential-id secret-octets)
@@ -260,6 +273,11 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
 
 (defun authenticate-authorization-header (authorization-header correlation-id deadline
                                           &key (store *credential-store*))
+  "Authenticate an =Authorization: Bearer ...= header value.
+
+Extracts the token with =bearer-token= and delegates to
+=authenticate-api-key=.  Returns the security context or signals
+=authentication-error=."
   (authenticate-api-key
    (bearer-token authorization-header)
    correlation-id
@@ -334,6 +352,12 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
 (defun create-api-key (owner principal-type scopes
                        &key expires-in-seconds rotation-parent-id
                          (store *credential-store*))
+  "Mint a new API key for OWNER.
+
+Returns (VALUES RECORD RAW-KEY); the raw key is the full
+=star_sk_v1_...= string, shown once and never stored verbatim (only a
+peppered verifier is persisted).  Signals =credential-lifecycle-error=
+for invalid owner, expiry or missing store."
   (unless (and (stringp owner) (plusp (length owner)))
     (signal-lifecycle-error
      "invalid_owner"
@@ -354,6 +378,12 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
 
 (defun bootstrap-api-key (presented-secret owner
                           &key (store *credential-store*))
+  "Create the first administrator key, guarded by the bootstrap secret.
+
+- PRESENTED-SECRET must constant-time-match =*auth-bootstrap-secret*=
+- fails with =bootstrap_complete= once any credential exists
+
+Returns (VALUES RECORD RAW-KEY) like =create-api-key=."
   (unless store
     (signal-lifecycle-error
      "auth_store_unavailable"
@@ -384,6 +414,12 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
 
 (defun rotate-api-key (credential-id overlap-seconds
                        &key (store *credential-store*))
+  "Rotate CREDENTIAL-ID: mint a replacement and phase out the old key.
+
+The old key stays valid for OVERLAP-SECONDS (bounded by
+=*auth-rotation-overlap-max-seconds*=) then is superseded.  If the
+store update fails the replacement is revoked so no untracked key
+survives.  Returns (VALUES REPLACEMENT-RECORD RAW-KEY)."
   (let* ((overlap (validate-overlap-seconds overlap-seconds))
          (record (and store
                       (credential-store-get store credential-id))))
@@ -418,7 +454,10 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
       (values replacement raw-key))))
 
 (defun revoke-api-key (credential-id &key (store *credential-store*))
-  (let ((record (and store
+  "Immediately revoke the credential CREDENTIAL-ID.
+
+Revoked keys never authenticate again; contrast =disable-api-key=,
+which permits temporary suspension."  (let ((record (and store
                      (credential-store-get store credential-id))))
     (unless record
       (signal-lifecycle-error
@@ -429,7 +468,10 @@ Verifier inputs are fixed-length SHA-256 values at the authentication boundary."
     (credential-store-update store record)))
 
 (defun disable-api-key (credential-id &key (store *credential-store*))
-  (let ((record (and store
+  "Temporarily suspend the credential CREDENTIAL-ID.
+
+A disabled key can be re-enabled by returning its status to
+=active= via the store; use =revoke-api-key= for permanent removal."  (let ((record (and store
                      (credential-store-get store credential-id))))
     (unless record
       (signal-lifecycle-error

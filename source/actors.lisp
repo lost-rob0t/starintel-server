@@ -27,6 +27,11 @@
 ;;;; Register an actor for recieving target inputs
 ;;;; Actors must be registered with actor-index before they will get any target messages.
 (defun register-actor (actor-name actor-symbol)
+  "Register ACTOR-SYMBOL under ACTOR-NAME in the actor index.
+
+Actors must be registered here before they receive any target
+messages; the target router resolves destinations through
+=get-dest-actor=."
   (log:info "Registering actor: ~a -> ~a" actor-name actor-symbol)
   (agent-update *actor-index-agent*
                 (lambda (current-dict)
@@ -235,6 +240,10 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; The target timer handles recurring targets.
 (defvar *target-timer* nil "simple wheel timer for targets")
 (defun start-target-timer ()
+  "Start the wheel timer backing recurring targets.
+
+Resolution 10s, max size 1000 scheduled entries.  See also
+=*target-timer*=."
   (log:info "Starting target timer - resolution: 10 max-size: 1000")
   (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000))
   (log:info "Target timer started successfully"))
@@ -323,6 +332,12 @@ and normalize it to JSON.
 
 
 (defun start-actors (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port)
+  "Boot the actor system and every well-known actor.
+
+Creates the sento actor system, the Rabbit producer agent, the
+CouchDB agent, the actor index and the target timer, then starts
+consumers.  Connection parameters default to the =star:*rabbit-*=
+settings."
   (start-actor-system)
   (setf *producer-agent* (make-producer-agent (star.producers:make-producer :name "actor-producer"
                                                                             :exchange-name "documents"
