@@ -30,10 +30,11 @@ jobs:
         run: |
           # Production stays unprivileged. CI temporarily uses root only to
           # install ephemeral test dependencies into the disposable container.
+          # Tests are mounted outside /app, so explicitly retain package pytest config.
           docker run --rm --user root --entrypoint /bin/bash \
             -v "$PWD/actors/website/tests:/tests:ro" \
             starintel/actor-wef-ygl:ci \
-            -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -q /tests'
+            -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -c /app/pyproject.toml -p no:cacheprovider -q /tests'
       - name: Compose model
         run: |
           mkdir -p secrets
