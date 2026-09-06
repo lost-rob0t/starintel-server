@@ -8,7 +8,7 @@
 LISP ?= sbcl
 EMACS ?= emacs
 
-.PHONY: all test integration-test test-emacs images load-images compose-config stack-test docs-api
+.PHONY: all test integration-test test-emacs images load-images compose-config stack-test docs-api doc-coverage
 
 all: test
 
@@ -17,6 +17,9 @@ test:
 
 docs-api:
 	nix run .#gen-api-docs
+
+doc-coverage:
+	nix run .#doc-coverage-test
 
 integration-test:
 	nix run .#star-integration-tests

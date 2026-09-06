@@ -1,21 +1,39 @@
 (in-package :star.actors)
 
-(defparameter *target-max-delay-seconds* 31536000)
-(defparameter *active-target-schedules* (make-hash-table :test #'equal))
+(defparameter *target-max-delay-seconds* 31536000
+  "Upper bound on a scheduled target delay.")
+(defparameter *active-target-schedules* (make-hash-table :test #'equal)
+  "Table of live target schedules keyed by schedule id.")
 
 (defstruct (target-destination-handle
              (:constructor make-target-destination-handle
                  (kind name &key component routing-key compatibility-routing-keys)))
+  "Resolved destination for a target dispatch (kind + address)."
   kind
   name
   component
   routing-key
   compatibility-routing-keys)
 
+;; Accessor documentation for target-destination-handle
+(setf (documentation 'TARGET-DESTINATION-HANDLE-COMPATIBILITY-ROUTING-KEYS 'function)
+"Legacy routing keys kept for the destination handle.")
+(setf (documentation 'TARGET-DESTINATION-HANDLE-COMPONENT 'function)
+"The =component= slot of =target-destination-handle=.")
+(setf (documentation 'TARGET-DESTINATION-HANDLE-KIND 'function)
+"The =kind= slot of =target-destination-handle=.")
+(setf (documentation 'TARGET-DESTINATION-HANDLE-NAME 'function)
+"The =name= slot of =target-destination-handle=.")
+(setf (documentation 'TARGET-DESTINATION-HANDLE-ROUTING-KEY 'function)
+"The =routing-key= slot of =target-destination-handle=.")
+
+
+
 (defstruct (target-dispatch-envelope
              (:constructor %make-target-dispatch-envelope
                  (record destination schedule-id execution-id attempt trace-id
                   lease-id fencing-token deadline)))
+  "Envelope carrying one target dispatch through the runtime."
   record
   destination
   schedule-id
@@ -26,35 +44,111 @@
   fencing-token
   deadline)
 
+;; Accessor documentation for target-dispatch-envelope
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-ATTEMPT 'function)
+"The =attempt= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-DEADLINE 'function)
+"Latest acceptable execution time for the envelope.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-DESTINATION 'function)
+"The =destination= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-EXECUTION-ID 'function)
+"The =execution-id= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-FENCING-TOKEN 'function)
+"The =fencing-token= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-LEASE-ID 'function)
+"The =lease-id= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-RECORD 'function)
+"The =record= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-SCHEDULE-ID 'function)
+"The =schedule-id= slot of =target-dispatch-envelope=.")
+(setf (documentation 'TARGET-DISPATCH-ENVELOPE-TRACE-ID 'function)
+"The =trace-id= slot of =target-dispatch-envelope=.")
+
+
+
 (defstruct (target-dispatch-outcome
              (:constructor make-target-dispatch-outcome
                  (status &key reason acceptance-id envelope retryable-p)))
+  "Outcome record of one dispatch attempt."
   status
   reason
   acceptance-id
   envelope
   (retryable-p nil))
 
+;; Accessor documentation for target-dispatch-outcome
+(setf (documentation 'TARGET-DISPATCH-OUTCOME-ACCEPTANCE-ID 'function)
+"The =acceptance-id= slot of =target-dispatch-outcome=.")
+(setf (documentation 'TARGET-DISPATCH-OUTCOME-ENVELOPE 'function)
+"The =envelope= slot of =target-dispatch-outcome=.")
+(setf (documentation 'TARGET-DISPATCH-OUTCOME-REASON 'function)
+"The =reason= slot of =target-dispatch-outcome=.")
+(setf (documentation 'TARGET-DISPATCH-OUTCOME-RETRYABLE-P 'function)
+"The =retryable-p= slot of =target-dispatch-outcome=.")
+(setf (documentation 'TARGET-DISPATCH-OUTCOME-STATUS 'function)
+"The =status= slot of =target-dispatch-outcome=.")
+
+
+
 (define-condition invalid-target-dispatch (error)
   ((reason :initarg :reason :reader invalid-target-dispatch-reason))
   (:report
    (lambda (condition stream)
      (format stream "Invalid target dispatch: ~a"
-             (invalid-target-dispatch-reason condition)))))
+             (invalid-target-dispatch-reason condition))))
+  (:documentation "Signalled when a target dispatch envelope fails validation."))
+
+;; Accessor documentation for invalid-target-dispatch
+(setf (documentation 'INVALID-TARGET-DISPATCH-REASON 'function)
+"The =reason= slot of =invalid-target-dispatch=.")
+
+
+(setf (documentation 'INVALID-TARGET-DISPATCH-REASON 'function)
+"The =invalid-target-dispatch-reason= slot of =invalid-target-dispatch=.")
+(setf (documentation 'INVALID-TARGET-DISPATCH-REASON 'function)
+"The =invalid-target-dispatch-reason= slot of =invalid-target-dispatch=.")
+(setf (documentation 'INVALID-TARGET-DISPATCH-REASON 'function)
+"The =invalid-target-dispatch-reason= slot of =invalid-target-dispatch=.")
 
 (define-condition target-ingress-overloaded (error)
   ((reason :initarg :reason :reader target-ingress-overloaded-reason))
   (:report
    (lambda (condition stream)
      (format stream "Target ingress overloaded: ~a"
-             (target-ingress-overloaded-reason condition)))))
+             (target-ingress-overloaded-reason condition))))
+  (:documentation "Signalled when the target ingress is above its load threshold."))
+
+;; Accessor documentation for target-ingress-overloaded
+(setf (documentation 'TARGET-INGRESS-OVERLOADED-REASON 'function)
+"The =reason= slot of =target-ingress-overloaded=.")
+
+
+(setf (documentation 'TARGET-INGRESS-OVERLOADED-REASON 'function)
+"The =target-ingress-overloaded-reason= slot of =target-ingress-overloaded=.")
+(setf (documentation 'TARGET-INGRESS-OVERLOADED-REASON 'function)
+"The =target-ingress-overloaded-reason= slot of =target-ingress-overloaded=.")
+(setf (documentation 'TARGET-INGRESS-OVERLOADED-REASON 'function)
+"The =target-ingress-overloaded-reason= slot of =target-ingress-overloaded=.")
 
 (define-condition target-destination-unavailable (error)
   ((reason :initarg :reason :reader target-destination-unavailable-reason))
   (:report
    (lambda (condition stream)
      (format stream "Target destination unavailable: ~a"
-             (target-destination-unavailable-reason condition)))))
+             (target-destination-unavailable-reason condition))))
+  (:documentation "Signalled when the resolved destination cannot accept work."))
+
+;; Accessor documentation for target-destination-unavailable
+(setf (documentation 'TARGET-DESTINATION-UNAVAILABLE-REASON 'function)
+"The =reason= slot of =target-destination-unavailable=.")
+
+
+(setf (documentation 'TARGET-DESTINATION-UNAVAILABLE-REASON 'function)
+"The =target-destination-unavailable-reason= slot of =target-destination-unavailable=.")
+(setf (documentation 'TARGET-DESTINATION-UNAVAILABLE-REASON 'function)
+"The =target-destination-unavailable-reason= slot of =target-destination-unavailable=.")
+(setf (documentation 'TARGET-DESTINATION-UNAVAILABLE-REASON 'function)
+"The =target-destination-unavailable-reason= slot of =target-destination-unavailable=.")
 
 (defun target-dispatch-digest (text)
   (ironclad:byte-array-to-hex-string
@@ -67,12 +161,14 @@
        (cl-ppcre:scan "^[A-Za-z0-9][A-Za-z0-9._:-]*$" name)))
 
 (defun canonical-target-routing-key (actor-name)
+  "Compute the canonical RabbitMQ routing key for a target."
   (unless (valid-target-actor-name-p actor-name)
     (error 'invalid-target-dispatch
            :reason (format nil "invalid actor identity ~s" actor-name)))
   (format nil "documents.target.dispatch.~a" (string-downcase actor-name)))
 
 (defun compatibility-target-routing-keys (actor-name)
+  "Legacy routing keys accepted alongside the canonical key."
   (list (format nil "actors.~a.new.target" (string-downcase actor-name))))
 
 (defun compatibility-target-ingress-routing-key (actor-name)
@@ -147,6 +243,7 @@
 
 (defun make-target-dispatch-envelope
     (record &key destination (attempt 0) trace-id lease-id (fencing-token 1))
+  "Build a validated dispatch envelope for a target."
   (validate-target-dispatch-record record)
   (let* ((schedule-id (target-record-schedule-id record))
          (resolved
@@ -179,10 +276,12 @@
             (target-dispatch-envelope-record envelope)))))
 
 (defun target-acceptance-id (schedule-id)
+  "Stable identifier of a target acceptance record."
   (format nil "target-acceptance:~a"
           (target-dispatch-digest schedule-id)))
 
 (defun target-acceptance-document (envelope)
+  "The persisted acceptance document for a target."
   (let* ((record (target-dispatch-envelope-record envelope))
          (destination (target-dispatch-envelope-destination envelope))
          (document (jsown:empty-object)))
@@ -227,6 +326,7 @@
     document))
 
 (defun target-acceptance-equivalent-p (left right)
+  "True when two acceptance documents describe the same target."
   (and (string= (jsown:val left "schedule_id")
                 (jsown:val right "schedule_id"))
        (string= (jsown:val left "fingerprint")
@@ -465,6 +565,7 @@
         (values 0 nil))))
 
 (defun accept-target-delivery (consumer document)
+  "Record an acceptance decision for a target delivery."
   (handler-case
       (let ((record (parse-target-record document)))
         (multiple-value-bind (attempt trace-id)
@@ -476,6 +577,7 @@
        :invalid :reason (princ-to-string condition)))))
 
 (defun target-outcome-success-p (outcome)
+  "True when a dispatch outcome counts as successful."
   (member (target-dispatch-outcome-status outcome)
           '(:accepted :duplicate)
           :test #'eq))

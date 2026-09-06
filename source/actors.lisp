@@ -40,6 +40,7 @@ messages; the target router resolves destinations through
 
 ;;;; Return the destination actor symbol by actor name string
 (defun get-dest-actor (actor)
+  "Resolve a destination actor symbol by its registered name."
   (let ((dest (serapeum:@  (agent-get *actor-index-agent* #'identity) actor)))
     (log:debug "Looking up destination actor for: ~a -> ~a" actor dest)
     dest))
@@ -251,6 +252,7 @@ Resolution 10s, max size 1000 scheduled entries.  See also
 
 
 (defmacro with-json (jobject &body body)
+  "Macro exposing =val=, =dataset=, =dtype= readers over a JSON object."
   `(macrolet ((val (key) `(jsown:val-safe ,jobject ,key))
               (dataset () `(jsown:val ,jobject "datast"))
               (date-added () `(jsown:val ,jobject "dateAdded"))
@@ -264,6 +266,7 @@ Resolution 10s, max size 1000 scheduled entries.  See also
 
 ;;;; Define a actor and its start function
 (defmacro define-actor ((name system &key (register t)) &body body)
+  "Define an actor message handler and register it in the actor index."
   (let ((start-fn-name (intern (format nil "START-~A" (str:replace-all "*" "" (symbol-name name))))))
     `(progn
        (defvar ,name nil)
@@ -287,7 +290,8 @@ Resolution 10s, max size 1000 scheduled entries.  See also
               :pinned))
 
 (defvar *producer-lock* "")
-(defvar *producer-agent* nil)
+(defvar *producer-agent* nil
+  "Sento agent pinning the RabbitMQ producer connection to one thread.")
 
 (defparameter *publish-timeout-seconds* 5
   "Maximum time allowed for a publish operation before failing fast.

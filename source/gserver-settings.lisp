@@ -89,7 +89,7 @@ Never log this value; session renewal relies on it.")
           (uiop:directory-files
            (uiop:merge-pathnames*
             "views/"
-            (asdf:system-source-directory :starintel-gserver)))))
+  (asdf:system-source-directory :starintel-gserver)))))
     (loop for file in files
           collect
           (with-open-file (stream file)
@@ -187,9 +187,11 @@ Clients may send =X-Request-Timeout-Ms= up to =*auth-max-request-timeout-ms*=.")
 
 ;;;; OAuth authorization-code credentials
 (defparameter *oauth-authorization-code-seconds*
-  (environment-integer "STAR_OAUTH_AUTHORIZATION_CODE_SECONDS" 300))
+  (environment-integer "STAR_OAUTH_AUTHORIZATION_CODE_SECONDS" 300)
+  "Lifetime of issued OAuth authorization codes.")
 (defparameter *oauth-access-token-seconds*
-  (environment-integer "STAR_OAUTH_ACCESS_TOKEN_SECONDS" 900))
+  (environment-integer "STAR_OAUTH_ACCESS_TOKEN_SECONDS" 900)
+  "Lifetime of issued OAuth access tokens.")
 
 ;;;; Human users
 (defparameter *auth-initial-username*

@@ -18,9 +18,11 @@
     :reader memory-store-oauth-access-tokens)
    (lock
     :initform (bt:make-lock "memory-credential-store")
-    :reader memory-store-lock)))
+    :reader memory-store-lock))
+  (:documentation "In-memory credential store."))
 
 (defun make-memory-credential-store ()
+  "Build an in-memory credential store (tests and tools)."
   (make-instance 'memory-credential-store))
 
 (defun copy-record-or-nil (record)
@@ -73,7 +75,8 @@
     :reader couchdb-store-pool)
    (database
     :initarg :database
-    :reader couchdb-store-database)))
+    :reader couchdb-store-database))
+  (:documentation "Credential store backed by the CouchDB auth database."))
 
 (defun make-auth-couchdb-pool ()
   (anypool:make-pool
@@ -97,6 +100,7 @@
    :max-idle-count 5))
 
 (defun make-couchdb-credential-store ()
+  "Build a CouchDB backed credential store."
   (make-instance
    'couchdb-credential-store
    :pool (make-auth-couchdb-pool)

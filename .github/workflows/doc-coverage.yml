@@ -1,0 +1,36 @@
+name: Docstring coverage
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  doc-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Verify every exported symbol has a docstring
+        run: nix run .#doc-coverage-test
+
+      - name: Regenerate API reference (org)
+        run: nix run .#gen-api-docs
+
+      - name: Fail if generated docs drifted from source
+        run: |
+          if ! git diff --exit-code -- doc/api/; then
+            echo "::error::doc/api/ is stale; run 'make docs-api' and commit."
+            exit 1
+          fi

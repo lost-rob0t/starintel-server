@@ -6,12 +6,14 @@
 
 
 (defun format-key (key)
+  "Convert a slot name into its CouchDB JSON key."
   (if (str:starts-with? "_" key)
       (string-downcase key)
       (str:camel-case key)))
 
 
 (defun as-json (object &key (format-fn #'format-key))
+  "Serialize a spec object into its JSON document form."
   (let ((json-obj (jsown:empty-object)))
     (loop for slot in (mapcar #'closer-mop:slot-definition-name
                               (closer-mop:class-slots (class-of object)))
@@ -36,6 +38,7 @@
                (t (write-char (char-downcase char) s))))))
 
 (defun from-json (json-obj class-name &key (format-fn #'format-key))
+  "Populate a spec object from its JSON document form."
   (let* ((object (make-instance class-name))
          (class (class-of object)))
     (loop for slot in (sb-mop:class-slots class)

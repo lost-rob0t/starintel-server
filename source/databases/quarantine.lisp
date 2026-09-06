@@ -12,6 +12,7 @@
     saved))
 
 (defun couchdb-get-quarantine-record (client database quarantine-id)
+  "Load one quarantine record by id."
   (jsown:with-injective-reader
     (jsown:parse
      (cl-couch:get-document client database quarantine-id))))
@@ -31,6 +32,7 @@
 
 (defun update-quarantine-record
     (client database quarantine-id updater &key (max-attempts 8))
+  "Update a quarantine record in place."
   (loop for attempt from 1 to max-attempts
         do
            (let* ((current
@@ -55,6 +57,7 @@
 
 (defun mark-quarantine-replayed
     (client database quarantine-id new-trace-id)
+  "Mark a quarantine record as successfully replayed."
   (update-quarantine-record
    client database quarantine-id
    (lambda (record)

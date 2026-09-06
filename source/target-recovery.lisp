@@ -4,6 +4,7 @@
              (:constructor %make-target-record
                  (id actor target delay recurring-p options document
                   revision lease-owner lease-expires-at)))
+  "A scheduled target: what to run, where, and when."
   id
   actor
   target
@@ -15,12 +16,47 @@
   lease-owner
   lease-expires-at)
 
+;; Accessor documentation for target-record
+(setf (documentation 'TARGET-RECORD-ACTOR 'function)
+"The =actor= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-DELAY 'function)
+"The =delay= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-DOCUMENT 'function)
+"The =document= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-ID 'function)
+"The =id= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-LEASE-EXPIRES-AT 'function)
+"Expiration of the lease guarding this target record.")
+(setf (documentation 'TARGET-RECORD-LEASE-OWNER 'function)
+"The =lease-owner= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-OPTIONS 'function)
+"The =options= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-RECURRING-P 'function)
+"The =recurring-p= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-REVISION 'function)
+"The =revision= slot of =target-record=.")
+(setf (documentation 'TARGET-RECORD-TARGET 'function)
+"The =target= slot of =target-record=.")
+
+
+
 (defstruct (target-command
              (:constructor make-target-command
                  (record &key (first-time-p t) (recovered-p nil))))
+  "Command message consumed by target actors."
   record
   (first-time-p t)
   (recovered-p nil))
+
+;; Accessor documentation for target-command
+(setf (documentation 'TARGET-COMMAND-FIRST-TIME-P 'function)
+"The =first-time-p= slot of =target-command=.")
+(setf (documentation 'TARGET-COMMAND-RECORD 'function)
+"The =record= slot of =target-command=.")
+(setf (documentation 'TARGET-COMMAND-RECOVERED-P 'function)
+"The =recovered-p= slot of =target-command=.")
+
+
 
 (define-condition invalid-persisted-target (error)
   ((document-id
@@ -33,7 +69,16 @@
    (lambda (condition stream)
      (format stream "Invalid persisted target ~a: ~a"
              (invalid-target-document-id condition)
-             (invalid-target-reason condition)))))
+             (invalid-target-reason condition))))
+  (:documentation "Signalled when a persisted target document cannot be reloaded safely."))
+
+;; Accessor documentation for invalid-persisted-target
+(setf (documentation 'INVALID-TARGET-DOCUMENT-ID 'function)
+"The =document-id= slot of =invalid-persisted-target=.")
+(setf (documentation 'INVALID-TARGET-REASON 'function)
+"The =reason= slot of =invalid-persisted-target=.")
+
+
 
 (defparameter *recovered-target-fingerprints*
   (make-hash-table :test #'equal)

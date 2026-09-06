@@ -3,6 +3,7 @@
 (defparameter +user-kind+ "user")
 
 (defstruct user-record
+  "Persisted record of one human user."
   username
   principal-type
   scopes
@@ -13,13 +14,37 @@
   must-change-password
   revision)
 
-(defgeneric user-store-get (store username))
-(defgeneric user-store-put (store record))
-(defgeneric user-store-update (store record))
-(defgeneric user-store-list (store))
-(defgeneric user-store-count (store))
+;; Accessor documentation for user-record
+(setf (documentation 'USER-RECORD-CREATED-AT 'function)
+"The =created-at= slot of =user-record=.")
+(setf (documentation 'USER-RECORD-MUST-CHANGE-PASSWORD 'function)
+"The =must-change-password= slot of =user-record=.")
+(setf (documentation 'USER-RECORD-PASSWORD-UPDATED-AT 'function)
+"The =password-updated-at= slot of =user-record=.")
+(setf (documentation 'USER-RECORD-PRINCIPAL-TYPE 'function)
+"The =principal-type= slot of =user-record=.")
+(setf (documentation 'USER-RECORD-SCOPES 'function)
+"The =scopes= slot of =user-record=.")
+(setf (documentation 'USER-RECORD-STATUS 'function)
+"The =status= slot of =user-record=.")
+(setf (documentation 'USER-RECORD-USERNAME 'function)
+"The =username= slot of =user-record=.")
+
+
+
+(defgeneric user-store-get (store username)
+  (:documentation "Fetch a user record by normalized username, or nil."))
+(defgeneric user-store-put (store record)
+  (:documentation "Insert a new user record."))
+(defgeneric user-store-update (store record)
+  (:documentation "Update an existing user record."))
+(defgeneric user-store-list (store)
+  (:documentation "List every user record in the store."))
+(defgeneric user-store-count (store)
+  (:documentation "Number of users in the store."))
 
 (defun normalize-username (username)
+  "Canonicalize a username; signal on invalid characters."
   (unless (and (stringp username)
                (<= 1 (length username) 64)
                (every (lambda (character)
@@ -70,6 +95,7 @@
   (and record (eq :active (user-record-status record))))
 
 (defun user-metadata-json (record)
+  "Serialize user metadata (no secrets) to JSON."
   (jsown:new-js
     ("username" (user-record-username record))
     ("principal_type" (user-record-principal-type record))
@@ -85,6 +111,7 @@
                       (must-change-password t)
                       allow-weak-password
                       (store *credential-store*))
+  "Create a human user with a hashed password."
   (unless store
     (signal-lifecycle-error
      "auth_store_unavailable"
@@ -112,6 +139,7 @@
       (user-store-put store record))))
 
 (defun list-user-metadata (&key (store *credential-store*))
+  "Metadata for every stored user."
   (unless store
     (signal-lifecycle-error
      "auth_store_unavailable"
@@ -120,6 +148,7 @@
 
 (defun authenticate-user-password (username password
                                     &key (store *credential-store*))
+  "Verify a username/password pair; return the user record."
   (unless store
     (signal-authentication-failure))
   (handler-case
@@ -190,6 +219,7 @@ By default forces a change at next login via =:must-change-password=."
      :store store)))
 
 (defun ensure-initial-user (&key (store *credential-store*))
+  "Create the bootstrapped user if the store is empty."
   (unless store
     (signal-lifecycle-error
      "auth_store_unavailable"

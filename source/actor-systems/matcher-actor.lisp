@@ -37,6 +37,31 @@
 
   (:documentation "Document pattern matcher, based on a match-fn you supply. When the handler returns non nill, the subs actors are then sent a message with the message being the document"))
 
+;; Accessor documentation for pattern
+(setf (documentation 'MATCH-FN 'function)
+  "The matching function of =pattern=: document in, targets out.")
+(setf (documentation 'TRANSIENTP 'function)
+  "True when =pattern= creates transient targets that are not persisted.")
+(setf (documentation 'PATTERN-NAME 'function)
+  "The =name= slot of =pattern=.")
+(setf (documentation 'SUBCRIPTIONS 'function)
+  "The =subcriptions= slot of =pattern=: extracted fields this pattern watches.")
+
+
+;; Accessor documentation for pattern
+(setf (documentation 'MATCH-FN 'function)
+"The =match-fn= slot of =pattern=.")
+(setf (documentation 'PATTERN-NAME 'function)
+"The =name= slot of =pattern=.")
+(setf (documentation 'SUBCRIPTIONS 'function)
+"The =subs= slot of =pattern=.")
+(setf (documentation 'TRANSIENTP 'function)
+"The =transient= slot of =pattern=.")
+
+
+(setf (documentation 'PATTERN-NAME 'function)
+"The =pattern-name= slot of =pattern=.")
+
 
 
 (defgeneric notify-subs (self message)
@@ -51,23 +76,28 @@
           do (act:tell actor message))))
 
 (defmacro define-pattern ((name subs) &body body)
+  "Define a named pattern: NAME with SUBS substitutions; BODY builds the document."
   `(make-instance 'pattern :name ,name  :subscriptions ,subs
                            :match-fn ,@body))
 (defvar *pattern-lock* (bt:make-lock "patterns"))
 
 (defun add-pattern (pattern)
+  "Register PATTERN with the matcher actor so extracted fields are routed."
   (bt:with-lock-held (*pattern-lock*)
     (push pattern star:*document-patterns*)))
 
 
-(defparameter *url-regex* (ppcre:create-scanner "https?:\\/\\/(www\\.)?\[-a-zA-Z0-9@:%.\_\\+~#=\]{1,256}\\.\[a-zA-Z0-9()\]{1,6}\\b(\[-a-zA-Z0-9()@:%\_\\+.~#?&//=\]\*)"))
+(defparameter *url-regex* (ppcre:create-scanner "https?:\\/\\/(www\\.)?\[-a-zA-Z0-9@:%.\_\\+~#=\]{1,256}\\.\[a-zA-Z0-9()\]{1,6}\\b(\[-a-zA-Z0-9()@:%\_\\+.~#?&//=\]\*)")
+  "Regular expression used by the URL extractor to find URLs in documents.")
 
-(defparameter *url-extractor-fields* '("content" "bio"))
+(defparameter *url-extractor-fields* '("content" "bio")
+  "Document fields scanned by the URL extractor.")
 
 (defparameter *url-extractor* nil "")
 
 
 (defun start-url-extractor ()
+  "Start the URL extractor actor over every registered pattern."
   (setf *url-extractor* (actor-of *sys*
                                   :name "url-extractor"
                                   :receive

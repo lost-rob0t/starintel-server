@@ -15,13 +15,13 @@ A actor that implements a simple way to run code against documents matching a co
 :KIND: var
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-Undocumented.
+Document fields scanned by the URL extractor.
 *** *url-regex*
 :PROPERTIES:
 :KIND: var
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-Undocumented.
+Regular expression used by the URL extractor to find URLs in documents.
 
 * Types and Classes
 *** pattern
@@ -41,13 +41,13 @@ Document pattern matcher, based on a match-fn you supply. When the handler retur
 #+begin_src lisp
 (add-pattern (STAR.ACTORS.MATCHER:PATTERN))
 #+end_src
-Undocumented.
+Register PATTERN with the matcher actor so extracted fields are routed.
 *** start-url-extractor
 :PROPERTIES:
 :KIND: fn
 :PACKAGE: STAR.ACTORS.MATCHER
 :END:
-Undocumented.
+Start the URL extractor actor over every registered pattern.
 
 * Generic Functions
 *** match-fn
@@ -58,7 +58,7 @@ Undocumented.
 #+begin_src lisp
 (match-fn (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =match-fn= slot of =pattern=.
 *** notify-subs
 :PROPERTIES:
 :KIND: fn
@@ -76,7 +76,7 @@ Notify subscribers about matched documents.
 #+begin_src lisp
 (pattern-name (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =pattern-name= slot of =pattern=.
 *** subcriptions
 :PROPERTIES:
 :KIND: fn
@@ -85,7 +85,7 @@ Undocumented.
 #+begin_src lisp
 (subcriptions (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =subs= slot of =pattern=.
 *** transientp
 :PROPERTIES:
 :KIND: fn
@@ -94,7 +94,7 @@ Undocumented.
 #+begin_src lisp
 (transientp (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =transient= slot of =pattern=.
 
 * Macros
 *** define-pattern
@@ -106,4 +106,4 @@ Undocumented.
 (define-pattern ((STAR.ACTORS.MATCHER::NAME STAR.ACTORS.MATCHER::SUBS) &BODY
  STAR.ACTORS.MATCHER::BODY))
 #+end_src
-Undocumented.
+Define a named pattern: NAME with SUBS substitutions; BODY builds the document.

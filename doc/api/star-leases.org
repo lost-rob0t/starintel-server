@@ -1,0 +1,675 @@
+#+TITLE: API Reference — STAR.LEASES
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Variables and Constants
+*** +lease-record-version+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Schema version of persisted lease records.
+*** +lease-identifier-max-bytes+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Maximum UTF-8 size of a lease identity component.
+*** +lease-metadata-max-bytes+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Maximum UTF-8 size of the lease metadata document.
+*** +lease-metadata-max-keys+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Maximum number of keys in lease metadata.
+*** +lease-outcome-codes+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Every outcome code the lease protocol may return.
+*** +lease-reason-max-bytes+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Maximum UTF-8 size of a lease revoke reason.
+*** +retryable-lease-outcome-codes+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.LEASES
+:END:
+Outcome codes callers may retry under bounded backoff.
+
+* Types and Classes
+*** lease-identity
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.LEASES
+:END:
+Canonical identity of a lease (tenant, program, target, actor, ...).
+- Slots: =tenant-id=, =program-id=, =target-namespace=, =target-id=, =actor-name=, =workflow-name=, =operation-class=
+*** lease-outcome
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.LEASES
+:END:
+Unified result of any lease protocol call.
+- Slots: =code=, =lease=, =leases=, =retryable-p=, =detail=
+*** lease-record
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.LEASES
+:END:
+Persisted state of one lease, including fencing token.
+- Slots: =lock-key=, =identity=, =lease-id=, =owner-principal-id=, =owner-client-id=, =owner-credential-id=, =service-instance-id=, =fencing-token=, =acquired-at=, =renewed-at=, =expires-at=, =ttl-ms=, =maximum-lifetime-ms=, =execution-id=, =job-id=, =trace-id=, =request-id=, =metadata=, =state=
+*** lease-runtime
+:PROPERTIES:
+:KIND: struct
+:PACKAGE: STAR.LEASES
+:END:
+Store plus lifecycle flag shared by lease users.
+- Slots: =store=, =closed-p=
+*** lease-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.LEASES
+:END:
+Protocol base class for lease backends.
+*** memory-lease-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.LEASES
+:END:
+In-memory lease store for tests and tools.
+- Slots: =lock=, =records=, =counters=, =idempotency=, =clock=, =id-generator=, =audit-hook=, =metrics-hook=, =closed-p=
+*** valkey-lease-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.LEASES
+:END:
+Valkey (Redis compatible) lease backend.
+- Slots: =host=, =port=, =password=, =tls-p=, =tls-context=, =pool-size=, =pool-wait-timeout-ms=, =operation-timeout-ms=, =reconnect-attempts=, =reconnect-backoff-ms=, =idempotency-ttl-ms=, =key-prefix=, =audit-hook=, =metrics-hook=, =after-submit-hook=, =pool-lock=, =pool-condition=, =idle-connections=, =all-connections=, =open-count=, =closed-p=
+
+* Functions
+*** canonical-target-lock-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(canonical-target-lock-key (IDENTITY))
+#+end_src
+Deterministic lock key derived from a lease identity.
+*** close-lease-runtime
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(close-lease-runtime (STAR.LEASES::RUNTIME &KEY STAR.LEASES::DEADLINE STAR.LEASES::REQUEST-ID))
+#+end_src
+Shut down a lease runtime; idempotent.
+*** deserialize-lease-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(deserialize-lease-record (STAR.LEASES::JSON))
+#+end_src
+Decode a persisted lease record from its JSON form.
+*** lease-identity-actor-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-actor-name (SB-KERNEL:INSTANCE))
+#+end_src
+The =actor-name= slot of =lease-identity=.
+*** lease-identity-operation-class
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-operation-class (SB-KERNEL:INSTANCE))
+#+end_src
+Operation class component of the lease identity.
+*** lease-identity-program-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-program-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =program-id= slot of =lease-identity=.
+*** lease-identity-target-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-target-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =target-id= slot of =lease-identity=.
+*** lease-identity-target-namespace
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-target-namespace (SB-KERNEL:INSTANCE))
+#+end_src
+The =target-namespace= slot of =lease-identity=.
+*** lease-identity-tenant-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-tenant-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =tenant-id= slot of =lease-identity=.
+*** lease-identity-workflow-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-identity-workflow-name (SB-KERNEL:INSTANCE))
+#+end_src
+The =workflow-name= slot of =lease-identity=.
+*** lease-metadata-object-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-metadata-object-p (STAR.LEASES::METADATA))
+#+end_src
+True for NIL (empty metadata) or a parsed JSON object (jsown object).
+*** lease-outcome-code
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-outcome-code (SB-KERNEL:INSTANCE))
+#+end_src
+The =code= slot of =lease-outcome=.
+*** lease-outcome-detail
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-outcome-detail (SB-KERNEL:INSTANCE))
+#+end_src
+Free-form detail attached to the outcome.
+*** lease-outcome-lease
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-outcome-lease (SB-KERNEL:INSTANCE))
+#+end_src
+The =lease= slot of =lease-outcome=.
+*** lease-outcome-leases
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-outcome-leases (SB-KERNEL:INSTANCE))
+#+end_src
+The =leases= slot of =lease-outcome=.
+*** lease-outcome-retryable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-outcome-retryable-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =retryable-p= slot of =lease-outcome=.
+*** lease-record-acquired-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-acquired-at (SB-KERNEL:INSTANCE))
+#+end_src
+The =acquired-at= slot of =lease-record=.
+*** lease-record-execution-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-execution-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =execution-id= slot of =lease-record=.
+*** lease-record-expires-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-expires-at (SB-KERNEL:INSTANCE))
+#+end_src
+The =expires-at= slot of =lease-record=.
+*** lease-record-fencing-token
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-fencing-token (SB-KERNEL:INSTANCE))
+#+end_src
+The =fencing-token= slot of =lease-record=.
+*** lease-record-identity
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-identity (SB-KERNEL:INSTANCE))
+#+end_src
+The =identity= slot of =lease-record=.
+*** lease-record-job-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-job-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =job-id= slot of =lease-record=.
+*** lease-record-lease-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-lease-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =lease-id= slot of =lease-record=.
+*** lease-record-lock-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-lock-key (SB-KERNEL:INSTANCE))
+#+end_src
+The =lock-key= slot of =lease-record=.
+*** lease-record-maximum-lifetime-ms
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-maximum-lifetime-ms (SB-KERNEL:INSTANCE))
+#+end_src
+The =maximum-lifetime-ms= slot of =lease-record=.
+*** lease-record-metadata
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-metadata (SB-KERNEL:INSTANCE))
+#+end_src
+The =metadata= slot of =lease-record=.
+*** lease-record-owner-client-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-owner-client-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =owner-client-id= slot of =lease-record=.
+*** lease-record-owner-credential-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-owner-credential-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =owner-credential-id= slot of =lease-record=.
+*** lease-record-owner-principal-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-owner-principal-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =owner-principal-id= slot of =lease-record=.
+*** lease-record-renewed-at
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-renewed-at (SB-KERNEL:INSTANCE))
+#+end_src
+The =renewed-at= slot of =lease-record=.
+*** lease-record-request-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-request-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =request-id= slot of =lease-record=.
+*** lease-record-service-instance-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-service-instance-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =service-instance-id= slot of =lease-record=.
+*** lease-record-state
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-state (SB-KERNEL:INSTANCE))
+#+end_src
+Lifecycle state of the lease record.
+*** lease-record-trace-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-trace-id (SB-KERNEL:INSTANCE))
+#+end_src
+The =trace-id= slot of =lease-record=.
+*** lease-record-ttl-ms
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-record-ttl-ms (SB-KERNEL:INSTANCE))
+#+end_src
+The =ttl-ms= slot of =lease-record=.
+*** lease-runtime-closed-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-runtime-closed-p (SB-KERNEL:INSTANCE))
+#+end_src
+The =closed-p= slot of =lease-runtime=.
+*** lease-runtime-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(lease-runtime-store (SB-KERNEL:INSTANCE))
+#+end_src
+The =store= slot of =lease-runtime=.
+*** make-lease-identity
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(make-lease-identity (&KEY STAR.LEASES::TENANT-ID STAR.LEASES::PROGRAM-ID
+ STAR.LEASES::TARGET-NAMESPACE STAR.LEASES::TARGET-ID STAR.LEASES::ACTOR-NAME
+ (STAR.LEASES::WORKFLOW-NAME "default")
+ (STAR.LEASES::OPERATION-CLASS "default")))
+#+end_src
+Build and normalize a lease identity.
+*** make-lease-outcome
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(make-lease-outcome (&KEY STAR.LEASES::CODE STAR.LEASES::LEASE STAR.LEASES::LEASES
+ (STAR.LEASES::RETRYABLE-P NIL) STAR.LEASES::DETAIL))
+#+end_src
+Build a lease outcome; validates the code.
+*** make-lease-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(make-lease-record (&KEY ((:LOCK-KEY #:LOCK-KEY) NIL) ((:IDENTITY #:IDENTITY) NIL)
+ ((:LEASE-ID #:LEASE-ID) NIL) ((:OWNER-PRINCIPAL-ID #:OWNER-PRINCIPAL-ID) NIL)
+ ((:OWNER-CLIENT-ID #:OWNER-CLIENT-ID) NIL)
+ ((:OWNER-CREDENTIAL-ID #:OWNER-CREDENTIAL-ID) NIL)
+ ((:SERVICE-INSTANCE-ID #:SERVICE-INSTANCE-ID) NIL)
+ ((:FENCING-TOKEN #:FENCING-TOKEN) NIL) ((:ACQUIRED-AT #:ACQUIRED-AT) NIL)
+ ((:RENEWED-AT #:RENEWED-AT) NIL) ((:EXPIRES-AT #:EXPIRES-AT) NIL)
+ ((:TTL-MS #:TTL-MS) NIL) ((:MAXIMUM-LIFETIME-MS #:MAXIMUM-LIFETIME-MS) NIL)
+ ((:EXECUTION-ID #:EXECUTION-ID) NIL) ((:JOB-ID #:JOB-ID) NIL)
+ ((:TRACE-ID #:TRACE-ID) NIL) ((:REQUEST-ID #:REQUEST-ID) NIL)
+ ((:METADATA #:METADATA) NIL) ((:STATE #:STATE) NIL)))
+#+end_src
+Build a persisted lease record from an identity and acquisition result.
+*** make-lease-runtime
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(make-lease-runtime (STAR.LEASES::STORE))
+#+end_src
+Wrap a store into a lease runtime.
+*** make-memory-lease-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(make-memory-lease-store (&KEY (STAR.LEASES::CLOCK #'STAR.LEASES::UNIX-TIME-MILLISECONDS)
+ (STAR.LEASES::ID-GENERATOR #'CMS-ULID:ULID) STAR.LEASES::AUDIT-HOOK
+ STAR.LEASES::METRICS-HOOK))
+#+end_src
+Create the deterministic test backend; production code must use an owned adapter.
+*** make-valkey-lease-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(make-valkey-lease-store (&KEY (STAR.LEASES::HOST "127.0.0.1") (STAR.LEASES::PORT 6379)
+ STAR.LEASES::PASSWORD-FILE (STAR.LEASES::TLS-P NIL)
+ (STAR.LEASES::TLS-VERIFY-P T) STAR.LEASES::TLS-CA-FILE
+ (STAR.LEASES::POOL-SIZE 8) (STAR.LEASES::POOL-WAIT-TIMEOUT-MS 500)
+ (STAR.LEASES::OPERATION-TIMEOUT-MS 1000) (STAR.LEASES::RECONNECT-ATTEMPTS 2)
+ (STAR.LEASES::RECONNECT-BACKOFF-MS 25)
+ (STAR.LEASES::IDEMPOTENCY-TTL-MS 86400000)
+ (STAR.LEASES::KEY-PREFIX "starintel:target-lease:v1") STAR.LEASES::AUDIT-HOOK
+ STAR.LEASES::METRICS-HOOK STAR.LEASES::AFTER-SUBMIT-HOOK))
+#+end_src
+Build a Valkey backed lease store.
+*** retryable-lease-outcome-code-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(retryable-lease-outcome-code-p (STAR.LEASES::CODE))
+#+end_src
+True when the outcome code is retryable.
+*** serialize-lease-record
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(serialize-lease-record (STAR.LEASES::RECORD))
+#+end_src
+Encode a lease record into its persisted JSON form.
+*** utf-8-byte-length
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(utf-8-byte-length (STRING))
+#+end_src
+Length of STRING in UTF-8 bytes.
+*** valid-lease-component-filter-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(valid-lease-component-filter-p (STAR.LEASES::VALUE))
+#+end_src
+Optional canonical identity-component filter (target-id, program-id):
+nil (omitted) or a valid canonical component. Validates before backend work
+without signaling. Both backends MUST consult this before scanning.
+*** valid-lease-filter-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(valid-lease-filter-p (STAR.LEASES::VALUE))
+#+end_src
+Optional externally supplied filter: nil (omitted) or a bounded identifier.
+Used for owner-principal-id and similar non-canonical filters. Both backends
+MUST validate filters before any backend work.
+*** valid-lease-identifier-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(valid-lease-identifier-p (STAR.LEASES::VALUE))
+#+end_src
+Non-empty string whose UTF-8 byte size fits the protocol identifier limit.
+*** valid-lease-metadata-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(valid-lease-metadata-p (STAR.LEASES::METADATA))
+#+end_src
+Metadata must be a bounded JSON object: object shape, bounded key count,
+and bounded serialized UTF-8 byte size. Non-object JSON shapes (arrays,
+scalars, strings) and oversized payloads are rejected before backend work.
+*** valid-lease-reason-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(valid-lease-reason-p (STAR.LEASES::VALUE))
+#+end_src
+Non-empty reason/incident identifier bounded by the reason limit.
+
+* Generic Functions
+*** acquire-lease
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(acquire-lease (STAR.LEASES::STORE IDENTITY &KEY STAR.LEASES::OWNER-PRINCIPAL-ID
+ STAR.LEASES::OWNER-CLIENT-ID STAR.LEASES::OWNER-CREDENTIAL-ID
+ STAR.LEASES::SERVICE-INSTANCE-ID STAR.LEASES::TTL-MS
+ STAR.LEASES::MAXIMUM-LIFETIME-MS STAR.LEASES::EXECUTION-ID STAR.LEASES::JOB-ID
+ STAR.LEASES::TRACE-ID STAR.LEASES::METADATA STAR.LEASES::DEADLINE
+ STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: acquire a lease for IDENTITY on STORE.
+*** backend-health
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(backend-health (STAR.LEASES::STORE &KEY STAR.LEASES::DEADLINE STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: probe the health of the lease backend.
+*** close-lease-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(close-lease-store (STAR.LEASES::STORE &KEY STAR.LEASES::DEADLINE STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: release backend resources of STORE.
+*** get-lease
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(get-lease (STAR.LEASES::STORE IDENTITY &KEY STAR.LEASES::DEADLINE STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: fetch the current lease for IDENTITY, if any.
+*** list-leases
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(list-leases (STAR.LEASES::STORE &KEY STAR.LEASES::OWNER-PRINCIPAL-ID STAR.LEASES::TARGET-ID
+ STAR.LEASES::PROGRAM-ID STAR.LEASES::DEADLINE STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: list leases filtered by owner/target/program.
+*** release-lease
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(release-lease (STAR.LEASES::STORE IDENTITY &KEY STAR.LEASES::LEASE-ID
+ STAR.LEASES::OWNER-PRINCIPAL-ID STAR.LEASES::SERVICE-INSTANCE-ID
+ STAR.LEASES::FENCING-TOKEN STAR.LEASES::DEADLINE STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: release a lease using its fencing token.
+*** renew-lease
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(renew-lease (STAR.LEASES::STORE IDENTITY &KEY STAR.LEASES::LEASE-ID
+ STAR.LEASES::OWNER-PRINCIPAL-ID STAR.LEASES::SERVICE-INSTANCE-ID
+ STAR.LEASES::FENCING-TOKEN STAR.LEASES::TTL-MS STAR.LEASES::DEADLINE
+ STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: extend a lease; returns a new fencing token.
+*** revoke-lease
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.LEASES
+:END:
+#+begin_src lisp
+(revoke-lease (STAR.LEASES::STORE IDENTITY &KEY STAR.LEASES::LEASE-ID
+ STAR.LEASES::FENCING-TOKEN STAR.LEASES::REASON STAR.LEASES::DEADLINE
+ STAR.LEASES::REQUEST-ID))
+#+end_src
+Protocol: administratively revoke a lease with a reason.

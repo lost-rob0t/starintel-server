@@ -21,7 +21,16 @@
     :reader http-input-error-info))
   (:report
    (lambda (condition stream)
-     (format stream "~a" (http-input-error-message condition)))))
+     (format stream "~a" (http-input-error-message condition))))
+  (:documentation "Signalled for malformed HTTP input payloads."))
+
+;; Accessor documentation for http-input-error
+(setf (documentation 'HTTP-INPUT-ERROR-CODE 'function)
+"The =code= slot of =http-input-error=.")
+(setf (documentation 'HTTP-INPUT-ERROR-STATUS 'function)
+"The =status= slot of =http-input-error=.")
+
+
 
 (defun new-correlation-id ()
   (cms-ulid:ulid))
@@ -93,10 +102,12 @@
                      :code "internal_error")))))
 
 (defun json-object-p (value)
+  "True when the parsed payload is a JSON object."
   (and (consp value)
        (eq (car value) :obj)))
 
 (defun json-array-p (value)
+  "True when the parsed payload is a JSON array."
   (or (null value)
       (and (listp value)
            (not (json-object-p value)))))
@@ -121,6 +132,7 @@
 
 (defun parse-json-octets (octets content-type
                           &key (max-bytes +http-max-body-bytes+))
+  "Parse a request body (octets) into a JSON value."
   (unless (json-content-type-p content-type)
     (signal-http-input-error
      415
@@ -221,6 +233,7 @@
 
 (defun validate-document-input
     (document &key path-dtype index (strict-schema-p t))
+  "Validate a document payload from HTTP input."
   (unless (json-object-p document)
     (signal-http-input-error
      422
@@ -261,6 +274,7 @@
 
 (defun bounded-query-integer (params name &key default (minimum 0)
                                             (maximum +http-max-query-limit+))
+  "Parse an integer query parameter clamped to sane bounds."
   (let ((raw (query-value params name)))
     (when (and (null raw) default)
       (return-from bounded-query-integer default))
@@ -295,6 +309,7 @@
     (t nil)))
 
 (defun request-principal (&optional (request (ningle:context :request)))
+  "Who is calling: id, type, scopes and credential id."
   (let* ((headers (ignore-errors (lack.request:request-headers request)))
          (authorization (request-header-value headers "authorization"))
          (remote-address

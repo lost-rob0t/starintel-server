@@ -1,8 +1,10 @@
 (in-package :star.databases.couchdb)
 
-(define-condition target-acceptance-store-conflict (error) ())
+(define-condition target-acceptance-store-conflict (error) ()
+  (:documentation "Signalled when writing target acceptance state conflicts."))
 
 (defun couchdb-load-target-acceptance (client database acceptance-id)
+  "Load the acceptance state for a target."
   (handler-case
       (jsown:with-injective-reader
         (jsown:parse
@@ -25,6 +27,7 @@
 
 (defun couchdb-update-target-acceptance
     (client database acceptance-id updater &key (max-attempts 8))
+  "Apply an update to persisted target acceptance state."
   (loop for attempt from 1 to max-attempts
         do
            (let* ((current

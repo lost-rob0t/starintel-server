@@ -1,7 +1,8 @@
 ;; http-api
 (in-package :star.frontends.http-api)
 
-(defparameter *app* (make-instance 'ningle:app))
+(defparameter *app* (make-instance 'ningle:app)
+  "The Ningle application instance serving the HTTP API.")
 
 (defparameter *rabbitmq-conn* nil)
 (defparameter *rabbit-lock* (bt:make-lock "rabbitmq-conn"))
@@ -25,7 +26,8 @@
                                                 :disconnector (lambda (obj)
                                                                 (setf (cl-couch:couchdb-headers obj) nil))
                                                 :max-open-count 20
-                                                :max-idle-count 10))
+                                                :max-idle-count 10)
+  "Connection pool of CouchDB clients.")
 
 (defun connect-rabbitmq ()
   (log:info "Connecting to RabbitMQ at ~a:~a" star:*rabbit-address* star:*rabbit-port*)
@@ -42,7 +44,8 @@
 
 
 (defparameter *default-headers* (list
-                                 :content-type "application/json"))
+                                 :content-type "application/json")
+  "Default response headers applied to API responses.")
 (defparameter *cors-headers* (list
                               :access-control-allow-origin "*"
                               :access-control-allow-methods "GET, POST, PUT, DELETE, OPTIONS"

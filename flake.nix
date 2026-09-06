@@ -320,6 +320,39 @@ EOF
         '';
       };
 
+      # CI gate: every exported symbol must carry a docstring.
+      doc-coverage-test = pkgs.writeShellApplication {
+        name = "doc-coverage-test";
+        runtimeInputs = [ sbcl-docs-wrapped ];
+        text = ''
+          HOME="$(mktemp -d)"
+          export HOME
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export TMPDIR="/tmp"
+          export TMP="/tmp"
+          export TEMP="/tmp"
+          export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval "(require :asdf)" \
+            --eval "(asdf:load-system :starintel-gserver)" \
+            --eval "(asdf:load-system :org-doc)" \
+            --eval "(let* ((report (org-doc:coverage :starintel-gserver))
+                           (missing (getf report :undocumented))
+                           (total (getf report :symbols)))
+                      (format t \"doc-coverage: ~a/~a symbols documented~%\"
+                              (- total (length missing)) total)
+                      (when missing
+                        (format *error-output*
+                                \"~&doc-coverage: missing docstrings:~%\")
+                        (dolist (e missing)
+                          (format *error-output* \"  ~a::~a (~a)~%\"
+                                  (org-doc:entry-package e)
+                                  (org-doc:entry-name e)
+                                  (org-doc:entry-kind e)))
+                        (uiop:quit 1)))"
+        '';
+      };
+
       make-test-runner = name: wrapped: asdfSystem: extraRuntimeInputs: prelude:
         pkgs.writeShellApplication {
           inherit name;
@@ -534,10 +567,15 @@ PY
       };
 
     in {
+      checks.${system} = {
+        doc-coverage = doc-coverage-test;
+      };
+
       packages.${system} = {
         default = star-server-bin;
 
         gen-api-docs = gen-api-docs;
+        doc-coverage-test = doc-coverage-test;
         sbcl-docs-wrapped = sbcl-docs-wrapped;
         star-unit-tests = unit-test-runner;
         star-smoke = unit-test-runner;
@@ -597,6 +635,11 @@ PY
         gen-api-docs = {
           type = "app";
           program = "${gen-api-docs}/bin/gen-api-docs";
+        };
+
+        doc-coverage-test = {
+          type = "app";
+          program = "${doc-coverage-test}/bin/doc-coverage-test";
         };
       };
 

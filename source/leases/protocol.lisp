@@ -1,6 +1,7 @@
 (in-package :star.leases)
 
-(defconstant +lease-record-version+ 1)
+(defconstant +lease-record-version+ 1
+  "Schema version of persisted lease records.")
 
 (defun normalize-identity-component (name value)
   (unless (and (stringp value) (plusp (length value)))
@@ -23,6 +24,7 @@
              (:constructor %make-lease-identity
                  (tenant-id program-id target-namespace target-id actor-name
                   workflow-name operation-class)))
+  "Canonical identity of a lease (tenant, program, target, actor, ...)."
   tenant-id
   program-id
   target-namespace
@@ -31,9 +33,28 @@
   workflow-name
   operation-class)
 
+;; Accessor documentation for lease-identity
+(setf (documentation 'LEASE-IDENTITY-ACTOR-NAME 'function)
+"The =actor-name= slot of =lease-identity=.")
+(setf (documentation 'LEASE-IDENTITY-OPERATION-CLASS 'function)
+"Operation class component of the lease identity.")
+(setf (documentation 'LEASE-IDENTITY-PROGRAM-ID 'function)
+"The =program-id= slot of =lease-identity=.")
+(setf (documentation 'LEASE-IDENTITY-TARGET-ID 'function)
+"The =target-id= slot of =lease-identity=.")
+(setf (documentation 'LEASE-IDENTITY-TARGET-NAMESPACE 'function)
+"The =target-namespace= slot of =lease-identity=.")
+(setf (documentation 'LEASE-IDENTITY-TENANT-ID 'function)
+"The =tenant-id= slot of =lease-identity=.")
+(setf (documentation 'LEASE-IDENTITY-WORKFLOW-NAME 'function)
+"The =workflow-name= slot of =lease-identity=.")
+
+
+
 (defun make-lease-identity
     (&key tenant-id program-id target-namespace target-id actor-name
        (workflow-name "default") (operation-class "default"))
+  "Build and normalize a lease identity."
   (%make-lease-identity
    (normalize-identity-component "tenant-id" tenant-id)
    (normalize-identity-component "program-id" program-id)
@@ -71,6 +92,7 @@
                  (write-char (char alphabet (ldb (byte 6 0) bits)) stream))))))
 
 (defun canonical-target-lock-key (identity)
+  "Deterministic lock key derived from a lease identity."
   (check-type identity lease-identity)
   (let* ((encoded (jsown:to-json (lease-identity-values identity)))
          (digest
@@ -80,6 +102,7 @@
             (base64url-octets digest))))
 
 (defstruct lease-record
+  "Persisted state of one lease, including fencing token."
   lock-key
   identity
   lease-id
@@ -100,22 +123,81 @@
   metadata
   state)
 
+;; Accessor documentation for lease-record
+(setf (documentation 'LEASE-RECORD-ACQUIRED-AT 'function)
+"The =acquired-at= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-EXECUTION-ID 'function)
+"The =execution-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-EXPIRES-AT 'function)
+"The =expires-at= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-FENCING-TOKEN 'function)
+"The =fencing-token= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-IDENTITY 'function)
+"The =identity= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-JOB-ID 'function)
+"The =job-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-LEASE-ID 'function)
+"The =lease-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-LOCK-KEY 'function)
+"The =lock-key= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-MAXIMUM-LIFETIME-MS 'function)
+"The =maximum-lifetime-ms= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-METADATA 'function)
+"The =metadata= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-OWNER-CLIENT-ID 'function)
+"The =owner-client-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-OWNER-CREDENTIAL-ID 'function)
+"The =owner-credential-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-OWNER-PRINCIPAL-ID 'function)
+"The =owner-principal-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-RENEWED-AT 'function)
+"The =renewed-at= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-REQUEST-ID 'function)
+"The =request-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-SERVICE-INSTANCE-ID 'function)
+"The =service-instance-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-STATE 'function)
+"Lifecycle state of the lease record.")
+(setf (documentation 'LEASE-RECORD-TRACE-ID 'function)
+"The =trace-id= slot of =lease-record=.")
+(setf (documentation 'LEASE-RECORD-TTL-MS 'function)
+"The =ttl-ms= slot of =lease-record=.")
+
+
+
 (defparameter +lease-outcome-codes+
   '(:acquired :renewed :released :found :listed :revoked :healthy :closed
     :not-found :conflict :stale-token :not-owner :expired
     :idempotency-conflict :invalid-request :timeout :rate-limited
-    :backend-unavailable :outcome-unknown))
+    :backend-unavailable :outcome-unknown)
+  "Every outcome code the lease protocol may return.")
 
 (defstruct (lease-outcome
              (:constructor %make-lease-outcome
                  (&key code lease leases (retryable-p nil) detail)))
+  "Unified result of any lease protocol call."
   code
   lease
   leases
   (retryable-p nil)
   detail)
 
+;; Accessor documentation for lease-outcome
+(setf (documentation 'LEASE-OUTCOME-CODE 'function)
+"The =code= slot of =lease-outcome=.")
+(setf (documentation 'LEASE-OUTCOME-DETAIL 'function)
+"Free-form detail attached to the outcome.")
+(setf (documentation 'LEASE-OUTCOME-LEASE 'function)
+"The =lease= slot of =lease-outcome=.")
+(setf (documentation 'LEASE-OUTCOME-LEASES 'function)
+"The =leases= slot of =lease-outcome=.")
+(setf (documentation 'LEASE-OUTCOME-RETRYABLE-P 'function)
+"The =retryable-p= slot of =lease-outcome=.")
+
+
+
 (defun make-lease-outcome (&key code lease leases (retryable-p nil) detail)
+  "Build a lease outcome; validates the code."
   (unless (member code +lease-outcome-codes+ :test #'eq)
     (error "Unknown lease outcome code ~s" code))
   (%make-lease-outcome
@@ -131,9 +213,11 @@
 ;;; the caller may retry acquisition under bounded backoff.
 
 (defparameter +retryable-lease-outcome-codes+
-  '(:conflict :timeout :rate-limited :backend-unavailable :outcome-unknown))
+  '(:conflict :timeout :rate-limited :backend-unavailable :outcome-unknown)
+  "Outcome codes callers may retry under bounded backoff.")
 
 (defun retryable-lease-outcome-code-p (code)
+  "True when the outcome code is retryable."
   (and (member code +retryable-lease-outcome-codes+) t))
 
 ;;; Bounded externally supplied identifiers. The KV lease threat model requires
@@ -142,12 +226,17 @@
 ;;; cannot bypass them. Identifiers and metadata are validated once here; the
 ;;; adapters consult these predicates instead of redefining local bounds.
 
-(defparameter +lease-identifier-max-bytes+ 256)
-(defparameter +lease-reason-max-bytes+ 512)
-(defparameter +lease-metadata-max-bytes+ 4096)
-(defparameter +lease-metadata-max-keys+ 64)
+(defparameter +lease-identifier-max-bytes+ 256
+  "Maximum UTF-8 size of a lease identity component.")
+(defparameter +lease-reason-max-bytes+ 512
+  "Maximum UTF-8 size of a lease revoke reason.")
+(defparameter +lease-metadata-max-bytes+ 4096
+  "Maximum UTF-8 size of the lease metadata document.")
+(defparameter +lease-metadata-max-keys+ 64
+  "Maximum number of keys in lease metadata.")
 
 (defun utf-8-byte-length (string)
+  "Length of STRING in UTF-8 bytes."
   (declare (type string string))
   (length (babel:string-to-octets string :encoding :utf-8)))
 
@@ -196,48 +285,68 @@ scalars, strings) and oversized payloads are rejected before backend work."
           (<= (utf-8-byte-length (jsown:to-json metadata))
               +lease-metadata-max-bytes+)))))
 
-(defclass lease-store () ())
+(defclass lease-store () ()
+  (:documentation "Protocol base class for lease backends."))
 
 (defgeneric acquire-lease
     (store identity
      &key owner-principal-id owner-client-id owner-credential-id
        service-instance-id ttl-ms maximum-lifetime-ms execution-id job-id
-       trace-id metadata deadline request-id))
+       trace-id metadata deadline request-id)
+  (:documentation "Protocol: acquire a lease for IDENTITY on STORE."))
 
 (defgeneric renew-lease
     (store identity
      &key lease-id owner-principal-id service-instance-id fencing-token ttl-ms
-       deadline request-id))
+       deadline request-id)
+  (:documentation "Protocol: extend a lease; returns a new fencing token."))
 
 (defgeneric release-lease
     (store identity
      &key lease-id owner-principal-id service-instance-id fencing-token
-       deadline request-id))
+       deadline request-id)
+  (:documentation "Protocol: release a lease using its fencing token."))
 
-(defgeneric get-lease (store identity &key deadline request-id))
+(defgeneric get-lease (store identity &key deadline request-id)
+  (:documentation "Protocol: fetch the current lease for IDENTITY, if any."))
 
 (defgeneric list-leases
     (store
-     &key owner-principal-id target-id program-id deadline request-id))
+     &key owner-principal-id target-id program-id deadline request-id)
+  (:documentation "Protocol: list leases filtered by owner/target/program."))
 
 (defgeneric revoke-lease
     (store identity
-     &key lease-id fencing-token reason deadline request-id))
+     &key lease-id fencing-token reason deadline request-id)
+  (:documentation "Protocol: administratively revoke a lease with a reason."))
 
-(defgeneric backend-health (store &key deadline request-id))
+(defgeneric backend-health (store &key deadline request-id)
+  (:documentation "Protocol: probe the health of the lease backend."))
 
-(defgeneric close-lease-store (store &key deadline request-id))
+(defgeneric close-lease-store (store &key deadline request-id)
+  (:documentation "Protocol: release backend resources of STORE."))
 
 (defstruct (lease-runtime
              (:constructor %make-lease-runtime (store)))
+  "Store plus lifecycle flag shared by lease users."
   store
   (closed-p nil))
 
+;; Accessor documentation for lease-runtime
+(setf (documentation 'LEASE-RUNTIME-CLOSED-P 'function)
+"The =closed-p= slot of =lease-runtime=.")
+(setf (documentation 'LEASE-RUNTIME-STORE 'function)
+"The =store= slot of =lease-runtime=.")
+
+
+
 (defun make-lease-runtime (store)
+  "Wrap a store into a lease runtime."
   (check-type store lease-store)
   (%make-lease-runtime store))
 
 (defun close-lease-runtime (runtime &key deadline request-id)
+  "Shut down a lease runtime; idempotent."
   (check-type runtime lease-runtime)
   (let ((outcome
           (close-lease-store
@@ -259,6 +368,7 @@ scalars, strings) and oversized payloads are rejected before backend work."
     ("operation_class" (lease-identity-operation-class identity))))
 
 (defun serialize-lease-record (record)
+  "Encode a lease record into its persisted JSON form."
   (check-type record lease-record)
   (jsown:to-json
    (jsown:new-js
@@ -284,6 +394,7 @@ scalars, strings) and oversized payloads are rejected before backend work."
      ("state" (string-downcase (symbol-name (lease-record-state record)))))))
 
 (defun deserialize-lease-record (json)
+  "Decode a persisted lease record from its JSON form."
   (let* ((object (jsown:parse json))
          (version (jsown:val object "record_version")))
     (unless (= version +lease-record-version+)
@@ -327,3 +438,6 @@ scalars, strings) and oversized payloads are rejected before backend work."
        :request-id (jsown:val object "request_id")
        :metadata (jsown:val object "metadata")
        :state state))))
+
+(setf (documentation 'MAKE-LEASE-RECORD 'function)
+  "Build a persisted lease record from an identity and acquisition result.")

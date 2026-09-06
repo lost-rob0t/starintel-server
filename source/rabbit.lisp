@@ -1,18 +1,31 @@
 (in-package :star.rabbit)
 
-(defparameter +documents-exchange+ "documents")
-(defparameter +documents-exchange-type+ "topic")
-(defparameter +ingest-key+ "documents.ingest.#")
-(defparameter +update-key+ "documents.update.#")
-(defparameter +ingest-queue+ "documents.ingest")
-(defparameter +updates-queue+ "documents.update")
-(defparameter +targets-key+ "documents.new.target.#")
-(defparameter +targets-queue+ "documents.targets")
-(defparameter +ingest-fmt-key+ "documents.ingest.~a")
-(defparameter +new-documents-key+ "documents.new.#")
-(defparameter +new-documents-fmt-key+ "documents.new.~a")
-(defparameter +updated-documents-key+ "documents.updated.#")
-(defparameter +updated-documents-fmt-key+ "documents.updated.~a")
+(defparameter +documents-exchange+ "documents"
+  "Name of the durable documents topic exchange.")
+(defparameter +documents-exchange-type+ "topic"
+  "Exchange type for documents (topic).")
+(defparameter +ingest-key+ "documents.ingest.#"
+  "Canonical ingest routing key.")
+(defparameter +update-key+ "documents.update.#"
+  "Canonical update routing key.")
+(defparameter +ingest-queue+ "documents.ingest"
+  "Queue consuming canonical new-document events.")
+(defparameter +updates-queue+ "documents.update"
+  "Queue consuming document update events.")
+(defparameter +targets-key+ "documents.new.target.#"
+  "Canonical target routing key.")
+(defparameter +targets-queue+ "documents.targets"
+  "Queue consuming target messages.")
+(defparameter +ingest-fmt-key+ "documents.ingest.~a"
+  "Format-specific ingest routing key.")
+(defparameter +new-documents-key+ "documents.new.#"
+  "Canonical new-document routing key.")
+(defparameter +new-documents-fmt-key+ "documents.new.~a"
+  "Format-specific new-document routing key.")
+(defparameter +updated-documents-key+ "documents.updated.#"
+  "Canonical updated-document routing key.")
+(defparameter +updated-documents-fmt-key+ "documents.updated.~a"
+  "Format-specific update routing key.")
 
 (defun publish-raw-message
     (exchange routing-key body properties
@@ -105,6 +118,7 @@ Legacy target adapters must opt out explicitly."
      record)))
 
 (defun inspect-quarantine (&key (status "quarantined") (limit 100))
+  "List or show quarantined messages for operator inspection."
   (anypool:with-connection
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:couchdb-list-quarantine-records
@@ -114,6 +128,7 @@ Legacy target adapters must opt out explicitly."
      :limit limit)))
 
 (defun replay-quarantined-message (quarantine-id &key corrected-body)
+  "Replay one quarantined message through its original route."
   (anypool:with-connection
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:replay-quarantine-record
@@ -150,6 +165,7 @@ Legacy target adapters must opt out explicitly."
   (process-rabbit-document-mutation message :new))
 
 (defun handle-update-document (consumer message)
+  "Ingest consumer entry point: process MESSAGE as =:updated=."
   (declare (ignore consumer))
   (process-rabbit-document-mutation message :updated))
 
@@ -196,6 +212,7 @@ is re-published exactly once per entry sequence."
        :reason "unknown target dispatch outcome")))))
 
 (defun handle-target (consumer message)
+  "Process one RabbitMQ target message."
   (target-outcome-settlement
    (star.actors:accept-target-delivery
     consumer

@@ -43,13 +43,23 @@
   (:report
    (lambda (condition stream)
      (declare (ignore condition))
-     (write-string "Access denied" stream))))
+     (write-string "Access denied" stream)))
+  (:documentation "Signalled for malformed authorization requests."))
+
+;; Accessor documentation for authorization-error
+(setf (documentation 'AUTHORIZATION-ERROR-CODE 'function)
+"The =code= slot of =authorization-error=.")
+(setf (documentation 'AUTHORIZATION-ERROR-DECISION 'function)
+"The =decision= slot of =authorization-error=.")
+
+
 
 (defstruct (authorization-resource
             (:constructor make-authorization-resource
                 (&key tenant-id dataset-id actor-name target-id
                       target-namespace program-id resource-id dtype))
             (:copier nil))
+  "The resource side of an authorization request."
   (tenant-id nil :read-only t)
   (dataset-id nil :read-only t)
   (actor-name nil :read-only t)
@@ -59,20 +69,56 @@
   (resource-id nil :read-only t)
   (dtype nil :read-only t))
 
+;; Accessor documentation for authorization-resource
+(setf (documentation 'AUTHORIZATION-RESOURCE-ACTOR-NAME 'function)
+"The =actor-name= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-DATASET-ID 'function)
+"The =dataset-id= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-DTYPE 'function)
+"The =dtype= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-PROGRAM-ID 'function)
+"The =program-id= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-RESOURCE-ID 'function)
+"The =resource-id= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-TARGET-ID 'function)
+"The =target-id= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-TARGET-NAMESPACE 'function)
+"The =target-namespace= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-TENANT-ID 'function)
+"The =tenant-id= slot of =authorization-resource=.")
+
+
+
 (defstruct (authorization-request
             (:constructor make-authorization-request
                 (&key principal action resource metadata quotas))
             (:copier nil))
+  "One authorization question: principal, action, resource."
   (principal nil :read-only t)
   (action nil :read-only t)
   (resource nil :read-only t)
   (metadata nil :read-only t)
   (quotas nil :read-only t))
 
+;; Accessor documentation for authorization-request
+(setf (documentation 'AUTHORIZATION-REQUEST-ACTION 'function)
+"The =action= slot of =authorization-request=.")
+(setf (documentation 'AUTHORIZATION-REQUEST-METADATA 'function)
+"The =metadata= slot of =authorization-request=.")
+(setf (documentation 'AUTHORIZATION-REQUEST-PRINCIPAL 'function)
+"The =principal= slot of =authorization-request=.")
+(setf (documentation 'AUTHORIZATION-REQUEST-QUOTAS 'function)
+"The =quotas= slot of =authorization-request=.")
+(setf (documentation 'AUTHORIZATION-REQUEST-RESOURCE 'function)
+"The =resource= slot of =authorization-request=.")
+
+
+
 (defstruct (authorization-decision
             (:constructor make-authorization-decision
                 (&key id allowed-p reason action resource principal-id))
             (:copier nil))
+  "Result of one authorization check: allow/deny plus reasons."
   (id nil :read-only t)
   (allowed-p nil :read-only t)
   (reason nil :read-only t)
@@ -80,29 +126,63 @@
   (resource nil :read-only t)
   (principal-id nil :read-only t))
 
+;; Accessor documentation for authorization-decision
+(setf (documentation 'AUTHORIZATION-DECISION-ACTION 'function)
+"The =action= slot of =authorization-decision=.")
+(setf (documentation 'AUTHORIZATION-DECISION-ALLOWED-P 'function)
+"The =allowed-p= slot of =authorization-decision=.")
+(setf (documentation 'AUTHORIZATION-DECISION-ID 'function)
+"The =id= slot of =authorization-decision=.")
+(setf (documentation 'AUTHORIZATION-DECISION-PRINCIPAL-ID 'function)
+"The =principal-id= slot of =authorization-decision=.")
+(setf (documentation 'AUTHORIZATION-DECISION-REASON 'function)
+"The =reason= slot of =authorization-decision=.")
+(setf (documentation 'AUTHORIZATION-DECISION-RESOURCE 'function)
+"The =resource= slot of =authorization-decision=.")
+
+
+
 (defstruct (trusted-authorization-context
             (:constructor make-trusted-authorization-context
                 (&key id principal-type scopes))
             (:copier nil))
+  "Pre-authenticated context for internal call chains."
   (id nil :read-only t)
   (principal-type nil :read-only t)
   (scopes nil :read-only t))
 
-(defclass policy-engine () ())
-(defclass default-deny-policy-engine (policy-engine) ())
+;; Accessor documentation for trusted-authorization-context
+(setf (documentation 'TRUSTED-AUTHORIZATION-CONTEXT-ID 'function)
+"The =id= slot of =trusted-authorization-context=.")
+(setf (documentation 'TRUSTED-AUTHORIZATION-CONTEXT-PRINCIPAL-TYPE 'function)
+"The =principal-type= slot of =trusted-authorization-context=.")
+(setf (documentation 'TRUSTED-AUTHORIZATION-CONTEXT-SCOPES 'function)
+"The =scopes= slot of =trusted-authorization-context=.")
 
-(defgeneric evaluate-authorization (engine request))
 
-(defvar *policy-engine* (make-instance 'default-deny-policy-engine))
-(defvar *trusted-authorization-context* nil)
-(defvar *current-authorization-decision* nil)
+
+(defclass policy-engine () ()
+  (:documentation "Protocol object answering authorization questions."))
+(defclass default-deny-policy-engine (policy-engine) ()
+  (:documentation "Policy engine that denies unless a rule explicitly allows."))
+
+(defgeneric evaluate-authorization (engine request)
+  (:documentation "Run the policy engine; returns the decision without signalling."))
+
+(defvar *policy-engine* (make-instance 'default-deny-policy-engine)
+  "Global policy engine consulted for every authorization check.")
+(defvar *trusted-authorization-context* nil
+  "Dynamic binding for service-to-service trusted contexts.")
+(defvar *current-authorization-decision* nil
+  "Dynamic binding of the in-flight authorization decision.")
 
 (defun default-authorization-audit-sink (event allowed-p)
   (if allowed-p
       (log:info "authorization ~a" (jsown:to-json event))
       (log:warn "authorization ~a" (jsown:to-json event))))
 
-(defvar *authorization-audit-sink* #'default-authorization-audit-sink)
+(defvar *authorization-audit-sink* #'default-authorization-audit-sink
+  "Function called with every authorization audit event.")
 
 (defun non-empty-bounded-string-p (value &optional (maximum 256))
   (and (stringp value)
@@ -124,6 +204,7 @@
         +scope-prefixes+))
 
 (defun validate-grant-scopes (scopes)
+  "Check that requested grant scopes are well formed."
   (unless (and (listp scopes)
                (every #'non-empty-bounded-string-p scopes))
     (star.auth::signal-lifecycle-error
@@ -190,11 +271,13 @@
   (member "admin" scopes :test #'string=))
 
 (defun capability-granted-p (scopes action)
+  "True when the principal holds the requested capability."
   (and scopes
        (or (administrator-scopes-p scopes)
            (member action scopes :test #'string=))))
 
 (defun scope-values (scopes prefix)
+  "Expand a scope string into its component values."
   (loop for scope in scopes
         when (prefixed-scope-p scope prefix)
           collect (subseq scope (length prefix))))
@@ -275,6 +358,7 @@
       :null))
 
 (defun authorization-audit-json (decision request)
+  "Serialize an authorization audit event to JSON."
   (let* ((principal (candidate-principal
                      (authorization-request-principal request)))
          (metadata (authorization-request-metadata request)))
@@ -308,6 +392,7 @@
 
 (defun authorize (action &key resource principal metadata quotas
                            (engine *policy-engine*))
+  "Evaluate POLICY-ENGINE against REQUEST; return a decision."
   (let* ((request
            (make-authorization-request
             :principal principal
@@ -321,6 +406,7 @@
 
 (defun authorize! (action &key resource principal metadata quotas
                             (engine *policy-engine*))
+  "Like =authorize= but signals on denial."
   (let ((decision
           (authorize action
                      :resource resource
@@ -335,10 +421,12 @@
     decision))
 
 (defmacro with-trusted-authorization-context ((context) &body body)
+  "Evaluate BODY with a trusted context bound."
   `(let ((*trusted-authorization-context* ,context))
      ,@body))
 
 (defun document-value (document &rest names)
+  "Generic accessor into a document object cell."
   (loop for name in names
         for value = (jsown:val-safe document name)
         when (and value (not (eq value :null)))
@@ -350,6 +438,7 @@
          (string-equal dtype "target"))))
 
 (defun resource-from-document (document &key actor-name)
+  "Derive an authorization resource from a document."
   (let ((target-p (target-document-p document)))
     (make-authorization-resource
      :tenant-id (or (document-value document "tenant_id" "tenant")
@@ -369,6 +458,7 @@
      :dtype (document-value document "dtype"))))
 
 (defun decision-rabbit-headers (decision)
+  "RabbitMQ headers encoding an authorization decision."
   (let ((resource (authorization-decision-resource decision)))
     (list
      (cons "x-star-authorization-decision-id"
@@ -387,3 +477,9 @@
            (or (and resource
                     (authorization-resource-actor-name resource))
                "")))))
+
+(setf (documentation 'MAKE-AUTHORIZATION-RESOURCE 'function)
+  "Build an authorization resource for TENANT, PROGRAM, DATASET and TARGET.")
+
+(setf (documentation 'MAKE-TRUSTED-AUTHORIZATION-CONTEXT 'function)
+  "Build a trusted context for internal service calls by PRINCIPAL-ID and TYPE.")

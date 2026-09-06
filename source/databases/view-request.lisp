@@ -2,16 +2,34 @@
 
 (defstruct (couchdb-view-request
              (:constructor make-couchdb-view-request (method uri body)))
+  "A fully built CouchDB view HTTP request."
   method
   uri
   body)
+
+;; Accessor documentation for couchdb-view-request
+(setf (documentation 'COUCHDB-VIEW-REQUEST-BODY 'function)
+"JSON body of the view request, or nil for GET.")
+(setf (documentation 'COUCHDB-VIEW-REQUEST-METHOD 'function)
+"The =method= slot of =couchdb-view-request=.")
+(setf (documentation 'COUCHDB-VIEW-REQUEST-URI 'function)
+"The =uri= slot of =couchdb-view-request=.")
+
+
 
 (define-condition view-query-error (error)
   ((reason :initarg :reason :reader view-query-error-reason))
   (:report
    (lambda (condition stream)
      (format stream "Invalid CouchDB view query: ~a"
-             (view-query-error-reason condition)))))
+             (view-query-error-reason condition))))
+  (:documentation "Signalled when a view query fails."))
+
+;; Accessor documentation for view-query-error
+(setf (documentation 'VIEW-QUERY-ERROR-REASON 'function)
+"The =reason= slot of =view-query-error=.")
+
+
 
 (defun reject-view-query (control &rest arguments)
   (error 'view-query-error :reason (apply #'format nil control arguments)))

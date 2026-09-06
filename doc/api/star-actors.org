@@ -9,13 +9,13 @@ Actor runtime namespace
 :KIND: var
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Table of live target schedules keyed by schedule id.
 *** *actor-event-receiver*
 :PROPERTIES:
 :KIND: var
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Actor receiving every emitted actor event and persisting it to CouchDB.
 *** *actor-index-agent*
 :PROPERTIES:
 :KIND: var
@@ -45,7 +45,7 @@ Actor responsible for handling couchdb inserts
 :KIND: var
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Sento agent pinning the RabbitMQ producer connection to one thread.
 *** *recovered-target-fingerprints*
 :PROPERTIES:
 :KIND: var
@@ -63,7 +63,7 @@ the main actor system
 :KIND: var
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Upper bound on a scheduled target delay.
 *** *target-timer*
 :PROPERTIES:
 :KIND: var
@@ -90,70 +90,70 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 :KIND: class
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Event record emitted by the actor runtime for observability.
 - Slots: =_id=, =timestamp=, =dtype=, =actor-name=, =component=, =event-type=, =details=, =source-id=, =trace-id=, =generation=
 *** couchdb-delete-request
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Deferred CouchDB DELETE command executed by the couchdb service actor.
 - Slots: =database=, =document-id=, =revision=
 *** couchdb-get-request
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Deferred CouchDB GET command executed by the couchdb service actor.
 - Slots: =database=, =document-id=, =revision=
 *** couchdb-insert-request
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Deferred CouchDB insert command executed by the couchdb service actor.
 - Slots: =database=, =document-id=, =document=
 *** couchdb-result
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Result envelope returned by couchdb service actor handlers.
 - Slots: =status=, =operation=, =database=, =document-id=, =revision=, =value=, =error-type=, =error-message=
 *** target-command
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Command message consumed by target actors.
 - Slots: =record=, =first-time-p=, =recovered-p=
 *** target-destination-handle
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Resolved destination for a target dispatch (kind + address).
 - Slots: =kind=, =name=, =component=, =routing-key=, =compatibility-routing-keys=
 *** target-dispatch-envelope
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Envelope carrying one target dispatch through the runtime.
 - Slots: =record=, =destination=, =schedule-id=, =execution-id=, =attempt=, =trace-id=, =lease-id=, =fencing-token=, =deadline=
 *** target-dispatch-outcome
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Outcome record of one dispatch attempt.
 - Slots: =status=, =reason=, =acceptance-id=, =envelope=, =retryable-p=
 *** target-record
 :PROPERTIES:
 :KIND: struct
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+A scheduled target: what to run, where, and when.
 - Slots: =id=, =actor=, =target=, =delay=, =recurring-p=, =options=, =document=, =revision=, =lease-owner=, =lease-expires-at=
 
 * Conditions
@@ -162,35 +162,35 @@ Undocumented.
 :KIND: condition
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Signalled when an actor event fails validation.
 - Slots: =reason=, =payload=
 *** invalid-persisted-target
 :PROPERTIES:
 :KIND: condition
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Signalled when a persisted target document cannot be reloaded safely.
 - Slots: =document-id=, =reason=
 *** invalid-target-dispatch
 :PROPERTIES:
 :KIND: condition
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Signalled when a target dispatch envelope fails validation.
 - Slots: =reason=
 *** target-destination-unavailable
 :PROPERTIES:
 :KIND: condition
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Signalled when the resolved destination cannot accept work.
 - Slots: =reason=
 *** target-ingress-overloaded
 :PROPERTIES:
 :KIND: condition
 :PACKAGE: STAR.ACTORS
 :END:
-Undocumented.
+Signalled when the target ingress is above its load threshold.
 - Slots: =reason=
 
 * Functions
@@ -202,7 +202,7 @@ Undocumented.
 #+begin_src lisp
 (accept-target-delivery (STAR.ACTORS::CONSUMER STAR.ACTORS::DOCUMENT))
 #+end_src
-Undocumented.
+Record an acceptance decision for a target delivery.
 *** accept-target-record
 :PROPERTIES:
 :KIND: fn
@@ -223,7 +223,7 @@ Synchronously durably accept a target and return a structured outcome.
 #+begin_src lisp
 (canonical-target-routing-key (STAR.ACTORS::ACTOR-NAME))
 #+end_src
-Undocumented.
+Compute the canonical RabbitMQ routing key for a target.
 *** compatibility-target-ingress-routing-key
 :PROPERTIES:
 :KIND: fn
@@ -241,7 +241,7 @@ Return the routing key used by the legacy HTTP target adapter.
 #+begin_src lisp
 (compatibility-target-routing-keys (STAR.ACTORS::ACTOR-NAME))
 #+end_src
-Undocumented.
+Legacy routing keys accepted alongside the canonical key.
 *** couchdb-delete-request-database
 :PROPERTIES:
 :KIND: fn
@@ -250,7 +250,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-delete-request-database (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =database= slot of =couchdb-delete-request=.
 *** couchdb-delete-request-document-id
 :PROPERTIES:
 :KIND: fn
@@ -259,7 +259,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-delete-request-document-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =document-id= slot of =couchdb-delete-request=.
 *** couchdb-delete-request-revision
 :PROPERTIES:
 :KIND: fn
@@ -268,7 +268,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-delete-request-revision (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+Optimistic concurrency revision for the deferred delete.
 *** couchdb-get-request-database
 :PROPERTIES:
 :KIND: fn
@@ -277,7 +277,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-get-request-database (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =database= slot of =couchdb-get-request=.
 *** couchdb-get-request-document-id
 :PROPERTIES:
 :KIND: fn
@@ -286,7 +286,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-get-request-document-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =document-id= slot of =couchdb-get-request=.
 *** couchdb-get-request-revision
 :PROPERTIES:
 :KIND: fn
@@ -295,7 +295,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-get-request-revision (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+Expected revision carried by the deferred get, or nil.
 *** couchdb-insert-request-database
 :PROPERTIES:
 :KIND: fn
@@ -304,7 +304,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-insert-request-database (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =database= slot of =couchdb-insert-request=.
 *** couchdb-insert-request-document
 :PROPERTIES:
 :KIND: fn
@@ -313,7 +313,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-insert-request-document (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The JSON document payload for the deferred insert.
 *** couchdb-insert-request-document-id
 :PROPERTIES:
 :KIND: fn
@@ -322,7 +322,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-insert-request-document-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =document-id= slot of =couchdb-insert-request=.
 *** couchdb-result-database
 :PROPERTIES:
 :KIND: fn
@@ -331,7 +331,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-database (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =database= slot of =couchdb-result=.
 *** couchdb-result-document-id
 :PROPERTIES:
 :KIND: fn
@@ -340,7 +340,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-document-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =document-id= slot of =couchdb-result=.
 *** couchdb-result-error-message
 :PROPERTIES:
 :KIND: fn
@@ -349,7 +349,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-error-message (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+Human readable failure reason, when the result failed.
 *** couchdb-result-error-type
 :PROPERTIES:
 :KIND: fn
@@ -358,7 +358,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-error-type (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =error-type= slot of =couchdb-result=.
 *** couchdb-result-operation
 :PROPERTIES:
 :KIND: fn
@@ -367,7 +367,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-operation (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =operation= slot of =couchdb-result=.
 *** couchdb-result-revision
 :PROPERTIES:
 :KIND: fn
@@ -376,7 +376,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-revision (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =revision= slot of =couchdb-result=.
 *** couchdb-result-status
 :PROPERTIES:
 :KIND: fn
@@ -385,7 +385,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-status (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =status= slot of =couchdb-result=.
 *** couchdb-result-value
 :PROPERTIES:
 :KIND: fn
@@ -394,7 +394,7 @@ Undocumented.
 #+begin_src lisp
 (couchdb-result-value (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =value= slot of =couchdb-result=.
 *** decode-actor-event
 :PROPERTIES:
 :KIND: fn
@@ -439,7 +439,7 @@ Dispatch one occurrence through an explicit destination handle.
 #+begin_src lisp
 (encode-actor-event (STAR.ACTORS::EVENT))
 #+end_src
-Undocumented.
+Serialize an actor event to its wire JSON representation.
 *** get-dest-actor
 :PROPERTIES:
 :KIND: fn
@@ -448,7 +448,7 @@ Undocumented.
 #+begin_src lisp
 (get-dest-actor (SENTO.ACTOR:ACTOR))
 #+end_src
-Undocumented.
+Resolve a destination actor symbol by its registered name.
 *** handle-event-message
 :PROPERTIES:
 :KIND: fn
@@ -457,7 +457,7 @@ Undocumented.
 #+begin_src lisp
 (handle-event-message (STAR.ACTORS::CONSUMER STAR.ACTORS::MESSAGE))
 #+end_src
-Undocumented.
+Process one RabbitMQ event message inside the event consumer.
 *** load-persisted-target-records
 :PROPERTIES:
 :KIND: fn
@@ -480,7 +480,7 @@ Return valid typed records and quarantine invalid persisted documents.
  STAR.ACTORS::SOURCE-ID STAR.ACTORS::TRACE-ID STAR.ACTORS::COMPONENT
  (STAR.ACTORS::GENERATION 0)))
 #+end_src
-Undocumented.
+Emit an actor event through the configured receiver and log it.
 *** make-actor-event
 :PROPERTIES:
 :KIND: fn
@@ -492,7 +492,7 @@ Undocumented.
  (STAR.ACTORS::GENERATION 0) STAR.ACTORS::TIMESTAMP STAR.ACTORS::DTYPE
  SENTO.ACTOR-CONTEXT:ID))
 #+end_src
-Undocumented.
+Construct a validated actor event record.
 *** make-couchdb-delete-handler
 :PROPERTIES:
 :KIND: fn
@@ -502,7 +502,7 @@ Undocumented.
 (make-couchdb-delete-handler (SENTO.AGENT:AGENT &KEY
  (STAR.ACTORS::DELETE-FN #'STAR.ACTORS::COUCHDB-AGENT-DELETE)))
 #+end_src
-Undocumented.
+Actor handler for deferred CouchDB deletes.
 *** make-couchdb-delete-request
 :PROPERTIES:
 :KIND: fn
@@ -512,7 +512,7 @@ Undocumented.
 (make-couchdb-delete-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
 #+end_src
-Undocumented.
+Build a deferred CouchDB delete request for DOCUMENT-ID at REVISION.
 *** make-couchdb-get-handler
 :PROPERTIES:
 :KIND: fn
@@ -521,7 +521,7 @@ Undocumented.
 #+begin_src lisp
 (make-couchdb-get-handler (SENTO.AGENT:AGENT &KEY (STAR.ACTORS::GET-FN #'STAR.ACTORS::COUCHDB-AGENT-GET)))
 #+end_src
-Undocumented.
+Actor handler for deferred CouchDB reads.
 *** make-couchdb-get-request
 :PROPERTIES:
 :KIND: fn
@@ -531,7 +531,7 @@ Undocumented.
 (make-couchdb-get-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::REVISION))
 #+end_src
-Undocumented.
+Build a deferred CouchDB get request for DATABASE and DOCUMENT-ID.
 *** make-couchdb-insert-handler
 :PROPERTIES:
 :KIND: fn
@@ -542,7 +542,7 @@ Undocumented.
  (STAR.ACTORS::EXISTS-FN #'STAR.ACTORS::COUCHDB-DOCUMENT-EXISTS-P)
  (STAR.ACTORS::INSERT-FN #'STAR.ACTORS::COUCHDB-AGENT-INSERT)))
 #+end_src
-Undocumented.
+Actor handler for deferred CouchDB inserts.
 *** make-couchdb-insert-request
 :PROPERTIES:
 :KIND: fn
@@ -552,7 +552,7 @@ Undocumented.
 (make-couchdb-insert-request (&KEY (STAR.ACTORS::DATABASE STARINTEL-GSERVER:*COUCHDB-DEFAULT-DATABASE*)
  STAR.ACTORS::DOCUMENT-ID STAR.ACTORS::DOCUMENT))
 #+end_src
-Undocumented.
+Build a deferred CouchDB insert request carrying DOCUMENT.
 *** make-remote-target-consumer
 :PROPERTIES:
 :KIND: fn
@@ -574,7 +574,7 @@ Create a consumer bound to the canonical remote target route.
 (make-target-dispatch-envelope (STAR.ACTORS::RECORD &KEY STAR.ACTORS::DESTINATION (STAR.ACTORS::ATTEMPT 0)
  STAR.ACTORS::TRACE-ID STAR.ACTORS::LEASE-ID (STAR.ACTORS::FENCING-TOKEN 1)))
 #+end_src
-Undocumented.
+Build a validated dispatch envelope for a target.
 *** parse-target-record
 :PROPERTIES:
 :KIND: fn
@@ -706,7 +706,7 @@ Start the actor runtime and retain every process-owned timer/system handle.
 #+begin_src lisp
 (start-couchdb-deletes (SENTO.ACTOR-CONTEXT:SYSTEM))
 #+end_src
-Undocumented.
+Start the actor handling deferred CouchDB deletes.
 *** start-event-consumer
 :PROPERTIES:
 :KIND: fn
@@ -761,7 +761,7 @@ Compatibility alias for the historical misspelling.
 #+begin_src lisp
 (target-acceptance-document (STAR.ACTORS::ENVELOPE))
 #+end_src
-Undocumented.
+The persisted acceptance document for a target.
 *** target-acceptance-equivalent-p
 :PROPERTIES:
 :KIND: fn
@@ -770,7 +770,7 @@ Undocumented.
 #+begin_src lisp
 (target-acceptance-equivalent-p (STAR.ACTORS::LEFT STAR.ACTORS::RIGHT))
 #+end_src
-Undocumented.
+True when two acceptance documents describe the same target.
 *** target-acceptance-id
 :PROPERTIES:
 :KIND: fn
@@ -779,7 +779,7 @@ Undocumented.
 #+begin_src lisp
 (target-acceptance-id (STAR.ACTORS::SCHEDULE-ID))
 #+end_src
-Undocumented.
+Stable identifier of a target acceptance record.
 *** target-active-lease-p
 :PROPERTIES:
 :KIND: fn
@@ -797,7 +797,7 @@ Return true when RECORD has a non-expired persisted execution lease.
 #+begin_src lisp
 (target-command-first-time-p (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =first-time-p= slot of =target-command=.
 *** target-command-record
 :PROPERTIES:
 :KIND: fn
@@ -806,7 +806,7 @@ Undocumented.
 #+begin_src lisp
 (target-command-record (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =record= slot of =target-command=.
 *** target-command-recovered-p
 :PROPERTIES:
 :KIND: fn
@@ -815,7 +815,7 @@ Undocumented.
 #+begin_src lisp
 (target-command-recovered-p (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =recovered-p= slot of =target-command=.
 *** target-destination-handle-compatibility-routing-keys
 :PROPERTIES:
 :KIND: fn
@@ -824,7 +824,7 @@ Undocumented.
 #+begin_src lisp
 (target-destination-handle-compatibility-routing-keys (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+Legacy routing keys kept for the destination handle.
 *** target-destination-handle-component
 :PROPERTIES:
 :KIND: fn
@@ -833,7 +833,7 @@ Undocumented.
 #+begin_src lisp
 (target-destination-handle-component (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =component= slot of =target-destination-handle=.
 *** target-destination-handle-kind
 :PROPERTIES:
 :KIND: fn
@@ -842,7 +842,7 @@ Undocumented.
 #+begin_src lisp
 (target-destination-handle-kind (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =kind= slot of =target-destination-handle=.
 *** target-destination-handle-name
 :PROPERTIES:
 :KIND: fn
@@ -851,7 +851,7 @@ Undocumented.
 #+begin_src lisp
 (target-destination-handle-name (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =name= slot of =target-destination-handle=.
 *** target-destination-handle-routing-key
 :PROPERTIES:
 :KIND: fn
@@ -860,7 +860,7 @@ Undocumented.
 #+begin_src lisp
 (target-destination-handle-routing-key (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =routing-key= slot of =target-destination-handle=.
 *** target-dispatch-envelope-attempt
 :PROPERTIES:
 :KIND: fn
@@ -869,7 +869,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-attempt (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =attempt= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-deadline
 :PROPERTIES:
 :KIND: fn
@@ -878,7 +878,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-deadline (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+Latest acceptable execution time for the envelope.
 *** target-dispatch-envelope-destination
 :PROPERTIES:
 :KIND: fn
@@ -887,7 +887,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-destination (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =destination= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-execution-id
 :PROPERTIES:
 :KIND: fn
@@ -896,7 +896,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-execution-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =execution-id= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-fencing-token
 :PROPERTIES:
 :KIND: fn
@@ -905,7 +905,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-fencing-token (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =fencing-token= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-lease-id
 :PROPERTIES:
 :KIND: fn
@@ -914,7 +914,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-lease-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =lease-id= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-record
 :PROPERTIES:
 :KIND: fn
@@ -923,7 +923,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-record (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =record= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-schedule-id
 :PROPERTIES:
 :KIND: fn
@@ -932,7 +932,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-schedule-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =schedule-id= slot of =target-dispatch-envelope=.
 *** target-dispatch-envelope-trace-id
 :PROPERTIES:
 :KIND: fn
@@ -941,7 +941,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-envelope-trace-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =trace-id= slot of =target-dispatch-envelope=.
 *** target-dispatch-outcome-acceptance-id
 :PROPERTIES:
 :KIND: fn
@@ -950,7 +950,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-outcome-acceptance-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =acceptance-id= slot of =target-dispatch-outcome=.
 *** target-dispatch-outcome-envelope
 :PROPERTIES:
 :KIND: fn
@@ -959,7 +959,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-outcome-envelope (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =envelope= slot of =target-dispatch-outcome=.
 *** target-dispatch-outcome-reason
 :PROPERTIES:
 :KIND: fn
@@ -968,7 +968,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-outcome-reason (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =reason= slot of =target-dispatch-outcome=.
 *** target-dispatch-outcome-retryable-p
 :PROPERTIES:
 :KIND: fn
@@ -977,7 +977,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-outcome-retryable-p (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =retryable-p= slot of =target-dispatch-outcome=.
 *** target-dispatch-outcome-status
 :PROPERTIES:
 :KIND: fn
@@ -986,7 +986,7 @@ Undocumented.
 #+begin_src lisp
 (target-dispatch-outcome-status (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =status= slot of =target-dispatch-outcome=.
 *** target-outcome-success-p
 :PROPERTIES:
 :KIND: fn
@@ -995,7 +995,7 @@ Undocumented.
 #+begin_src lisp
 (target-outcome-success-p (STAR.ACTORS::OUTCOME))
 #+end_src
-Undocumented.
+True when a dispatch outcome counts as successful.
 *** target-record-actor
 :PROPERTIES:
 :KIND: fn
@@ -1004,7 +1004,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-actor (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =actor= slot of =target-record=.
 *** target-record-delay
 :PROPERTIES:
 :KIND: fn
@@ -1013,7 +1013,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-delay (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =delay= slot of =target-record=.
 *** target-record-document
 :PROPERTIES:
 :KIND: fn
@@ -1022,7 +1022,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-document (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =document= slot of =target-record=.
 *** target-record-id
 :PROPERTIES:
 :KIND: fn
@@ -1031,7 +1031,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-id (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =id= slot of =target-record=.
 *** target-record-lease-expires-at
 :PROPERTIES:
 :KIND: fn
@@ -1040,7 +1040,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-lease-expires-at (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+Expiration of the lease guarding this target record.
 *** target-record-lease-owner
 :PROPERTIES:
 :KIND: fn
@@ -1049,7 +1049,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-lease-owner (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =lease-owner= slot of =target-record=.
 *** target-record-options
 :PROPERTIES:
 :KIND: fn
@@ -1058,7 +1058,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-options (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =options= slot of =target-record=.
 *** target-record-recurring-p
 :PROPERTIES:
 :KIND: fn
@@ -1067,7 +1067,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-recurring-p (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =recurring-p= slot of =target-record=.
 *** target-record-revision
 :PROPERTIES:
 :KIND: fn
@@ -1076,7 +1076,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-revision (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =revision= slot of =target-record=.
 *** target-record-target
 :PROPERTIES:
 :KIND: fn
@@ -1085,7 +1085,7 @@ Undocumented.
 #+begin_src lisp
 (target-record-target (SB-KERNEL:INSTANCE))
 #+end_src
-Undocumented.
+The =target= slot of =target-record=.
 *** validate-actor-event
 :PROPERTIES:
 :KIND: fn
@@ -1094,7 +1094,7 @@ Undocumented.
 #+begin_src lisp
 (validate-actor-event (STAR.ACTORS::EVENT &OPTIONAL STAR.ACTORS::PAYLOAD))
 #+end_src
-Undocumented.
+Validate an actor event; signal invalid-actor-event on failure.
 *** validate-target-dispatch-record
 :PROPERTIES:
 :KIND: fn
@@ -1115,7 +1115,7 @@ Validate identity, schedule, recurrence, transient policy, and deadline.
 #+begin_src lisp
 (event-actor-name (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =actor-name= slot of =actor-event=.
 *** event-component
 :PROPERTIES:
 :KIND: fn
@@ -1124,7 +1124,7 @@ Undocumented.
 #+begin_src lisp
 (event-component (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =component= slot of =actor-event=.
 *** event-details
 :PROPERTIES:
 :KIND: fn
@@ -1133,7 +1133,7 @@ Undocumented.
 #+begin_src lisp
 (event-details (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =details= slot of =actor-event=.
 *** event-generation
 :PROPERTIES:
 :KIND: fn
@@ -1142,7 +1142,7 @@ Undocumented.
 #+begin_src lisp
 (event-generation (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =generation= slot of =actor-event=.
 *** event-id
 :PROPERTIES:
 :KIND: fn
@@ -1151,7 +1151,7 @@ Undocumented.
 #+begin_src lisp
 (event-id (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =event-id= slot of =actor-event=.
 *** event-source-document
 :PROPERTIES:
 :KIND: fn
@@ -1160,7 +1160,7 @@ Undocumented.
 #+begin_src lisp
 (event-source-document (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =source-id= slot of =actor-event=.
 *** event-timestamp
 :PROPERTIES:
 :KIND: fn
@@ -1169,7 +1169,7 @@ Undocumented.
 #+begin_src lisp
 (event-timestamp (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =timestamp= slot of =actor-event=.
 *** event-trace-id
 :PROPERTIES:
 :KIND: fn
@@ -1178,7 +1178,7 @@ Undocumented.
 #+begin_src lisp
 (event-trace-id (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =trace-id= slot of =actor-event=.
 *** event-type
 :PROPERTIES:
 :KIND: fn
@@ -1187,7 +1187,7 @@ Undocumented.
 #+begin_src lisp
 (event-type (SB-PCL::OBJECT))
 #+end_src
-Undocumented.
+The =event-type= slot of =actor-event=.
 *** invalid-actor-event-reason
 :PROPERTIES:
 :KIND: fn
@@ -1196,7 +1196,7 @@ Undocumented.
 #+begin_src lisp
 (invalid-actor-event-reason (CONDITION))
 #+end_src
-Undocumented.
+The =invalid-actor-event-reason= slot of =invalid-actor-event=.
 *** invalid-target-dispatch-reason
 :PROPERTIES:
 :KIND: fn
@@ -1205,7 +1205,7 @@ Undocumented.
 #+begin_src lisp
 (invalid-target-dispatch-reason (CONDITION))
 #+end_src
-Undocumented.
+The =invalid-target-dispatch-reason= slot of =invalid-target-dispatch=.
 *** invalid-target-document-id
 :PROPERTIES:
 :KIND: fn
@@ -1214,7 +1214,7 @@ Undocumented.
 #+begin_src lisp
 (invalid-target-document-id (CONDITION))
 #+end_src
-Undocumented.
+The =document-id= slot of =invalid-persisted-target=.
 *** invalid-target-reason
 :PROPERTIES:
 :KIND: fn
@@ -1223,7 +1223,7 @@ Undocumented.
 #+begin_src lisp
 (invalid-target-reason (CONDITION))
 #+end_src
-Undocumented.
+The =reason= slot of =invalid-persisted-target=.
 *** target-destination-unavailable-reason
 :PROPERTIES:
 :KIND: fn
@@ -1232,7 +1232,7 @@ Undocumented.
 #+begin_src lisp
 (target-destination-unavailable-reason (CONDITION))
 #+end_src
-Undocumented.
+The =target-destination-unavailable-reason= slot of =target-destination-unavailable=.
 *** target-ingress-overloaded-reason
 :PROPERTIES:
 :KIND: fn
@@ -1241,7 +1241,7 @@ Undocumented.
 #+begin_src lisp
 (target-ingress-overloaded-reason (CONDITION))
 #+end_src
-Undocumented.
+The =target-ingress-overloaded-reason= slot of =target-ingress-overloaded=.
 
 * Macros
 *** define-actor
@@ -1253,7 +1253,7 @@ Undocumented.
 (define-actor ((STAR.ACTORS::NAME SENTO.ACTOR-CONTEXT:SYSTEM &KEY (STAR.ACTORS::REGISTER T))
  &BODY STAR.ACTORS::BODY))
 #+end_src
-Undocumented.
+Define an actor message handler and register it in the actor index.
 *** with-json
 :PROPERTIES:
 :KIND: macro
@@ -1262,4 +1262,4 @@ Undocumented.
 #+begin_src lisp
 (with-json (STAR.ACTORS::JOBJECT &BODY STAR.ACTORS::BODY))
 #+end_src
-Undocumented.
+Macro exposing =val=, =dataset=, =dtype= readers over a JSON object.
