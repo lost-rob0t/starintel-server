@@ -145,8 +145,8 @@ class OperationalSalvageContractTests(unittest.TestCase):
         self.assertIn("couchdb-update-target-acceptance", acceptance)
 
     def test_target_lease_semantics_design_is_complete(self) -> None:
-        design = self.text("docs/target-lease-semantics.org")
-        index = self.text("docs/index.org")
+        design = self.text("doc/target-lease-semantics.org")
+        index = self.text("doc/index.org")
         for section in (
             "* Canonical lease identity and key",
             "* Lease record contract",
@@ -238,7 +238,7 @@ class OperationalSalvageContractTests(unittest.TestCase):
         adapter = self.text("source/leases/valkey-store.lisp")
         scripts = self.text("source/leases/valkey-scripts.lisp")
         compose = self.text("docker-compose.yml")
-        usage = self.text("docs/lease-store-usage.org")
+        usage = self.text("doc/lease-store-usage.org")
         for script in (
             "+valkey-acquire-script+",
             "+valkey-renew-script+",
