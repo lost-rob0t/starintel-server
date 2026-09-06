@@ -27,6 +27,6 @@ jobs:
           docker run --rm --user root --entrypoint /bin/bash \
             -v "$PWD/actors/website/tests:/tests:ro" \
             starintel/actor-wef-ygl:ci \
-            -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -q /tests'
+            -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -c /app/pyproject.toml -p no:cacheprovider -q /tests'
       - name: Registry smoke
         run: docker run --rm starintel/actor-wef-ygl:ci sites
