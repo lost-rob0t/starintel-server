@@ -28,7 +28,9 @@ jobs:
         run: docker run --rm starintel/actor-wef-ygl:ci sites
       - name: Fixture tests
         run: |
-          docker run --rm --entrypoint /bin/bash \
+          # Production stays unprivileged. CI temporarily uses root only to
+          # install ephemeral test dependencies into the disposable container.
+          docker run --rm --user root --entrypoint /bin/bash \
             -v "$PWD/actors/website/tests:/tests:ro" \
             starintel/actor-wef-ygl:ci \
             -lc 'python -m pip install -q pytest pytest-asyncio && PYTHONPATH=/app/src pytest -q /tests'
