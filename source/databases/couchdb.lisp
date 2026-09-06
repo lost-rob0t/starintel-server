@@ -6,12 +6,14 @@
 
 
 (defun format-key (key)
+  "Convert a slot name into its CouchDB JSON key."
   (if (str:starts-with? "_" key)
       (string-downcase key)
       (str:camel-case key)))
 
 
 (defun as-json (object &key (format-fn #'format-key))
+  "Serialize a spec object into its JSON document form."
   (let ((json-obj (jsown:empty-object)))
     (loop for slot in (mapcar #'closer-mop:slot-definition-name
                               (closer-mop:class-slots (class-of object)))
@@ -36,6 +38,7 @@
                (t (write-char (char-downcase char) s))))))
 
 (defun from-json (json-obj class-name &key (format-fn #'format-key))
+  "Populate a spec object from its JSON document form."
   (let* ((object (make-instance class-name))
          (class (class-of object)))
     (loop for slot in (sb-mop:class-slots class)
@@ -54,7 +57,11 @@
 
 
 (defun init-views (client database)
-  "Create or update all views from source/views/*.json files."
+  "Create or update all view documents in DATABASE.
+
+Documents come from =star:*couchdb-views*= (the =views/= directory).
+Existing views are updated in place using their current =_rev=;
+missing views are created.  Conflicts are logged and re-signalled."
   (log:info "Initializing CouchDB views for database: ~a" database)
   (dolist (jdata star:*couchdb-views*)
     (let* ((doc (jsown:parse jdata))
@@ -86,7 +93,11 @@
 
 
 (defun init-db ()
-  "Create the database if needed, and ensure all map-reduce views are up to date."
+  "Create the intelligence database if needed and install all views.
+
+Connects using the =star:*couchdb-*= settings, authenticates, creates
+=*couchdb-default-database*= on 404, then calls =init-views=.  Idempotent;
+safe to call at every boot."
   (log:info "Starting database initialization sequence")
   (log:info "Initializing main database: ~a" *couchdb-default-database*)
   (log:debug "Database connection parameters: host=~a, port=~a, scheme=~a, user=~a" 
@@ -134,7 +145,8 @@
   (log:info "All database initialization completed successfully"))
 
 (defun init-event-db ()
-  "Create the event source database if needed."
+  "Create the event source database (=*couchdb-event-log-database*=)
+if needed.  Idempotent; outbox and settlement events are stored here."
   (log:info "Initializing event source database: ~a" star:*couchdb-event-log-database*)
   (let ((event-database star:*couchdb-event-log-database*)
         (client (new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
@@ -155,6 +167,11 @@
 
 
 (defun get-neighbors (client database ddoc view-name n &rest keys)
+  "Expand a relation graph N hops outwards around KEYS.
+
+Queries the grouped reduce view (DDOC/VIEW-NAME) repeatedly, feeding
+discovered keys back in as the frontier.  Returns an assoc graph of
+(key . values) suitable for drawing edges."
   (let ((graph nil)
         (current-keys keys))
     (loop repeat n

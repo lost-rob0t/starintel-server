@@ -27,6 +27,11 @@
 ;;;; Register an actor for recieving target inputs
 ;;;; Actors must be registered with actor-index before they will get any target messages.
 (defun register-actor (actor-name actor-symbol)
+  "Register ACTOR-SYMBOL under ACTOR-NAME in the actor index.
+
+Actors must be registered here before they receive any target
+messages; the target router resolves destinations through
+=get-dest-actor=."
   (log:info "Registering actor: ~a -> ~a" actor-name actor-symbol)
   (agent-update *actor-index-agent*
                 (lambda (current-dict)
@@ -35,6 +40,7 @@
 
 ;;;; Return the destination actor symbol by actor name string
 (defun get-dest-actor (actor)
+  "Resolve a destination actor symbol by its registered name."
   (let ((dest (serapeum:@  (agent-get *actor-index-agent* #'identity) actor)))
     (log:debug "Looking up destination actor for: ~a -> ~a" actor dest)
     dest))
@@ -235,6 +241,10 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 ;;;; The target timer handles recurring targets.
 (defvar *target-timer* nil "simple wheel timer for targets")
 (defun start-target-timer ()
+  "Start the wheel timer backing recurring targets.
+
+Resolution 10s, max size 1000 scheduled entries.  See also
+=*target-timer*=."
   (log:info "Starting target timer - resolution: 10 max-size: 1000")
   (setf *target-timer* (wt:make-wheel-timer :resolution 10 :max-size 1000))
   (log:info "Target timer started successfully"))
@@ -242,6 +252,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 
 (defmacro with-json (jobject &body body)
+  "Macro exposing =val=, =dataset=, =dtype= readers over a JSON object."
   `(macrolet ((val (key) `(jsown:val-safe ,jobject ,key))
               (dataset () `(jsown:val ,jobject "datast"))
               (date-added () `(jsown:val ,jobject "dateAdded"))
@@ -255,6 +266,7 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
 
 ;;;; Define a actor and its start function
 (defmacro define-actor ((name system &key (register t)) &body body)
+  "Define an actor message handler and register it in the actor index."
   (let ((start-fn-name (intern (format nil "START-~A" (str:replace-all "*" "" (symbol-name name))))))
     `(progn
        (defvar ,name nil)
@@ -278,7 +290,8 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
               :pinned))
 
 (defvar *producer-lock* "")
-(defvar *producer-agent* nil)
+(defvar *producer-agent* nil
+  "Sento agent pinning the RabbitMQ producer connection to one thread.")
 
 (defparameter *publish-timeout-seconds* 5
   "Maximum time allowed for a publish operation before failing fast.
@@ -323,6 +336,12 @@ and normalize it to JSON.
 
 
 (defun start-actors (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port)
+  "Boot the actor system and every well-known actor.
+
+Creates the sento actor system, the Rabbit producer agent, the
+CouchDB agent, the actor index and the target timer, then starts
+consumers.  Connection parameters default to the =star:*rabbit-*=
+settings."
   (start-actor-system)
   (setf *producer-agent* (make-producer-agent (star.producers:make-producer :name "actor-producer"
                                                                             :exchange-name "documents"

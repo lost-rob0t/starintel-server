@@ -200,6 +200,7 @@
                      :code "internal_error")))))
 
 (defun request-principal (&optional request)
+  "Who is calling: id, type, scopes and credential id."
   (declare (ignore request))
   (or (star.auth:current-principal-id)
       "anonymous"))

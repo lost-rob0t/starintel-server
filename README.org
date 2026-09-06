@@ -189,7 +189,7 @@ Full Nix image, health, FTS, restart, and persistence test:
 ./scripts/stack-test.sh
 #+end_src
 
-See [[file:docs/testing.md][docs/testing.md]].
+See [[file:doc/testing.md][doc/testing.md]].
 
 ** Run from Common Lisp
 
@@ -221,16 +221,16 @@ The same path can be supplied through =STAR_SERVER_INIT_FILE=.
 
 | Document | Contents |
 |----------+----------|
-| [[file:docs/index.org][docs/index.org]] | Documentation index and implementation status |
-| [[file:docs/architecture.org][docs/architecture.org]] | Runtime structure, startup order, concurrency, and repository layout |
-| [[file:docs/actors.org][docs/actors.org]] | Creating, registering, targeting, scheduling, and operating actors |
-| [[file:docs/messaging.org][docs/messaging.org]] | RabbitMQ exchanges, queues, routing keys, recursion, delivery, and loop control |
-| [[file:docs/document-spec.org][docs/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
-| [[file:docs/configuration.org][docs/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
-| [[file:docs/http-api-docs.org][docs/http-api-docs.org]] | HTTP endpoint reference and examples |
-| [[file:docs/lease-store-usage.org][docs/lease-store-usage.org]] | Backend-neutral target lease protocol examples and lifecycle |
+| [[file:doc/index.org][doc/index.org]] | Documentation index and implementation status |
+| [[file:doc/architecture.org][doc/architecture.org]] | Runtime structure, startup order, concurrency, and repository layout |
+| [[file:doc/actors.org][doc/actors.org]] | Creating, registering, targeting, scheduling, and operating actors |
+| [[file:doc/messaging.org][doc/messaging.org]] | RabbitMQ exchanges, queues, routing keys, recursion, delivery, and loop control |
+| [[file:doc/document-spec.org][doc/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
+| [[file:doc/configuration.org][doc/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
+| [[file:doc/http-api-docs.org][doc/http-api-docs.org]] | HTTP endpoint reference and examples |
+| [[file:doc/lease-store-usage.org][doc/lease-store-usage.org]] | Backend-neutral target lease protocol examples and lifecycle |
 | [[file:DOCKER.md][DOCKER.md]] | Nix-built container stack and operations |
-| [[file:docs/testing.md][docs/testing.md]] | Unit, integration, and stack tests |
+| [[file:doc/testing.md][doc/testing.md]] | Unit, integration, and stack tests |
 
 ** Runtime status
 
@@ -256,6 +256,26 @@ Important current limits:
   depending on Ningle route behavior.
 
 These are documented facts, not supported guarantees.
+
+** API documentation
+
+The exported API of every package is documented where it is defined: as
+=org-mode= markup inside Common Lisp docstrings.  Render it into
+Org files under =doc/api/= with:
+
+#+begin_example
+make docs-api        # = nix run .#gen-api-docs
+#+end_example
+
+This runs the [[https://git.starintel.actor/nsaspy/org-doc][org-doc]] extractor against the loaded
+=starintel-gserver= image and regenerates =doc/api/index.org= plus one
+file per package.  Docstring coverage is printed at the end of the run
+so undocumented symbols are visible.
+
+In Emacs, install the =sly-org-doc= package (from the org-doc repo) to
+see docstring summaries in the echo area while typing (SLY and SLIME),
+and =C-c C-d C-o= to open the full Org docstring of the symbol at
+point, fontified and live.
 
 ** License
 

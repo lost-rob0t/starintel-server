@@ -27,7 +27,8 @@
     :reader memory-store-metrics-hook)
    (closed-p
     :initform nil
-    :accessor memory-store-closed-p)))
+    :accessor memory-store-closed-p))
+  (:documentation "In-memory lease store for tests and tools."))
 
 (defun unix-time-milliseconds ()
   (* 1000 (- (get-universal-time) 2208988800)))
