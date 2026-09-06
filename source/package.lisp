@@ -377,10 +377,22 @@
     #:target-ingress-overloaded-reason
     #:target-destination-unavailable
     #:target-destination-unavailable-reason
-   #:canonical-target-routing-key
-   #:compatibility-target-routing-keys
-   #:compatibility-target-ingress-routing-key
-   #:resolve-target-destination
+    #:canonical-target-routing-key
+    #:compatibility-target-routing-keys
+    #:compatibility-target-ingress-routing-key
+    #:resolve-target-destination
+    #:valid-target-actor-identity-p
+    #:resolve-target-actor-identity
+    #:*target-actor-identity-resolver*
+    #:target-actor-identity
+    #:target-actor-identity-p
+    #:target-actor-identity-star-uri
+    #:target-actor-identity-registry-key
+    #:make-target-actor-identity
+    #:target-destination-handle-star-uri
+    #:target-dispatch-document
+    #:target-dispatch-remote-properties
+    #:target-dispatch-amqp-headers
    #:validate-target-dispatch-record
    #:make-target-dispatch-envelope
    #:target-acceptance-id
@@ -405,9 +417,52 @@
    #:event-timestamp
    #:event-actor-name
    #:event-type
-   #:event-details
-   #:event-source-document
-   #:event-id))
+    #:event-details
+    #:event-source-document
+    #:event-id))
+
+(uiop:define-package :star.star-uri
+  (:use :cl)
+  (:documentation
+   "Temporary canonical STAR URI compatibility layer.
+
+Normative source: STAR-SERVER-041 (RFC 3986 STAR URI Authority Routing
+Extension) and STAR-RESEARCH-041.  This package implements the approved
+star://<authority>/<resource-kind>/<resource-path> v1 identity model as a
+small, deliberately temporary gserver-local library.  It MUST be replaced by
+the shared StarLang STAR URI library once that library is consumable by
+gserver; see source/star-uri.lisp for the replacement marker.
+
+Legacy star://domain:address:actor-name syntax is compatibility input only
+and lives behind the explicit legacy API in source/star-uri-legacy.lisp.")
+  (:export
+   #:+star-uri-implementation-replacement-marker+
+   #:+star-uri-resource-kinds+
+   #:invalid-star-uri
+   #:invalid-star-uri-reason
+   #:star-uri
+   #:star-uri-p
+   #:star-uri-authority
+   #:star-uri-path-segments
+   #:star-uri-resource-kind
+   #:star-uri-resource-path
+   #:parse-star-uri
+   #:canonicalize-star-uri
+   #:serialize-star-uri
+   #:canonical-star-uri-p
+   #:valid-star-uri-p
+   #:actor-star-uri-p
+   #:star-uri-text-p
+   #:*gserver-star-authority*
+   #:star-uri-owned-p
+   #:legacy-star-actor-tuple
+   #:legacy-star-actor-tuple-p
+   #:legacy-star-actor-tuple-domain
+   #:legacy-star-actor-tuple-address
+   #:legacy-star-actor-tuple-actor-name
+   #:parse-legacy-star-uri
+   #:legacy-star-actor-uri-p
+   #:migrate-legacy-star-uri))
 
 (uiop:define-package :starintel-gserver-http-api
   (:nicknames :star.frontends.http-api)

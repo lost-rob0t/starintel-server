@@ -114,7 +114,14 @@ invalid_document_schema= and do not invoke persistence.
 The historical =POST /new/target/:actor= adapter is the exception. It retains
 transport identity checks, skips strict schema validation, and publishes
 directly to =documents.new.target.<actor>= so legacy target envelopes do not
-enter canonical ingest.
+enter canonical ingest. It remains a bounded compatibility adapter for bare
+actor names: canonical =star://= actor identities are rejected there with
+=canonical_actor_identity_unsupported=.
+
+The versioned =POST /api/v1/targets= operation is the canonical migration
+interface: its =actor= field accepts either a bare actor name or a canonical
+STAR actor URI (=star://<authority>/actor/<resource-path>=, STAR-SERVER-041).
+Malformed or non-actor STAR identities return =422 invalid_target_actor=.
 
 * View query routes
 

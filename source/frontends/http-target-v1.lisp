@@ -81,9 +81,10 @@
          (extensions (jsown:empty-object))
          (document (jsown:empty-object))
          (now (star.documents:utc-now)))
-    (unless (star.actors::valid-target-actor-name-p actor)
+    (unless (star.actors:valid-target-actor-identity-p actor)
       (signal-http-input-error
-       422 "invalid_target_actor" "actor contains invalid characters"))
+       422 "invalid_target_actor"
+       "actor must be a bare actor name or a canonical STAR actor URI"))
     (setf (jsown:val extensions "idempotency_key") identity
           (jsown:val extensions "submitted_by") (target-v1-digest principal)
           (jsown:val document "_id") (format nil "target:~a" identity)

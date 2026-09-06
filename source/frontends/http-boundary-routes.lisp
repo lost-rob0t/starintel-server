@@ -13,6 +13,17 @@
       (publish-document document)
       (jsown:to-json document))))
 
+(defun ensure-legacy-target-adapter-actor (actor)
+  "The historical /new/target/:actor routes are bounded compatibility
+adapters for bare actor names.  Canonical STAR actor identity must be
+submitted through the versioned target API (/api/v1/targets); a STAR URI
+must not be smuggled through a URL path segment."
+  (when (star.star-uri:star-uri-text-p actor)
+    (signal-http-input-error
+     400
+     "canonical_actor_identity_unsupported"
+     "canonical STAR actor identity is not accepted by the legacy target adapter; use POST /api/v1/targets")))
+
 (defun handle-new-target-route (params)
   (with-http-boundary ()
     (let* ((actor (query-value params "actor"))
@@ -22,6 +33,7 @@
          400
          "missing_path_parameter"
          "Route actor is required"))
+      (ensure-legacy-target-adapter-actor actor)
       (setf (jsown:val document "dtype") "target"
             (jsown:val document "actor") actor)
       ;; This route is the historical target compatibility adapter. Canonical

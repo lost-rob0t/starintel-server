@@ -29,6 +29,7 @@
   (with-http-boundary ()
     (let* ((actor (require-path-string params "actor"))
            (document (require-json-object (parse-json-request))))
+      (ensure-legacy-target-adapter-actor actor)
       (setf (jsown:val document "dtype") "target"
             (jsown:val document "actor") actor)
       ;; Keep the historical target envelope as an explicit narrow exception.

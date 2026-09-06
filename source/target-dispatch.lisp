@@ -5,12 +5,16 @@
 
 (defstruct (target-destination-handle
              (:constructor make-target-destination-handle
-                 (kind name &key component routing-key compatibility-routing-keys)))
+                 (kind name &key component routing-key compatibility-routing-keys star-uri)))
   kind
   name
   component
   routing-key
-  compatibility-routing-keys)
+  compatibility-routing-keys
+  ;; Canonical STAR actor identity carried separately from transport
+  ;; material (STAR-SERVER-041 transport binding).  NIL for bare
+  ;; legacy actor names.
+  star-uri)
 
 (defstruct (target-dispatch-envelope
              (:constructor %make-target-dispatch-envelope
@@ -66,6 +70,109 @@
   (and (target-nonempty-string-p name)
        (cl-ppcre:scan "^[A-Za-z0-9][A-Za-z0-9._:-]*$" name)))
 
+;;;; Canonical STAR actor identity (STAR-SERVER-041 / STAR-RESEARCH-041).
+;;;;
+;;;; Three concepts stay distinct:
+;;;;   * canonical STAR identity (star.star-uri:star-uri),
+;;;;   * the local actor registry key,
+;;;;   * the RabbitMQ transport binding token.
+;;;; The temporary gserver-local :star.star-uri compatibility layer is the
+;;;; only URI parser behind the default resolver; replacing it with the
+;;;; shared StarLang STAR URI library means rebinding
+;;;; *target-actor-identity-resolver*, not rewriting target routing.
+
+(defstruct (target-actor-identity
+            (:constructor make-target-actor-identity
+                (&key star-uri registry-key))
+            (:predicate target-actor-identity-p)
+            (:copier nil))
+  "Canonical STAR actor identity plus its temporary local projections."
+  (star-uri nil :read-only t)
+  (registry-key nil :read-only t))
+
+(defun star-actor-identity-star-uri-string (identity)
+  (let ((uri (target-actor-identity-star-uri identity)))
+    (when uri
+      (star.star-uri:serialize-star-uri uri))))
+
+(defun star-actor-registry-key (uri)
+  "Dedicated adapter: project a canonical, locally-owned actor resource onto
+the flat local actor registry key space.  The registry key is registry
+material, not identity; the canonical STAR URI is carried separately and is
+never flattened into an actor name."
+  (format nil "~{~a~^/~}" (star.star-uri:star-uri-resource-path uri)))
+
+(defun resolve-star-actor-identity/default (actor)
+  "Default identity resolution backed by the temporary gserver-local
+:star.star-uri compatibility layer (see the replacement marker there).
+
+Canonical actor URIs owned by the configured gserver authority resolve
+through the registry adapter; foreign authorities such as
+star://bbpd.starintel.actor/actor/subfinder never touch the local registry."
+  (if (star.star-uri:star-uri-text-p actor)
+      (let ((uri
+              (handler-case (star.star-uri:parse-star-uri actor)
+                (star.star-uri:invalid-star-uri (condition)
+                  (error 'invalid-target-dispatch
+                         :reason (star.star-uri:invalid-star-uri-reason condition))))))
+        (unless (string= "actor" (star.star-uri:star-uri-resource-kind uri))
+          (error 'invalid-target-dispatch
+                 :reason (format nil "STAR URI ~s does not address an actor resource"
+                                 actor)))
+        (unless (star.star-uri:star-uri-resource-path uri)
+          (error 'invalid-target-dispatch
+                 :reason (format nil "STAR actor URI ~s has no actor resource path"
+                                 actor)))
+        (make-target-actor-identity
+         :star-uri uri
+         :registry-key (when (star.star-uri:star-uri-owned-p uri)
+                         (star-actor-registry-key uri))))
+      (progn
+        (unless (valid-target-actor-name-p actor)
+          (error 'invalid-target-dispatch
+                 :reason (format nil "invalid actor identity ~s" actor)))
+        (make-target-actor-identity :star-uri nil :registry-key actor))))
+
+(defparameter *target-actor-identity-resolver*
+  #'resolve-star-actor-identity/default
+  "Resolution seam between target routing and canonical STAR identity.
+
+Target routing depends on this interface only.  It currently points at the
+temporary gserver-local star.star-uri compatibility layer; the shared
+StarLang STAR URI library will replace the resolver (and the parser behind
+it) without touching actor or target routing code.")
+
+(defun resolve-target-actor-identity (actor)
+  "Resolve ACTOR (a bare legacy actor name or a canonical STAR actor URI)
+into a target-actor-identity."
+  (funcall *target-actor-identity-resolver* actor))
+
+(defun valid-target-actor-identity-p (actor)
+  "True when ACTOR is a valid target actor identity: a bare legacy actor
+name, or a STAR actor URI accepted by the canonical identity profile."
+  (or (valid-target-actor-name-p actor)
+      (and (star.star-uri:star-uri-text-p actor)
+           (star.star-uri:actor-star-uri-p actor))))
+
+(defun target-actor-transport-token (identity)
+  "Project a canonical actor identity onto the flat external-actor RabbitMQ
+routing token (documents.target.dispatch.<token> /
+actors.<token>.new.target).
+
+The current external-actor contract is flat; identities that cannot be
+expressed there fail closed instead of being silently flattened."
+  (let* ((uri (target-actor-identity-star-uri identity))
+         (path (when uri (star.star-uri:star-uri-resource-path uri)))
+         (token (and path (null (cdr path)) (car path))))
+    (if (and token (valid-target-actor-name-p token))
+        token
+        (error 'invalid-target-dispatch
+               :reason
+               (format nil
+                       "cannot project actor identity ~s onto the flat external-actor transport"
+                       (or (star-actor-identity-star-uri-string identity)
+                           (target-actor-identity-registry-key identity)))))))
+
 (defun canonical-target-routing-key (actor-name)
   (unless (valid-target-actor-name-p actor-name)
     (error 'invalid-target-dispatch
@@ -82,20 +189,28 @@
            :reason (format nil "invalid actor identity ~s" actor-name)))
   (format nil "documents.new.target.~a" (string-downcase actor-name)))
 
-(defun resolve-target-destination (actor-name &key (resolver #'get-dest-actor))
-  "Resolve ACTOR-NAME into an explicit local or Rabbit component handle."
-  (unless (valid-target-actor-name-p actor-name)
-    (error 'invalid-target-dispatch
-           :reason (format nil "invalid actor identity ~s" actor-name)))
-  (let ((component (funcall resolver actor-name)))
+(defun resolve-target-destination (actor &key (resolver #'get-dest-actor))
+  "Resolve ACTOR (a bare legacy actor name or a canonical STAR actor URI)
+into an explicit local or Rabbit component handle.
+
+Canonical identities owned by the gserver authority resolve into the local
+actor registry through the dedicated registry-key projection; foreign
+authorities and unresolved local identities project onto the existing
+external-actor RabbitMQ transport with the canonical STAR URI carried
+separately in destination metadata."
+  (let* ((identity (resolve-target-actor-identity actor))
+         (registry-key (target-actor-identity-registry-key identity))
+         (component (and registry-key (funcall resolver registry-key)))
+         (star-uri-string (star-actor-identity-star-uri-string identity)))
     (if component
         (make-target-destination-handle
-         :local actor-name :component component)
-        (make-target-destination-handle
-         :rabbit actor-name
-         :routing-key (canonical-target-routing-key actor-name)
-         :compatibility-routing-keys
-         (compatibility-target-routing-keys actor-name)))))
+         :local registry-key :component component :star-uri star-uri-string)
+        (let ((token (or registry-key (target-actor-transport-token identity))))
+          (make-target-destination-handle
+           :rabbit token
+           :routing-key (canonical-target-routing-key token)
+           :compatibility-routing-keys (compatibility-target-routing-keys token)
+           :star-uri star-uri-string)))))
 
 (defun target-record-deadline (record)
   (target-value (target-record-document record) "deadline" nil))
@@ -114,7 +229,7 @@
   "Validate identity, schedule, recurrence, transient policy, and deadline."
   (unless (target-nonempty-string-p (target-record-id record))
     (error 'invalid-target-dispatch :reason "target id is required"))
-  (unless (valid-target-actor-name-p (target-record-actor record))
+  (unless (valid-target-actor-identity-p (target-record-actor record))
     (error 'invalid-target-dispatch :reason "actor identity is invalid"))
   (unless (target-nonempty-string-p (target-record-target record))
     (error 'invalid-target-dispatch :reason "target value is required"))
@@ -214,6 +329,8 @@
            (symbol-name (target-destination-handle-kind destination)))
           (jsown:val document "routing_key")
           (or (target-destination-handle-routing-key destination) :null)
+          (jsown:val document "actor_star_uri")
+          (or (target-destination-handle-star-uri destination) :null)
           (jsown:val document "recurring")
           (if (target-record-recurring-p record) :true :false)
           (jsown:val document "delay") (target-record-delay record)
@@ -252,7 +369,10 @@
              (target-dispatch-envelope-record envelope))))
          (extensions
            (or (star.documents:object-value document "extensions" nil)
-               (jsown:empty-object))))
+               (jsown:empty-object)))
+         (star-uri
+           (target-destination-handle-star-uri
+            (target-dispatch-envelope-destination envelope))))
     (setf (jsown:val extensions "target_execution_id")
           (target-dispatch-envelope-execution-id envelope)
           (jsown:val extensions "target_schedule_id")
@@ -266,6 +386,11 @@
           (jsown:val extensions "target_fencing_token")
           (target-dispatch-envelope-fencing-token envelope)
           (jsown:val document "extensions") extensions)
+    ;; Canonical STAR actor identity travels with the document so foreign
+    ;; authorities stay distinguishable across the flat transport
+    ;; projection (STAR-SERVER-041 transport binding).
+    (when star-uri
+      (setf (jsown:val extensions "target_actor_uri") star-uri))
     document))
 
 (defun classify-target-dispatch-condition (condition)
@@ -283,15 +408,43 @@
                        :reason (princ-to-string condition)))
       (t condition))))
 
+(defun target-dispatch-amqp-headers (envelope)
+  "Safe AMQP metadata carrying the canonical STAR destination identity.
+
+STAR-SERVER-041 transport binding: safe STAR source/destination URIs may be
+carried in AMQP metadata for provenance/routing.  Identity stays metadata;
+it never becomes transport state and the flat routing key never rewrites
+it."
+  (let ((star-uri
+          (target-destination-handle-star-uri
+           (target-dispatch-envelope-destination envelope))))
+    (when star-uri
+      (list (cons "x-star-destination-uri" star-uri)))))
+
+(defun target-dispatch-remote-properties (envelope)
+  "Server-owned AMQP properties for one remote target dispatch."
+  (let ((properties
+          (list (cons :content-type "application/json")
+                (cons :delivery-mode 2)))
+        (headers (target-dispatch-amqp-headers envelope)))
+    (when headers
+      (push (cons :headers headers) properties))
+    (nreverse properties)))
+
+(defun dispatch-target-remote-send (envelope routing-key document)
+  "Default remote dispatch: publish to the durable target route with
+server-owned properties, carrying canonical STAR identity in AMQP metadata
+when the destination has one."
+  (star.rabbit:emit-document
+   "documents" routing-key document
+   :properties (target-dispatch-remote-properties envelope)))
+
 (defun dispatch-target-envelope-now
     (envelope &key
                 (local-send-fn
                   (lambda (component payload)
                     (tell component payload)))
-                (remote-send-fn
-                  (lambda (routing-key document)
-                    (star.rabbit:emit-document
-                     "documents" routing-key document))))
+                (remote-send-fn #'dispatch-target-remote-send))
   "Dispatch one occurrence through an explicit destination handle."
   (let ((destination (target-dispatch-envelope-destination envelope)))
     (handler-case
@@ -305,6 +458,7 @@
                     envelope))
           (:rabbit
            (funcall remote-send-fn
+                    envelope
                     (target-destination-handle-routing-key destination)
                     (target-dispatch-document envelope))))
       (error (condition)

@@ -3,7 +3,10 @@
 (defparameter +target-create-request-schema+
   (object-schema
    (list
-    (cons "actor" (string-schema :min-length 1))
+    (cons "actor" (string-schema
+                   :min-length 1
+                   :description
+                   "Bare actor name, or canonical STAR actor URI star://<authority>/actor/<resource-path> (STAR-SERVER-041)."))
     (cons "target" (string-schema :min-length 1))
     (cons "dataset" (string-schema :min-length 1))
     (cons "delay" (integer-schema :minimum 1))

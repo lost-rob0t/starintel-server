@@ -29,7 +29,44 @@ skips strict document-schema validation and publishes directly to
 =documents.new.target.<actor>=. This keeps legacy target envelopes away from
 canonical ingest while preserving the target consumer's durable acceptance and
 dispatch handling. New canonical target producers should use
-=documents.ingest.target=.
+=documents.ingest.target=. Targets carrying a canonical =star://= actor
+identity are rejected there with =canonical_actor_identity_unsupported=; the
+versioned =POST /api/v1/targets= operation is the migration interface for
+canonical actor identity.
+
+** Canonical STAR actor identity on target dispatch
+
+Target dispatch understands canonical STAR v1 actor identities:
+
+#+begin_example
+star://<authority>/actor/<actor-resource-path>
+#+end_example
+
+for example =star://bbpd.starintel.actor/actor/subfinder=. Identity, routing,
+and local registry keys stay distinct:
+
+- A URI whose authority equals the deployment authority
+  (=STAR_GSERVER_AUTHORITY=) resolves its actor resource through the local
+  actor registry adapter (resource path =("user-hunt")= maps to registry key
+  =user-hunt=; multi-segment paths map to slash-joined registry keys).
+- A URI owned by a foreign authority never touches the local registry. It
+  projects onto the existing flat external-actor transport
+  (=documents.target.dispatch.<token>= with compatibility key
+  =actors.<token>.new.target=) using the single actor resource-path segment
+  as the token. Multi-segment paths cannot be expressed on the flat
+  transport and fail closed.
+- The canonical URI always travels with the projection: in the document
+  =extensions.target_actor_uri= field and in the AMQP message header
+  =x-star-destination-uri=. Authorities projecting the same transport token
+  therefore stay distinguishable.
+
+Canonical identity is parsed by the temporary gserver-local =:star.star-uri=
+compatibility layer (STAR-SERVER-041 / STAR-RESEARCH-041), which is to be
+replaced by the shared StarLang STAR URI library; target routing depends only
+on that package's narrow API. Legacy =star://domain:address:actor-name=
+tuples are compatibility input only: they are accepted solely through the
+explicit legacy migration API, are never emitted by the server, and are
+rejected as target identities.
 
 ** Events exchange
 

@@ -24,6 +24,8 @@
      (:file "consumers-test")
      (:file "init-loader-test")
      (:file "target-routing-test")
+     (:file "star-uri-test")
+     (:file "star-actor-identity-test")
      (:file "system-load-test")
      (:file "couchdb-actor-test")
      (:file "couchdb-session-test")

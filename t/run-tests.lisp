@@ -5,6 +5,8 @@
     consumer-tests
     init-loader-tests
     target-routing-tests
+    star-uri-tests
+    star-actor-identity-tests
     system-load-tests
     couchdb-actor-tests
     couchdb-session-tests

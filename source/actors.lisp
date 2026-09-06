@@ -35,9 +35,10 @@
 
 ;;;; Return the destination actor symbol by actor name string
 (defun get-dest-actor (actor)
-  (let ((dest (serapeum:@  (agent-get *actor-index-agent* #'identity) actor)))
-    (log:debug "Looking up destination actor for: ~a -> ~a" actor dest)
-    dest))
+  (when *actor-index-agent*
+    (let ((dest (serapeum:@ (agent-get *actor-index-agent* #'identity) actor)))
+      (log:debug "Looking up destination actor for: ~a -> ~a" actor dest)
+      dest)))
 
 ;;;; Send the the target to the destination actor
 (defun route-target (target actor)
