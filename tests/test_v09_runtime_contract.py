@@ -57,23 +57,32 @@ class V09RuntimeContractTests(unittest.TestCase):
         self.assertIn("#:com.inuoe.jzon", system)
         self.assertNotIn("defun validate-v090-value", access)
 
-    def test_rabbit_mutations_are_strict_and_targets_are_explicit(self) -> None:
+    def test_rabbit_mutations_are_strict_and_targets_validate_the_same_way(self) -> None:
         rabbit = self.text("source/rabbit.lisp")
         self.assertIn("(strict-schema-p t)", rabbit)
         self.assertIn("star.documents:validate-v09-document", rabbit)
-        self.assertIn(":strict-schema-p nil", rabbit)
+        # The remaining non-strict decode is transport-metadata inspection
+        # (transient-p); target deliveries no longer opt out.
+        self.assertIn("(decode-rabbit-document message :strict-schema-p nil)", rabbit)
         self.assertIn(':route-dtype "target"', rabbit)
         self.assertIn("persist-rabbit-document-mutation", rabbit)
 
     def test_target_compatibility_is_direct_and_narrow(self) -> None:
         target = self.text("source/frontends/http-bulk-jobs.lisp")
         routes = self.text("source/frontends/http-authorization-routes.lisp")
+        boundary = self.text("source/frontends/http-boundary-core.lisp")
         self.assertIn("compatibility-target-ingress-routing-key", target)
         self.assertIn("publish-target-document-unchecked", routes)
         self.assertIn(
             '"documents.new.target.~a"',
             self.text("source/target-dispatch.lisp"),
         )
+        # The legacy adapter folds its historical envelope and then holds
+        # the target dtype to unconditional strict v0.9 validation.
+        self.assertIn("defun normalize-legacy-target-document", boundary)
+        self.assertIn("normalize-legacy-target-document", routes)
+        self.assertNotIn(":strict-schema-p nil", routes)
+        self.assertNotIn("(strict-schema-p", boundary)
 
 
 if __name__ == "__main__":

@@ -237,8 +237,12 @@
          ("index" (or index :null)))))))
 
 (defun validate-document-input
-    (document &key path-dtype index (strict-schema-p t))
-  "Validate a document payload from HTTP input."
+    (document &key path-dtype index)
+  "Validate a document payload from HTTP input.
+
+Validation is unconditionally strict: every HTTP boundary caller must emit
+v0.9-valid documents, including the legacy target adapter, which first
+folds its historical envelope with =normalize-legacy-target-document=."
   (unless (json-object-p document)
     (signal-http-input-error
      422
@@ -257,10 +261,49 @@
        "Document dtype does not match the route dtype"
        (jsown:new-js ("path_dtype" path-dtype)
                      ("document_dtype" dtype))))
-     (when strict-schema-p
-       (validate-schema-version document :index index)
-       (validate-document-schema document :index index))
-     document))
+    (validate-schema-version document :index index)
+    (validate-document-schema document :index index)
+    document))
+
+(defun fold-legacy-target-field (document data key)
+  "Move one historical top-level target field into DATA when absent there."
+  (when (jsown:keyp document key)
+    (unless (jsown:keyp data key)
+      (setf (jsown:val data key) (jsown:val document key)))
+    (jsown:remkey document key)))
+
+(defun normalize-legacy-target-document (document actor)
+  "Fold the historical top-level target envelope into a v0.9 document.
+
+The legacy target adapter accepted ACTOR, TARGET, DELAY, RECURRING, and
+OPTIONS at the top level. v0.9 closes the top level, so these fields now
+live in DATA. Missing envelope fields are defaulted so a minimal
+historical request still produces a schema-valid target document;
+callers keep full control by sending a canonical document with a DATA
+object."
+  (let ((data (jsown:val-safe document "data")))
+    (unless (json-object-p data)
+      (setf data (jsown:empty-object)))
+    ;; The URL actor is authoritative for dispatch routing.
+    (setf (jsown:val data "actor") actor)
+    (dolist (key '("target" "delay" "recurring" "options"))
+      (fold-legacy-target-field document data key))
+    (unless (jsown:keyp document "schema_version")
+      (setf (jsown:val document "schema_version")
+            starintel:+starintel-doc-version+))
+    (unless (jsown:keyp document "version")
+      (setf (jsown:val document "version") 1))
+    (unless (jsown:keyp document "date_added")
+      (setf (jsown:val document "date_added") (star.documents:utc-now)))
+    (unless (jsown:keyp document "date_updated")
+      (setf (jsown:val document "date_updated") (star.documents:utc-now)))
+    (unless (jsown:keyp document "sources")
+      (setf (jsown:val document "sources") #()))
+    (unless (jsown:keyp document "evidence")
+      (setf (jsown:val document "evidence") #()))
+    (setf (jsown:val document "dtype") "target"
+          (jsown:val document "data") data)
+    document))
 
 (defun query-value (params name)
   (or (cdr (assoc name params :test #'string=))

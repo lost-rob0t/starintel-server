@@ -68,7 +68,9 @@
       (is (typep condition 'star.consumers:schema-invalid-delivery-error))
       (is-false persisted))))
 
-(test target-rabbit-adapter-explicitly-skips-strict-schema
+(test decode-escape-hatch-permits-transport-metadata-inspection
+  ;; transient-p inspects transport metadata without strict schema
+  ;; validation; it is the only remaining non-strict decode.
   (let* ((message
            (cons
             (jsown:to-json
@@ -85,6 +87,25 @@
             :strict-schema-p nil)))
     (is (string= "legacy-target" (jsown:val document "_id")))
     (is (string= "target" (jsown:val document "dtype")))))
+
+(test target-deliveries-are-strictly-validated
+  ;; The target compatibility consumer validates like every other dtype:
+  ;; the historical top-level actor envelope is now a schema violation.
+  (let* ((message
+           (cons
+            (jsown:to-json
+             (jsown:new-js
+               ("_id" "legacy-target")
+               ("dtype" "target")
+               ("actor" "nmap")
+               ("legacy_flat_field" "compatibility")))
+            1))
+         (condition
+           (capture-schema-invalid
+            (lambda ()
+              (star.rabbit:decode-rabbit-document
+               message :route-dtype "target")))))
+    (is-true condition)))
 
 (test rabbit-strict-validation-is-default
   (is-true

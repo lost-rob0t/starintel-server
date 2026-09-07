@@ -29,21 +29,19 @@
   (with-http-boundary ()
     (let* ((actor (require-path-string params "actor"))
            (document (require-json-object (parse-json-request))))
-      (setf (jsown:val document "dtype") "target"
-            (jsown:val document "actor") actor)
-      ;; Keep the historical target envelope as an explicit narrow exception.
-      (validate-document-input
-       document
-       :path-dtype "target"
-       :strict-schema-p nil)
+      ;; Fold the historical top-level target envelope into a v0.9
+      ;; document, then hold the target dtype to the same strict schema
+      ;; validation as every other HTTP ingest path.
+      (normalize-legacy-target-document document actor)
+      (validate-document-input document :path-dtype "target")
       (star.authorization:authorized-publish-document
-       document
-       #'publish-target-document-unchecked
-       :principal (current-publish-service-context)
-       :actor-name actor
-       :action "targets:dispatch"
-       :metadata (route-policy-metadata
-                  "/new/target/:actor" "POST"))
+        document
+        #'publish-target-document-unchecked
+        :principal (current-publish-service-context)
+        :actor-name actor
+        :action "targets:dispatch"
+        :metadata (route-policy-metadata
+                   "/new/target/:actor" "POST"))
       (jsown:to-json document))))
 
 (defun handle-authorized-bulk-route (params)

@@ -121,7 +121,7 @@
 
 (defun publish-target-document-unchecked (document)
   "Publish a legacy target directly to the target compatibility consumer."
-  (let* ((actor (jsown:val document "actor"))
+  (let* ((actor (star.documents:document-value document "actor"))
          (routing-key
            (star.actors:compatibility-target-ingress-routing-key actor))
          (context (current-publish-service-context)))
