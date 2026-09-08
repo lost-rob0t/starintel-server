@@ -200,6 +200,27 @@ server-owned public scopes. No caller principal or caller scope enters here."
   (with-http-boundary ()
     (star.http.contract:client-manifest-json)))
 
+;; Versioned document operations. Each handler reuses the shared authorized
+;; document pipelines of the hardened boundary and only labels the
+;; authorization audit with the versioned route shape.
+(defun handle-contracted-document-create-route (params)
+  (authorized-new-document params "/api/v1/documents"))
+
+(defun handle-contracted-document-bulk-route (params)
+  (handle-authorized-bulk-route params "/api/v1/documents/bulk"))
+
+(defun handle-contracted-document-get-route (params)
+  (handle-authorized-document-get-route params "/api/v1/documents/:id"))
+
+(defun handle-contracted-document-update-route (params)
+  (handle-authorized-document-update-route params "/api/v1/documents/:id"))
+
+(defun handle-contracted-document-delete-route (params)
+  (handle-authorized-document-delete-route params "/api/v1/documents/:id"))
+
+(defun handle-contracted-document-search-route (params)
+  (handle-authorized-search-route params "/api/v1/documents/search"))
+
 ;; Re-mount the contracted surface from operation IDs. Some legacy route
 ;; declarations still exist in their historical source files; these final
 ;; mounts are authoritative and prevent method/path drift for the contracted
@@ -224,3 +245,19 @@ server-owned public scopes. No caller principal or caller scope enters here."
 (mount-http-operation "auth.credentials.rotate" #'handle-auth-rotate-route)
 (mount-http-operation "auth.credentials.revoke" #'handle-auth-revoke-route)
 (mount-http-operation "auth.credentials.disable" #'handle-auth-disable-route)
+
+;; Versioned document operations. documents.search must be mounted before
+;; documents.get: myway dispatches in registration order, so the static
+;; route would otherwise be captured by the /:id route.
+(mount-http-operation "documents.search"
+                      #'handle-contracted-document-search-route)
+(mount-http-operation "documents.create"
+                      #'handle-contracted-document-create-route)
+(mount-http-operation "documents.bulk.create"
+                      #'handle-contracted-document-bulk-route)
+(mount-http-operation "documents.get"
+                      #'handle-contracted-document-get-route)
+(mount-http-operation "documents.update"
+                      #'handle-contracted-document-update-route)
+(mount-http-operation "documents.delete"
+                      #'handle-contracted-document-delete-route)

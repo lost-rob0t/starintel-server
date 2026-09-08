@@ -502,17 +502,9 @@
                                                     :descending descending
                                                     :skip skip))))))
 
-(setf (ningle:route *app* "/dataset-size" :method :get)
-      #'(lambda (params)
-          (set-default-headers)
-          (let ((dataset (cdr (assoc "dataset" params :test #'string=))))
-            (jsown:to-json
-             (couchdb-handler (client *couchdb-pool*)
-                              (dataset-size client star:*couchdb-default-database*
-                                            :key dataset
-                                            :include-docs nil
-                                            :reduce t))))))
-
+;;; /dataset-size is defined exactly once here; the later view-registry and
+;;; authorization mounts replace this handler in place (see README known gaps
+;;; for the shadowing this used to have).
 (setf (ningle:route *app* "/dataset-size" :method :get)
       #'(lambda (params)
           (set-default-headers)

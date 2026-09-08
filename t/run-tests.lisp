@@ -21,6 +21,7 @@
     addon-system-tests
     authorization-policy-tests
     gserver-client-tests
+    http-contract-documents-tests
     runtime-lifecycle-tests))
 
 (defun run-all-gserver-tests ()
