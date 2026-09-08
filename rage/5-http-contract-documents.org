@@ -305,6 +305,13 @@ judged out of scope. The CouchDB-backed happy paths of the contracted
 operations reuse the same =authorized-*= pipelines as the legacy routes and
 remain covered by the integration suite in a provisioned CI environment.
 
+** Exact-head re-verification (commit 972da6a)
+- Focused suite: exit 0, 101/101 checks.
+- Full hermetic unit gate (=nix run .#star-unit-tests=): exit 0, 22 suites,
+  0 failed, 0 skipped.
+- Doc coverage (=nix run .#doc-coverage-test=): exit 0.
+- =prolog-verify check=: verification passed.
+
 ** Final state
 - New registry operations emitted by =/openapi.json= and
   =/client-manifest.json=: =documents.create=, =documents.bulk.create=,
