@@ -36,7 +36,7 @@ jobs:
 
           while IFS= read -r -d '' path; do
             sed -i "s/$old/$expected/g" "$path"
-          done < <(git grep -IlZ "$old" -- . ':!.github/workflows/sync-operation-runtime-once.yml' || true)
+          done < <(git grep -Ilz "$old" -- . ':!.github/workflows/sync-operation-runtime-once.yml' || true)
 
           grep -q "github-$expected" qlfile.lock
           if git grep -n "$old" -- . ':!.github/workflows/sync-operation-runtime-once.yml'; then
