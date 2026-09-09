@@ -65,7 +65,7 @@
 ("star-cl" .
  (:class qlot/source/github:source-github
   :initargs (:repos "lost-rob0t/star-cl" :ref nil :branch nil :tag nil)
-  :version "github-138e3ff3334954491db862ab583058058e35e64d"))
+  :version "github-9ce8f88f57fb7ac143851f7fd2c75dccd6a40cc3"))
 ("cl-couch" .
  (:class qlot/source/github:source-github
   :initargs (:repos "lost-rob0t/cl-couch" :ref nil :branch nil :tag nil)
