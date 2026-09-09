@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STAR_CL_V09 = "b8dfbe2f9f56065ace8c3313b92ca748a115cdfa"
+STAR_CL_V09 = "138e3ff3334954491db862ab583058058e35e64d"
 
 
 class V09RuntimeContractTests(unittest.TestCase):
