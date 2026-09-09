@@ -161,6 +161,24 @@ services:
       retries: 12
       start_period: 30s
 
+  youtube-actor:
+    image: starintel/youtube-actor:0.1.0
+    hostname: youtube-actor
+    profiles: ["actors"]
+    restart: "no"
+    environment:
+      STARINTEL_SERVER_URL: http://star-server:5000
+      STARINTEL_API_KEY_FILE: /run/secrets/youtube_actor_api_key
+    secrets:
+      - youtube_actor_api_key
+    volumes:
+      - youtube-actor-data:/var/lib/youtube-actor
+    networks:
+      - backend
+    depends_on:
+      star-server:
+        condition: service_healthy
+
 secrets:
   couchdb_password:
     file: ${CREDENTIALS_DIR:-./secrets}/couchdb_password
@@ -172,6 +190,8 @@ secrets:
     file: ${CREDENTIALS_DIR:-./secrets}/rabbitmq_password
   valkey_password:
     file: ${CREDENTIALS_DIR:-./secrets}/valkey_password
+  youtube_actor_api_key:
+    file: ${CREDENTIALS_DIR:-./secrets}/youtube_actor_api_key
   auth_pepper:
     file: ${CREDENTIALS_DIR:-./secrets}/auth_pepper
   auth_bootstrap_secret:
@@ -182,6 +202,7 @@ volumes:
   couchdb_data:
   rabbitmq_data:
   valkey_data:
+  youtube-actor-data:
 
 networks:
   backend:

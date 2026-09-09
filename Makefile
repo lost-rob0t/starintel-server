@@ -8,7 +8,7 @@
 LISP ?= sbcl
 EMACS ?= emacs
 
-.PHONY: all test integration-test test-emacs images load-images compose-config stack-test docs-api doc-coverage
+.PHONY: all test integration-test test-emacs images load-images compose-config stack-test docs-api doc-coverage youtube-actor-image
 
 all: test
 
@@ -27,8 +27,14 @@ integration-test:
 test-emacs:
 	$(EMACS) -Q --batch -L . -l client-test.el -f ert-run-tests-batch-and-exit
 
+ACTOR_FLAKE ?= ../starintel-pro-actors
+
 images:
 	nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
+
+youtube-actor-image:
+	nix build $(ACTOR_FLAKE)#starintel-youtube-image --no-link --print-out-paths > /tmp/actor-image-path && \
+	docker load < $$(cat /tmp/actor-image-path)
 
 load-images:
 	nix run .#load-images
