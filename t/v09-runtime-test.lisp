@@ -12,6 +12,36 @@
     :ip "192.0.2.20"
     :os "linux")))
 
+(defun v09-test-operation-document ()
+  (let* ((data (jsown:empty-object))
+         (targets (jsown:empty-object))
+         (discovery (jsown:empty-object))
+         (analysis (jsown:empty-object)))
+    (setf (jsown:val targets "primary")
+          (list "starintel:target:operation-runtime-primary")
+          (jsown:val targets "supporting")
+          (list "starintel:investigation-target:operation-runtime-question")
+          (jsown:val discovery "phase_id") "discovery"
+          (jsown:val discovery "objective") "Discover approved public sources"
+          (jsown:val discovery "state") "completed"
+          (jsown:val discovery "completion_evidence")
+          (list "starintel:evidence-record:operation-runtime-discovery")
+          (jsown:val analysis "phase_id") "analysis"
+          (jsown:val analysis "objective") "Analyze collected operation data"
+          (jsown:val analysis "state") "ready"
+          (jsown:val analysis "depends_on") (list "discovery")
+          (jsown:val data "mission") "Exercise the operation runtime boundary"
+          (jsown:val data "status") "active"
+          (jsown:val data "in_scope") (list "public-source research")
+          (jsown:val data "out_of_scope") (list "private contact information")
+          (jsown:val data "targets") targets
+          (jsown:val data "phases") (list discovery analysis))
+    (starintel:encode
+     (make-instance 'starintel:operation
+                    :dataset "v09-runtime-tests"
+                    :title "Operation runtime boundary"
+                    :data data))))
+
 (defun capture-schema-invalid (thunk)
   (handler-case
       (progn
@@ -35,6 +65,19 @@
     (is (eq document (star.documents:validate-v09-document document)))
     (is (string= "0.9.0" (jsown:val document "schema_version")))
     (is (= 1 (jsown:val document "version")))))
+
+(test operation-encoding-passes-server-validator
+  (let* ((document (v09-test-operation-document))
+         (data (jsown:val document "data"))
+         (targets (jsown:val data "targets")))
+    (is (eq document (star.documents:validate-v09-document document)))
+    (is (string= "operation" (jsown:val document "dtype")))
+    (is (string= "Action"
+                 (jsown:val (jsown:val document "schema_org") "@type")))
+    (is (string= "starintel:target:operation-runtime-primary"
+                 (first (jsown:val targets "primary"))))
+    (is (string= "starintel:investigation-target:operation-runtime-question"
+                 (first (jsown:val targets "supporting"))))))
 
 (test rabbit-ingest-invalid-schema-cannot-reach-persistence
   (let ((persisted nil))
