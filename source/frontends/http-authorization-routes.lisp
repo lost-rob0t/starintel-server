@@ -17,13 +17,20 @@
        (format nil "Route parameter ~a is required" name)))
     value))
 
-(defun handle-authorized-new-document-route (params)
+(defun authorized-new-document (params route &optional path-dtype-key)
+  "Validate and publish one document; PATH-DTYPE-KEY names the optional
+legacy path parameter that must match the document dtype."
   (with-http-boundary ()
-    (let* ((path-dtype (require-path-string params "dtype"))
+    (let* ((path-dtype
+             (when path-dtype-key
+               (require-path-string params path-dtype-key)))
            (document (require-json-object (parse-json-request))))
       (validate-document-input document :path-dtype path-dtype)
       (publish-document document)
       (jsown:to-json document))))
+
+(defun handle-authorized-new-document-route (params)
+  (authorized-new-document params "/new/document/:dtype" "dtype"))
 
 (defun handle-authorized-new-target-route (params)
   (with-http-boundary ()
@@ -44,12 +51,12 @@
                    "/new/target/:actor" "POST"))
       (jsown:to-json document))))
 
-(defun handle-authorized-bulk-route (params)
+(defun handle-authorized-bulk-route (params &optional (route "/documents/bulk"))
   (declare (ignore params))
   (with-http-boundary ()
     (let* ((documents (require-json-array (parse-json-request)))
            (document-count (length documents))
-           (metadata (route-policy-metadata "/documents/bulk" "POST")))
+           (metadata (route-policy-metadata route "POST")))
       (when (> document-count star:*bulk-max-documents*)
         (signal-http-input-error
          413
@@ -81,7 +88,8 @@
                         (bulk-ingest-job-id job)))
                ("correlation_id" (current-correlation-id)))))))))
 
-(defun handle-authorized-search-route (params)
+(defun handle-authorized-search-route
+    (params &optional (route "/search"))
   (with-http-boundary ()
     (let* ((q (require-query-string params "q"))
            (limit (bounded-query-integer
@@ -94,7 +102,7 @@
               :principal (current-policy-principal)
               :requested-dataset dataset
               :requested-tenant tenant
-              :metadata (route-policy-metadata "/search" "GET"))))
+              :metadata (route-policy-metadata route "GET"))))
       (couchdb-handler (client *couchdb-pool*)
         (let* ((db star:*couchdb-default-database*)
                (bookmark (query-value params "bookmark"))
@@ -114,7 +122,8 @@
            "search"
            "fts"))))))
 
-(defun handle-authorized-document-get-route (params)
+(defun handle-authorized-document-get-route
+    (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let ((document-id (require-path-string params "id")))
       (couchdb-handler (client *couchdb-pool*)
@@ -125,9 +134,10 @@
             client star:*couchdb-default-database* id))
          :principal (current-policy-principal)
          :metadata
-         (route-policy-metadata "/document/:id" "GET"))))))
+         (route-policy-metadata route "GET"))))))
 
-(defun handle-authorized-document-delete-route (params)
+(defun handle-authorized-document-delete-route
+    (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let ((document-id (require-path-string params "id")))
       (couchdb-handler (client *couchdb-pool*)
@@ -142,12 +152,13 @@
               client star:*couchdb-default-database* id revision))
            :principal (current-policy-principal)
            :metadata
-           (route-policy-metadata "/document/:id" "DELETE"))
+           (route-policy-metadata route "DELETE"))
           (status-msg
            (format nil "Document ~a deleted" document-id)
             'success))))))
 
-(defun handle-authorized-document-update-route (params)
+(defun handle-authorized-document-update-route
+    (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let* ((document-id (require-path-string params "id"))
            (patch (request-json-body)))
@@ -169,7 +180,7 @@
              candidate)))
          :principal (current-policy-principal)
          :metadata
-         (route-policy-metadata "/document/:id" "PUT"))))))
+         (route-policy-metadata route "PUT"))))))
 
 (defun handle-authorized-targets-route (params)
   (with-http-boundary ()
