@@ -325,3 +325,19 @@ remain covered by the integration suite in a provisioned CI environment.
   =REQUEST-DOCUMENT-*= external symbols of =star.api.client=).
 - Legacy routes untouched; =/dataset-size= now defined exactly once in
   =http-api.lisp= (runtime authority still the later authorization mounts).
+
+* Iteration 2 — integration gate runs per-run (2026-09-08, operator decision)
+
+Operator clarified the testing convention: the shared staging services are
+never used for gates. Instead each run provisions its own CouchDB (+ Clouseau)
+with random credentials (docker compose project with CREDENTIALS_DIR pointing
+at freshly generated secret files, throwaway volumes, random host port).
+
+Consequence: the "integration gate could not run" invariant is superseded. The
+gate CAN and MUST run green. verify.pl updated: integration_gate_not_claimed
+replaced by integration_gate_green requiring an exit(0) observation of
+nix run .#star-integration-tests at the current HEAD/digest. This strengthens,
+not weakens, verification.
+
+Evidence (prolog-verify observe, per-run stack star-ci compose project):
+VALKEY-LEASE 24/24, COUCHDB-VIEW 9/9, HTTP-API 36/36 — exit 0.
