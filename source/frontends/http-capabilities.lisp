@@ -49,6 +49,7 @@
        ("search" :true)
        ("stats" :true)
        ("targets" :true)
+       ("actors" :true)
        ("views"
         (jsown:new-js
           ("available" :true)
@@ -77,6 +78,9 @@
       (capability-endpoint
        "stats" "GET" "/api/v1/stats"
        :authority (public-read-authority))
+      (capability-endpoint
+       "actors" "GET" "/api/v1/actors"
+       :scopes '("actors:read"))
       (capability-endpoint
        "document_create" "POST" "/new/document/:dtype"
        :legacy t :scopes '("documents:write"))
