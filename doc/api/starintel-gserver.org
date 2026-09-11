@@ -300,6 +300,13 @@ Lifetime of issued OAuth access tokens.
 :PACKAGE: STARINTEL-GSERVER
 :END:
 Lifetime of issued OAuth authorization codes.
+*** *observability-active*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Non-nil while the observability addon has been started via the init-file
+addon lifecycle. The HTTP boundary stays a pass-through until then.
 *** *rabbit-address*
 :PROPERTIES:
 :KIND: var
@@ -485,6 +492,13 @@ Ensure INIT-PATH exists, copying =example_configs/init.lisp= if absent.
 
 Falls back to a minimal template when the example config itself is
 missing.  Call before =load-init-file= on first boot.
+*** ensure-observability-addon
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Register the observability addon with the trusted addon lifecycle.
+Registration is metadata only; the addon starts via the addon lifecycle.
 *** list-addons
 :PROPERTIES:
 :KIND: fn
@@ -532,6 +546,40 @@ Binary entry point; parses argv via clingon and dispatches subcommands.
 Subcommands:
 - =start= :: run the server runtime loop until interrupted
 - =admin= :: administrative utilities
+*** observability-active-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+True when the observability addon was loaded via init.lisp and is active.
+*** observability-lease-metrics-hook
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+A lease-store metrics hook suitable for the existing metrics-hook seams.
+Stale fencing-token rejections get a dedicated counter.
+*** observability-route-template
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(observability-route-template (STARINTEL-GSERVER::ENV))
+#+end_src
+Match the request against the HTTP contract table and stash the normalized
+route template on the env, so the HTTP middleware labels stay bounded and
+request identifiers never become metric labels.
+*** observability-wrapped-server
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(observability-wrapped-server (STARINTEL-GSERVER::APP))
+#+end_src
+Build the observability layer used in the lack builder: a request-time
+gate that only instruments when the addon was loaded via init.lisp.
 *** register-addon
 :PROPERTIES:
 :KIND: fn
@@ -594,6 +642,21 @@ Start a SLY/Slynk server on =*slynk-port*= for live debugging.
 
 Connect from Emacs with =M-x sly-connect= and the port configured by
 =STAR_SLYNK_PORT= (default 4009).
+*** start-observability
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Addon start (init.lisp: =load-addon :starintel-observability=): start the
+exporter thread and wire the instrumented CouchDB view transport. Safe to
+call repeatedly.
+*** stop-observability
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Addon stop: flush what is queued and return every boundary to a
+pass-through.
 *** unload-addon
 :PROPERTIES:
 :KIND: fn

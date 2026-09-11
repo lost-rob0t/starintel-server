@@ -96,7 +96,8 @@ Queue consuming document update events.
 Parse one Rabbit delivery and classify malformed payloads permanently.
 
 Canonical document mutation queues validate before transport normalization.
-Legacy target adapters must opt out explicitly.
+The remaining non-strict decode is transport-metadata inspection
+(=transient-p=); target deliveries validate like every other dtype.
 *** emit-document
 :PROPERTIES:
 :KIND: fn

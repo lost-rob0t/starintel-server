@@ -13,7 +13,9 @@
    #:fiveam
    #:dexador
    #:bordeaux-threads
-   #:jsown)
+   #:jsown
+   #:usocket
+   #:alexandria)
   :components
   ((:module "t"
     :serial t
@@ -51,6 +53,7 @@
      (:file "gserver-client-final-test")
      (:file "http-contract-documents-test")
      (:file "runtime-lifecycle-test")
+     (:file "observability-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)

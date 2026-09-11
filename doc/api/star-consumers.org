@@ -45,7 +45,7 @@ A Rabbit consumer configuration or channel-owning worker.
 :PACKAGE: STAR.CONSUMERS
 :END:
 A Rabbit queue/channel owned by exactly one thread.
-- Slots: =exchange=, =exchange-type=, =exchange-durable=, =routing-key=, =user=, =password=, =vhost=, =port=, =host=, =queue-durable-p=, =queue-name=, =prefetch-count=, =conn=, =chan=, =owner-thread=, =open=
+- Slots: =exchange=, =exchange-type=, =exchange-durable=, =routing-key=, =user=, =password=, =vhost=, =port=, =host=, =queue-durable-p=, =queue-name=, =prefetch-count=, =current-properties=, =conn=, =chan=, =owner-thread=, =open=
 *** retrying-rabbit-consumer
 :PROPERTIES:
 :KIND: class

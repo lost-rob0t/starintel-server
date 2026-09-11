@@ -40,6 +40,38 @@ server process.
 | =RABBITMQ_PASSWORD= | empty | =star:*rabbit-password*= |
 | =STAR_SERVER_INIT_FILE= | =./init.lisp= | init path |
 
+** Observability configuration
+
+Telemetry is OFF until the operator opts in from the init file:
+
+#+begin_src lisp
+(load-addon :starintel-observability)
+#+end_src
+
+Loading the addon starts the exporter thread and wires the instrumented
+CouchDB transport. Without that line, no exporter thread, no queues, no
+ids, and no counters run; the application has no telemetry dependency. The
+env kill switch below still overrides everything.
+
+Observability env variables (read by the =star.observability= library):
+
+| Variable | Default | Meaning |
+|----------+---------+---------|
+| =STAR_OBSERVABILITY_ENABLED= | =true= | kill switch; =false= disables all export |
+| =STAR_OBSERVABILITY_ENDPOINT= | =http://127.0.0.1:4318= | OTLP/HTTP collector endpoint (compose: =http://otelcol:4318=) |
+| =STAR_OBSERVABILITY_SIGNALS= | =logs,metrics,traces= | comma-separated signals to record |
+| =STAR_TRACE_SAMPLE_RATE= | =1.0= | SDK-side rate; the collector tail-samples authoritatively (5% baseline) |
+| =STAR_INCLUDE_PAYLOADS= | unset (=nil=) | payload capture stays off unless an explicit debug policy sets it |
+| =STAR_ACTOR_DETAIL= | =normal= | actor span detail: =minimal=, =normal=, =verbose= |
+| =STAR_PROLOG_DETAIL= | =goal= | Prolog span detail: =goal=, =phase=, =predicate= (debug mode only) |
+| =STAR_SERVICE_NAME= | =starintel-server= | =service.name= resource attribute |
+| =STARINTEL_NODE_ID= | =unknown-node= | =starintel.node.id= (NixOS renders =networking.hostName=) |
+| =STARINTEL_COMPONENT= | =app= | =starintel.component= resource attribute |
+
+Applications never hold OpenObserve credentials; the compose =otelcol=
+sidecar and the observe gateway handle authentication. See
+[[file:observability.org][observability]].
+
 Current fixed defaults unless overridden in Lisp:
 
 | Runtime variable | Default |

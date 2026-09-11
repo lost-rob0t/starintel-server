@@ -622,9 +622,8 @@ Sento agent semantics: do the publish *inside* the agent via `agent-get`, so the
 producer state (connection/channel) is touched from one pinned thread.
 
 BODY is expected to be a JSON string, but accept a JSOWN object as a convenience
-and normalize it to JSON.
-
-
+and normalize it to JSON. The current trace context rides in AMQP headers
+(never in message bodies); publish outcomes are counted.
 *** query-persisted-target-documents
 :PROPERTIES:
 :KIND: fn
