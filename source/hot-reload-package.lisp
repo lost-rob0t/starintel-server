@@ -12,6 +12,7 @@
    #:start-watcher
    #:stop-watcher
    #:watcher-running-p
+   #:process-id
    #:image-id
    #:image-generation
    #:image-marker
