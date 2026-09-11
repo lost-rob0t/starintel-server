@@ -190,10 +190,13 @@ Reserve bounded queue capacity and enqueue one authenticated job.
 :END:
 #+begin_src lisp
 (validate-document-input (STARINTEL-GSERVER-HTTP-API::DOCUMENT &KEY
- STARINTEL-GSERVER-HTTP-API::PATH-DTYPE STARINTEL-GSERVER-HTTP-API::INDEX
- (STARINTEL-GSERVER-HTTP-API::STRICT-SCHEMA-P T)))
+ STARINTEL-GSERVER-HTTP-API::PATH-DTYPE STARINTEL-GSERVER-HTTP-API::INDEX))
 #+end_src
 Validate a document payload from HTTP input.
+
+Validation is unconditionally strict: every HTTP boundary caller must emit
+v0.9-valid documents, including the legacy target adapter, which first
+folds its historical envelope with =normalize-legacy-target-document=.
 
 * Generic Functions
 *** http-input-error-code
