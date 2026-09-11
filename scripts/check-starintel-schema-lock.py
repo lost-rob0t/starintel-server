@@ -66,6 +66,9 @@ def verify_dtype(
 def main() -> int:
     lock_path = Path(sys.argv[1] if len(sys.argv) > 1 else "schema/starintel-schema.lock.json")
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    release_version = lock.get("release_version")
+    if not release_version:
+        fail("lock is missing release_version")
     repository = lock["canonical_repository"]
     commit = lock["canonical_commit"]
     base_url = f"https://raw.githubusercontent.com/{repository}/{commit}"
@@ -80,7 +83,7 @@ def main() -> int:
         fail("manifest schema version does not match lock")
     if expansion.get("schema_version") != lock["schema_version"]:
         fail("expansion schema version does not match lock")
-    if lock.get("release_version") and manifest.get("release_version") != lock["release_version"]:
+    if manifest.get("release_version") != release_version:
         fail("manifest release version does not match lock")
 
     required_by_dtype = {
@@ -88,7 +91,9 @@ def main() -> int:
         "operation": list(lock.get("operation_required_fields", [])),
     }
     for dtype in lock.get("required_dtypes", []):
-        verify_dtype(schema, expansion, dtype, required_by_dtype.get(dtype, []))
+        if dtype not in required_by_dtype:
+            fail(f"lock is missing required fields for dtype {dtype}")
+        verify_dtype(schema, expansion, dtype, required_by_dtype[dtype])
 
     if manifest.get("dtype_count") != len(expansion.get("dtype_fields", {})):
         fail("schema manifest dtype count does not match expansion")

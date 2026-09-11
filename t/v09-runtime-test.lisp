@@ -48,6 +48,8 @@
         (funcall thunk)
         nil)
     (star.consumers:schema-invalid-delivery-error (condition)
+      condition)
+    (star.documents:document-schema-validation-error (condition)
       condition)))
 
 (defun invalid-rabbit-delivery ()
@@ -78,6 +80,16 @@
                  (first (jsown:val targets "primary"))))
     (is (string= "starintel:investigation-target:operation-runtime-question"
                  (first (jsown:val targets "supporting"))))))
+
+(test operation-missing-required-field-fails-strict-validation
+  (let* ((document (v09-test-operation-document)))
+    (jsown:remkey (jsown:val document "data") "mission")
+    (let ((condition
+            (capture-schema-invalid
+             (lambda ()
+               (star.documents:validate-v09-document document)))))
+      (is-true condition)
+      (is (typep condition 'star.documents:document-schema-validation-error)))))
 
 (test rabbit-ingest-invalid-schema-cannot-reach-persistence
   (let ((persisted nil))

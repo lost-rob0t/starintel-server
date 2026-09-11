@@ -19,6 +19,8 @@ class V09RuntimeContractTests(unittest.TestCase):
         qlot_lock = self.text("qlfile.lock")
 
         self.assertEqual(schema_lock["schema_version"], "0.9.0")
+        self.assertEqual(schema_lock["release_version"], "0.9.1")
+        self.assertIn("operation", schema_lock["required_dtypes"])
         self.assertEqual(
             flake_lock["nodes"]["star-cl"]["locked"]["rev"], STAR_CL_V09
         )
