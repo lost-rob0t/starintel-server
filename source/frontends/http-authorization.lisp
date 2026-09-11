@@ -227,3 +227,8 @@
        (cors-middleware
         (authentication-middleware
          (authorization-middleware *app*)))))
+
+;; The observability layer is the OUTERMOST boundary so it sees the original
+;; traceparent, the final status, and every security rejection below it.
+(setf *server*
+      (observability-wrapped-server *server*))

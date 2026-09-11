@@ -2,6 +2,14 @@
   (:nicknames :star)
   (:use :cl)
   (:export
+   #:*observability-active*
+   #:observability-active-p
+   #:observability-wrapped-server
+   #:observability-route-template
+   #:observability-lease-metrics-hook
+   #:start-observability
+   #:stop-observability
+   #:ensure-observability-addon
    #:*rabbit-password*
    #:*rabbit-user*
    #:*rabbit-port*

@@ -56,6 +56,21 @@
 ;;; Example:
 ;;; (load #P"/etc/starintel/actors/domain-enricher.lisp")
 
+;;; Optional addons ---------------------------------------------------------
+;;;
+;;; Addons are trusted operator code loaded through the addon lifecycle and
+;;; started explicitly. Nothing below runs unless the operator adds it here.
+;;;
+;;; Observability: OTLP export of logs, metrics and traces to the local
+;;; OpenTelemetry Collector. Off unless this line is present; the export
+;;; target and signal mix are controlled by STAR_OBSERVABILITY_* env vars.
+;;; The application holds no OpenObserve credentials.
+;;;
+;;; (load-addon :starintel-observability)
+;;;
+;;; Example:
+;;; (load-addon :starintel-bixby)
+
 ;;; Optional SLYNK debugger ------------------------------------------------
 ;;;
 ;;; SLYNK is remote code execution. Use loopback/SSH forwarding only.

@@ -53,6 +53,8 @@
    (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "addons")
+   (:file "observability-gserver")
+   (:file "observability-consumers")
    (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
@@ -89,7 +91,7 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
+  (#:starintel-observability #:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
    #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre

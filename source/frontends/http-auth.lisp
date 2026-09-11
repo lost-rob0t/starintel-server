@@ -126,10 +126,18 @@
                  (star.auth:*request-security-context* context)
                  (*http-correlation-id* correlation-id)
                  (response (lack.component:call app env)))
+            (star.observability:security-event
+             'authn-ok
+             :outcome :allowed
+             :attributes (list (cons "http.route" path)))
             (append-response-headers
              response
              (list :x-correlation-id correlation-id)))
         (star.auth:authentication-error ()
+          (star.observability:security-event
+           'authn-failed
+           :outcome :denied
+           :attributes (list (cons "http.route" path)))
           (authentication-error-response correlation-id))))))
 
 (defun configured-origin-allowed-p (origin)

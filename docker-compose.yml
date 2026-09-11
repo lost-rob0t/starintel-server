@@ -161,6 +161,35 @@ services:
       retries: 12
       start_period: 30s
 
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:5000/health]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # OpenTelemetry Collector sidecar: the ONLY egress path for application
+  # telemetry. Holds NO OpenObserve credentials; it forwards OTLP to the
+  # observe gateway collector, which owns the ingest credential. Scrapes
+  # rabbitmq/couchdb prometheus endpoints for broker health. The app itself
+  # stays telemetry-free unless the operator loads the addon in init.lisp
+  # and points STAR_OBSERVABILITY_ENDPOINT at otelcol:4318.
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:${OTELCOL_VERSION:-0.155.0}
+    hostname: otelcol
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - type: bind
+        source: ${OTELCOL_CONFIG_HOST_FILE:-./docker/otelcol-sidecar.yaml}
+        target: /etc/otelcol/config.yaml
+        read_only: true
+    ports:
+      - "${STAR_OTLP_BIND_ADDRESS:-127.0.0.1}:4317:4317"
+      - "${STAR_OTLP_BIND_ADDRESS:-127.0.0.1}:4318:4318"
+    networks:
+      - backend
+
   youtube-actor:
     image: starintel/youtube-actor:0.1.0
     hostname: youtube-actor

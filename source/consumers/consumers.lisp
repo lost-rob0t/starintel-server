@@ -439,6 +439,10 @@ NIL and non-settlement success values remain backward-compatible ACK results."
     :initarg :prefetch-count
     :initform 200
     :accessor rabbit-stream-prefetch-count)
+   (current-properties
+    :initform nil
+    :accessor rabbit-stream-current-properties
+    :documentation "AMQP properties of the delivery last read, used for trace-context extraction.")
    (conn
     :initform nil
     :accessor rabbit-stream-connection)
@@ -592,6 +596,9 @@ NIL and non-settlement success values remain backward-compatible ACK results."
 
 (defmethod consumer-read ((consumer rabbit-consumer))
   (let ((envelope (stream-read (consumer-stream consumer))))
+    (setf (rabbit-stream-current-properties (consumer-stream consumer))
+          (ignore-errors (cl-rabbit:message/properties
+                          (cl-rabbit:envelope/message envelope))))
     (cons
      (babel:octets-to-string
       (cl-rabbit:message/body (cl-rabbit:envelope/message envelope))
