@@ -33,6 +33,7 @@
      (:file "dataset-export-test")
      (:file "couchdb-view-request-test")
      (:file "lease-store-contract-test")
+     (:file "lease-store-runtime-test")
      (:file "http-boundary-test")
      (:file "http-target-v1-test")
      (:file "json-literal-preservation-test")

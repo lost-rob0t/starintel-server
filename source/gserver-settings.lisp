@@ -248,6 +248,38 @@ Keep this list minimal; everything else is authenticated.")
 (defparameter *rabbit-password*
   (environment-secret "RABBITMQ_PASSWORD" "RABBITMQ_PASSWORD_FILE")
   "RabbitMQ password, from =RABBITMQ_PASSWORD= or =RABBITMQ_PASSWORD_FILE=.")
+
+;;;; Target lease store
+(defparameter *lease-store-backend*
+  (or (uiop:getenv "STAR_LEASE_STORE_BACKEND") "memory")
+  "Target lease backend selected by =initialize-lease-store=: =memory= (the
+in-process default; matches the historical inline lease behavior and has no
+external dependency) or =valkey=.
+
+- env: =STAR_LEASE_STORE_BACKEND=
+- default: =memory=")
+(defparameter *valkey-lease-host*
+  (or (uiop:getenv "VALKEY_HOST") "127.0.0.1")
+  "Valkey lease backend host, used when =*lease-store-backend*= is =valkey=.
+
+- env: =VALKEY_HOST=
+- default: =127.0.0.1=")
+(defparameter *valkey-lease-port*
+  (environment-integer "VALKEY_PORT" 6379)
+  "Valkey lease backend port, used when =*lease-store-backend*= is =valkey=.
+
+- env: =VALKEY_PORT=
+- default: =6379=")
+(defparameter *valkey-lease-password-file*
+  (uiop:getenv "VALKEY_PASSWORD_FILE")
+  "Path of the Valkey password secret file, read once by the lease-store
+constructor. Required when =*lease-store-backend*= is =valkey=; the password
+value itself is never read from the environment, only from this file
+(compose mounts it at =/run/secrets/valkey_password=).
+
+- env: =VALKEY_PASSWORD_FILE=
+- default: unset")
+
 (defparameter *slynk-port* 4009
   "Port for the SLY/Slynk REPL when =start-debugger= is invoked.")
 

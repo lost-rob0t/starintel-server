@@ -43,7 +43,7 @@ OpenObserve client. OpenObserve stays replaceable.
 | RabbitMQ publish | =traceparent= AMQP header (never message body), =starintel_rabbit_publish_total= / =_failures_total= | =star.actors:publish= choke-point |
 | RabbitMQ consume | consume/join spans via header extraction, =starintel_rabbit_consumed_total= / =_failures_total= | =consume= around-method in =source/observability-consumers.lisp=; properties captured in =rabbit-queue-stream= |
 | CouchDB views | client span per request, =starintel_couchdb_requests_total=, conflicts counter | transport wrapper installed at addon start; document bodies never recorded |
-| Leases | =starintel_lease_stale_writer_rejections_total= hook | =star:observability-lease-metrics-hook= for the existing lease =metrics-hook= seams (no runtime lease store is wired yet — see gaps) |
+| Leases | =starintel_lease_stale_writer_rejections_total=, =_conflicts_total=, =_acquisitions_total=, bounded =_outcomes_total= | =star:observability-lease-metrics-hook= attached to the runtime lease store (=star:initialize-lease-store=; memory default, Valkey via =STAR_LEASE_STORE_BACKEND=valkey=) |
 | Security events | =security-event= structured logs: authn ok/failed, authz denied, tenant-boundary rejection | authentication + authorization middleware |
 | Structured events | =event.name= JSON log events with trace_id/span_id | =emit-log-event= |
 
@@ -102,12 +102,14 @@ Run: =nix run .#star-unit-tests=.
 
 - Prolog/RLM trace hierarchy (rlm.run/spec/plan/execute/verify): the
   span helpers exist; no Prolog boundary exists in the server yet.
-- Lease store adoption: =observability-lease-metrics-hook= is ready for the
-  valkey lease store's =metrics-hook= seam; the store is not wired into the
-  runtime yet (VALKEY_* env is read by nothing).
 - LLM telemetry contract (model, provider, tokens, cost): attributes
   documented, no model calls exist in the server.
 - Predicate-level Prolog tracing: debug mode only; never default.
+- Lease consumer adoption: the runtime lease store (memory or Valkey) and
+  the =starintel_lease_*= counters are wired through
+  =star:initialize-lease-store=; request/target execution still uses the
+  inline document lease fields until issue #32 switches consumers to the
+  store.
 
 * Troubleshooting
 

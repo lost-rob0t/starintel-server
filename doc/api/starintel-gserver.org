@@ -288,6 +288,26 @@ Effective scheme, =http= or =https=, derived from TLS configuration.
 :PACKAGE: STARINTEL-GSERVER
 :END:
 Number of parallel ingest workers consuming the ingest queue.
+*** *lease-store*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+The initialized global target lease store installed by
+=initialize-lease-store=, or NIL. Consumers use it only through the
+=star.leases= protocol operations (acquire/renew/release/get/list/revoke);
+the concrete backend class is a composition-root detail.
+*** *lease-store-backend*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Target lease backend selected by =initialize-lease-store=: =memory= (the
+in-process default; matches the historical inline lease behavior and has no
+external dependency) or =valkey=.
+
+- env: =STAR_LEASE_STORE_BACKEND=
+- default: =memory=
 *** *oauth-access-token-seconds*
 :PROPERTIES:
 :KIND: var
@@ -388,6 +408,36 @@ Port for the SLY/Slynk REPL when =start-debugger= is invoked.
 :PACKAGE: STARINTEL-GSERVER
 :END:
 Server version string reported by =/health= and admin endpoints.
+*** *valkey-lease-host*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Valkey lease backend host, used when =*lease-store-backend*= is =valkey=.
+
+- env: =VALKEY_HOST=
+- default: =127.0.0.1=
+*** *valkey-lease-password-file*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Path of the Valkey password secret file, read once by the lease-store
+constructor. Required when =*lease-store-backend*= is =valkey=; the password
+value itself is never read from the environment, only from this file
+(compose mounts it at =/run/secrets/valkey_password=).
+
+- env: =VALKEY_PASSWORD_FILE=
+- default: unset
+*** *valkey-lease-port*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Valkey lease backend port, used when =*lease-store-backend*= is =valkey=.
+
+- env: =VALKEY_PORT=
+- default: =6379=
 
 * Types and Classes
 *** addon-state
@@ -499,6 +549,34 @@ missing.  Call before =load-init-file= on first boot.
 :END:
 Register the observability addon with the trusted addon lifecycle.
 Registration is metadata only; the addon starts via the addon lifecycle.
+*** initialize-lease-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(initialize-lease-store (&KEY STARINTEL-GSERVER::FORCE
+ (STARINTEL-GSERVER::BACKEND STARINTEL-GSERVER:*LEASE-STORE-BACKEND*)
+ (STARINTEL-GSERVER::HOST STARINTEL-GSERVER:*VALKEY-LEASE-HOST*)
+ (STARINTEL-GSERVER::PORT STARINTEL-GSERVER:*VALKEY-LEASE-PORT*)
+ (STARINTEL-GSERVER::PASSWORD-FILE
+  STARINTEL-GSERVER:*VALKEY-LEASE-PASSWORD-FILE*)
+ (STARINTEL-GSERVER::METRICS-HOOK
+  (STARINTEL-GSERVER:OBSERVABILITY-LEASE-METRICS-HOOK))
+ STARINTEL-GSERVER::AUDIT-HOOK))
+#+end_src
+Build and install the global =*lease-store*= from configuration.
+
+Backend selection follows =*lease-store-backend*= (=STAR_LEASE_STORE_BACKEND=;
+=memory= default, =valkey= with =VALKEY_HOST=/=VALKEY_PORT=/
+=VALKEY_PASSWORD_FILE=). The =star:observability-lease-metrics-hook= is
+attached by default, so lease outcome counters flow whenever the
+observability addon is loaded. Idempotent: without =:force= an existing
+store is returned unchanged. Never connects to Valkey here; with the valkey
+backend selected, configuration errors (missing password file) signal
+immediately while an unreachable server degrades per the adapter's bounded
+retry contract (retryable =:backend-unavailable=/:timeout=/:outcome-unknown=
+outcomes). Returns the store.
 *** list-addons
 :PROPERTIES:
 :KIND: fn
@@ -558,7 +636,9 @@ True when the observability addon was loaded via init.lisp and is active.
 :PACKAGE: STARINTEL-GSERVER
 :END:
 A lease-store metrics hook suitable for the existing metrics-hook seams.
-Stale fencing-token rejections get a dedicated counter.
+Lease stores invoke the hook with one event plist containing =:operation=,
+=:request-id=, =:code= and =:retryable-p=; the outcome code selects the
+counter. Stale fencing-token rejections get a dedicated counter.
 *** observability-route-template
 :PROPERTIES:
 :KIND: fn
@@ -633,6 +713,19 @@ Load INIT-PATH, creating it first if it does not exist yet.
 
 Returns T on success, signals an error on failure.  This is the
 idempotent entry point used by the runtime startup.
+*** shutdown-lease-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(shutdown-lease-store (&KEY
+ (STARINTEL-GSERVER::DEADLINE
+  (+ (STARINTEL-GSERVER::LEASE-STORE-UNIX-MILLISECONDS) 5000))
+ (STARINTEL-GSERVER::REQUEST-ID "shutdown-lease-store")))
+#+end_src
+Close and uninstall the global =*lease-store*=. Idempotent; returns t when
+a store was actually closed.
 *** start-debugger
 :PROPERTIES:
 :KIND: fn

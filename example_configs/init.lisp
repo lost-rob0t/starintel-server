@@ -71,6 +71,15 @@
 ;;; Example:
 ;;; (load-addon :starintel-bixby)
 
+;;; Optional durable target leases ------------------------------------------
+;;;
+;;; The lease store is initialized during start-runtime. The default
+;;; *lease-store-backend* is "memory" (in-process, no external dependency).
+;;; To make target leases durable, select the Valkey backend; compose already
+;;; provides VALKEY_HOST, VALKEY_PORT and VALKEY_PASSWORD_FILE.
+;;;
+;;; (setf *lease-store-backend* "valkey")
+
 ;;; Optional SLYNK debugger ------------------------------------------------
 ;;;
 ;;; SLYNK is remote code execution. Use loopback/SSH forwarding only.

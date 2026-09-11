@@ -419,6 +419,8 @@
       (condition (condition)
         (log:warn "lparallel shutdown failed: ~a" condition))))
   (setf (star-runtime-kernel runtime) nil)
+  (ignore-errors
+    (star:shutdown-lease-store))
   (bt:with-lock-held ((star-runtime-lock runtime))
     (setf (star-runtime-state runtime) :stopped))
   (when (eq runtime *runtime*)
@@ -448,6 +450,7 @@
           (star.databases.couchdb:init-db)
           (star.auth:initialize-auth-store)
           (star.auth:ensure-initial-user)
+          (star:initialize-lease-store)
           (setf (star-runtime-actor-system runtime)
                 (star.actors:start-actors
                  :rabbit-host star:*rabbit-address*

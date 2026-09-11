@@ -12,6 +12,7 @@
     dataset-export-tests
     couchdb-view-request-tests
     lease-store-contract-tests
+    lease-store-runtime-tests
     http-boundary-tests
     http-target-v1-tests
     v09-runtime-tests
