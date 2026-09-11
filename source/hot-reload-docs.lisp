@@ -1,0 +1,10 @@
+(in-package :star.hot-reload)
+
+(setf (documentation 'hot-reload-error 'type)
+      "Condition signalled when a live patch cannot be safely accepted or loaded.")
+(setf (documentation 'hot-reload-error-code 'function)
+      "Stable machine-readable code describing a hot reload failure.")
+(setf (documentation 'hot-reload-error-message 'function)
+      "Human-readable explanation of a hot reload failure.")
+(setf (documentation 'watcher-running-p 'function)
+      "True when the singleton hot reload watcher thread is alive.")

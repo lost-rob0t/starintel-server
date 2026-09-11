@@ -1,0 +1,108 @@
+#+title: StarIntel live hot reload
+#+options: toc:2
+
+* Purpose
+
+StarIntel can replace Common Lisp definitions in the already-running SBCL image.
+The HTTP server, actor system, RabbitMQ consumers, CouchDB state, process ID, and
+image identity are not restarted when a patch is applied.
+
+This is operational code loading, not configuration reload. A trusted patch has
+the same authority as the StarIntel process itself.
+
+* Enable
+
+Hot reload is disabled by default.
+
+#+begin_src sh
+export STAR_HOT_RELOAD=true
+export STAR_HOT_RELOAD_DIRECTORY=/var/lib/starintel/hot-reload
+#+end_src
+
+When the actor runtime starts, StarIntel starts one watcher thread for the patch
+directory. Existing =.lisp= files are snapshotted and ignored; new or modified
+files are compiled and loaded into the current image.
+
+For a local development server, =./launch.sh= enables hot reload and defaults the
+patch directory to =.star-hot-reload/= in the checkout.
+
+* Publish a patch
+
+Use an atomic publish. The Makefile does this for you:
+
+#+begin_src sh
+make reload PATCH=source/frontends/http-api.lisp
+#+end_src
+
+For a deployed service whose patch directory differs from the local default:
+
+#+begin_src sh
+make reload \
+  PATCH=/tmp/http-fix.lisp \
+  HOT_RELOAD_DIR=/var/lib/starintel/hot-reload
+#+end_src
+
+The command copies to a temporary non-=.lisp= name and renames it into place, so
+the watcher never intentionally compiles a partially-written patch.
+
+A patch may also be applied explicitly from a SLY/Slynk session:
+
+#+begin_src lisp
+(star.hot-reload:apply-patch-file "http-fix.lisp")
+#+end_src
+
+Paths passed to =apply-patch-file= are relative to the configured hot-reload
+directory. Absolute paths, path escapes, non-=.lisp= files, missing files, and
+patches over the configured size limit are rejected.
+
+* What changes live
+
+Normal Common Lisp redefinition semantics apply:
+
+- =defun= replaces future calls to the function without killing current threads;
+- CLOS generic functions/methods can be replaced using normal method definition;
+- top-level route registration forms can replace Ningle route handlers;
+- actor code invoked after the load sees the new function definitions;
+- already-running stack frames finish using the code they entered with.
+
+Avoid treating a hot patch as a schema migration. Changes that require rebuilding
+external state, replacing queue topology, changing persistent document contracts,
+or destructively changing live object invariants need an explicit migration plan.
+
+* Failure behavior
+
+StarIntel compiles a patch before loading the resulting FASL. A compile failure
+does not advance the image generation and the watcher records the failure instead
+of restarting the service. A failed patch is not retried until that file changes.
+
+Arbitrary Lisp can have load-time side effects. A patch that successfully compiles
+but raises during LOAD can therefore be partially applied. Keep production hot
+patches small, reviewable, and focused on replaceable definitions.
+
+* Observability
+
+The runtime API exposes:
+
+#+begin_src lisp
+(star.hot-reload:process-id)
+(star.hot-reload:image-id)
+(star.hot-reload:image-generation)
+(star.hot-reload:status-json)
+#+end_src
+
+=IMAGE-ID= is initialized once with =defvar= and survives hot reloads. A process
+restart creates a new image identity. =IMAGE-GENERATION= increments after each
+successful patch.
+
+* CI invariant
+
+The service-backed integration suite proves this is a real in-image update. It:
+
+1. starts the real Clack HTTP test service;
+2. records the OS PID, image ID, image generation, and Clack server handle;
+3. starts the production hot-reload watcher;
+4. publishes a patch redefining a live function;
+5. verifies the function result changed while PID, image ID, and server handle did
+   not change and HTTP still responds;
+6. submits malformed Lisp and verifies the patch is rejected, generation does not
+   advance, the prior live definition remains active, and HTTP still responds.
