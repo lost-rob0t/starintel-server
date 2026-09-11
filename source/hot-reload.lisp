@@ -63,6 +63,18 @@
 (defvar *last-error* nil)
 (defvar *actors-hook-installed-p* nil)
 
+(defun process-id ()
+  "Return the current OS process id when running under SBCL."
+  #+sbcl
+  (progn
+    (require :sb-posix)
+    (let ((getpid (find-symbol "GETPID" "SB-POSIX")))
+      (unless (and getpid (fboundp getpid))
+        (error "SB-POSIX:GETPID is unavailable"))
+      (funcall getpid)))
+  #-sbcl
+  nil)
+
 (defun image-id ()
   "Stable identifier for this Lisp image. It survives hot reloads, not restarts."
   *image-id*)
@@ -240,7 +252,7 @@ actor, RabbitMQ, CouchDB and HTTP objects are not restarted."
                         (hot-reload-error (condition)
                           (log:error "Watcher rejected ~a: ~a"
                                      canonical
-                                     condition)))))
+                                     condition))))))
                 (sleep *poll-seconds*))
     (bt:with-lock-held (*watcher-lock*)
       (when (eq *watcher-thread* (bt:current-thread))
@@ -309,6 +321,7 @@ publishing a patch so the watcher never observes a partially written file."
    (jsown:new-js
     ("enabled" (if *enabled-p* :true :false))
     ("watcher_running" (if (watcher-running-p) :true :false))
+    ("process_id" (or (process-id) :null))
     ("image_id" *image-id*)
     ("generation" *image-generation*)
     ("image_marker" (image-marker))
