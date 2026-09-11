@@ -38,6 +38,10 @@ server process.
 | =RABBITMQ_ADDRESS= | =localhost= | =star:*rabbit-address*= |
 | =RABBITMQ_USER= | =guest= | =star:*rabbit-user*= |
 | =RABBITMQ_PASSWORD= | empty | =star:*rabbit-password*= |
+| =STAR_LEASE_STORE_BACKEND= | =memory= | =star:*lease-store-backend*= |
+| =VALKEY_HOST= | =127.0.0.1= | =star:*valkey-lease-host*= |
+| =VALKEY_PORT= | =6379= | =star:*valkey-lease-port*= |
+| =VALKEY_PASSWORD_FILE= | unset | =star:*valkey-lease-password-file*= (secret file path) |
 | =STAR_SERVER_INIT_FILE= | =./init.lisp= | init path |
 
 ** Observability configuration
@@ -83,11 +87,60 @@ Current fixed defaults unless overridden in Lisp:
 | =*ingest-workers*= | 4 |
 | =*bulk-max-documents*= | 500 |
 | =*couchdb-event-log-database*= | ="starintel-event-source"= |
+| =*lease-store-backend*= | ="memory"= |
+| =*valkey-lease-host*= | ="127.0.0.1"= |
+| =*valkey-lease-port*= | 6379 |
 | =*slynk-port*= | 4009 |
 | =*publish-timeout-seconds*= | 5 |
 
 The Compose variables =STAR_SERVER_PORT=, =COUCHDB_PORT=, and =RABBITMQ_PORT=
 control host-side port mappings. They do not change the internal Lisp ports.
+
+** Lease store backend
+
+The target lease store is initialized during =start-runtime= by
+=star:initialize-lease-store=. The default =memory= backend is an in-process
+store that matches the historical inline lease behavior: no external
+dependency, no network traffic, and no consumer changes.
+
+Operators opt into the durable Valkey backend through the environment:
+
+| Variable | Default | Meaning |
+|----------+---------+---------|
+| =STAR_LEASE_STORE_BACKEND= | =memory= | =memory= or =valkey= |
+| =VALKEY_HOST= | =127.0.0.1= | Valkey host (compose: =valkey=) |
+| =VALKEY_PORT= | =6379= | Valkey port |
+| =VALKEY_PASSWORD_FILE= | unset | mounted secret file; required for =valkey= |
+
+Selecting =valkey= without =VALKEY_PASSWORD_FILE= fails startup loudly: the
+store constructor refuses a password from the environment and reads the
+secret once from the file (compose mounts it at
+=/run/secrets/valkey_password=). The password value itself is never exported
+as an environment variable.
+
+The initializer attaches =star:observability-lease-metrics-hook= to the
+store, so =starintel_lease_stale_writer_rejections_total=,
+=starintel_lease_conflicts_total= and =starintel_lease_acquisitions_total=
+flow whenever the observability addon is loaded. When Valkey is unreachable,
+lease operations degrade per the adapter's bounded retry contract: they
+return retryable =:backend-unavailable= / =:timeout= / =:outcome-unknown=
+outcomes within the caller's deadline instead of signaling.
+
+The init file can override any knob before runtime start (the environment is
+read only when the image loads):
+
+#+begin_src lisp
+(in-package :star)
+
+;;; Durable target leases: select the Valkey backend and rely on the
+;;; VALKEY_* environment (compose already sets host, port, password file).
+(setf *lease-store-backend* "valkey")
+
+;;; Or override everything here instead of through the environment:
+;; (setf *valkey-lease-host* "valkey"
+;;       *valkey-lease-port* 6379
+;;       *valkey-lease-password-file* "/run/secrets/valkey_password")
+#+end_src
 
 ** Secret files in containers
 
@@ -95,9 +148,9 @@ The container entrypoint reads:
 
 - =COUCHDB_PASSWORD_FILE= and exports =COUCHDB_PASSWORD=;
 - =RABBITMQ_PASSWORD_FILE= and exports =RABBITMQ_PASSWORD=.
-- =VALKEY_PASSWORD_FILE= identifies the mounted secret that the composition
-  root passes to the lease-store constructor; its value is never exported as
-  an environment variable.
+- =VALKEY_PASSWORD_FILE= is read directly by the server's lease-store
+  wiring (the constructor reads the secret from the file, never from an
+  exported variable).
 
 It then drops to UID/GID 65532 and starts:
 
@@ -105,7 +158,9 @@ It then drops to UID/GID 65532 and starts:
 /bin/star-server start -i /etc/starintel/init.lisp
 #+end_example
 
-Outside that image, =*_FILE= variables are not read by the Lisp code.
+Outside that image, =*_FILE= variables are not read by the Lisp code, with
+the exception of =VALKEY_PASSWORD_FILE=, which the lease-store wiring reads
+directly.
 
 ** Complete init-file example
 

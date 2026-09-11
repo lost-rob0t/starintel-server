@@ -73,24 +73,27 @@ gate that only instruments when the addon was loaded via init.lisp."
 
 (defun observability-lease-metrics-hook ()
   "A lease-store metrics hook suitable for the existing metrics-hook seams.
-Stale fencing-token rejections get a dedicated counter."
-  (lambda (outcome-code &rest info)
-    (declare (ignore info))
-    (case outcome-code
-      (:stale-token
-       (star.observability:record-counter
-        "starintel_lease_stale_writer_rejections_total" 1))
-      (:conflict
-       (star.observability:record-counter "starintel_lease_conflicts_total" 1))
-      (:acquired
-       (star.observability:record-counter
-        "starintel_lease_acquisitions_total" 1))
-      (t
-       (star.observability:record-counter
-        "starintel_lease_outcomes_total" 1
-        :attributes
-        (list (cons "outcome"
-                    (string-downcase (princ-to-string outcome-code)))))))))
+Lease stores invoke the hook with one event plist containing =:operation=,
+=:request-id=, =:code= and =:retryable-p=; the outcome code selects the
+counter. Stale fencing-token rejections get a dedicated counter."
+  (lambda (event &rest ignored)
+    (declare (ignore ignored))
+    (let ((outcome-code (getf event :code)))
+      (case outcome-code
+        (:stale-token
+         (star.observability:record-counter
+          "starintel_lease_stale_writer_rejections_total" 1))
+        (:conflict
+         (star.observability:record-counter "starintel_lease_conflicts_total" 1))
+        (:acquired
+         (star.observability:record-counter
+          "starintel_lease_acquisitions_total" 1))
+        (t
+         (star.observability:record-counter
+          "starintel_lease_outcomes_total" 1
+          :attributes
+          (list (cons "outcome"
+                      (string-downcase (princ-to-string outcome-code))))))))))
 
 ;; ---- Lifecycle -------------------------------------------------------------
 

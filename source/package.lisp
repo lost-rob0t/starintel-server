@@ -65,6 +65,13 @@
    #:load-init-file
    #:safe-load-init
    #:*bulk-max-documents*
+   #:*lease-store*
+   #:initialize-lease-store
+   #:shutdown-lease-store
+   #:*lease-store-backend*
+   #:*valkey-lease-host*
+   #:*valkey-lease-port*
+   #:*valkey-lease-password-file*
    #:repl/main))
 
 (uiop:define-package :star.databases.couchdb
