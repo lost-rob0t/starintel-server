@@ -1,0 +1,76 @@
+#+title: StarIntel operation object
+#+options: toc:2
+
+* Purpose
+
+=operation= is a StarIntel 0.9 control-plane document for phased, agent-executable
+research and investigation work. It sits above =target= and
+=investigation-target=; it does not replace either one and it is not a
+real-world intelligence entity.
+
+Conceptually:
+
+- =target= answers what should be worked on;
+- =investigation-target= answers which bounded investigative question should be
+  resolved;
+- =operation= describes why the body of work exists, what phases are runnable,
+  which dependencies and scope constraints apply, which datasets and
+  capabilities may be used, and when work may advance or terminate.
+
+The canonical structural schema is owned by =lost-rob0t/starintel-gpt-auto-dig=.
+The server validates operation documents through =star-cl= at the same strict
+v0.9 mutation boundary used by other canonical documents.
+
+* Initial v0.9 structure
+
+An operation carries structured data for:
+
+- mission and objectives;
+- operation lifecycle state;
+- operation-wide =in_scope= and =out_of_scope= constraints;
+- target policy and primary/supporting/derived/excluded target references;
+- phases with stable identifiers and dependency-DAG edges;
+- phase entry/exit conditions and completion evidence;
+- dataset bindings with role, access mode, and applicable phases;
+- capability requirements and gaps, including actor/software/hardware/device,
+  source/dataset/schema/protocol/infrastructure/research work;
+- agent/actor assignments;
+- structured post-operation actions.
+
+Operation-level exclusions are authoritative over phase-local inclusions.
+
+* Agentic semantics
+
+The representation is intentionally structured so the ontology/Prolog layer can
+project predicates equivalent to:
+
+#+begin_src prolog
+currentPhase(Operation, Phase).
+phaseRunnable(Operation, Phase).
+phaseBlockedBy(Operation, Phase, Dependency).
+validTarget(Operation, Phase, Target).
+allowedDataset(Operation, Phase, Dataset, Access).
+phaseComplete(Operation, Phase).
+nextPhase(Operation, Current, Next).
+operationComplete(Operation).
+capabilityMissing(Operation, Phase, Capability).
+#+end_src
+
+The server does not implement a scheduler from these predicates in the first
+slice. It preserves and validates the control-plane document so symbolic
+orchestration can be layered on without changing the wire model.
+
+* Ontology authority
+
+The v0.9 field layout is transitional. JSON-LD is the canonical StarIntel
+ontology representation, and no Common Lisp, Python, Nim, JavaScript, or Prolog
+implementation may become the permanent semantic authority for operation
+concepts.
+
+The operation/phase vocabulary is being re-examined in
+=lost-rob0t/starintel-auto-research#219= under the broader ontology foundation
+=lost-rob0t/starintel-auto-research#72=. Server implementation is tracked in
+=lost-rob0t/starintel-server#151=.
+
+The ontology pass must preserve a lossless migration path for operation
+documents created under the initial v0.9 structural contract.

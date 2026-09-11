@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STAR_CL_V09 = "b8dfbe2f9f56065ace8c3313b92ca748a115cdfa"
+STAR_CL_V09 = "9ce8f88f57fb7ac143851f7fd2c75dccd6a40cc3"
 
 
 class V09RuntimeContractTests(unittest.TestCase):
@@ -19,6 +19,8 @@ class V09RuntimeContractTests(unittest.TestCase):
         qlot_lock = self.text("qlfile.lock")
 
         self.assertEqual(schema_lock["schema_version"], "0.9.0")
+        self.assertEqual(schema_lock["release_version"], "0.9.1")
+        self.assertIn("operation", schema_lock["required_dtypes"])
         self.assertEqual(
             flake_lock["nodes"]["star-cl"]["locked"]["rev"], STAR_CL_V09
         )

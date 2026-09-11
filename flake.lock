@@ -69,11 +69,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1786244418,
-        "narHash": "sha256-WO/qeIgw7nvRDYeM21Iuwb5HUGttVPMOXj69Ghfmlj4=",
+        "lastModified": 1788955972,
+        "narHash": "sha256-/sUn3L9xkv2nfoRJkj6Sg7TsNvo7NiVhBVmY2XtDnPU=",
         "owner": "lost-rob0t",
         "repo": "star-cl",
-        "rev": "b8dfbe2f9f56065ace8c3313b92ca748a115cdfa",
+        "rev": "9ce8f88f57fb7ac143851f7fd2c75dccd6a40cc3",
         "type": "github"
       },
       "original": {
