@@ -527,7 +527,11 @@ raw Lisp error. Exercises valkey-script-outcome's handler-case."
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
 
 (test one-hundred-concurrent-acquires-have-exactly-one-observed-owner
-  (with-real-valkey-store (store :label "concurrency" :pool-size 16)
+  ;; 100 real threads contend for a 16-connection pool on CI runners that also
+  ;; host CouchDB/RabbitMQ/Clouseau, so operation-timeout-ms 2500 must cover
+  ;; worst-case thread scheduling yet stay bounded by the 3000ms caller deadline.
+  (with-real-valkey-store
+      (store :label "concurrency" :pool-size 16 :operation-timeout-ms 2500)
     (let ((identity (real-valkey-identity "concurrent-target"))
           (results nil)
           (results-lock (bt:make-lock "valkey-acquire-results")))
