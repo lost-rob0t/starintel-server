@@ -91,13 +91,8 @@ HTTP server handle and listening service stay unchanged."
               directory
               "broken-patch.lisp"
               "(in-package :star.hot-reload)\n(defun image-marker () \"broken\"\n")
-             (is
-              (handler-case
-                  (progn
-                    (star.hot-reload:apply-patch-file "broken-patch.lisp")
-                    nil)
-                (star.hot-reload:hot-reload-error () t))
-              "Broken patch must be rejected")
+             (signals star.hot-reload:hot-reload-error
+               (star.hot-reload:apply-patch-file "broken-patch.lisp"))
              (is (= good-generation (star.hot-reload:image-generation))
                  "Rejected patch must not advance image generation")
              (is (string= "patched-ci" (star.hot-reload:image-marker))
