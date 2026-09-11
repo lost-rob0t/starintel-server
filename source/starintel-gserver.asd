@@ -31,6 +31,7 @@
    (:file "leases/valkey-list-store")
    (:file "gserver-settings")
    (:file "hot-reload")
+   (:file "hot-reload-docs")
    (:file "databases/couchdb")
    (:file "databases/view-request")
    (:file "databases/export")
