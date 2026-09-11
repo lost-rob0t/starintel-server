@@ -197,7 +197,7 @@
         (record-failure pathname condition)
         (log:error "Hot reload rejected ~a: ~a" pathname condition)
         (error condition))
-      (condition (condition)
+      (error (condition)
         (record-failure pathname condition)
         (log:error "Hot reload failed for ~a: ~a" pathname condition)
         (signal-hot-reload-error
