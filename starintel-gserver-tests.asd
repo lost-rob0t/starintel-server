@@ -33,6 +33,7 @@
      (:file "lease-store-contract-test")
      (:file "http-boundary-test")
      (:file "http-view-v2-test")
+     (:file "http-activity-v2-test")
      (:file "http-target-v1-test")
      (:file "json-literal-preservation-test")
      (:file "v09-runtime-test")

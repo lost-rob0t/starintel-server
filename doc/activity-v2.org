@@ -1,0 +1,84 @@
+#+title: StarIntel Activity and Timeline API
+#+startup: overview
+
+* Scope
+
+The activity and timeline surfaces are general StarIntel client APIs. They are
+not Wear-specific even though the first compact client is =starintel-wearos=.
+Both endpoints are authenticated and require =views:read=.
+
+All routes remain under the server's current versioned prefix:
+
+- =GET /api/v1/activity=
+- =GET /api/v1/activity/:view=
+- =GET /api/v1/timeline=
+
+* Activity
+
+=/api/v1/activity= returns bounded historical document-ingest activity from
+server-owned CouchDB projections.
+
+** Query
+
+- =metric= :: =documents_added= or =ingest_rate=
+- =range= :: =1h=, =6h=, =24h=, =7d=, or =30d=
+- =max_points= :: 1 through 120; defaults to 120
+
+The server chooses the finest checked-in bucket view that does not exceed the
+requested point budget. The default buckets used by the Wear ranges are:
+
+| range | bucket |
+|-------+--------|
+| 1h    | 60s    |
+| 6h    | 300s   |
+| 24h   | 900s   |
+| 7d    | 7200s  |
+| 30d   | 21600s |
+
+=documents_added= values are document counts for each UTC bucket.
+=ingest_rate= is the same count normalized to documents/minute. The =delta=
+field is always the total documents added over the returned series and is
+labelled with =delta_unit=.
+
+No negative counter reconstruction is performed. A missing indexed bucket is
+zero documents added. Current or boundary-clipped buckets set =partial=true=;
+the server does not interpolate synthetic spikes.
+
+The response also includes real UTC-boundary =period_counts= for the current
+minute, hour, day, week, month, and year.
+
+* Timeline
+
+=/api/v1/timeline= returns compact chronological events. It does not guess a
+single universal event time.
+
+** Query
+
+- =basis= :: =added=, =updated=, =observed=, =collected=, =valid_from=,
+  =valid_to=, or =generated=
+- =range= :: =1h=, =6h=, =24h=, =7d=, or =30d=
+- =limit= :: 1 through 200; defaults to 50
+- =descending= :: defaults to true
+
+Each event is a minimal fixed projection containing epoch-second =ts=,
+=time_basis=, =id=, =dataset=, =dtype=, and a display =label=. Full documents
+are not embedded in the index. =partial=true= means another event exists beyond
+the requested limit.
+
+Timestamp bases are explicit. Absence of =observed_at= never causes
+=date_added= to be emitted as an observed timestamp, and the same rule applies
+to every other basis.
+
+* Registered projections
+
+The =activity_v2= design document contains reduced added-time buckets at 1m,
+5m, 15m, 1h, 2h, 6h, 1d, 7d, and 30d plus map-only =timeline= and
+=latest_updated= projections.
+
+The generic registry routes can inspect them through:
+
+- =GET /api/v1/views?category=activity=
+- =GET /api/v1/views/activity/:view=
+- =GET /api/v1/activity/:view=
+
+Clients cannot provide JavaScript map/reduce source.

@@ -9,6 +9,7 @@
                  (:file "http-contract-final")
                  (:file "http-contract-targets")
                  (:file "http-contract-views-v2")
+                 (:file "http-contract-activity-v2")
                  (:file "client-package")
                  (:file "client-runtime")
                  (:file "client-compat")
