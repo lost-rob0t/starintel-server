@@ -20,13 +20,12 @@
         (rabbit-stream-owner-thread stream) nil)
   stream)
 
-(defun open-rabbit-stream-with-retry
-    (stream policy &key (open-fn #'open-stream)
-                        (sleep-fn *retry-sleep-function*))
-  "Open STREAM with POLICY-bounded retries for transient Rabbit transport errors."
+(defun call-with-rabbit-startup-retry
+    (stream policy operation &key (sleep-fn *retry-sleep-function*))
+  "Call OPERATION with bounded retries for transient Rabbit stream-open errors."
   (loop for attempt from 0
         do (handler-case
-               (return (funcall open-fn stream))
+               (return (funcall operation))
              (condition (condition)
                (reset-rabbit-stream-after-open-failure stream)
                (unless (and (rabbit-startup-retryable-p condition)
@@ -41,11 +40,8 @@
                   (retry-policy-max-retries policy))
                  (funcall sleep-fn (/ delay-ms 1000.0d0)))))))
 
-(defun open-consumer-stream (consumer)
-  "Open CONSUMER's stream, applying startup retry only to retrying Rabbit streams."
-  (let ((stream (consumer-stream consumer)))
-    (if (typep stream 'retrying-rabbit-queue-stream)
-        (open-rabbit-stream-with-retry
-         stream
-         (retry-stream-policy stream))
-        (open-stream stream))))
+(defmethod open-stream :around ((stream retrying-rabbit-queue-stream))
+  (call-with-rabbit-startup-retry
+   stream
+   (retry-stream-policy stream)
+   (lambda () (call-next-method))))
