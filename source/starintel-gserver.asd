@@ -59,6 +59,7 @@
    (:file "target-recovery")
    (:file "target-dispatch")
    (:file "target-dispatch-fixes")
+   (:file "target-admission")
    (:file "actor-systems/event-actor")
    (:file "actor-systems/matcher-actor")
    (:file "rabbit")
