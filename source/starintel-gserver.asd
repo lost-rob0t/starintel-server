@@ -15,6 +15,7 @@
    (:file "consumers/consumers")
    (:file "consumers/owner-fixes")
    (:file "consumers/retry-policy")
+   (:file "consumers/startup-retry")
    (:file "producers/package")
    (:file "producers/producers")
    (:file "http-contract-package" :pathname "../cli/http-contract-package")
