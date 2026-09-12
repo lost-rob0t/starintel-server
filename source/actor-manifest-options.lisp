@@ -1,11 +1,6 @@
 (uiop:define-package :star.actor-manifest-options
   (:use :cl)
   (:export
-   #:invalid-actor-manifest
-   #:invalid-actor-manifest-reason
-   #:missing-required-target-option
-   #:missing-required-target-option-actor
-   #:missing-required-target-option-key
    #:actor-manifest-actor
    #:actor-manifest-target-options
    #:target-option-value
