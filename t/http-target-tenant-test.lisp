@@ -12,17 +12,20 @@
    :scopes scopes
    :credential-id (format nil "credential-~a" id)))
 
-(defun make-tenant-target-document (id tenant actor)
-  (jsown:new-js
-    ("_id" id)
-    ("tenant_id" tenant)
-    ("dataset" "dataset-a")
-    ("dtype" "target")
-    ("version" starintel:+starintel-doc-version+)
-    ("data"
-     (jsown:new-js
-       ("actor" actor)
-       ("target" (format nil "target-value-~a" id))))))
+(defun make-tenant-target-document (id tenant actor &key (dataset "dataset-a"))
+  (let ((document
+          (jsown:new-js
+            ("_id" id)
+            ("tenant_id" tenant)
+            ("dtype" "target")
+            ("version" starintel:+starintel-doc-version+)
+            ("data"
+             (jsown:new-js
+               ("actor" actor)
+               ("target" (format nil "target-value-~a" id)))))))
+    (when dataset
+      (setf (jsown:val document "dataset") dataset))
+    document))
 
 (defun target-view-response (&rest documents)
   (jsown:new-js
@@ -118,11 +121,77 @@
             :query-fn
             (lambda (&rest arguments)
               (declare (ignore arguments))
-              ;; Simulate stale/misindexed/poisoned backend output.  Wildcard
+              ;; Simulate stale/misindexed/poisoned backend output. Wildcard
               ;; authorization must not turn these rows into response leakage.
               (target-view-response allowed wrong-tenant wrong-actor)))))
     (is (= 1 (length result)))
     (is (string= "allowed" (jsown:val (first result) "_id")))))
+
+(test target-list-preserves-present-dataset-restrictions
+  (let* ((principal
+           (make-target-list-principal
+            "dataset-reader"
+            '("targets:read"
+              "tenant:agent-zero"
+              "actor:test-actor"
+              "dataset:dataset-a"
+              "target:*")))
+         (allowed
+           (make-tenant-target-document
+            "target-a" "agent-zero" "test-actor"
+            :dataset "dataset-a"))
+         (wrong-dataset
+           (make-tenant-target-document
+            "target-b" "agent-zero" "test-actor"
+            :dataset "dataset-b"))
+         (missing-dataset
+           (make-tenant-target-document
+            "target-c" "agent-zero" "test-actor"
+            :dataset nil))
+         (result
+           (star.frontends.http-api::query-authorized-target-documents
+            nil
+            "records"
+            "test-actor"
+            "agent-zero"
+            principal
+            nil
+            :query-fn
+            (lambda (&rest arguments)
+              (declare (ignore arguments))
+              (target-view-response
+               allowed wrong-dataset missing-dataset)))))
+    (is (= 1 (length result)))
+    (is (string= "target-a" (jsown:val (first result) "_id")))))
+
+(test target-list-preserves-present-target-restrictions
+  (let* ((principal
+           (make-target-list-principal
+            "target-reader"
+            '("targets:read"
+              "tenant:agent-zero"
+              "actor:test-actor"
+              "target:target-a")))
+         (allowed
+           (make-tenant-target-document
+            "target-a" "agent-zero" "test-actor"))
+         (wrong-target
+           (make-tenant-target-document
+            "target-b" "agent-zero" "test-actor"))
+         (result
+           (star.frontends.http-api::query-authorized-target-documents
+            nil
+            "records"
+            "test-actor"
+            "agent-zero"
+            principal
+            nil
+            :query-fn
+            (lambda (&rest arguments)
+              (declare (ignore arguments))
+              (target-view-response allowed wrong-target)))))
+    (is (= 1 (length result)))
+    (is (string= "target-a" (jsown:val (first result) "_id")))))
 
 (test target-list-missing-tenant-default-is-explicit-and-empty-is-rejected
   (is (string= "default"
