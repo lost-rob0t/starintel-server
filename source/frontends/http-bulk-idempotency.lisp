@@ -36,7 +36,6 @@
      (let ((keys nil)
            (copy (jsown:empty-object)))
        (jsown:do-json-keys (key ignored) value
-         (declare (ignore ignored))
          (push key keys))
        (dolist (key (sort keys #'string<) copy)
          (setf (jsown:val copy key)
@@ -284,12 +283,14 @@ Unresolved/indeterminate reservations stay fail-closed indefinitely."
   (let* ((result (jsown:parse body))
          (succeeded (or (jsown:val-safe result "succeeded") 0))
          (failed (or (jsown:val-safe result "failed") 0)))
+    ;; Persist the replay body first. If the terminal status write later fails,
+    ;; the caller can still recover the exact successful response safely.
+    (store-bulk-idempotency-initial-response job-id 200 body)
     (mark-bulk-idempotency-status
      job-id
      (if (zerop failed) "completed" "completed-with-errors")
      :succeeded succeeded
      :failed failed)
-    (store-bulk-idempotency-initial-response job-id 200 body)
     body))
 
 (defun reject-bulk-idempotency-reservation (job-id)
