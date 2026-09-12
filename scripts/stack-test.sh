@@ -120,6 +120,7 @@ authz_doc_a="authz-doc-a"
 authz_doc_b="authz-doc-b"
 authz_target_a="authz-target-a"
 authz_target_b="authz-target-b"
+authz_target_agent_zero="authz-target-agent-zero"
 authz_term="authzscopedfixture"
 couchdb_url="http://127.0.0.1:${COUCHDB_PORT}"
 server_url="http://127.0.0.1:${STAR_SERVER_PORT}"
@@ -180,6 +181,19 @@ reader_key="$(jq --exit-status --raw-output '.api_key' <<<"$reader_response")"
 [[ "$reader_key" == star_sk_v1_* ]]
 reader_header="Authorization: Bearer ${reader_key}"
 
+set_stage "create-non-default-target-reader"
+tenant_reader_response="$(
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "$auth_header" \
+    --header "Content-Type: application/json" \
+    --data '{"owner":"agent-zero-target-reader","principal_type":"api_client","scopes":["targets:read","tenant:agent-zero","actor:actor-a"]}' \
+    "${server_url}/auth/credentials"
+)"
+tenant_reader_key="$(jq --exit-status --raw-output '.api_key' <<<"$tenant_reader_response")"
+[[ "$tenant_reader_key" == star_sk_v1_* ]]
+tenant_reader_header="Authorization: Bearer ${tenant_reader_key}"
+
 set_stage "insert-search-fixtures"
 couch_put "$fixture_id" \
   "{\"dtype\":\"note\",\"dataset\":\"stack\",\"tenant_id\":\"default\",\"content\":\"${fixture_term}\"}"
@@ -191,6 +205,8 @@ couch_put "$authz_target_a" \
   '{"dtype":"target","dataset":"dataset-a","tenant_id":"default","actor":"actor-a","target_namespace":"people","program_id":"program-a"}'
 couch_put "$authz_target_b" \
   '{"dtype":"target","dataset":"dataset-b","tenant_id":"default","actor":"actor-a","target_namespace":"people","program_id":"program-a"}'
+couch_put "$authz_target_agent_zero" \
+  '{"dtype":"target","tenant_id":"agent-zero","actor":"actor-a"}'
 
 wait_for_search_id() {
   local header="$1"
@@ -300,6 +316,20 @@ targets_response="$(
 jq --exit-status --arg a "$authz_target_a" --arg b "$authz_target_b" \
   '([.[]?._id // empty] | index($a)) != null and ([.[]?._id // empty] | index($b)) == null' \
   <<<"$targets_response" >/dev/null
+
+set_stage "verify-non-default-target-list"
+tenant_targets_response="$(
+  curl --fail --silent --show-error \
+    --header "$tenant_reader_header" \
+    --get --data-urlencode "tenant=agent-zero" \
+    "${server_url}/targets/actor-a"
+)"
+jq --exit-status --arg allowed "$authz_target_agent_zero" --arg default "$authz_target_a" \
+  '([.[]?._id // empty] | index($allowed)) != null and ([.[]?._id // empty] | index($default)) == null' \
+  <<<"$tenant_targets_response" >/dev/null
+[[ "$(http_status --header "$tenant_reader_header" --get --data-urlencode "tenant=default" "${server_url}/targets/actor-a")" == "403" ]]
+[[ "$(http_status --header "$tenant_reader_header" --get --data-urlencode "tenant=" "${server_url}/targets/actor-a")" == "400" ]]
+[[ "$(http_status --header "$tenant_reader_header" --get --data-urlencode "tenant=agent-zero" "${server_url}/targets/actor-b")" == "403" ]]
 
 set_stage "restart-stack"
 docker compose restart
