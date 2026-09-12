@@ -89,3 +89,22 @@
             ("data" (jsown:new-js ("actor" "username-targets"))))))
     (signals star.actor-manifest-options:invalid-actor-manifest
       (star.actor-manifest-options:actor-manifest-actor document))))
+
+(test external-actor-contract-is-publicly-discoverable
+  (let* ((document (star.frontends.http-api::capabilities-document))
+         (data (jsown:val document "data"))
+         (features (jsown:val data "features"))
+         (contracts (jsown:val data "actor_contracts")))
+    (is (eq :true (jsown:val features "actor_manifests")))
+    (is (eq :true (jsown:val features "actor_target_options")))
+    (is (eq :true (jsown:val features "remote_actor_dispatch")))
+    (is (string= "actor-manifest"
+                 (jsown:val contracts "manifest_dtype")))
+    (is (string= "data.target_options"
+                 (jsown:val contracts "manifest_target_options_field")))
+    (is (string= "documents.ingest.target"
+                 (jsown:val contracts "canonical_target_ingest_key")))
+    (is (string= "documents"
+                 (jsown:val contracts "remote_target_exchange")))
+    (is (string= "documents.target.dispatch.<actor>"
+                 (jsown:val contracts "remote_target_routing_key_template")))))
