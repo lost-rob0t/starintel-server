@@ -40,6 +40,37 @@
 (setf *ingest-workers* 4
       star.actors:*publish-timeout-seconds* 5)
 
+;;; Target admission -------------------------------------------------------
+;;;
+;;; These are alternatives or composable gates. Every enabled gate must pass.
+;;; Leave them unset for the historical unlimited target-dispatch behavior.
+;;;
+;;; Maximum concurrent server-side target dispatches:
+;;; (configure-target-admission :max-concurrent 8)
+;;;
+;;; Sliding-window rate limit (60 dispatches in any 60-second window):
+;;; (configure-target-admission
+;;;  :rate-limit '(:count 60 :per 60))
+;;;
+;;; Token bucket (burst 20, refill 2 dispatch tokens/second):
+;;; (configure-target-admission
+;;;  :token-bucket '(:capacity 20 :refill-rate 2))
+;;;
+;;; Gates can be combined, including a trusted custom condition. The condition
+;;; receives the target dispatch envelope plus a snapshot plist containing
+;;; :ACTIVE, :ACTOR-ACTIVE, :RATE-COUNT, and :TOKENS. Return a boolean and an
+;;; optional rejection reason. Keep it fast/non-blocking because it runs under
+;;; the admission lock.
+;;;
+;;; (configure-target-admission
+;;;  :max-concurrent 8
+;;;  :token-bucket '(:capacity 20 :refill-rate 2)
+;;;  :condition
+;;;  (lambda (envelope state)
+;;;    (declare (ignore envelope))
+;;;    (values (< (getf state :actor-active) 2)
+;;;            "per-actor concurrency limit")))
+
 ;;; Logging ----------------------------------------------------------------
 
 (ensure-directories-exist #P"logs/")
