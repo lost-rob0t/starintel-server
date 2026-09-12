@@ -115,16 +115,26 @@ receives PATCH only after the resource decision has been made."
 
 (defun authorized-target-documents (documents actor-name action
                                     &key principal metadata)
-  "Return only target documents individually authorized for the caller."
+  "Return target documents authorized by the target-list tenant/actor contract.
+
+Target listing is scoped by tenant and actor.  Dataset and target-id scopes are
+not required by this read route and therefore must not be introduced by the
+per-row defense-in-depth check."
   (loop for raw in documents
         for document = (parse-document-value raw)
+        for tenant = (or (star.documents:document-value
+                          document "tenant_id" nil)
+                         (star.documents:document-value
+                          document "tenant" nil)
+                         "default")
         for decision =
           (authorize
            action
            :principal principal
-           :resource (resource-from-document
-                      document
-                      :actor-name actor-name)
+           :resource
+           (make-authorization-resource
+            :tenant-id tenant
+            :actor-name actor-name)
            :metadata metadata)
         when (authorization-decision-allowed-p decision)
           collect raw))
