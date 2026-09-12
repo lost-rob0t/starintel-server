@@ -81,12 +81,14 @@
                   "/api/v1/views/activity/timeline"))
     (is (string= "views:read"
                  (star.frontends.http-api::route-action :get path))))
-  (is (member '("/api/v1/activity" activity)
-              star.frontends.http-api::*http-view-v2-route-matrix*
-              :test #'equal))
-  (is (member '("/api/v1/timeline" timeline)
-              star.frontends.http-api::*http-view-v2-route-matrix*
-              :test #'equal)))
+  (is (find "/api/v1/activity"
+            star.frontends.http-api::*http-view-v2-route-matrix*
+            :key #'first
+            :test #'string=))
+  (is (find "/api/v1/timeline"
+            star.frontends.http-api::*http-view-v2-route-matrix*
+            :key #'first
+            :test #'string=)))
 
 (test activity-v2-query-contract-rejects-unknown-range-and-metric
   (dolist (params '((("range" . "forever"))
