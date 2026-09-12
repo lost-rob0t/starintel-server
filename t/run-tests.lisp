@@ -20,6 +20,7 @@
     oauth-authorization-code-tests
     addon-system-tests
     authorization-policy-tests
+    http-target-tenant-tests
     gserver-client-tests
     runtime-lifecycle-tests))
 
