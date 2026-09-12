@@ -71,7 +71,7 @@
             (jsown:new-js
               ("key" "target_actor")
               ("required" :true))))))
-    (signals star.actor-manifest-options:missing-required-target-option
+    (signals star.actor-manifest-options::missing-required-target-option
       (star.actor-manifest-options:merge-target-options-with-manifest
        manifest #()))
     (let ((merged
@@ -87,7 +87,7 @@
           (jsown:new-js
             ("dtype" "target")
             ("data" (jsown:new-js ("actor" "username-targets"))))))
-    (signals star.actor-manifest-options:invalid-actor-manifest
+    (signals star.actor-manifest-options::invalid-actor-manifest
       (star.actor-manifest-options:actor-manifest-actor document))))
 
 (test external-actor-contract-is-publicly-discoverable
