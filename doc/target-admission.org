@@ -86,8 +86,9 @@ snapshot includes:
 
 Return a generalized boolean and optionally a human-readable rejection reason.
 The condition executes while the admission lock is held so its decision and the
-reservation are atomic.  It MUST therefore be fast, non-blocking, and must not
-call target-admission configuration/state mutation functions recursively.
+reservation are atomic.  It MUST therefore be fast and non-blocking.  It also
+MUST NOT call any target-admission API that acquires the same lock, including
+=configure-target-admission= or =target-admission-state=.
 
 The envelope gives trusted Lisp configuration full freedom to inspect actor,
 target, options, destination kind, schedule, or external process state through
@@ -109,10 +110,19 @@ custom code.
 
 The dispatch must satisfy all four gates.
 
+* Live reconfiguration
+
+Calling =configure-target-admission= from a trusted REPL or reloaded init file is
+atomic with respect to dispatch admission.  Rate-window and token-bucket history
+are restarted for the new policy, while already-active dispatch tickets and
+per-actor active counts are preserved.  If a new concurrency cap is lower than
+the current active count, existing work is allowed to drain and new admissions
+remain blocked until the count falls below the new cap.
+
 * Disable / reset
 
 Calling the function with no policy arguments disables admission control and
-clears limiter state:
+clears limiter history without corrupting any outstanding dispatch tickets:
 
 #+begin_src lisp
 (configure-target-admission)
