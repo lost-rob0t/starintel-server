@@ -124,3 +124,92 @@ server-owned authorization scope before the backend query executes."
                      ("X-Test-Auth-Mode" . "unauthenticated")))))
     (report-public-api-response "anonymous-target-dispatch" status body)
     (is (= 401 status))))
+
+(defun make-activity-integration-document
+    (id added-at &key observed-at)
+  "Build a minimal CouchDB fixture for activity/timeline index integration."
+  (let ((document
+          (jsown:new-js
+            ("_id" id)
+            ("dataset" "activity-integration")
+            ("dtype" "document")
+            ("date_added" added-at)
+            ("date_updated" added-at)
+            ("data" (jsown:new-js ("title" id))))))
+    (when observed-at
+      (setf (jsown:val document "temporal")
+            (jsown:new-js ("observed_at" observed-at))))
+    document))
+
+(test test-activity-v2-is-authenticated-and-couchdb-backed
+  "The compact activity API reads real indexed history and is not public."
+  (multiple-value-bind (status body)
+      (perform-request
+       (lambda ()
+         (dex:get
+          (make-test-url "/api/v1/activity?range=1h")
+          :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+    (declare (ignore body))
+    (is (= 401 status)))
+  (let ((now (star.frontends.http-api::activity-v2-unix-now)))
+    (insert-test-document
+     (make-activity-integration-document
+      "activity-integration-a" (- now 300)))
+    (insert-test-document
+     (make-activity-integration-document
+      "activity-integration-b" (- now 60)))
+    (multiple-value-bind (status body)
+        (perform-request
+         (lambda ()
+           (dex:get
+            (make-test-url
+             "/api/v1/activity?metric=documents_added&range=1h&max_points=120"))))
+      (report-public-api-response "activity-v2" status body)
+      (is (= 200 status))
+      (let* ((document (jsown:parse body))
+             (data (jsown:val document "data"))
+             (samples (jsown:val data "samples")))
+        (is (string= "ok" (jsown:val document "status")))
+        (is (string= "documents_added" (jsown:val data "metric")))
+        (is (string= "added" (jsown:val data "time_basis")))
+        (is (= 60 (jsown:val data "bucket_seconds")))
+        (is (<= (length samples) 120))
+        (is (>= (jsown:val data "delta") 2))))))
+
+(test test-timeline-v2-preserves-explicit-time-basis-end-to-end
+  "Observed-time queries return observed rows and never substitute added time."
+  (let ((now (star.frontends.http-api::activity-v2-unix-now)))
+    (insert-test-document
+     (make-activity-integration-document
+      "activity-timeline-observed" (- now 120)
+      :observed-at (- now 30)))
+    (insert-test-document
+     (make-activity-integration-document
+      "activity-timeline-added-only" (- now 20)))
+    (multiple-value-bind (status body)
+        (perform-request
+         (lambda ()
+           (dex:get
+            (make-test-url
+             "/api/v1/timeline?basis=observed&range=1h&limit=200"))))
+      (report-public-api-response "timeline-v2" status body)
+      (is (= 200 status))
+      (let* ((document (jsown:parse body))
+             (data (jsown:val document "data"))
+             (events (jsown:val data "events"))
+             (observed
+               (find "activity-timeline-observed"
+                     events
+                     :key (lambda (event)
+                            (jsown:val event "id"))
+                     :test #'string=))
+             (added-only
+               (find "activity-timeline-added-only"
+                     events
+                     :key (lambda (event)
+                            (jsown:val event "id"))
+                     :test #'string=)))
+        (is (string= "observed" (jsown:val data "time_basis")))
+        (is (not (null observed)))
+        (is (string= "observed" (jsown:val observed "time_basis")))
+        (is (null added-only))))))
