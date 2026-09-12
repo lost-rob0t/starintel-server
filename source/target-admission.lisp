@@ -25,7 +25,8 @@ Use a plist of the form =(:capacity N :refill-rate TOKENS-PER-SECOND)=.
 
 The function receives =(ENVELOPE SNAPSHOT)= and returns a generalized boolean
 plus an optional rejection reason.  It runs while the admission lock is held and
-therefore MUST be fast and non-blocking.")
+therefore MUST be fast, non-blocking, and must not call target-admission APIs
+that acquire the same lock.")
 
 (in-package :star.actors)
 
@@ -98,18 +99,39 @@ therefore MUST be fast and non-blocking.")
       star::*target-token-bucket*
       star::*target-admission-condition*))
 
-(defun reset-target-admission-state (&key (now (target-admission-now)))
+(defun reset-target-admission-limiter-state-unlocked (now)
+  (setf *target-admission-rate-events* nil
+        *target-admission-last-refill* now
+        *target-admission-tokens*
+        (when star::*target-token-bucket*
+          (coerce (getf star::*target-token-bucket*
+                        :initial-tokens
+                        (getf star::*target-token-bucket* :capacity))
+                  'double-float))))
+
+(defun reset-target-admission-state
+    (&key (now (target-admission-now)) (reset-active t))
+  "Reset limiter state for tests/startup.
+
+RESET-ACTIVE is intentionally internal.  Live operator reconfiguration preserves
+outstanding dispatch tickets instead of zeroing their counters."
   (bt:with-lock-held (*target-admission-lock*)
-    (setf *target-admission-active* 0
-          *target-admission-active-by-actor* (make-hash-table :test #'equal)
-          *target-admission-rate-events* nil
-          *target-admission-last-refill* now
-          *target-admission-tokens*
-          (when star::*target-token-bucket*
-            (coerce (getf star::*target-token-bucket*
-                          :initial-tokens
-                          (getf star::*target-token-bucket* :capacity))
-                    'double-float))))
+    (when reset-active
+      (setf *target-admission-active* 0
+            *target-admission-active-by-actor* (make-hash-table :test #'equal)))
+    (reset-target-admission-limiter-state-unlocked now))
+  t)
+
+(defun apply-target-admission-config
+    (max-concurrent rate-limit token-bucket condition
+     &key (now (target-admission-now)))
+  "Atomically install a new policy while preserving outstanding dispatches."
+  (bt:with-lock-held (*target-admission-lock*)
+    (setf star::*target-max-concurrent-dispatches* max-concurrent
+          star::*target-rate-limit* rate-limit
+          star::*target-token-bucket* token-bucket
+          star::*target-admission-condition* condition)
+    (reset-target-admission-limiter-state-unlocked now))
   t)
 
 (defun prune-target-rate-events (now)
@@ -245,7 +267,8 @@ the dispatch attempt itself consumed capacity."
     (&key max-concurrent rate-limit token-bucket condition)
   "Configure target dispatch admission from =init.lisp=.
 
-All configured gates are ANDed: a target must pass every enabled gate.
+All configured gates are ANDed: a target must pass every enabled gate.  Live
+reconfiguration preserves already-active dispatch tickets.
 
 Examples:
   (configure-target-admission :max-concurrent 8)
@@ -259,11 +282,8 @@ Examples:
    :rate-limit rate-limit
    :token-bucket token-bucket
    :condition condition)
-  (setf *target-max-concurrent-dispatches* max-concurrent
-        *target-rate-limit* rate-limit
-        *target-token-bucket* token-bucket
-        *target-admission-condition* condition)
-  (star.actors::reset-target-admission-state)
+  (star.actors::apply-target-admission-config
+   max-concurrent rate-limit token-bucket condition)
   (star.actors::current-target-admission-state))
 
 (defun target-admission-state ()
