@@ -1,0 +1,96 @@
+#+title: StarIntel v2 Map/Reduce Views API
+#+startup: overview
+
+* Scope
+
+The v2 views API exposes only server-owned, registered CouchDB Map/Reduce
+views. Clients cannot submit JavaScript map/reduce functions. Every new route
+is rooted at =/api/v1= and requires the existing =views:read= authorization
+capability.
+
+* Routes
+
+- =GET /api/v1/views= :: registered view catalog
+- =GET /api/v1/views/:view= :: execute any registered view by stable name
+- =GET /api/v1/views/:category/:view= :: execute a categorized v2 view
+- =GET /api/v1/analytics= :: default aggregate dashboard
+- =GET /api/v1/analytics/:view=
+- =GET /api/v1/research/:view=
+- =GET /api/v1/graph/:view=
+- =GET /api/v1/geo/:view=
+- =GET /api/v1/operations/:view=
+- =GET /api/v1/migrations/:view=
+
+Query parameters accepted by the generic executor are =limit=, =skip=,
+=descending=, =include_docs=, =reduce=, =group=, =group_level=, =update=,
+=key=, =keys=, =start_key=, and =end_key=. Key values are JSON encoded.
+
+* View families
+
+** Analytics
+
+Corpus composition, document activity, confidence and quality statistics,
+sources/evidence coverage, verification/workflow state, event/claim metrics,
+financial/contract/lobbying statistics, host ASN counts, and domain registrar
+counts.
+
+** Research / Auto-Dig
+
+Research-pass throughput/findings/unresolved/source counts and research-node
+status, actor workload, requests, runs, cost, elapsed time, recursion depth,
+failure clustering, dependency fan-out, children, dependencies, targets, and
+outputs.
+
+** Targets
+
+Root grouping, status, actor/status, target type, recursion depth, required
+dtypes, source usage, next-run scheduling, parent edges, and dependency edges.
+
+** Graph
+
+Relation adjacency in both directions, predicate indexes, in/out degree,
+predicate degree, dtype edge counts, self loops, lineage edges, provenance
+edges, evidence/corroboration/contradiction edges, and claim-evidence edges.
+Iterative algorithms such as BFS, shortest path, PageRank, and community
+detection remain service-layer operations over these indexed primitives.
+
+** Geo
+
+Geohash buckets at precision 2/4/6/8, jurisdiction/country/region/city counts,
+accuracy statistics, containment edges, reverse containment, and coordinate
+rows. Canonical =geospatial= and location-like dtype data are both recognized.
+
+** Operations
+
+Operation status, phase state, per-operation phase state, phase dependency
+edges, capability gaps, agent/actor assignments, dataset roles/access,
+post-actions, and target roles.
+
+** Migrations
+
+=migrations/version-distribution= inventories explicit and structurally detected
+document families.
+
+=migrations/outdated-by-version= emits the original stale document keyed by its
+detected version.
+
+=migrations/promote-next= emits the fully transformed next-version document as
+the row value. CouchDB views are read-only; writing a promoted document remains
+a separate validated/CAS operation.
+
+Explicit version promotions recognized by the map function are:
+
+#+begin_example
+0.4.5 -> 0.4.6 -> 0.5.0 -> 0.5.1 -> 0.5.2 -> 0.5.3 -> 0.5.4
+      -> 0.6.0 -> 0.7.0 -> 0.7.3 -> 0.8.0 -> 0.9.0 -> 0.9.1
+#+end_example
+
+Historical Booker/pre-versioned documents that lack an embedded version cannot
+be assigned an exact release reliably. They are structurally detected and
+promoted conservatively to =0.7.3=. Unknown shapes are never automatically
+promoted.
+
+The current server lock still identifies canonical schema =0.9.0= and release
+=0.9.1=. Therefore this API exposes the requested =0.9.0 -> 0.9.1= corrected
+document as a migration view result, but this change does not add a write-back
+path that bypasses the canonical validator.
