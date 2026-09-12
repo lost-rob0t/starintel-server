@@ -355,17 +355,3 @@ Unresolved/indeterminate reservations stay fail-closed indefinitely."
                 :test #'char-equal)
   (setf star:*http-cors-allowed-headers*
         (format nil "~a, Idempotency-Key" star:*http-cors-allowed-headers*)))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (export '(bulk-idempotency-store-conflict
-            request-bulk-idempotency-key
-            reserve-bulk-idempotency
-            replay-bulk-idempotency-record
-            idempotency-job-id-p
-            mark-bulk-idempotency-status
-            store-bulk-idempotency-initial-response
-            store-bulk-idempotency-inline-result
-            reject-bulk-idempotency-reservation
-            load-bulk-idempotency-by-job-id
-            bulk-idempotency-status-json)
-          :star.frontends.http-api))
