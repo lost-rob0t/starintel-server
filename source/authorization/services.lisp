@@ -115,34 +115,67 @@ receives PATCH only after the resource decision has been made."
 
 (defun authorized-target-documents (documents actor-name action
                                     &key principal metadata)
-  "Return target documents authorized by the target-list tenant/actor contract.
+  "Return target documents authorized for the caller.
 
-Target listing is scoped by tenant and actor.  Dataset and target-id scopes are
-not required by this read route and therefore must not be introduced by the
-per-row defense-in-depth check."
-  (loop for raw in documents
-        for document = (parse-document-value raw)
-        for tenant = (or (star.documents:document-value
-                          document "tenant_id" nil)
-                         (star.documents:document-value
-                          document "tenant" nil)
-                         "default")
-        for document-actor =
-          (star.documents:document-value document "actor" nil)
-        for decision =
-          (authorize
-           action
-           :principal principal
-           :resource
-           (make-authorization-resource
-            :tenant-id tenant
-            :actor-name actor-name)
-           :metadata metadata)
-        when (and (or (null actor-name)
-                      (and (stringp document-actor)
-                           (string= actor-name document-actor)))
-                  (authorization-decision-allowed-p decision))
-          collect raw))
+Tenant and actor are mandatory target-list scopes. Dataset, target,
+target-namespace, and program restrictions narrow rows only when the principal
+actually carries the corresponding scope dimension."
+  (let* ((candidate (candidate-principal principal))
+         (scopes (principal-scopes candidate))
+         (dataset-scoped-p (not (null (scope-values scopes "dataset:"))))
+         (target-scoped-p (not (null (scope-values scopes "target:"))))
+         (namespace-scoped-p
+           (not (null (scope-values scopes "target-namespace:"))))
+         (program-scoped-p (not (null (scope-values scopes "program:")))))
+    (loop for raw in documents
+          for document = (parse-document-value raw)
+          for tenant = (or (star.documents:document-value
+                            document "tenant_id" nil)
+                           (star.documents:document-value
+                            document "tenant" nil)
+                           "default")
+          for document-actor =
+            (star.documents:document-value document "actor" nil)
+          for dataset = (star.documents:document-dataset document)
+          for target-id = (or (star.documents:document-id document)
+                              (star.documents:document-value
+                               document "target_id" nil))
+          for target-namespace =
+            (or (star.documents:document-value
+                 document "target_namespace" nil)
+                (star.documents:document-value
+                 document "namespace" nil))
+          for program-id =
+            (or (star.documents:document-value document "program_id" nil)
+                (star.documents:document-value document "program" nil))
+          for scoped-dimensions-present-p =
+            (and (or (not dataset-scoped-p) (stringp dataset))
+                 (or (not target-scoped-p) (stringp target-id))
+                 (or (not namespace-scoped-p)
+                     (stringp target-namespace))
+                 (or (not program-scoped-p) (stringp program-id)))
+          for decision =
+            (and scoped-dimensions-present-p
+                 (authorize
+                  action
+                  :principal candidate
+                  :resource
+                  (make-authorization-resource
+                   :tenant-id tenant
+                   :dataset-id (and dataset-scoped-p dataset)
+                   :actor-name actor-name
+                   :target-id (and target-scoped-p target-id)
+                   :target-namespace
+                   (and namespace-scoped-p target-namespace)
+                   :program-id (and program-scoped-p program-id))
+                  :metadata metadata))
+          when (and (stringp tenant)
+                    (or (null actor-name)
+                        (and (stringp document-actor)
+                             (string= actor-name document-actor)))
+                    decision
+                    (authorization-decision-allowed-p decision))
+            collect raw)))
 
 (defun lucene-escape (value)
   (with-output-to-string (stream)
