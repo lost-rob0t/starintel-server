@@ -115,11 +115,7 @@ receives PATCH only after the resource decision has been made."
 
 (defun authorized-target-documents (documents actor-name action
                                     &key principal metadata)
-  "Return target documents authorized for the caller.
-
-Tenant and actor are mandatory target-list scopes. Dataset, target,
-target-namespace, and program restrictions narrow rows only when the principal
-actually carries the corresponding scope dimension."
+  "Return only target documents individually authorized for the caller."
   (let* ((candidate (candidate-principal principal))
          (scopes (principal-scopes candidate))
          (dataset-scoped-p (not (null (scope-values scopes "dataset:"))))
