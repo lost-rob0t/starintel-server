@@ -14,12 +14,19 @@
   (if (not (idempotent-bulk-job-p job))
       (funcall *execute-bulk-job-without-idempotency*
                job :publish-fn publish-fn)
-      (handler-case
-          (progn
-            ;; If durable status cannot be advanced, publish nothing. A retry
-            ;; will see the existing reservation instead of duplicating work.
-            (mark-bulk-idempotency-status
-             (bulk-ingest-job-id job) "running")
+      (let ((job-id (bulk-ingest-job-id job)))
+        ;; This transition is the publication fence. If it cannot be persisted,
+        ;; no Rabbit side effect is allowed to begin.
+        (handler-case
+            (mark-bulk-idempotency-status job-id "running")
+          (error (condition)
+            (log:error "Keyed bulk job refused before publish job=~a: ~a"
+                       job-id condition)
+            (setf (bulk-ingest-job-status job) :failed
+                  (bulk-ingest-job-error-code job)
+                  "bulk_idempotency_unavailable")
+            (return-from execute-bulk-job job)))
+        (handler-case
             (let ((result
                     (funcall *execute-bulk-job-without-idempotency*
                              job :publish-fn publish-fn)))
@@ -31,19 +38,27 @@
                    :failed (bulk-ingest-job-failed result)
                    :error-code (bulk-ingest-job-error-code result))
                 (error (condition)
-                  ;; Publication already happened. Never retry it merely because
-                  ;; status persistence failed; leave the durable record running.
+                  ;; Publication already happened. Never retry merely because
+                  ;; completion persistence failed. Mark uncertainty if the
+                  ;; store is available enough to record that distinction.
                   (log:error
                    "Bulk idempotency completion persistence failed job=~a: ~a"
-                   (bulk-ingest-job-id result) condition)))
-              result))
-        (error (condition)
-          (log:error "Keyed bulk job refused before publish job=~a: ~a"
-                     (bulk-ingest-job-id job) condition)
-          (setf (bulk-ingest-job-status job) :failed
-                (bulk-ingest-job-error-code job)
-                "bulk_idempotency_unavailable")
-          job))))
+                   (bulk-ingest-job-id result) condition)
+                  (ignore-errors
+                    (mark-bulk-idempotency-status job-id "indeterminate"))))
+              result)
+          (error (condition)
+            ;; The worker entered the publish phase. The exception may have
+            ;; happened after a prefix was accepted, so preserve the no-retry
+            ;; fence and surface the state as indeterminate.
+            (ignore-errors
+              (mark-bulk-idempotency-status job-id "indeterminate"))
+            (log:error "Keyed bulk job failed after publish phase began job=~a: ~a"
+                       job-id condition)
+            (setf (bulk-ingest-job-status job) :failed
+                  (bulk-ingest-job-error-code job)
+                  "bulk_execution_indeterminate")
+            job)))))
 
 (defun submit-idempotent-bulk-ingest-job
     (documents principal-id job-id
