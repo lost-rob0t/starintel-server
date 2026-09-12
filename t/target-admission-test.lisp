@@ -9,8 +9,10 @@
   `(unwind-protect
        (progn
          (star::configure-target-admission)
+         (star.actors::reset-target-admission-state)
          ,@body)
-     (star::configure-target-admission)))
+     (star::configure-target-admission)
+     (star.actors::reset-target-admission-state)))
 
 (defun release-target-admission-ticket (ticket)
   (when ticket
@@ -84,15 +86,16 @@
             (star.actors::target-admission-acquire
              nil :actor-name "custom-actor" :now 0d0)))
       (unwind-protect
-           (signals star.actors:target-ingress-overloaded
-             (star.actors::target-admission-acquire
-              nil :actor-name "custom-actor" :now 0d0))
-        (release-target-admission-ticket first)))
-    (let ((other
-            (star.actors::target-admission-acquire
-             nil :actor-name "other-actor" :now 0d0)))
-      (is (not (null other)))
-      (release-target-admission-ticket other))))
+           (progn
+             (signals star.actors:target-ingress-overloaded
+               (star.actors::target-admission-acquire
+                nil :actor-name "custom-actor" :now 0d0))
+             (let ((other
+                     (star.actors::target-admission-acquire
+                      nil :actor-name "other-actor" :now 0d0)))
+               (is (not (null other)))
+               (release-target-admission-ticket other)))
+        (release-target-admission-ticket first)))))
 
 (test target-admission-composes-policies
   (with-clean-target-admission
@@ -115,3 +118,20 @@
              (is (= 2 (getf (star::target-admission-state) :active))))
         (release-target-admission-ticket first)
         (release-target-admission-ticket second)))))
+
+(test target-admission-live-reconfigure-preserves-active-tickets
+  (with-clean-target-admission
+    (star::configure-target-admission :max-concurrent 2)
+    (let ((first
+            (star.actors::target-admission-acquire
+             nil :actor-name "live" :now 0d0)))
+      (unwind-protect
+           (progn
+             (is (= 1 (getf (star::target-admission-state) :active)))
+             (star::configure-target-admission :max-concurrent 1)
+             (is (= 1 (getf (star::target-admission-state) :active)))
+             (signals star.actors:target-ingress-overloaded
+               (star.actors::target-admission-acquire
+                nil :actor-name "blocked" :now 0d0)))
+        (release-target-admission-ticket first)))
+    (is (= 0 (getf (star::target-admission-state) :active)))))
