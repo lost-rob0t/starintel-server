@@ -26,6 +26,17 @@
 (defun public-read-authority ()
   (if star::*public-mode* "public" "authenticated"))
 
+(defun actor-contract-capabilities ()
+  "Public, secret-free contract for external RabbitMQ actor interoperability."
+  (jsown:new-js
+    ("manifest_dtype" "actor-manifest")
+    ("manifest_actor_field" "data.actor")
+    ("manifest_target_options_field" "data.target_options")
+    ("canonical_target_ingest_key" "documents.ingest.target")
+    ("remote_target_exchange" "documents")
+    ("remote_target_routing_key_template" "documents.target.dispatch.<actor>")
+    ("legacy_remote_target_routing_key_template" "actors.<actor>.new.target")))
+
 (defun capabilities-data ()
   (jsown:new-js
     ("build"
@@ -49,6 +60,9 @@
        ("search" :true)
        ("stats" :true)
        ("targets" :true)
+       ("actor_manifests" :true)
+       ("actor_target_options" :true)
+       ("remote_actor_dispatch" :true)
        ("views"
         (jsown:new-js
           ("available" :true)
@@ -58,6 +72,7 @@
        ("target_leases" :false)
        ("streams" :false)
        ("openapi" :true)))
+    ("actor_contracts" (actor-contract-capabilities))
     ("limits"
      (jsown:new-js
        ("bulk_documents" star:*bulk-max-documents*)
