@@ -26,7 +26,7 @@
            (existing-rev (and existing (jsown:val-safe existing "_rev"))))
       (when (or (and existing (not (equal provided-rev existing-rev)))
                 (and (null existing) provided-rev))
-        (error 'star.frontends.http-api:bulk-idempotency-store-conflict))
+        (error 'star.frontends.http-api::bulk-idempotency-store-conflict))
       (let ((saved (idem-clone record)))
         (incf *idempotency-test-revision*)
         (setf (jsown:val saved "_rev")
@@ -53,7 +53,7 @@
 (defun capture-idempotency-http-error (thunk)
   (handler-case
       (progn (funcall thunk) nil)
-    (star.frontends.http-api:http-input-error (condition)
+    (star.frontends.http-api::http-input-error (condition)
       condition)))
 
 (test canonical-object-order-hashes-identically
@@ -69,10 +69,10 @@
   (with-idempotency-test-store
     (let ((documents (list (idem-doc))))
       (multiple-value-bind (first first-state)
-          (star.frontends.http-api:reserve-bulk-idempotency
+          (star.frontends.http-api::reserve-bulk-idempotency
            documents "request-1" "principal-a" :inline)
         (multiple-value-bind (second second-state)
-            (star.frontends.http-api:reserve-bulk-idempotency
+            (star.frontends.http-api::reserve-bulk-idempotency
              documents "request-1" "principal-a" :inline)
           (is (eq :owner first-state))
           (is (eq :replay second-state))
@@ -82,28 +82,28 @@
 
 (test same-key-different-payload-is-409
   (with-idempotency-test-store
-    (star.frontends.http-api:reserve-bulk-idempotency
+    (star.frontends.http-api::reserve-bulk-idempotency
      (list (idem-doc :value 1)) "request-2" "principal-a" :inline)
     (let ((condition
             (capture-idempotency-http-error
              (lambda ()
-               (star.frontends.http-api:reserve-bulk-idempotency
+               (star.frontends.http-api::reserve-bulk-idempotency
                 (list (idem-doc :value 2))
                 "request-2" "principal-a" :inline)))))
       (is condition)
       (is (= 409
-             (star.frontends.http-api:http-input-error-status condition)))
+             (star.frontends.http-api::http-input-error-status condition)))
       (is (string= "idempotency_key_reused"
-                   (star.frontends.http-api:http-input-error-code condition))))))
+                   (star.frontends.http-api::http-input-error-code condition))))))
 
 (test idempotency-key-is-scoped-by-principal
   (with-idempotency-test-store
     (let ((documents (list (idem-doc))))
       (multiple-value-bind (a state-a)
-          (star.frontends.http-api:reserve-bulk-idempotency
+          (star.frontends.http-api::reserve-bulk-idempotency
            documents "shared-key" "principal-a" :inline)
         (multiple-value-bind (b state-b)
-            (star.frontends.http-api:reserve-bulk-idempotency
+            (star.frontends.http-api::reserve-bulk-idempotency
              documents "shared-key" "principal-b" :inline)
           (is (eq :owner state-a))
           (is (eq :owner state-b))
@@ -113,11 +113,11 @@
 (test idempotency-key-is-scoped-by-tenant-set
   (with-idempotency-test-store
     (multiple-value-bind (a state-a)
-        (star.frontends.http-api:reserve-bulk-idempotency
+        (star.frontends.http-api::reserve-bulk-idempotency
          (list (idem-doc :tenant "tenant-a"))
          "shared-key" "principal-a" :inline)
       (multiple-value-bind (b state-b)
-          (star.frontends.http-api:reserve-bulk-idempotency
+          (star.frontends.http-api::reserve-bulk-idempotency
            (list (idem-doc :tenant "tenant-b"))
            "shared-key" "principal-a" :inline)
         (is (eq :owner state-a))
@@ -129,10 +129,10 @@
   (with-idempotency-test-store
     (let ((documents (list (idem-doc))))
       (multiple-value-bind (record state)
-          (star.frontends.http-api:reserve-bulk-idempotency
+          (star.frontends.http-api::reserve-bulk-idempotency
            documents "expiry-key" "principal-a" :inline)
         (is (eq :owner state))
-        (star.frontends.http-api:mark-bulk-idempotency-status
+        (star.frontends.http-api::mark-bulk-idempotency-status
          (jsown:val record "job_id") "completed"
          :succeeded 1 :failed 0)
         (let ((star.frontends.http-api::*bulk-idempotency-now-fn*
@@ -140,7 +140,7 @@
                               star.frontends.http-api::*bulk-idempotency-ttl-seconds*
                               1))))
           (multiple-value-bind (replacement replacement-state)
-              (star.frontends.http-api:reserve-bulk-idempotency
+              (star.frontends.http-api::reserve-bulk-idempotency
                documents "expiry-key" "principal-a" :inline)
             (declare (ignore replacement))
             (is (eq :owner replacement-state))))))))
@@ -148,14 +148,14 @@
 (test unresolved-expired-key-remains-a-no-retry-fence
   (with-idempotency-test-store
     (let ((documents (list (idem-doc))))
-      (star.frontends.http-api:reserve-bulk-idempotency
+      (star.frontends.http-api::reserve-bulk-idempotency
        documents "uncertain-key" "principal-a" :inline)
       (let ((star.frontends.http-api::*bulk-idempotency-now-fn*
               (lambda () (+ 1000
                             star.frontends.http-api::*bulk-idempotency-ttl-seconds*
                             1))))
         (multiple-value-bind (record state)
-            (star.frontends.http-api:reserve-bulk-idempotency
+            (star.frontends.http-api::reserve-bulk-idempotency
              documents "uncertain-key" "principal-a" :inline)
           (declare (ignore record))
           (is (eq :replay state)))))))
@@ -171,7 +171,7 @@
                    (bt:make-thread
                     (lambda ()
                       (multiple-value-bind (record state)
-                          (star.frontends.http-api:reserve-bulk-idempotency
+                          (star.frontends.http-api::reserve-bulk-idempotency
                            documents "race-key" "principal-a" :inline)
                         (declare (ignore record))
                         (bt:with-lock-held (result-lock)
@@ -185,16 +185,16 @@
 (test persisted-record-survives-in-memory-job-loss
   (with-idempotency-test-store
     (multiple-value-bind (record state)
-        (star.frontends.http-api:reserve-bulk-idempotency
+        (star.frontends.http-api::reserve-bulk-idempotency
          (list (idem-doc)) "restart-key" "principal-a" :async)
       (is (eq :owner state))
       (let ((job-id (jsown:val record "job_id"))
             (star.frontends.http-api::*bulk-ingest-jobs*
               (make-hash-table :test #'equal)))
-        (star.frontends.http-api:mark-bulk-idempotency-status
+        (star.frontends.http-api::mark-bulk-idempotency-status
          job-id "accepted")
         (let ((loaded
-                (star.frontends.http-api:load-bulk-idempotency-by-job-id
+                (star.frontends.http-api::load-bulk-idempotency-by-job-id
                  job-id)))
           (is loaded)
           (is (string= "accepted" (jsown:val loaded "status")))
@@ -205,7 +205,7 @@
     (let* ((documents (list (idem-doc :id "one") (idem-doc :id "two")))
            (published 0))
       (multiple-value-bind (record state)
-          (star.frontends.http-api:reserve-bulk-idempotency
+          (star.frontends.http-api::reserve-bulk-idempotency
            documents "worker-key" "principal-a" :inline)
         (is (eq :owner state))
         (let* ((job-id (jsown:val record "job_id"))
@@ -216,7 +216,7 @@
                   :documents documents
                   :correlation-id "corr-worker"
                   :submitted-at 1000)))
-          (star.frontends.http-api:execute-bulk-job
+          (star.frontends.http-api::execute-bulk-job
            job
            :publish-fn
            (lambda (document)
@@ -224,13 +224,13 @@
              (incf published)))
           (is (= 2 published))
           (let ((persisted
-                  (star.frontends.http-api:load-bulk-idempotency-by-job-id
+                  (star.frontends.http-api::load-bulk-idempotency-by-job-id
                    job-id)))
             (is (string= "completed" (jsown:val persisted "status")))
             (is (= 2 (jsown:val persisted "succeeded")))
             (is (= 0 (jsown:val persisted "failed"))))
           (multiple-value-bind (replay replay-state)
-              (star.frontends.http-api:reserve-bulk-idempotency
+              (star.frontends.http-api::reserve-bulk-idempotency
                documents "worker-key" "principal-a" :inline)
             (declare (ignore replay))
             (is (eq :replay replay-state)))
@@ -253,11 +253,11 @@
            (lambda (record-id)
              (declare (ignore record-id))
              (error "store unavailable"))))
-    (star.frontends.http-api:execute-bulk-job
+    (star.frontends.http-api::execute-bulk-job
      job
      :publish-fn
      (lambda (document)
        (declare (ignore document))
        (incf published)))
     (is (= 0 published))
-    (is (eq :failed (star.frontends.http-api:bulk-ingest-job-status job)))))
+    (is (eq :failed (star.frontends.http-api::bulk-ingest-job-status job)))))
