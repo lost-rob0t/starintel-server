@@ -171,38 +171,82 @@
          :metadata
          (route-policy-metadata "/document/:id" "PUT"))))))
 
+(defun target-list-tenant (params)
+  "Resolve the target-list tenant, preserving the legacy default explicitly."
+  (let ((tenant (query-value params "tenant")))
+    (cond
+      ((null tenant) "default")
+      ((non-empty-string-p tenant) tenant)
+      (t
+       (signal-http-input-error
+        400
+        "invalid_tenant"
+        "Tenant must be a non-empty string")))))
+
+(defun target-document-tenant-id (document)
+  "Return the effective tenant of DOCUMENT using the legacy default rule."
+  (or (star.documents:document-value document "tenant_id" nil)
+      (star.documents:document-value document "tenant" nil)
+      "default"))
+
+(defun target-document-in-tenant-p (document tenant)
+  "True only when DOCUMENT belongs to the exact requested TENANT."
+  (let ((document-tenant (target-document-tenant-id document)))
+    (and (stringp document-tenant)
+         (string= tenant document-tenant))))
+
+(defun query-authorized-target-documents
+    (client database actor tenant principal metadata
+     &key (query-fn #'query-view))
+  "Authorize and fetch target documents through a tenant+actor scoped view.
+
+Authorization runs before backend I/O.  Returned documents are checked against
+TENANT again so a stale, poisoned, or incorrectly indexed backend response
+cannot widen the caller's requested tenant scope."
+  (star.authorization:authorize!
+   "targets:read"
+   :principal principal
+   :resource
+   (star.authorization:make-authorization-resource
+    :tenant-id tenant
+    :actor-name actor)
+   :metadata metadata)
+  (let* ((view
+           (funcall query-fn
+                    client
+                    database
+                    "targets"
+                    "by_tenant_actor"
+                    :include-docs t
+                    :key (list tenant actor)
+                    :reduce nil))
+         (rows (or (jsown:val-safe view "rows") nil))
+         (documents
+           (loop for row in rows
+                 for document = (jsown:val-safe row "doc")
+                 when (and document
+                           (target-document-in-tenant-p document tenant))
+                   collect document)))
+    (star.authorization:authorized-target-documents
+     documents actor "targets:read"
+     :principal principal
+     :metadata metadata)))
+
 (defun handle-authorized-targets-route (params)
   (with-http-boundary ()
     (let* ((actor (require-path-string params "actor"))
+           (tenant (target-list-tenant params))
+           (principal (current-policy-principal))
            (metadata (route-policy-metadata "/targets/:actor" "GET")))
-      (star.authorization:authorize!
-       "targets:read"
-       :principal (current-policy-principal)
-       :resource
-       (star.authorization:make-authorization-resource
-        :tenant-id "default"
-        :actor-name actor)
-       :metadata metadata)
       (couchdb-handler (client *couchdb-pool*)
-        (let* ((view
-                 (query-view
-                  client
-                  star:*couchdb-default-database*
-                  "targets"
-                  "by_actor"
-                  :include-docs t
-                  :key actor
-                  :reduce nil))
-               (rows (or (jsown:val-safe view "rows") nil))
-               (documents
-                 (loop for row in rows
-                       for document = (jsown:val-safe row "doc")
-                       when document collect document)))
-          (jsown:to-json
-           (star.authorization:authorized-target-documents
-            documents actor "targets:read"
-            :principal (current-policy-principal)
-            :metadata metadata)))))))
+        (jsown:to-json
+         (query-authorized-target-documents
+          client
+          star:*couchdb-default-database*
+          actor
+          tenant
+          principal
+          metadata))))))
 
 (defun safe-view-name-p (value)
   (and (non-empty-string-p value)
