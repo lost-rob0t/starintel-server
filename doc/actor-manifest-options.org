@@ -1,0 +1,98 @@
+#+title: Actor manifests and target options
+#+options: toc:3
+
+* Purpose
+
+Star Server treats =actor-manifest= as the portable declaration for an actor's
+network-facing target contract. The manifest advertises the actor identity,
+consumer path, and actor-defined target options. Core Star Server does not
+interpret actor-specific values; it provides generic lookup, defaulting, and
+required-option enforcement so local and RabbitMQ actors can share one option
+shape.
+
+This is the contract used by the external =username-targets= actor in
+=lost-rob0t/starintel-pro-actors=.
+
+* Manifest shape
+
+The canonical v0.9 document uses =dtype="actor-manifest"=. Relevant fields live
+under =data=:
+
+#+begin_src json
+{
+  "dtype": "actor-manifest",
+  "data": {
+    "actor": "username-targets",
+    "consumer_path": "starintel-pro-actors.username-targets",
+    "target_options": [
+      {"key": "target_actor", "type": "string", "required": true},
+      {"key": "target_options", "type": "array", "default": []},
+      {"key": "max_username_rate_per_second", "type": "number", "minimum": 0.01}
+    ]
+  }
+}
+#+end_src
+
+=target_options= remains an array of JSON values for wire compatibility. A
+manifest entry with =key= may additionally declare =required=, =default=, or a
+legacy fixed =value=.
+
+* Target option values
+
+The runtime accessor accepts both option encodings already present in StarIntel:
+
+#+begin_src json
+[{"max_username_rate_per_second": 2.0}]
+#+end_src
+
+and descriptor/value form:
+
+#+begin_src json
+[{"key": "max_username_rate_per_second", "value": 2.0}]
+#+end_src
+
+Explicit target values win over manifest defaults. Missing required options are
+rejected by the generic merge helper.
+
+The server does not assign semantics to =max_username_rate_per_second=. The
+=username-targets= actor owns that value and enforces it as a hard ceiling on
+username target publication. This keeps Star Server reusable for other actors
+that may declare unrelated rate, budget, provider, or scope options.
+
+* RabbitMQ target contract
+
+Canonical target producers publish newly created targets to:
+
+#+begin_example
+exchange: documents
+key:      documents.ingest.target
+#+end_example
+
+Star Server persists the target and routes remote actor execution over:
+
+#+begin_example
+exchange: documents
+key:      documents.target.dispatch.<actor>
+#+end_example
+
+The compatibility routing key =actors.<actor>.new.target= remains documented for
+older remote actors but new actors should bind the canonical dispatch key.
+
+Actor manifests are normal durable documents and therefore appear on the
+post-insert document stream as =documents.new.actor-manifest=. External actors
+may consume that event to maintain their own manifest cache without direct
+CouchDB access.
+
+* Runtime API
+
+The =STAR.ACTOR-MANIFEST-OPTIONS= package exports:
+
+- =actor-manifest-actor= — validate a manifest and return its actor identity.
+- =actor-manifest-target-options= — return the manifest option declarations.
+- =target-option-value= — read an option using either supported option encoding.
+- =merge-target-options-with-manifest= — apply defaults and enforce required
+  declarations without interpreting actor-specific values.
+
+The same interoperability facts are exposed by =GET /api/v1/capabilities= under
+=actor_contracts= so clients and external actors do not need to hard-code the
+server's RabbitMQ target route.
