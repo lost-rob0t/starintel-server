@@ -22,6 +22,7 @@
    (:file "http-contract-final" :pathname "../cli/http-contract-final")
    (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "package")
+   (:file "playbooks/package")
    (:file "leases/package")
    (:file "leases/protocol")
    (:file "leases/memory-store")
@@ -52,8 +53,11 @@
    (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "addons")
+   (:file "playbooks/core")
+   (:file "playbooks/lisa-runtime")
    (:file "init-loader")
    (:file "actors")
+   (:file "actors/playbook-scheduler")
    (:file "actors/couchdb-service")
    (:file "target-repository")
    (:file "target-recovery")
@@ -92,7 +96,8 @@
    #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre
-   #:cms-ulid #:bordeaux-threads #:usocket #:cl+ssl #:jsown #:closer-mop))
+   #:cms-ulid #:bordeaux-threads #:usocket #:cl+ssl #:jsown #:closer-mop
+   #:lisa))
 
 ;;;; StarIntel Gserver is a processing framework for StarIntel documents.
 ;;;; Runtime documentation lives in ../docs and must track behavior changes.
