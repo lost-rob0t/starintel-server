@@ -127,6 +127,8 @@ per-row defense-in-depth check."
                          (star.documents:document-value
                           document "tenant" nil)
                          "default")
+        for document-actor =
+          (star.documents:document-value document "actor" nil)
         for decision =
           (authorize
            action
@@ -136,7 +138,10 @@ per-row defense-in-depth check."
             :tenant-id tenant
             :actor-name actor-name)
            :metadata metadata)
-        when (authorization-decision-allowed-p decision)
+        when (and (or (null actor-name)
+                      (and (stringp document-actor)
+                           (string= actor-name document-actor)))
+                  (authorization-decision-allowed-p decision))
           collect raw))
 
 (defun lucene-escape (value)
