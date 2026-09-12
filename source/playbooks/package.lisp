@@ -53,5 +53,9 @@
    #:playbook-run-facts
    #:compile-playbook-module
    #:validate-playbook-graph
+   #:flow
    #:define-playbook
+   #:handle-playbook-command
+   #:start-playbook-scheduler
+   #:*playbook-scheduler*
    #:*effect-dispatcher*))
