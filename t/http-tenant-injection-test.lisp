@@ -173,16 +173,29 @@
                          ("extensions" extensions)))))
          (response (jsown:new-js ("rows" (vector row)))))
     (star.frontends.http-api:strip-server-tenant-from-rows response)
-    (let ((out-row (aref (jsown:val response "rows") 0)))
+    (let ((out-row (elt (jsown:val response "rows") 0)))
       (is (null (jsown:keyp (jsown:val out-row "fields") "tenant_id")))
       (is (null (jsown:keyp (jsown:val out-row "doc") "tenant_id")))
       (is (null
            (jsown:keyp
             (jsown:val
-             (aref
+             (elt
               (jsown:val
                (jsown:val (jsown:val out-row "doc") "extensions")
-               "_server_outbox")
-              0)
+               "_server_outbox") 0)
              "payload")
             "tenant_id"))))))
+
+(test search-strip-normalizes-jsown-bodies
+  (let* ((doc (injection-document :dataset "testing-debug" :tenant "ci"))
+         (row (jsown:new-js
+                ("id" "doc-injection-1")
+                ("fields" (jsown:new-js ("tenant_id" "ci")))
+                ("doc" doc)))
+         (body (jsown:new-js ("rows" (vector row))))
+         (stripped
+           (star.frontends.http-api:strip-server-tenant-from-search-body body)))
+    (is (jsown:keyp stripped "rows"))
+    (let ((out-row (elt (jsown:val stripped "rows") 0)))
+      (is (null (jsown:keyp (jsown:val out-row "fields") "tenant_id")))
+      (is (null (jsown:keyp (jsown:val out-row "doc") "tenant_id"))))))

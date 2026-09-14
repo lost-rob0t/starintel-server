@@ -248,7 +248,9 @@ internal bookkeeping; it must not leak tenancy on egress."
   (when (and extensions
              (jsown:keyp extensions "_server_outbox"))
     (let ((outbox (jsown:val extensions "_server_outbox")))
-      (loop for entry across outbox
+      (loop for entry in (if (listp outbox)
+                             outbox
+                             (coerce outbox 'list))
             when (and (jsown:keyp entry "payload")
                       (jsown:keyp (jsown:val entry "payload") "tenant_id"))
               do (jsown:remkey (jsown:val entry "payload") "tenant_id"))))
@@ -261,8 +263,11 @@ Covers the FTS stored-fields projection (=fields=), the embedded document
 (=doc=), and outbox payloads recorded inside =doc.extensions=."
   (when (and response (jsown:keyp response "rows"))
     (let* ((rows (jsown:val response "rows"))
+           (rows-list (if (listp rows)
+                          rows
+                          (coerce rows 'list)))
            (stripped
-             (loop for row in (coerce rows 'list)
+             (loop for row in rows-list
                    collect
                    (progn
                      (when (jsown:keyp row "fields")
@@ -276,17 +281,23 @@ Covers the FTS stored-fields projection (=fields=), the embedded document
                             (jsown:val doc "extensions")))))
                      row))))
       (setf (jsown:val response "rows")
-            (if (vectorp rows)
-                (coerce stripped 'vector)
-                stripped))))
+            (if (listp rows)
+                stripped
+                (coerce stripped 'vector)))))
   response)
 
 (defun strip-server-tenant-from-search-body (body)
-  "Strip tenant_id from docs embedded in a CouchDB FTS response body."
-  (if (stringp body)
-      (jsown:to-json
-       (strip-server-tenant-from-rows (jsown:parse body)))
-      (strip-server-tenant-from-rows body)))
+  "Strip tenant_id from docs embedded in a CouchDB FTS response body.
+
+Accepts either a parsed jsown object or a raw JSON string; strings are
+parsed, stripped, and re-serialized so the surrounding handler keeps
+operating on the type it started with."
+  (etypecase body
+    (string
+     (jsown:to-json
+      (strip-server-tenant-from-rows (jsown:parse body))))
+    (list
+     (strip-server-tenant-from-rows body))))
 
 (defun validate-schema-version (document &key index)
   (let ((schema-version (jsown:val-safe document "schema_version"))
