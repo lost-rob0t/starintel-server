@@ -408,6 +408,26 @@ Port for the SLY/Slynk REPL when =start-debugger= is invoked.
 :PACKAGE: STARINTEL-GSERVER
 :END:
 Server version string reported by =/health= and admin endpoints.
+*** *tenant-dataset-map*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Alist mapping datasets to the authorization tenant applied when a
+document arrives without tenant_id/tenant.
+
+- env: =STAR_TENANT_DATASET_MAP= (comma-separated =dataset=tenant=)
+- default: empty
+*** *tenant-fallback*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Tenant applied when a document carries no tenancy and its dataset has
+no =*tenant-dataset-map*= entry.
+
+- env: =STAR_TENANT_FALLBACK=
+- default: unset (documents keep the historical =default= tenant)
 *** *valkey-lease-host*
 :PROPERTIES:
 :KIND: var
@@ -660,6 +680,24 @@ request identifiers never become metric labels.
 #+end_src
 Build the observability layer used in the lack builder: a request-time
 gate that only instruments when the addon was loaded via init.lisp.
+*** parse-tenant-dataset-map
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(parse-tenant-dataset-map (STARINTEL-GSERVER::VALUE))
+#+end_src
+Parse a comma-separated =dataset=tenant= setting into an alist.
+*** parse-tenant-fallback
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(parse-tenant-fallback (STARINTEL-GSERVER::VALUE))
+#+end_src
+Treat blank or absent fallback values as unset.
 *** register-addon
 :PROPERTIES:
 :KIND: fn
@@ -750,6 +788,18 @@ call repeatedly.
 :END:
 Addon stop: flush what is queued and return every boundary to a
 pass-through.
+*** tenant-adaptation-for
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER
+:END:
+#+begin_src lisp
+(tenant-adaptation-for (STARINTEL-GSERVER::DATASET))
+#+end_src
+Resolve the server-side adapted tenant for a tenant-less document.
+
+Returns nil when no adaptation is configured, leaving the historical
+=default= tenant in effect.
 *** unload-addon
 :PROPERTIES:
 :KIND: fn
