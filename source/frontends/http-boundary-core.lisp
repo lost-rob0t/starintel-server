@@ -201,6 +201,61 @@
                      ("index" (or index :null)))))
     value))
 
+;;;; Server-side tenant injection and egress redaction
+;;
+;; Tenancy is a server concern. Clients neither send nor receive tenant
+;; fields; the client-visible contract stays exactly v0.9.0. On ingest
+;; the resolved tenant is injected as tenant_id before any MQ publish or
+;; database write, and every document returned to a client has the
+;; server-injected tenant_id removed again.
+
+(defun resolved-server-tenant (document)
+  "Tenant adopted by a document that carries no tenancy of its own."
+  (or (star:tenant-adaptation-for
+       (star.documents:document-value document "dataset" nil))
+      "default"))
+
+(defun stamp-server-tenant! (document)
+  "Inject the resolved tenant_id ahead of MQ publish or persistence.
+
+A document that already declares tenant_id or tenant keeps it untouched."
+  (unless (or (jsown:keyp document "tenant_id")
+              (jsown:keyp document "tenant"))
+    (setf (jsown:val document "tenant_id")
+          (resolved-server-tenant document)))
+  document)
+
+(defun strip-server-tenant-fields (document)
+  "Remove the server-injected tenant_id from an outgoing document."
+  (when (jsown:keyp document "tenant_id")
+    (jsown:remkey document "tenant_id"))
+  document)
+
+(defun strip-server-tenant-from-rows (response)
+  "Strip tenant_id from every embedded document of a row response."
+  (when (and response (jsown:keyp response "rows"))
+    (let* ((rows (jsown:val response "rows"))
+           (stripped
+             (loop for row in (coerce rows 'list)
+                   collect
+                   (progn
+                     (when (jsown:keyp row "doc")
+                       (strip-server-tenant-fields
+                        (jsown:val row "doc")))
+                     row))))
+      (setf (jsown:val response "rows")
+            (if (vectorp rows)
+                (coerce stripped 'vector)
+                stripped))))
+  response)
+
+(defun strip-server-tenant-from-search-body (body)
+  "Strip tenant_id from docs embedded in a CouchDB FTS response body."
+  (if (stringp body)
+      (jsown:to-json
+       (strip-server-tenant-from-rows (jsown:parse body)))
+      (strip-server-tenant-from-rows body)))
+
 (defun validate-schema-version (document &key index)
   (let ((schema-version (jsown:val-safe document "schema_version"))
         (expected starintel:+starintel-doc-version+))
@@ -377,5 +432,10 @@ object."
             json-array-p
             parse-json-octets
             validate-document-input
-            bounded-query-integer)
+            bounded-query-integer
+            resolved-server-tenant
+            stamp-server-tenant!
+            strip-server-tenant-fields
+            strip-server-tenant-from-rows
+            strip-server-tenant-from-search-body)
           :star.frontends.http-api))

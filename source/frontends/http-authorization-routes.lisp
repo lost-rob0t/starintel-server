@@ -27,7 +27,7 @@ legacy path parameter that must match the document dtype."
            (document (require-json-object (parse-json-request))))
       (validate-document-input document :path-dtype path-dtype)
       (publish-document document)
-      (jsown:to-json document))))
+      (jsown:to-json (strip-server-tenant-fields document)))))
 
 (defun handle-authorized-new-document-route (params)
   (authorized-new-document params "/new/document/:dtype" "dtype"))
@@ -115,12 +115,16 @@ legacy path parameter that must match the document dtype."
             (setf (jsown:val query "sort") sort))
           (when bookmark
             (setf (jsown:val query "bookmark") bookmark))
-          (cl-couch:fts-search
-           client
-           (jsown:to-json query)
-           db
-           "search"
-           "fts"))))))
+          (strip-server-tenant-from-search-body
+           (cl-couch:fts-search
+            client
+            (jsown:to-json query)
+            db
+            "search"
+            "fts")))))))
+
+
+
 
 (defun handle-authorized-document-get-route
     (params &optional (route "/document/:id"))
@@ -130,8 +134,9 @@ legacy path parameter that must match the document dtype."
         (star.authorization:authorized-fetch-document
          document-id
          (lambda (id)
-           (cl-couch:get-document
-            client star:*couchdb-default-database* id))
+           (strip-server-tenant-fields
+            (cl-couch:get-document
+             client star:*couchdb-default-database* id)))
          :principal (current-policy-principal)
          :metadata
          (route-policy-metadata route "GET"))))))
@@ -294,12 +299,13 @@ cannot widen the caller's requested tenant scope."
                  :limit limit
                  :reduce nil)))
           (jsown:to-json
-           (star.authorization:authorized-view-response
-            response
-            :principal (current-policy-principal)
-            :requested-dataset dataset
-            :requested-tenant tenant
-            :metadata metadata)))))))
+           (strip-server-tenant-from-rows
+            (star.authorization:authorized-view-response
+             response
+             :principal (current-policy-principal)
+             :requested-dataset dataset
+             :requested-tenant tenant
+             :metadata metadata))))))))
 
 (defun handle-authorized-dataset-size-route (params)
   (with-http-boundary ()

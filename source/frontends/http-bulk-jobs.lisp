@@ -111,7 +111,7 @@
          (context (current-publish-service-context)))
     (star.actors:publish
      star.actors:*producer-agent*
-     :body (jsown:to-json document)
+     :body (jsown:to-json (stamp-server-tenant! document))
      :routing-key routing-key
      :properties
      (service-context-properties
@@ -127,7 +127,7 @@
          (context (current-publish-service-context)))
     (star.actors:publish
      star.actors:*producer-agent*
-     :body (jsown:to-json document)
+     :body (jsown:to-json (stamp-server-tenant! document))
      :routing-key routing-key
      :properties
      (service-context-properties
