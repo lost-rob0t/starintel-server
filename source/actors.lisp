@@ -315,7 +315,7 @@ and normalize it to JSON. The current trace context rides in AMQP headers
             ((null body) (error "publish: body is NIL"))
             (t (jsown:to-json body))))
         (properties
-          (when (observability-active-p)
+          (when (star:observability-active-p)
             (star.observability:inject-rabbit-trace-context properties))))
     (handler-case
         (bt:with-timeout (*publish-timeout-seconds*)
