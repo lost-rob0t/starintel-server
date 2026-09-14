@@ -226,10 +226,19 @@ A document that already declares tenant_id or tenant keeps it untouched."
   document)
 
 (defun strip-server-tenant-fields (document)
-  "Remove the server-injected tenant_id from an outgoing document."
-  (when (jsown:keyp document "tenant_id")
-    (jsown:remkey document "tenant_id"))
-  document)
+  "Remove the server-injected tenant_id from an outgoing document.
+
+Accepts either a parsed jsown object or a raw JSON string; strings are
+parsed, stripped, and re-serialized so the surrounding handler keeps
+operating on the type it started with."
+  (etypecase document
+    (string
+     (jsown:to-json
+      (strip-server-tenant-fields (jsown:parse document))))
+    (list
+     (when (jsown:keyp document "tenant_id")
+       (jsown:remkey document "tenant_id"))
+     document)))
 
 (defun strip-server-tenant-from-rows (response)
   "Strip tenant_id from every embedded document of a row response."

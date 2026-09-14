@@ -143,3 +143,15 @@
            1)))
     (signals star.consumers:schema-invalid-delivery-error
       (star.rabbit:decode-rabbit-document message))))
+
+(test strip-accepts-raw-json-strings
+  (let ((json
+          (jsown:to-json
+           (star.frontends.http-api:stamp-server-tenant!
+            (injection-document :dataset "testing-debug" :tenant "ci")))))
+    (let ((stripped
+            (star.frontends.http-api:strip-server-tenant-fields json)))
+      (is (stringp stripped))
+      (is (null (jsown:keyp (jsown:parse stripped) "tenant_id")))
+      (is (string= "doc-injection-1"
+                   (jsown:val (jsown:parse stripped) "_id"))))))
