@@ -1,0 +1,4 @@
+% Ground task/control facts for this worktree. Machine observations live in runs/run-<HEAD>.pl.
+task('reconcile-master').
+repo_state('1599100ec1c9267d773573fdd9d679d00791106c', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855').
+research_required(false).
