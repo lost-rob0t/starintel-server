@@ -11,7 +11,13 @@
             ("_id" "doc-injection-1")
             ("dataset" dataset)
             ("dtype" "note")
-            ("version" starintel:+starintel-doc-version+))))
+            ("schema_version" "0.9.0")
+            ("version" 1)
+            ("date_added" "2026-09-14T00:00:00Z")
+            ("date_updated" "2026-09-14T00:00:00Z")
+            ("sources")
+            ("evidence")
+            ("data" (jsown:new-js)))))
     (when tenant
       (setf (jsown:val document "tenant_id") tenant))
     document))
@@ -106,3 +112,33 @@
         (dolist (key '("_id" "dataset" "dtype" "version"))
           (is (equal (jsown:val (injection-document) key)
                      (jsown:val returned key))))))))
+
+(test consumer-decode-exempts-injected-tenant-and-restores-it
+  (let ((star:*tenant-fallback* "ci"))
+    (let* ((stamped (star.frontends.http-api:stamp-server-tenant!
+                     (injection-document :dataset "testing-debug")))
+           (message (cons (jsown:to-json stamped) 1))
+           (decoded (star.rabbit:decode-rabbit-document message)))
+      (is (string= "ci" (jsown:val decoded "tenant_id")))
+      (is (string= "doc-injection-1" (jsown:val decoded "_id")))
+      (is (string= "note" (jsown:val decoded "dtype"))))))
+
+(test consumer-decode-still-rejects-schema-invalid-documents
+  (let ((message
+          (cons
+           (jsown:to-json
+            (jsown:new-js
+              ("_id" "bad-doc")
+              ("dataset" "testing-debug")
+              ("dtype" "note")
+              ("schema_version" "0.9.0")
+              ("version" 1)
+              ("undeclared_top_level_field" "schema violation")
+              ("date_added" "2026-09-14T00:00:00Z")
+              ("date_updated" "2026-09-14T00:00:00Z")
+              ("sources")
+              ("evidence")
+              ("data")))
+           1)))
+    (signals star.consumers:schema-invalid-delivery-error
+      (star.rabbit:decode-rabbit-document message))))
