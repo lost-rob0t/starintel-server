@@ -221,10 +221,18 @@
                      (valkey-store-after-submit-hook store))
             (funcall (valkey-store-after-submit-hook store) connection))
           (unless (or (valkey-store-tls-p store)
-                      (usocket:wait-for-input
-                       (valkey-connection-socket connection)
-                       :timeout (remaining-operation-seconds store deadline)
-                       :ready-only t))
+                      (loop
+                        ;; usocket:wait-for-input returns NIL when select
+                        ;; is interrupted (EINTR), not only on timeout; so
+                        ;; retry until the operation deadline is exhausted
+                        ;; and an EINTR is not mistaken for a lost reply.
+                        (when (usocket:wait-for-input
+                               (valkey-connection-socket connection)
+                               :timeout (remaining-operation-seconds store deadline)
+                               :ready-only t)
+                          (return t))
+                        (when (>= (valkey-unix-milliseconds) deadline)
+                          (return nil))))
             (error 'valkey-command-failure :submitted-p submitted-p))
           (read-valkey-response (valkey-connection-stream connection)))
       (valkey-server-error (condition) (error condition))
@@ -280,27 +288,32 @@
   (let ((connection nil)
         (reserved-p nil))
     (bt:with-lock-held ((valkey-store-pool-lock store))
-      (loop
-        (when (valkey-store-closed-p store)
-          (error 'valkey-store-closed))
-        (when (valkey-store-idle-connections store)
-          (setf connection (pop (valkey-store-idle-connections store)))
-          (return))
-        (when (< (valkey-store-open-count store)
-                 (valkey-store-pool-size store))
-          (incf (valkey-store-open-count store))
-          (setf reserved-p t)
-          (return))
-        (let ((remaining
-                (min (valkey-store-pool-wait-timeout-ms store)
-                     (- deadline (valkey-unix-milliseconds)))))
-          (when (<= remaining 0)
-            (error 'valkey-pool-timeout))
-          (unless (bt:condition-wait
-                   (valkey-store-pool-condition store)
-                   (valkey-store-pool-lock store)
-                   :timeout (/ remaining 1000.0))
-            (error 'valkey-pool-timeout)))))
+      (let ((pool-deadline
+              (+ (valkey-unix-milliseconds)
+                 (max 0
+                      (min (valkey-store-pool-wait-timeout-ms store)
+                           (- deadline (valkey-unix-milliseconds)))))))
+        (loop
+          (when (valkey-store-closed-p store)
+            (error 'valkey-store-closed))
+          (when (valkey-store-idle-connections store)
+            (setf connection (pop (valkey-store-idle-connections store)))
+            (return))
+          (when (< (valkey-store-open-count store)
+                   (valkey-store-pool-size store))
+            (incf (valkey-store-open-count store))
+            (setf reserved-p t)
+            (return))
+          (let ((remaining (- pool-deadline (valkey-unix-milliseconds))))
+            (when (<= remaining 0)
+              (error 'valkey-pool-timeout))
+            ;; condition-wait may return NIL on timeout even when a notify
+            ;; raced with expiry; the loop head re-checks the pool predicate
+            ;; before the pool deadline is declared exhausted.
+            (bt:condition-wait
+             (valkey-store-pool-condition store)
+             (valkey-store-pool-lock store)
+             :timeout (/ remaining 1000.0))))))
     (when reserved-p
       (handler-case
           (progn
