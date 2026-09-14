@@ -301,6 +301,39 @@ Populated by plugins; see =addons.lisp=.")
 (defparameter *bulk-max-documents* 500
   "Maximum documents accepted by the bulk ingest endpoint per request.")
 
+;;;; Ingest tenant adaptation
+(defparameter *tenant-dataset-map*
+  (loop for entry in (split-comma-setting
+                      (uiop:getenv "STAR_TENANT_DATASET_MAP"))
+        for separator = (position #\= entry)
+        when (and separator (plusp separator))
+          collect (cons (string-trim '(#\Space)
+                                     (subseq entry 0 separator))
+                        (string-trim '(#\Space)
+                                     (subseq entry (1+ separator)))))
+  "Alist mapping datasets to the authorization tenant applied when a
+document arrives without tenant_id/tenant.
+
+- env: =STAR_TENANT_DATASET_MAP= (comma-separated =dataset=tenant=)
+- default: empty")
+
+(defparameter *tenant-fallback*
+  (uiop:getenv "STAR_TENANT_FALLBACK")
+  "Tenant applied when a document carries no tenancy and its dataset has
+no =*tenant-dataset-map*= entry.
+
+- env: =STAR_TENANT_FALLBACK=
+- default: unset (documents keep the historical =default= tenant)")
+
+(defun tenant-adaptation-for (dataset)
+  "Resolve the server-side adapted tenant for a tenant-less document.
+
+Returns nil when no adaptation is configured, leaving the historical
+=default= tenant in effect."
+  (or (and dataset
+           (cdr (assoc dataset *tenant-dataset-map* :test #'string=)))
+      *tenant-fallback*))
+
 ;;;; Rabbit retry and quarantine
 (defparameter *rabbit-max-retries* 4
   "Maximum republished attempts after the original delivery.")
