@@ -442,7 +442,9 @@
   (let ((target-p (target-document-p document)))
     (make-authorization-resource
      :tenant-id (or (document-value document "tenant_id" "tenant")
-                    "default")
+                   (star:tenant-adaptation-for
+                    (document-value document "dataset"))
+                   "default")
      :dataset-id (document-value document "dataset")
      :actor-name (or actor-name
                      (and target-p

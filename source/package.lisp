@@ -65,6 +65,11 @@
    #:load-init-file
    #:safe-load-init
    #:*bulk-max-documents*
+   #:*tenant-dataset-map*
+   #:*tenant-fallback*
+   #:parse-tenant-dataset-map
+   #:parse-tenant-fallback
+   #:tenant-adaptation-for
    #:*lease-store*
    #:initialize-lease-store
    #:shutdown-lease-store

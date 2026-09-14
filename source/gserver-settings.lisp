@@ -301,6 +301,46 @@ Populated by plugins; see =addons.lisp=.")
 (defparameter *bulk-max-documents* 500
   "Maximum documents accepted by the bulk ingest endpoint per request.")
 
+;;;; Ingest tenant adaptation
+(defun parse-tenant-dataset-map (value)
+  "Parse a comma-separated =dataset=tenant= setting into an alist."
+  (loop for entry in (split-comma-setting value)
+        for separator = (position #\= entry)
+        when (and separator (plusp separator))
+          collect (cons (string-trim '(#\Space)
+                                     (subseq entry 0 separator))
+                        (string-trim '(#\Space)
+                                     (subseq entry (1+ separator))))))
+
+(defun parse-tenant-fallback (value)
+  "Treat blank or absent fallback values as unset."
+  (and value (plusp (length value)) value))
+
+(defparameter *tenant-dataset-map*
+  (parse-tenant-dataset-map (uiop:getenv "STAR_TENANT_DATASET_MAP"))
+  "Alist mapping datasets to the authorization tenant applied when a
+document arrives without tenant_id/tenant.
+
+- env: =STAR_TENANT_DATASET_MAP= (comma-separated =dataset=tenant=)
+- default: empty")
+
+(defparameter *tenant-fallback*
+  (parse-tenant-fallback (uiop:getenv "STAR_TENANT_FALLBACK"))
+  "Tenant applied when a document carries no tenancy and its dataset has
+no =*tenant-dataset-map*= entry.
+
+- env: =STAR_TENANT_FALLBACK=
+- default: unset (documents keep the historical =default= tenant)")
+
+(defun tenant-adaptation-for (dataset)
+  "Resolve the server-side adapted tenant for a tenant-less document.
+
+Returns nil when no adaptation is configured, leaving the historical
+=default= tenant in effect."
+  (or (and dataset
+           (cdr (assoc dataset *tenant-dataset-map* :test #'string=)))
+      *tenant-fallback*))
+
 ;;;; Rabbit retry and quarantine
 (defparameter *rabbit-max-retries* 4
   "Maximum republished attempts after the original delivery.")

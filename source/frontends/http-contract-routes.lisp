@@ -113,12 +113,13 @@ server-owned public scopes. No caller principal or caller scope enters here."
             (when bookmark
               (setf (jsown:val query "bookmark") bookmark))
             (set-cache-control "no-store")
-            (cl-couch:fts-search
-             client
-             (jsown:to-json query)
-             star:*couchdb-default-database*
-             "search"
-             "fts")))))))
+            (strip-server-tenant-from-search-body
+             (cl-couch:fts-search
+              client
+              (jsown:to-json query)
+              star:*couchdb-default-database*
+              "search"
+              "fts"))))))))
 
 (defun reduced-view-value (response)
   (let* ((rows (or (jsown:val-safe response "rows") nil))

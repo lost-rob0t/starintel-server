@@ -49,6 +49,7 @@
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")
      (:file "http-target-tenant-test")
+     (:file "http-tenant-injection-test")
      (:file "authorization-services-final-test")
      (:file "authorization-quota-test")
      (:file "gserver-client-test")
