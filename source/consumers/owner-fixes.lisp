@@ -115,6 +115,13 @@ cannot silently acknowledge a Rabbit delivery."
         (setf (rabbit-stream-open-p stream) t)
         stream)
     (condition (condition)
+      (let ((connection (rabbit-stream-connection stream)))
+        (when connection
+          (handler-case
+              (cl-rabbit:destroy-connection connection)
+            (condition (cleanup-condition)
+              (log:warn "Rabbit connection cleanup after open failure failed: ~a"
+                        cleanup-condition)))))
       (setf (rabbit-stream-owner-thread stream) nil
             (rabbit-stream-connection stream) nil
             (rabbit-stream-open-p stream) nil)
