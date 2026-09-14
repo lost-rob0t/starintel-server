@@ -33,6 +33,22 @@ remains the implementation baseline on current master. A later change to the
 canonical validation boundary requires re-verification before carrying this
 approval forward.
 
+* Current release contract
+
+The runtime boundary is the v0.9 wire contract, but the active coordinated
+StarIntel release is a separate value.  The current schema lock resolves:
+
+- wire =schema_version=: =0.9.0=;
+- release/profile version: =0.9.1=;
+- schema revision: =0.9.0+fields.20260909.1=;
+- canonical schema source commit:
+  =6479c0a9dc88ce9fed183515fc4df5d245de0b3a=.
+
+The authoritative active release is resolved from
+=schema/starintel-schema.lock.json= and the manifest at its pinned canonical
+commit.  It must not be inferred from the immutable
+=starintel-doc-v0.9.0.schema.json= filename or from =schema_version= alone.
+
 * Canonical mutation boundaries
 
 The following mutation paths validate a complete document with the canonical
@@ -44,10 +60,11 @@ The following mutation paths validate a complete document with the canonical
 - RabbitMQ =documents.ingest.#=
 - RabbitMQ =documents.update.#=
 
-The schema revision is =schema_version="0.9.0"=. The independent document
-revision is the integer =version= field. A missing or unsupported schema version
-is rejected as =422 schema_version_required= or =422
-unsupported_schema_version=; a structurally invalid canonical document is
+Canonical documents carry =schema_version="0.9.0"=.  That field identifies the
+wire schema family; it is not the release number or the schema revision.  The
+independent document revision is the integer =version= field. A missing or
+unsupported schema version is rejected as =422 schema_version_required= or
+=422 unsupported_schema_version=; a structurally invalid canonical document is
 =422 invalid_document_schema=.
 
 * Target compatibility
