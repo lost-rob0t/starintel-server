@@ -161,13 +161,6 @@ services:
       retries: 12
       start_period: 30s
 
-    healthcheck:
-      test: [CMD, curl, --fail, --silent, http://localhost:5000/health]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-
   # OpenTelemetry Collector sidecar: the ONLY egress path for application
   # telemetry. Holds NO OpenObserve credentials; it forwards OTLP to the
   # observe gateway collector, which owns the ingest credential. Scrapes
