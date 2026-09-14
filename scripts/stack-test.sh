@@ -242,7 +242,7 @@ wait_for_healthy_stack() {
     if ((${#container_ids[@]} == expected_services)); then
       status=0
       for container_id in "${container_ids[@]}"; do
-        health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
+        health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{if eq .State.Status "running"}}healthy{{else}}{{.State.Status}}{{end}}{{end}}' "$container_id")"
         if [[ "$health" != "healthy" ]]; then
           status=1
           break
