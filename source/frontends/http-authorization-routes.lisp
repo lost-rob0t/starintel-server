@@ -131,15 +131,15 @@ legacy path parameter that must match the document dtype."
   (with-http-boundary ()
     (let ((document-id (require-path-string params "id")))
       (couchdb-handler (client *couchdb-pool*)
-        (star.authorization:authorized-fetch-document
-         document-id
-         (lambda (id)
-           (strip-server-tenant-fields
+        (strip-server-tenant-fields
+         (star.authorization:authorized-fetch-document
+          document-id
+          (lambda (id)
             (cl-couch:get-document
-             client star:*couchdb-default-database* id)))
-         :principal (current-policy-principal)
-         :metadata
-         (route-policy-metadata route "GET"))))))
+             client star:*couchdb-default-database* id))
+          :principal (current-policy-principal)
+          :metadata
+          (route-policy-metadata route "GET")))))))
 
 (defun handle-authorized-document-delete-route
     (params &optional (route "/document/:id"))
