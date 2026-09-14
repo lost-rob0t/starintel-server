@@ -29,14 +29,17 @@ base_complete :-
 
 % Extend this predicate with task-specific requirements and invariants.
 
-% RED evidence lives in the merge-head run file (suite exit 1 before the
-% fix, twice) plus the attribution run at parent 8533dc4 narrated there.
+% RED evidence: verbatim machine fact copied from
+% runs/run-1599100ec1c9267d773573fdd9d679d00791106c.pl (observe id ce461618f6648445).
+% Defined here as a fact instead of ensure_loaded/1 because consulting that
+% file would REPLACE the observation/6 clauses of the current run file
+% (consult redefinition semantics) and wipe the current-head GREEN evidence.
+red_observation_fact(
+    observation('ce461618f6648445', command(['env', 'COUCHDB_USER=admin', 'COUCHDB_PASSWORD_FILE=/home/unseen/starintel/starintel-server/secrets/couchdb_password', 'nix', 'run', '.#star-integration-tests']),
+                exit(1), 'f66d58fe4c74e74b7683880fb7ade01cec8583c793851eb993215aab496664b2', '1599100ec1c9267d773573fdd9d679d00791106c', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')).
+
 red_recorded_at_merge_head :-
-    ( exists_file('runs/run-1599100ec1c9267d773573fdd9d679d00791106c.pl')
-    -> ensure_loaded('runs/run-1599100ec1c9267d773573fdd9d679d00791106c.pl')
-    ; true ),
-    observation(_, command(['env',_,_,'nix','run','.#star-integration-tests']),
-                exit(1), _, '1599100ec1c9267d773573fdd9d679d00791106c', _).
+    red_observation_fact(_).
 
 % GREEN: full integration suite passes at the fixed head.
 green_suite_at_fixed_head :-
