@@ -1,4 +1,4 @@
-name: Temporary org-doc sync
+name: Temporary PR 181 hardening
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  sync:
+  harden:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -25,19 +25,54 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Regenerate org-doc API reference
-        run: nix run .#gen-api-docs
-
-      - name: Commit generated org-doc output
+      - name: Authorize persisted tenant before egress redaction
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- doc/api/; then
-            echo 'org-doc output already current'
-            exit 0
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('source/frontends/http-authorization-routes.lisp')
+          text = path.read_text()
+          old = '''        (star.authorization:authorized-fetch-document
+         document-id
+         (lambda (id)
+           (strip-server-tenant-fields
+            (cl-couch:get-document
+             client star:*couchdb-default-database* id)))
+         :principal (current-policy-principal)
+         :metadata
+         (route-policy-metadata route "GET"))))))'''
+          new = '''        (strip-server-tenant-fields
+         (star.authorization:authorized-fetch-document
+          document-id
+          (lambda (id)
+            (cl-couch:get-document
+             client star:*couchdb-default-database* id))
+          :principal (current-policy-principal)
+          :metadata
+          (route-policy-metadata route "GET")))))))'''
+          if old not in text:
+              raise SystemExit('expected GET authorization snippet not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Run unit tests
+        run: nix run .#star-unit-tests
+
+      - name: Regenerate org-doc API reference
+        run: nix run .#gen-api-docs
+
+      - name: Commit hardening and generated docs
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add doc/api/
-          git commit -m 'docs: regenerate API reference with org-doc'
+          git add source/frontends/http-authorization-routes.lisp doc/api/
+          if git diff --cached --quiet; then
+            echo 'no changes to commit'
+            exit 0
+          fi
+          git commit -m 'fix: authorize persisted tenant before egress redaction'
           git push origin HEAD:feat/ingest-tenant-adapter
