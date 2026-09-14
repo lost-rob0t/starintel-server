@@ -155,3 +155,34 @@
       (is (null (jsown:keyp (jsown:parse stripped) "tenant_id")))
       (is (string= "doc-injection-1"
                    (jsown:val (jsown:parse stripped) "_id"))))))
+
+(test search-rows-strip-fields-and-outbox-payload-tenants
+  (let* ((doc (injection-document :dataset "testing-debug" :tenant "ci"))
+         (payload (jsown:new-js
+                    ("_id" "doc-injection-1")
+                    ("tenant_id" "ci")))
+         (outbox-entry (jsown:new-js
+                         ("mutation_id" "m-1")
+                         ("payload" payload)))
+         (extensions (jsown:new-js
+                      ("_server_outbox" (vector outbox-entry))))
+         (row (jsown:new-js
+                ("id" "doc-injection-1")
+                ("fields" (jsown:new-js ("tenant_id" "ci")))
+                ("doc" (jsown:extend-js doc
+                         ("extensions" extensions)))))
+         (response (jsown:new-js ("rows" (vector row)))))
+    (star.frontends.http-api:strip-server-tenant-from-rows response)
+    (let ((out-row (aref (jsown:val response "rows") 0)))
+      (is (null (jsown:keyp (jsown:val out-row "fields") "tenant_id")))
+      (is (null (jsown:keyp (jsown:val out-row "doc") "tenant_id")))
+      (is (null
+           (jsown:keyp
+            (jsown:val
+             (aref
+              (jsown:val
+               (jsown:val (jsown:val out-row "doc") "extensions")
+               "_server_outbox")
+              0)
+             "payload")
+            "tenant_id"))))))

@@ -240,17 +240,40 @@ operating on the type it started with."
        (jsown:remkey document "tenant_id"))
      document)))
 
+(defun strip-outbox-payload-tenants (extensions)
+  "Strip tenant_id from outbox payloads embedded in server extensions.
+
+The outbox records the originally published (tenant-stamped) payload for
+internal bookkeeping; it must not leak tenancy on egress."
+  (when (and extensions
+             (jsown:keyp extensions "_server_outbox"))
+    (let ((outbox (jsown:val extensions "_server_outbox")))
+      (loop for entry across outbox
+            when (and (jsown:keyp entry "payload")
+                      (jsown:keyp (jsown:val entry "payload") "tenant_id"))
+              do (jsown:remkey (jsown:val entry "payload") "tenant_id"))))
+  extensions)
+
 (defun strip-server-tenant-from-rows (response)
-  "Strip tenant_id from every embedded document of a row response."
+  "Strip tenant_id from every embedded document of a row response.
+
+Covers the FTS stored-fields projection (=fields=), the embedded document
+(=doc=), and outbox payloads recorded inside =doc.extensions=."
   (when (and response (jsown:keyp response "rows"))
     (let* ((rows (jsown:val response "rows"))
            (stripped
              (loop for row in (coerce rows 'list)
                    collect
                    (progn
-                     (when (jsown:keyp row "doc")
+                     (when (jsown:keyp row "fields")
                        (strip-server-tenant-fields
-                        (jsown:val row "doc")))
+                        (jsown:val row "fields")))
+                     (when (jsown:keyp row "doc")
+                       (let ((doc (jsown:val row "doc")))
+                         (strip-server-tenant-fields doc)
+                         (when (jsown:keyp doc "extensions")
+                           (strip-outbox-payload-tenants
+                            (jsown:val doc "extensions")))))
                      row))))
       (setf (jsown:val response "rows")
             (if (vectorp rows)
