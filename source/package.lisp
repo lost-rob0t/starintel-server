@@ -67,6 +67,8 @@
    #:*bulk-max-documents*
    #:*tenant-dataset-map*
    #:*tenant-fallback*
+   #:parse-tenant-dataset-map
+   #:parse-tenant-fallback
    #:tenant-adaptation-for
    #:*lease-store*
    #:initialize-lease-store
