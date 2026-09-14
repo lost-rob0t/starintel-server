@@ -29,33 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('source/frontends/http-authorization-routes.lisp')
-          text = path.read_text()
-          old = '''        (star.authorization:authorized-fetch-document
-         document-id
-         (lambda (id)
-           (strip-server-tenant-fields
-            (cl-couch:get-document
-             client star:*couchdb-default-database* id)))
-         :principal (current-policy-principal)
-         :metadata
-         (route-policy-metadata route "GET"))))))'''
-          new = '''        (strip-server-tenant-fields
-         (star.authorization:authorized-fetch-document
-          document-id
-          (lambda (id)
-            (cl-couch:get-document
-             client star:*couchdb-default-database* id))
-          :principal (current-policy-principal)
-          :metadata
-          (route-policy-metadata route "GET")))))))'''
-          if old not in text:
-              raise SystemExit('expected GET authorization snippet not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("source/frontends/http-authorization-routes.lisp"); s=p.read_text(); old="        (star.authorization:authorized-fetch-document\n         document-id\n         (lambda (id)\n           (strip-server-tenant-fields\n            (cl-couch:get-document\n             client star:*couchdb-default-database* id)))\n         :principal (current-policy-principal)\n         :metadata\n         (route-policy-metadata route \"GET\"))))))"; new="        (strip-server-tenant-fields\n         (star.authorization:authorized-fetch-document\n          document-id\n          (lambda (id)\n            (cl-couch:get-document\n             client star:*couchdb-default-database* id))\n          :principal (current-policy-principal)\n          :metadata\n          (route-policy-metadata route \"GET\")))))))"; assert old in s, "expected GET authorization snippet not found"; p.write_text(s.replace(old,new,1))'
 
       - name: Run unit tests
         run: nix run .#star-unit-tests
