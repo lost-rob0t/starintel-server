@@ -1,0 +1,43 @@
+name: Temporary org-doc sync
+
+on:
+  push:
+    branches:
+      - feat/ingest-tenant-adapter
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ingest-tenant-adapter
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Regenerate org-doc API reference
+        run: nix run .#gen-api-docs
+
+      - name: Commit generated org-doc output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- doc/api/; then
+            echo 'org-doc output already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add doc/api/
+          git commit -m 'docs: regenerate API reference with org-doc'
+          git push origin HEAD:feat/ingest-tenant-adapter
