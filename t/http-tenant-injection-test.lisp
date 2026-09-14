@@ -10,7 +10,7 @@
           (jsown:new-js
             ("_id" "doc-injection-1")
             ("dataset" dataset)
-            ("dtype" "note")
+            ("dtype" "observation")
             ("schema_version" "0.9.0")
             ("version" 1)
             ("date_added" "2026-09-14T00:00:00Z")
@@ -55,7 +55,7 @@
       (is (null (jsown:keyp document "tenant_id")))
       (is (string= "doc-injection-1" (jsown:val document "_id")))
       (is (string= "dataset-a" (jsown:val document "dataset")))
-      (is (string= "note" (jsown:val document "dtype"))))))
+      (is (string= "observation" (jsown:val document "dtype"))))))
 
 (test strip-leaves-tenantless-documents-untouched
   (let ((document (injection-document)))
@@ -114,14 +114,15 @@
                      (jsown:val returned key))))))))
 
 (test consumer-decode-exempts-injected-tenant-and-restores-it
-  (let ((star:*tenant-fallback* "ci"))
-    (let* ((stamped (star.frontends.http-api:stamp-server-tenant!
-                     (injection-document :dataset "testing-debug")))
-           (message (cons (jsown:to-json stamped) 1))
-           (decoded (star.rabbit:decode-rabbit-document message)))
-      (is (string= "ci" (jsown:val decoded "tenant_id")))
-      (is (string= "doc-injection-1" (jsown:val decoded "_id")))
-      (is (string= "note" (jsown:val decoded "dtype"))))))
+  (let* ((star:*tenant-fallback* "ci")
+         (stamped
+           (star.frontends.http-api:stamp-server-tenant!
+            (starintel:encode
+             (starintel:new-host "testing-debug" :ip "192.0.2.30" :os "linux"))))
+         (message (cons (jsown:to-json stamped) 1))
+         (decoded (star.rabbit:decode-rabbit-document message)))
+    (is (string= "ci" (jsown:val decoded "tenant_id")))
+    (is (string= "host" (jsown:val decoded "dtype")))))
 
 (test consumer-decode-still-rejects-schema-invalid-documents
   (let ((message
