@@ -43,7 +43,7 @@ exporters:
   # ${env:OO_INGEST_AUTH} credential. Sending without credentials is safe
   # inside the management VLAN (nftables-scoped).
   otlphttp/gateway:
-    endpoint: ${STAR_OBSERVABILITY_GATEWAY:-http://observe.star.intel:4318}
+    endpoint: ${env:STAR_OBSERVABILITY_GATEWAY:-http://observe.star.intel:4318}
     sending_queue:
       enabled: true
       num_consumers: 2
