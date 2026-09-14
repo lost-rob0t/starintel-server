@@ -318,7 +318,8 @@ document arrives without tenant_id/tenant.
 - default: empty")
 
 (defparameter *tenant-fallback*
-  (uiop:getenv "STAR_TENANT_FALLBACK")
+  (let ((value (uiop:getenv "STAR_TENANT_FALLBACK")))
+    (and value (plusp (length value)) value))
   "Tenant applied when a document carries no tenancy and its dataset has
 no =*tenant-dataset-map*= entry.
 
