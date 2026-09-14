@@ -35,6 +35,8 @@
      (:file "lease-store-contract-test")
      (:file "lease-store-runtime-test")
      (:file "http-boundary-test")
+     (:file "http-bulk-idempotency-test")
+     (:file "http-bulk-idempotency-adverse-test")
      (:file "http-target-v1-test")
      (:file "json-literal-preservation-test")
      (:file "v09-runtime-test")
