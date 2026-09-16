@@ -23,8 +23,8 @@ Default response headers applied to API responses.
 :KIND: struct
 :PACKAGE: STARINTEL-GSERVER-HTTP-API
 :END:
-One bulk ingest job: documents plus options.
-- Slots: =id=, =principal=, =documents=, =correlation-id=, =service-context=, =submitted-at=, =status=, =succeeded=, =failed=, =error-code=
+One bulk ingest job; terminal jobs retain counts, not request payloads.
+- Slots: =id=, =principal=, =documents=, =total=, =correlation-id=, =service-context=, =submitted-at=, =status=, =succeeded=, =failed=, =error-code=
 
 * Conditions
 *** http-input-error
