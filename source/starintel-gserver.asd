@@ -9,7 +9,8 @@
   :entry-point "star::main"
   :in-order-to ((test-op (test-op "starintel-gserver-tests")))
   :components
-  ((:file "document-access-package")
+  ((:file "ids")
+   (:file "document-access-package")
    (:file "document-access")
    (:file "consumers/package")
    (:file "consumers/consumers")

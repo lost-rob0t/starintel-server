@@ -1,5 +1,7 @@
 % Durable project knowledge for starintel-server. Load with:
-%   swipl -g "use_module('.prolog/kb/index.pl')"
-:- use_module('root-causes.pl').
-:- use_module('tooling.pl').
-:- use_module('git-remotes.pl').
+%   swipl -q -s .prolog/kb/index.pl -g halt
+:- multifile root_cause/3, invariant/2, method/2.
+:- ensure_loaded('root-causes.pl').
+:- ensure_loaded('tooling.pl').
+:- ensure_loaded('git-remotes.pl').
+:- ensure_loaded('ulid-quarantine.pl').

@@ -224,7 +224,7 @@
      "Bulk ingest service is not available"))
   (let ((job
           (make-bulk-ingest-job
-           :id (cms-ulid:ulid)
+           :id (star.ids:ulid)
            :principal principal
            :documents documents
            :correlation-id (current-correlation-id)

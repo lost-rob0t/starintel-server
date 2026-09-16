@@ -173,12 +173,12 @@
   "Trace id propagated with the delivery."
   (or (rabbit-header properties "x-starintel-trace-id")
       (rabbit-property properties :correlation-id)
-      (cms-ulid:ulid)))
+      (star.ids:ulid)))
 
 (defun delivery-message-id (properties)
   "Stable message identity used for deduplication."
   (or (rabbit-property properties :message-id)
-      (cms-ulid:ulid)))
+      (star.ids:ulid)))
 
 (defun delivery-first-seen-at (properties)
   "Timestamp when this delivery was first observed."
@@ -403,7 +403,7 @@ by tests and must be between zero and one."
          (attempt (delivery-attempt properties))
          (record (jsown:empty-object)))
     (setf (jsown:val record "_id")
-          (format nil "quarantine:~a" (cms-ulid:ulid))
+          (format nil "quarantine:~a" (star.ids:ulid))
           (jsown:val record "type") "_server_quarantine"
           (jsown:val record "status") "quarantined"
           (jsown:val record "failure_class")
@@ -600,7 +600,7 @@ by tests and must be between zero and one."
   "Return BODY, PROPERTIES, EXCHANGE, and ROUTING-KEY for explicit replay."
   (let* ((now (star.documents:utc-now))
          (old-trace (jsown:val record "trace_id"))
-         (new-trace (cms-ulid:ulid))
+         (new-trace (star.ids:ulid))
          (replay-count (1+ (or (jsown:val-safe record "replay_count") 0)))
          (headers
            (list
@@ -615,7 +615,7 @@ by tests and must be between zero and one."
            (list
             (cons :content-type "application/json")
             (cons :delivery-mode 2)
-            (cons :message-id (cms-ulid:ulid))
+            (cons :message-id (star.ids:ulid))
             (cons :correlation-id new-trace)
             (cons :headers headers))))
     (values

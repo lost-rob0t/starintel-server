@@ -32,6 +32,13 @@
                        (consumer-read consumer))
                     (consumer-read-timeout () nil)
                     (end-of-file ()
+                      (return))
+                    (error (condition)
+                      ;; A failed settlement leaves the delivery unsettled.
+                      ;; Closing the Rabbit stream returns it for redelivery
+                      ;; without letting the worker kill the HTTP listener.
+                      (log:error "Consumer ~a stopped after unsettled delivery: ~a"
+                                 (consumer-name consumer) condition)
                       (return)))))
     (when (consumer-running-p consumer)
       (handler-case

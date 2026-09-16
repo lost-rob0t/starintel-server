@@ -326,7 +326,7 @@
          (reason (decision-reason principal scopes action resource))
          (allowed-p (string= reason "matching_grant")))
     (make-authorization-decision
-     :id (cms-ulid:ulid)
+     :id (star.ids:ulid)
      :allowed-p allowed-p
      :reason reason
      :action action

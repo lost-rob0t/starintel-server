@@ -523,7 +523,7 @@
            store deadline +valkey-acquire-script+ keys
            (list digest (valkey-store-idempotency-ttl-ms store)
                  (canonical-target-lock-key identity) identity-json
-                 (cms-ulid:ulid) owner-principal-id owner-client-id
+                 (star.ids:ulid) owner-principal-id owner-client-id
                  ttl-ms maximum-lifetime-ms owner-credential-id
                  service-instance-id execution-id job-id trace-id request-id
                  metadata-json))
