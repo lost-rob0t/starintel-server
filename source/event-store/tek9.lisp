@@ -6,6 +6,16 @@
 (defparameter +event-store-database-names+
   (list +event-records-db+ +event-stream-log-db+ +event-stream-heads-db+))
 
+(defparameter *event-store-name*
+  (or (uiop:getenv "STAR_EVENT_STORE_NAME") "starintel-event-source")
+  "Logical Tek9 event-store name.")
+
+(defparameter *event-store-path*
+  (uiop:ensure-directory-pathname
+   (or (uiop:getenv "STAR_EVENT_STORE_PATH")
+       "./starintel-event-source/"))
+  "Filesystem path of the canonical Tek9 event source.")
+
 (defvar *event-store* nil
   "Current process-owned Tek9 event store.")
 
@@ -121,8 +131,8 @@
   (and store (tek9:db-is-open-p store)))
 
 (defun open-event-store (&key
-                           (path star:*event-store-path*)
-                           (name star:*event-store-name*))
+                           (path *event-store-path*)
+                           (name *event-store-name*))
   "Open and return the process-owned Tek9 event source.
 
 The store uses full LMDB durability. Repeated calls are idempotent while the
