@@ -4,6 +4,8 @@
    "Append-only Tek9 event source used for deterministic StarIntel replay.")
   (:export
    #:*event-store*
+   #:*event-store-name*
+   #:*event-store-path*
    #:event-store-error
    #:event-store-conflict
    #:event-store-conflict-event-id
@@ -26,6 +28,7 @@
    #:event-store-record-recorded-at
    #:event-store-record-metadata
    #:event-store-append-result
+   #:make-event-store-append-result
    #:event-store-append-result-status
    #:event-store-append-result-event-id
    #:event-store-append-result-stream-id
