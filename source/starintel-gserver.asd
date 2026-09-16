@@ -61,6 +61,7 @@
     (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
+   (:file "actors/proxy-gateway")
    (:file "target-repository")
    (:file "target-recovery")
    (:file "target-dispatch")

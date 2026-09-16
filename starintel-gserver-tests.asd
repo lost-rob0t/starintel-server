@@ -28,6 +28,7 @@
      (:file "target-routing-test")
      (:file "system-load-test")
      (:file "couchdb-actor-test")
+     (:file "proxy-gateway-test")
      (:file "couchdb-session-test")
      (:file "event-actor-test")
      (:file "dataset-export-test")

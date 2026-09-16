@@ -6,7 +6,8 @@
 (defun start-actor-system ()
   "Start the actors."
   (setf *sys* (make-actor-system `(:dispatchers
-                                   (:pinned (:workers ,star:*ingest-workers* :strategy :random))
+                                   (:pinned (:workers ,star:*ingest-workers* :strategy :random)
+                                    :proxy (:workers 2 :strategy :random))
                                    :timeout-timer
                                    (:resolution 500 :max-size 1000)
                                    :eventstream

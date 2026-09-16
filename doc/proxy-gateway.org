@@ -1,0 +1,60 @@
+#+title: Core proxy gateway
+#+description: Internal Sento request and reply contract for provider-backed egress proxies.
+
+* Purpose
+
+The core server starts =proxy-gateway= and =evomi-proxy-provider= with its actor
+system. A trusted in-process caller sends a =star.actors:proxy-request= to
+=star.actors:*proxy-gateway*= or calls =star.actors:request-proxy=. The gateway
+returns a typed =star.actors:proxy-result=. It does not make the caller's
+outbound request and does not publish proxy credentials to documents or RabbitMQ.
+
+* Request modes
+
+| Mode | Required fields | Result |
+|------+-----------------+--------|
+| =:rotating= | =project-id= | One Evomi connection configuration with no session suffix. Evomi chooses the exit IP when the connection is used. |
+| =:sticky= | =project-id=, =seed= | A connection configuration using a 10-character deterministic Evomi session token and a bounded lifetime. |
+| =:capabilities= | none | Supported modes/protocols and =:vpn nil=. |
+| =:vpn= | none | =:unsupported=; Evomi has no documented VPN configuration API. |
+
+Optional selection fields are =product= (=rp=, =rpc=, =sdc=, or =mp=),
+=protocol= (=http= or =socks5=), and a two-letter uppercase =country=. Sticky
+requests can set =lifetime-minutes= from 1 through 1440; the default is 30.
+The =seed= is an opaque target identifier scoped by =project-id=, product, and
+country. Use the same fields to request the same session token. Evomi may change
+the exit IP within a sticky session, and the IP can change after expiry. The
+reply reports =:best-effort= stability; it does not promise a fixed IP.
+
+#+begin_src lisp
+(let* ((request (star.actors:make-proxy-request
+                 :mode :sticky :project-id "approved-project"
+                 :seed "target-42" :country "US"))
+       (result (star.actors:request-proxy request)))
+  (when (eq :ok (star.actors:proxy-result-status result))
+    (let ((config (star.actors:proxy-result-config result)))
+      ;; Pass host, port, username, and password to the caller's HTTP client.
+      ;; Do not log, publish, or persist CONFIG.
+      config)))
+#+end_src
+
+* Configuration and failure
+
+Set =EVOMI_API_KEY= in the server process to enable rotating requests. Set
+=EVOMI_SESSION_SECRET= as a separate private secret to enable sticky requests.
+The provider sends the API key only in Evomi's =x-apikey= header when requesting
+one proxy configuration through =GET https://api.evomi.com/public/generate=.
+Both actors still start without credentials; selection then returns
+=:unavailable=. Invalid requests return =:invalid-request= before any provider
+call. Provider errors return =:provider-error= without reflecting API response
+bodies, credentials, or exception text. Result/config printers redact secrets.
+
+The gateway is currently an internal API. It does not authorize a claimed
+=project-id= against a project registry, provide a public HTTP endpoint, or
+manage VPN tunnels. Callers must supply only approved project and target IDs.
+
+* Provider references
+
+- [[https://docs.evomi.com/public-api/endpoints/generate/][Evomi Generate Proxies]] (retrieved 2026-09-16)
+- [[https://docs.evomi.com/public-api/authentication/][Evomi Public API Authentication]] (retrieved 2026-09-16)
+- [[https://docs.evomi.com/proxy-instructions/residential-proxies/proxy-sessions/][Evomi Residential Proxy Sessions]] (retrieved 2026-09-16)

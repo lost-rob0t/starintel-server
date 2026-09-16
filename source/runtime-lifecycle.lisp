@@ -149,6 +149,8 @@
         *couchdb-agent* nil
         *couchdb-gets* nil
         *couchdb-inserts* nil
+        *proxy-gateway* nil
+        *evomi-provider* nil
         *sys* nil)
   t)
 
