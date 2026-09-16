@@ -25,6 +25,31 @@
       starintel = star-cl.packages.${system}.starintel;
       cms-ulid  = star-cl.packages.${system}.cms-ulid;
 
+      tek9-src = builtins.fetchGit {
+        url = "https://github.com/lost-rob0t/tek9.git";
+        rev = "1cb978084da8b4f1d184b3ef2a1d30057f525608";
+      };
+
+      tek9-lmdb = pkgs.sbclPackages.lmdb.overrideLispAttrs (old: {
+        nativeLibs = (old.nativeLibs or [ ]) ++ [ pkgs.lmdb.out ];
+      });
+
+      tek9 = pkgs.sbcl.buildASDFSystem {
+        pname = "tek9";
+        version = "0.2.0";
+        src = tek9-src;
+        systems = [ "tek9" ];
+        nativeLibs = [ pkgs.lmdb.out ];
+        lispLibs = [
+          pkgs.sbclPackages.alexandria
+          pkgs.sbclPackages.bordeaux-threads
+          pkgs.sbclPackages.serapeum
+          pkgs.sbclPackages.jsown
+          tek9-lmdb
+          pkgs.sbclPackages.cl-conspack
+        ];
+      };
+
       org-doc-lib = pkgs.sbcl.buildASDFSystem rec {
         pname = "org-doc";
         version = "0.1.0";
@@ -114,7 +139,7 @@ EOF
       };
 
       sbcl' = pkgs.sbcl.withOverrides (self: super: {
-        inherit starintel cms-ulid cl-couch cl-rabbit nhooks lack-middleware-accesslog;
+        inherit starintel cms-ulid tek9 cl-couch cl-rabbit nhooks lack-middleware-accesslog;
         inherit org-doc-lib;
 
         # expose both names to the package set
@@ -148,6 +173,7 @@ EOF
         lispLibs = with sbcl'.pkgs; [
           starintel-observability
           starintel
+          tek9
           cl-couch
           serapeum
           alexandria
@@ -331,9 +357,9 @@ EOF
           export TEMP="/tmp"
           export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           exec sbcl --non-interactive --no-userinit --no-sysinit \
-            --eval "(require :asdf)" \
-            --eval "(asdf:load-system :org-doc)" \
-            --eval "(org-doc/cli:main)"
+            --eval '(require :asdf)' \
+            --eval '(asdf:load-system :org-doc)' \
+            --eval '(org-doc/cli:main)'
         '';
       };
 
@@ -350,23 +376,23 @@ EOF
           export TEMP="/tmp"
           export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           exec sbcl --non-interactive --no-userinit --no-sysinit \
-            --eval "(require :asdf)" \
-            --eval "(asdf:load-system :starintel-gserver)" \
-            --eval "(asdf:load-system :org-doc)" \
-            --eval "(let* ((report (org-doc:coverage :starintel-gserver))
+            --eval '(require :asdf)' \
+            --eval '(asdf:load-system :starintel-gserver)' \
+            --eval '(asdf:load-system :org-doc)' \
+            --eval '(let* ((report (org-doc:coverage :starintel-gserver))
                            (missing (getf report :undocumented))
                            (total (getf report :symbols)))
-                      (format t \"doc-coverage: ~a/~a symbols documented~%\"
+                      (format t "doc-coverage: ~a/~a symbols documented~%"
                               (- total (length missing)) total)
                       (when missing
                         (format *error-output*
-                                \"~&doc-coverage: missing docstrings:~%\")
+                                "~&doc-coverage: missing docstrings:~%")
                         (dolist (e missing)
-                          (format *error-output* \"  ~a::~a (~a)~%\"
+                          (format *error-output* "  ~a::~a (~a)~%"
                                   (org-doc:entry-package e)
                                   (org-doc:entry-name e)
                                   (org-doc:entry-kind e)))
-                        (uiop:quit 1)))"
+                        (uiop:quit 1)))'
         '';
       };
 
