@@ -185,6 +185,35 @@ services:
     networks:
       - backend
 
+  # Private document-to-Prolog projection; originals remain archived in the
+  # durable spool. No public listener and no broker/database credentials.
+  prolog-shard-actor:
+    image: starintel/prolog-shard-actor:0.1.0
+    hostname: prolog-shard-actor
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    profiles: ["actors"]
+    restart: unless-stopped
+    command: ["starintel-prolog-shards", "serve"]
+    environment:
+      STARINTEL_SHARD_ROOT: /var/lib/starintel-prolog/shards
+      STARINTEL_SPOOL_ROOT: /var/lib/starintel-prolog/spool
+      STARINTEL_TENANT: ${STARINTEL_TENANT:-}
+      STARINTEL_DATASET: ${STARINTEL_DATASET:-}
+    volumes:
+      - prolog-shard-data:/var/lib/starintel-prolog
+    network_mode: none
+    healthcheck:
+      test: ["CMD", "starintel-prolog-shards", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   youtube-actor:
     image: starintel/youtube-actor:0.1.0
     hostname: youtube-actor
@@ -227,6 +256,8 @@ volumes:
   rabbitmq_data:
   valkey_data:
   youtube-actor-data:
+  prolog-shard-data:
 
 networks:
   backend:
+
