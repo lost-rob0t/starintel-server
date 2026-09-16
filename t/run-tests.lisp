@@ -14,6 +14,7 @@
     lease-store-contract-tests
     lease-store-runtime-tests
     http-boundary-tests
+    http-bulk-idempotency-tests
     http-target-v1-tests
     v09-runtime-tests
     http-auth-tests
