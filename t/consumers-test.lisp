@@ -51,6 +51,70 @@
 
 (define-condition test-rabbitmq-server-error (error) ())
 
+(defclass test-failed-settlement-stream ()
+  ((closed-p :initform nil :accessor test-stream-closed-p)
+   (settlements :initform 0 :accessor test-stream-settlement-attempts)))
+
+(defmethod star.consumers:open-stream ((stream test-failed-settlement-stream))
+  stream)
+
+(defmethod star.consumers:close-stream ((stream test-failed-settlement-stream))
+  (setf (test-stream-closed-p stream) t))
+
+(defmethod star.consumers:stream-settle
+    ((stream test-failed-settlement-stream) delivery settlement)
+  (declare (ignore delivery settlement))
+  (incf (test-stream-settlement-attempts stream))
+  (error 'test-rabbitmq-server-error))
+
+(defclass test-failed-settlement-consumer (star.consumers:consumer) ())
+
+(defmethod star.consumers:consumer-read
+    ((consumer test-failed-settlement-consumer))
+  (declare (ignore consumer))
+  "delivery")
+
+(test concurrent-server-ulids-remain-distinct
+  ;; The pinned cms-ulid generator has one process-wide mutable LAST value.
+  ;; Both workers would enter RANDOM and choose the same value without the
+  ;; server lock. The timeout also lets the locked implementation finish.
+  (let* ((arrivals 0)
+         (arrival-lock (bt:make-lock "ulid-test-arrivals"))
+         (timestamp 123456789000000)
+         (random (lambda (limit)
+                   (declare (ignore limit))
+                   (bt:with-lock-held (arrival-lock)
+                     (incf arrivals))
+                   (let ((deadline (+ (get-internal-real-time)
+                                      (/ internal-time-units-per-second 10))))
+                     (loop until (or (= 2 arrivals)
+                                     (>= (get-internal-real-time) deadline))
+                           do (sleep 0.001)))
+                   17))
+         (left (bt:make-thread
+                (lambda () (star.ids:ulid :time timestamp :random random))))
+         (right (bt:make-thread
+                 (lambda () (star.ids:ulid :time timestamp :random random))))
+         (ids (list (bt:join-thread left) (bt:join-thread right))))
+    (is (= 26 (length (first ids))))
+    (is (= 26 (length (second ids))))
+    (is (not (string= (first ids) (second ids))))))
+
+(test failed-settlement-closes-worker-without-acknowledging
+  (let* ((stream (make-instance 'test-failed-settlement-stream))
+         (consumer (make-instance
+                    'test-failed-settlement-consumer
+                    :name "failed-settlement"
+                    :stream stream
+                    :fn (lambda (self delivery)
+                          (declare (ignore self delivery))
+                          (star.consumers:settlement-reject)))))
+    (star.consumers:run-consumer consumer)
+    (is (test-stream-closed-p stream))
+    (is (= 1 (test-stream-settlement-attempts stream)))
+    (is (= 1 (star.consumers:consumer-unsettled consumer)))
+    (is (= 0 (star.consumers:consumer-settlement-count consumer :reject)))))
+
 (test consumer-creation
   (let ((consumer (make-test-consumer :name "test" :workers 2)))
     (is (string= "test" (star.consumers:consumer-name consumer)))

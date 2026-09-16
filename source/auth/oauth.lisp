@@ -440,7 +440,7 @@
   (unless (and (listp redirect-uris) redirect-uris
                (every #'valid-https-redirect-uri-p redirect-uris))
     (signal-oauth-error "invalid_redirect_uri" "OAuth redirect URI is invalid"))
-  (let* ((client-id (format nil "oauth_~a" (cms-ulid:ulid)))
+  (let* ((client-id (format nil "oauth_~a" (star.ids:ulid)))
          (secret (random-hex star:*auth-key-secret-bytes*))
          (salt (random-hex star:*auth-salt-bytes*))
          (record
@@ -512,7 +512,7 @@
   (base64url-encode-octets (sha256 (string-octets verifier))))
 
 (defun make-oauth-secret-material (prefix)
-  (let ((id (cms-ulid:ulid))
+  (let ((id (star.ids:ulid))
         (secret (random-hex star:*auth-key-secret-bytes*)))
     (values id secret (format nil "~a~a_~a" prefix id secret))))
 

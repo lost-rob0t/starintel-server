@@ -33,7 +33,7 @@
 
 
 (defun new-correlation-id ()
-  (cms-ulid:ulid))
+  (star.ids:ulid))
 
 (defun current-correlation-id ()
   (or *http-correlation-id*
