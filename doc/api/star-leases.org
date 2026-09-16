@@ -487,7 +487,7 @@ Wrap a store into a lease runtime.
 :END:
 #+begin_src lisp
 (make-memory-lease-store (&KEY (STAR.LEASES::CLOCK #'STAR.LEASES::UNIX-TIME-MILLISECONDS)
- (STAR.LEASES::ID-GENERATOR #'CMS-ULID:ULID) STAR.LEASES::AUDIT-HOOK
+ (STAR.LEASES::ID-GENERATOR #'STAR.IDS:ULID) STAR.LEASES::AUDIT-HOOK
  STAR.LEASES::METRICS-HOOK))
 #+end_src
 Create the deterministic test backend; production code must use an owned adapter.

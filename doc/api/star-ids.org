@@ -1,0 +1,14 @@
+#+TITLE: API Reference — STAR.IDS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Functions
+*** ulid
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.IDS
+:END:
+#+begin_src lisp
+(ulid (&REST STAR.IDS::ARGUMENTS))
+#+end_src
+Generate a server-wide unique ULID while serializing cms-ulid state.
