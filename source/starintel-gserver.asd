@@ -25,6 +25,8 @@
    (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "http-contract-documents" :pathname "../cli/http-contract-documents")
    (:file "package")
+   (:file "actor-registry-package")
+   (:file "actor-registry")
    (:file "leases/package")
    (:file "leases/protocol")
    (:file "leases/memory-store")

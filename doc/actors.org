@@ -99,6 +99,49 @@ Registration maps an operator-facing string name to a Sento actor reference:
 
 Actor names in target documents must match the registered string exactly.
 
+** Pure actor manifest registry
+
+=star.actor-registry= is the deployment discovery authority for validated
+StarLang portable manifests.  It is separate from the mutable Sento actor index
+above: registry membership describes a semantic actor contract, while the Sento
+index contains live process-local actor references.
+
+The implemented slice accepts StarLang wire version 1 manifests with:
+
+- =library.name=, =library.version=, and a lowercase
+  =sha256:= digest followed by 64 hexadecimal digits;
+- actor =name=, =runtime=, =serviceUri=, =accepts=, =produces=, and
+  =capabilities=;
+- the current StarLang compatibility URI form
+  =star://domain:address:actor-name=, whose last token must equal =name=.
+
+The server validates digest syntax but does not recompute the digest because the
+portable manifest does not carry the source artifact bytes.  Compile actor
+source with the pinned StarLang compiler; its CLI hashes the exact =.star= file
+octets and emits the digest in the portable manifest.
+
+#+begin_src lisp
+(let* ((registry
+         (star.actor-registry:build-actor-registry manifests))
+       (actor
+         (star.actor-registry:actor-registry-find
+          registry
+          "star://starintel-pro-actors:localhost:mastodon")))
+  actor)
+#+end_src
+
+Listing and queries are bounded and sorted by exact service URI.  Returned rows
+are whitelist projections: they contain semantic library provenance and actor
+contract fields, but not endpoints, callbacks, runtime objects, broker routes,
+or secret references.  Duplicate URIs and conflicting semantic digests fail
+closed.
+
+The colon-form URI is reported as
+=identity_status= =legacy_star_service_uri_v1=.  It is not claimed to be the
+future RFC3986 registry resource identity.  Final URI migration, RuntimePlan,
+HTTP discovery, runtime availability, persistence, tenant policy, and dispatch
+remain separate follow-up slices.
+
 ** Target document
 
 Legacy target fields:

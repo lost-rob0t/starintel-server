@@ -54,6 +54,7 @@ symbol lacks a docstring.
 | RabbitMQ update ingest | Active | =documents.updated.#=; partial deep merge and conflict retry |
 | Target routing | Active | Local Sento actor or =actors.<name>.new.target= |
 | Actor event storage | Active | Local receiver and separate =events= exchange consumer |
+| Pure actor manifest registry | Active | Validates StarLang portable manifests and provides deterministic, topology-safe discovery; HTTP/runtime integration is deferred |
 | HTTP API-key authentication | Active | Default-deny bearer authentication, immutable request context, lifecycle routes, exact-origin CORS, and separate credential storage |
 | Fine-grained route authorization | Active | Closed capabilities and tenant/dataset/actor/target scopes enforced at HTTP and embedded service boundaries; unmapped routes deny |
 | Authentication revocation cache | Active | No credential cache; committed revoke/disable is visible to the next verifier lookup |

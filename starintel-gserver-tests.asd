@@ -26,6 +26,7 @@
      (:file "consumers-test")
      (:file "init-loader-test")
      (:file "target-routing-test")
+     (:file "actor-registry-test")
      (:file "system-load-test")
      (:file "couchdb-actor-test")
      (:file "couchdb-session-test")
