@@ -100,6 +100,53 @@
     (is (= 26 (length (second ids))))
     (is (not (string= (first ids) (second ids))))))
 
+(test concurrent-quarantine-records-have-distinct-ids
+  (let* ((timestamp 123456789000111)
+         (arrivals 0)
+         (arrival-lock (bt:make-lock "quarantine-ulid-test"))
+         (original-clock (symbol-function 'cms-ulid::unix-ts-ms))
+         (original-random (symbol-function 'crypto:strong-random))
+         (ids nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'cms-ulid::unix-ts-ms)
+                 (lambda () timestamp)
+                 (symbol-function 'crypto:strong-random)
+                 (lambda (limit)
+                   (declare (ignore limit))
+                   (bt:with-lock-held (arrival-lock)
+                     (incf arrivals))
+                   (let ((deadline (+ (get-internal-real-time)
+                                      (/ internal-time-units-per-second 10))))
+                     (loop until (or (= 2 arrivals)
+                                     (>= (get-internal-real-time) deadline))
+                           do (sleep 0.001)))
+                   17))
+           (setf ids
+                 (loop for index below 2
+                       collect
+                       (bt:make-thread
+                        (lambda ()
+                          (let ((stream (make-mock-retrying-rabbit-stream)))
+                            (setf (star.consumers:retry-stream-current-properties
+                                   stream)
+                                  (list (cons :message-id
+                                              (format nil "delivery-~d" index))
+                                        (cons :correlation-id "trace")))
+                            (jsown:val
+                             (star.consumers::quarantine-record
+                              stream (star.consumers:settlement-reject))
+                             "_id"))))))
+           (setf ids (mapcar #'bt:join-thread ids)))
+      (setf (symbol-function 'cms-ulid::unix-ts-ms) original-clock
+            (symbol-function 'crypto:strong-random) original-random))
+    (is (= 2 (length ids)))
+    (is (every (lambda (id) (and (stringp id)
+                                 (= 37 (length id))
+                                 (search "quarantine:" id :end2 11)))
+               ids))
+    (is (not (string= (first ids) (second ids))))))
+
 (test failed-settlement-closes-worker-without-acknowledging
   (let* ((stream (make-instance 'test-failed-settlement-stream))
          (consumer (make-instance
