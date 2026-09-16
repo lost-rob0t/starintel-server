@@ -2,8 +2,10 @@
 
 (defvar *event-source-mode* :off
   "OFF preserves legacy writes; SMART captures them; EXPLICIT requires metadata.")
-(defvar *event-source-max-state-bytes* (* 1024 1024))
-(defvar *event-source-max-records* 10000)
+(defvar *event-source-max-state-bytes* (* 1024 1024)
+  "Maximum UTF-8 byte length of one captured or replayed public after-image.")
+(defvar *event-source-max-records* 10000
+  "Maximum records per replay batch or captured per-document history.")
 (defparameter +replay-protocol+ "starintel.event-source/1")
 (defparameter +replay-entry-key+ "replay_record")
 (defparameter +replay-request-key+ "event_source_request")
@@ -16,7 +18,11 @@
   ((code :initarg :code :reader event-source-error-code))
   (:report (lambda (condition stream)
              (format stream "Event source rejected operation: ~a"
-                     (event-source-error-code condition)))))
+                     (event-source-error-code condition))))
+  (:documentation "A fail-closed capture, archive, protocol or replay validation error."))
+
+(setf (documentation 'event-source-error-code 'function)
+      "Return the stable rejection code without exposing document payloads.")
 
 (defun replay-fail (code)
   (error 'event-source-error :code code))
