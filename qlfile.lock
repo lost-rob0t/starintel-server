@@ -66,6 +66,10 @@
  (:class qlot/source/github:source-github
   :initargs (:repos "lost-rob0t/star-cl" :ref nil :branch nil :tag nil)
   :version "github-9ce8f88f57fb7ac143851f7fd2c75dccd6a40cc3"))
+("tek9" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "lost-rob0t/tek9" :ref "1cb978084da8b4f1d184b3ef2a1d30057f525608" :branch nil :tag nil)
+  :version "github-1cb978084da8b4f1d184b3ef2a1d30057f525608"))
 ("cl-couch" .
  (:class qlot/source/github:source-github
   :initargs (:repos "lost-rob0t/cl-couch" :ref nil :branch nil :tag nil)

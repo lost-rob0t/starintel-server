@@ -17,6 +17,7 @@ ql cl+ssl :latest
 
 # GitHub repositories
 github lost-rob0t/star-cl
+github lost-rob0t/tek9
 github lost-rob0t/cl-couch
 github mdbergmann/cl-gserver
 github lokedhs/cl-rabbit
