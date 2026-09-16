@@ -9,5 +9,6 @@
 (defvar *ulid-lock* (bt:make-lock "starintel-ulid"))
 
 (defun ulid (&rest arguments)
+  "Generate a server-wide unique ULID while serializing cms-ulid state."
   (bt:with-lock-held (*ulid-lock*)
     (apply #'cms-ulid:ulid arguments)))
