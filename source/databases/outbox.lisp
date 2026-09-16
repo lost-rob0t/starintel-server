@@ -1,5 +1,11 @@
 (in-package :star.databases.couchdb)
 
+;; Optional commit/publication extensions. No independent actor or store authority.
+(defvar *outbox-entry-decorator* nil)
+(defvar *outbox-before-publish* nil)
+(defvar *outbox-source-database* nil)
+(defvar *outbox-store-client* nil)
+
 (defparameter +outbox-extension-key+ "_server_outbox")
 (defparameter +mutation-ledger-extension-key+ "_server_mutations")
 (defparameter +mutation-id-extension-key+ "mutation_id")
@@ -294,6 +300,8 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
               content-hash
               operation
               sequence)))
+      (when *outbox-entry-decorator*
+        (setf entry (funcall *outbox-entry-decorator* existing document entry)))
       (values
        (merge-server-state
         document
@@ -383,6 +391,9 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
                       mutation-id))))))))
 
 (defun publish-outbox-entry (publish-fn entry)
+  ;; A failed archive must leave the already committed outbox entry pending.
+  (when *outbox-before-publish*
+    (funcall *outbox-before-publish* entry))
   (funcall publish-fn
            (jsown:val entry "routing_key")
            (jsown:val entry "payload")
@@ -459,14 +470,16 @@ If publication fails, the durable pending entry remains recoverable."
 (defun couchdb-process-outbox-mutation
     (client database publish-fn document operation)
   "Apply one outbox mutation to the document store."
-  (process-outbox-mutation
-   (lambda (document-id)
-     (couchdb-load-outbox-document client database document-id))
-   (lambda (state)
-     (couchdb-save-outbox-document client database state))
-   publish-fn
-   document
-   operation))
+  (let ((*outbox-source-database* database)
+        (*outbox-store-client* client))
+    (process-outbox-mutation
+     (lambda (document-id)
+       (couchdb-load-outbox-document client database document-id))
+     (lambda (state)
+       (couchdb-save-outbox-document client database state))
+     publish-fn
+     document
+     operation)))
 
 (defun couchdb-pending-outbox-documents (client database)
   "Outbox documents whose publication is still pending."
@@ -492,10 +505,12 @@ If publication fails, the durable pending entry remains recoverable."
 
 (defun recover-couchdb-outbox (client database publish-fn)
   "Replay every pending outbox mutation after a crash."
-  (recover-outbox-documents
-   (lambda (document-id)
-     (couchdb-load-outbox-document client database document-id))
-   (lambda (state)
-     (couchdb-save-outbox-document client database state))
-   publish-fn
-   (couchdb-pending-outbox-documents client database)))
+  (let ((*outbox-source-database* database)
+        (*outbox-store-client* client))
+    (recover-outbox-documents
+     (lambda (document-id)
+       (couchdb-load-outbox-document client database document-id))
+     (lambda (state)
+       (couchdb-save-outbox-document client database state))
+     publish-fn
+     (couchdb-pending-outbox-documents client database))))

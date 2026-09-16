@@ -1,0 +1,226 @@
+#+title: Optional event-source replay — issue 192, draft foundation
+
+* Status: NOT full-server replay
+
+This is a bounded, default-off implementation proposal. Do not enable it in
+production until the Lisp unit and real CouchDB/Rabbit crash tests pass. No
+live server configuration, database, actor, deployment branch or schema lock
+is changed by this work. The active lock remains release 0.9.1 / base 0.9.0;
+=starintel.event-source/1= is a separate internal event protocol.
+
+The implemented capture boundary is =prepare-outbox-mutation= for =:new= and
+=:updated= operations. It is not every durable write in the server. In
+particular =couchdb-upsert-document-update=, physical deletes, auth/user stores,
+target acceptance and actor configuration stores still need integration.
+A CLI report always says =server_fully_replayable: false= in this slice.
+
+* Modes and compatibility
+
+| Mode | Behavior on the captured outbox path |
+|------+---------------------------------------|
+| =:off= | Default; no new replay records or archive work for ordinary entries. |
+| =:smart= | Server creates replay records for existing clients; valid actor hints accepted too. |
+| =:explicit= | New logical mutations require versioned actor metadata. |
+
+For a development image, an operator may use the existing trusted init surface:
+
+#+begin_src lisp
+(setf star.databases.couchdb:*event-source-mode* :smart)
+#+end_src
+
+This example is not a new configuration control plane or a deployed default.
+Production configuration projection/validation remains integration work. An
+unknown enabled mode fails closed. Changing modes while writes are in flight
+is unsupported: quiesce intake first. DEFVAR preserves configured mode across
+reloading this file.
+
+OFF does not discard a previously committed archive obligation. Pending entries
+which already contain =replay_record= still archive before publication during
+recovery. Existing clients retain the old asynchronous HTTP acceptance semantics:
+this slice does not make an HTTP queue-acceptance response a durable commit receipt.
+
+* One authoritative commit, not a dual-write illusion
+
+The existing CouchDB document revision atomically includes its current document,
+mutation ledger, pending publication and new replay record. The decorator runs
+before that revision CAS. It performs no archive I/O. Losing the CAS cannot
+publish or archive a phantom committed event.
+
+After persistence, the existing publication path first inserts the immutable
+record into =*couchdb-event-log-database*= (normally =starintel-event-source=),
+then invokes the existing publisher and marks its existing outbox entry.
+
+#+begin_example
+validate/authorize through existing boundary
+  -> prepare document + outbox + replay record
+  -> single document revision CAS                  authoritative commit
+  -> insert committed replay record in event DB   derived durable archive
+  -> existing Rabbit publication
+  -> existing published marker
+#+end_example
+
+Archive failure leaves the committed entry pending and prevents publication
+in that attempt. Crash after archive but before publish retries the same
+scoped record identity. An archive conflict is success only after validating
+and comparing every immutable field; the adapter strips =_rev= before insert
+so a copied record cannot turn this operation into an update.
+
+The adapter uses the caller's already-owned CouchDB client, not a second
+connection held against the same bounded pool. There is no new actor system,
+thread, scheduler, broker or storage authority. Current Sento/consumer ownership
+and settlement remain in place. This is at-least-once physical delivery, not
+an exactly-once transport claim. It does not redesign #47 idempotency.
+
+The archive DB must already exist and have private server/operator ACLs. Full
+state images can contain sensitive corpus data: they are not redacted log
+messages and must not be exposed through ordinary audit-log visibility.
+Checksums are integrity checks, not signatures or protection from a database
+administrator rewriting both data and hashes. Separate ACL/retention/encryption
+and secret-recovery policies remain necessary.
+
+* Actor-aware request contract
+
+A protocol-aware actor sends an ordinary authorized document mutation with:
+
+#+begin_src json
+{
+  "extensions": {
+    "mutation_id": "stable-logical-mutation-identity",
+    "event_source_request": {
+      "protocol": "starintel.event-source/1",
+      "expected_sequence": 0,
+      "causation_id": "optional-parent-event-id"
+    }
+  }
+}
+#+end_src
+
+The example is an extension fragment, not a complete schema-valid document.
+Use =expected_sequence=0= for creation. For updates, supply the previous
+server outbox sequence. It is not a CouchDB revision or global offset.
+The event request object is closed: protocol and expected_sequence are
+required; causation_id is optional and bounded to 256 characters. Unknown
+protocol/fields or missing mutation identity fail before the outbox commit.
+A causation hint is descriptive only: it grants no actor, principal or lease
+authority. The server derives database/scope, IDs, order, timestamp and after-image.
+
+Exact duplicate logical mutations return the existing event even if a later
+mutation has advanced the stream. Same mutation identity with different
+content still uses the existing outbox conflict rule. SMART uses existing
+content-derived identity for clients without a key; this does NOT solve generic
+command/occurrence identity or A->B->A repeated-intent ambiguity (#47).
+
+No new HTTP event-ingress API or capability advertisement is added. Translating
+these typed errors to canonical synchronous HTTP 400/409 responses, source-head
+discovery and transport-level actor protocol negotiation are follow-up work.
+The metadata contract applies only where mutations reach the captured boundary.
+
+* Replay record and hashing
+
+Each record has =_id=, =hash= and these fields in this exact hash order:
+
+#+begin_example
+protocol database tenant dataset document_id stream_id event_id mutation_id
+sequence previous_hash coverage operation recorded_at causation_id state_json
+#+end_example
+
+=state_json= stores the exact public after-image JSON text, excluding =_rev=
+and all =extensions._server_*= fields. False, null and empty arrays remain
+injective in the Lisp reader. The original record's event ID is preserved;
+the archive identity is scoped by source DB, tenant, dataset and document.
+
+A scalar is encoded as UTF-8 of =s= plus its string value, or =i= plus an
+integer's base-10 decimal spelling. Prefix every encoded scalar with its
+ASCII byte length and a colon. SHA-256 hashes the concatenated bytes:
+
+- Stream ID: =["stream/v1", database, tenant, dataset, document_id]=.
+- Record ID: ="replay:" + H(["record-id/v1", stream_id, mutation_id])=.
+- Record hash: =H(["record/v1", values of the fields listed above])=.
+
+This length-prefixed format is unambiguous and does not rely on JSON key order
+or pretend to implement JCS. Hash the stored =state_json= bytes, never a parsed
+and reserialized replacement. =_rev= is an optional archive transport field,
+not hash material. Unknown record fields/protocol/effect names are rejected.
+
+* Safe replay and completeness
+
+=star.databases.couchdb:replay-event-records= is a pure reducer returning
+state-table, heads-table and complete-p. Each stream head is =(sequence hash)=.
+The input must already be ordered within each stream. Events may interleave
+across streams; wall clocks do not define a global transaction order. Replay
+checks identity, scope, hash, exact predecessor and contiguous sequence.
+Repeated identical records are no-ops; conflicting identity reuse is an error.
+It never calls archive, publish, actor, timer, billing, HTTP or lease functions.
+
+=new= creates state, =updated= replaces its public after-image, =deleted=
+requires an empty state_json tombstone and removes the projection. This slice
+implements tombstone reduction ONLY; it does not yet capture production deletes.
+Unknown transitions fail rather than inventing effects. Live reruns and target
+activation require a separate privileged operation with fresh authorization
+and current lease/fencing authority. Historical keys/leases are never revived.
+
+An independent trusted source-head manifest is required to detect a missing
+tail or entirely omitted stream. Deriving that manifest from the same incomplete
+export proves nothing. Its complete stream set must come from a consistent,
+quiesced source snapshot; the automatic exporter/manifest producer is NOT yet
+implemented. =complete-p= means the supplied scope matches that trusted manifest,
+not that every server write path was captured. Without a manifest, complete-p
+is always false.
+
+An enabled system updating a document with no captured origin emits an explicit
+=baseline= marker. The reducer rejects it unless allow-baselines is explicit,
+and never labels its earlier history complete. If capture is disabled between
+captured mutations, a sequence discontinuity is rejected. If a bypassed write
+changes the stored after-image, a later captured write rejects the mismatch.
+This cannot detect a bypassed change which was later reverted, deleted history,
+or all cross-domain writes; a coordinated bootstrap and coverage inventory
+remain mandatory. Never fabricate pre-enable history.
+
+Limits: 1 MiB per after-image and 10,000 records per reducer batch/captured
+per-document history by default. The existing outbox retains history in the
+live document: costs grow with that history. Segmented archival, total-byte
+budgets, safe pruning and large-dataset pagination are not implemented. Limit
+exhaustion fails rather than silently truncating replay evidence.
+
+* Offline verifier / shadow files
+
+#+begin_src sh
+python3 scripts/starintel-replay.py authorized-events.ndjson \
+  --database starintel --tenant tenant-a --dataset fixture \
+  --heads independent-source-heads.json --output ./replay-shadow
+#+end_src
+
+The Python tool imports no network clients. It validates the versioned records
+and exact scope, and optionally writes =documents.ndjson=, =heads.json= and
+=report.json= into a NEW private directory (0700; files 0600). Existing paths
+and symlinks are refused. =report.json= is written last as the completion marker;
+a process kill can leave an incomplete directory without that marker. No
+fsync/crash-durability or live cutover guarantee is claimed by this utility.
+An ordinary write error removes the directory it created, never an existing one.
+
+Without an independent manifest the command fails by default; explicit
+=--allow-incomplete= permits inspection, not production restoration. Baselines
+also require =--allow-baselines= and cannot yield a complete-history report.
+JSON duplicate keys, trailing tokens and non-finite numbers fail in this tool.
+The Lisp reducer consumes trusted server-produced state_json through the existing
+injective JSOWN codec; it is not a replacement for #130's strict untrusted HTTP
+parser. Authorize source access and protect output as sensitive backups.
+
+* Required before full-server replay or merge
+
+1. Execute the new Lisp suite and existing required unit/integration/schema gates.
+   Verify real CouchDB conflicts, crash points and Rabbit settlement on the exact head.
+2. Route ALL durable mutators through their canonical atomic event/outbox seams:
+   CRUD/upsert/delete, bulk/HTTP/Rabbit/embedded writes, target/actor configs,
+   ACL/group/key metadata, quota usage and other server-owned persistent state.
+3. Add durable delete tombstones without deleting their history; define recreate
+   identity, privacy erasure and retention policies. Never restore erased secrets.
+4. Build a coordinated baseline, consistent bounded exporter/source-head manifest,
+   immutable archive access controls, checkpoints, resumable shadow DB projections,
+   deterministic verification and explicit generation cutover/rollback.
+5. Rebuild projections without re-executing external actors, charges or callbacks.
+   External identity/billing systems remain external authorities.
+6. Expose canonical authorized APIs/capabilities/CLI status which report coverage
+   honestly; integrate deployment configuration only after review and verification.
+
+The parent issue stays open. Do not call this draft full event sourcing.

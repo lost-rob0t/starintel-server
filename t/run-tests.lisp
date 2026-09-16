@@ -9,6 +9,7 @@
     couchdb-actor-tests
     couchdb-session-tests
     event-actor-tests
+    event-source-tests
     dataset-export-tests
     couchdb-view-request-tests
     lease-store-contract-tests

@@ -36,6 +36,7 @@
    (:file "databases/view-request")
    (:file "databases/export")
    (:file "databases/outbox")
+   (:file "databases/event-source")
    (:file "databases/view-registry-package")
    (:file "databases/view-registry")
    (:file "databases/document-update-package")
