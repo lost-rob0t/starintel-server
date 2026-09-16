@@ -17,13 +17,15 @@
 
 (defstruct (bulk-ingest-job
             (:constructor make-bulk-ingest-job
-                (&key id principal documents correlation-id service-context
+                (&key id principal documents (total (length documents))
+                      correlation-id service-context
                       submitted-at (status :queued) (succeeded 0) (failed 0)
                       error-code)))
-  "One bulk ingest job: documents plus options."
+  "One bulk ingest job; terminal jobs retain counts, not request payloads."
   id
   principal
   documents
+  total
   correlation-id
   service-context
   submitted-at
@@ -51,7 +53,7 @@
     ("job_id" (bulk-ingest-job-id job))
     ("status" (string-downcase
                 (symbol-name (bulk-ingest-job-status job))))
-    ("total" (length (bulk-ingest-job-documents job)))
+    ("total" (bulk-ingest-job-total job))
     ("succeeded" (bulk-ingest-job-succeeded job))
     ("failed" (bulk-ingest-job-failed job))
     ("correlation_id" (bulk-ingest-job-correlation-id job))))
@@ -149,32 +151,38 @@
 (defun execute-bulk-job (job &key (publish-fn #'publish-document))
   "Apply every document of a bulk job; returns per-document outcomes."
   (setf (bulk-ingest-job-status job) :running)
-  (let ((*service-call-context* (bulk-ingest-job-service-context job)))
-    (handler-case
-        (progn
-          (loop for document in (bulk-ingest-job-documents job)
-                do (handler-case
-                       (progn
-                         (funcall publish-fn document)
-                         (incf (bulk-ingest-job-succeeded job)))
-                     (error (condition)
-                       (log:error
-                        "Bulk publish failed job=~a correlation=~a: ~a"
+  (unwind-protect
+       (let ((*service-call-context* (bulk-ingest-job-service-context job)))
+         (handler-case
+             (progn
+               (loop for document in (bulk-ingest-job-documents job)
+                     do (handler-case
+                            (progn
+                              (funcall publish-fn document)
+                              (incf (bulk-ingest-job-succeeded job)))
+                          (error (condition)
+                            (log:error
+                             "Bulk publish failed job=~a correlation=~a: ~a"
+                             (bulk-ingest-job-id job)
+                             (bulk-ingest-job-correlation-id job)
+                             condition)
+                            (incf (bulk-ingest-job-failed job)))))
+               (setf (bulk-ingest-job-status job)
+                     (if (zerop (bulk-ingest-job-failed job))
+                         :completed
+                         :completed-with-errors)))
+           (error (condition)
+             (log:error "Bulk job failed job=~a correlation=~a: ~a"
                         (bulk-ingest-job-id job)
                         (bulk-ingest-job-correlation-id job)
                         condition)
-                       (incf (bulk-ingest-job-failed job)))))
-          (setf (bulk-ingest-job-status job)
-                (if (zerop (bulk-ingest-job-failed job))
-                    :completed
-                    :completed-with-errors)))
-      (error (condition)
-        (log:error "Bulk job failed job=~a correlation=~a: ~a"
-                   (bulk-ingest-job-id job)
-                   (bulk-ingest-job-correlation-id job)
-                   condition)
-        (setf (bulk-ingest-job-status job) :failed
-              (bulk-ingest-job-error-code job) "bulk_job_failed"))))
+             (setf (bulk-ingest-job-status job) :failed
+                   (bulk-ingest-job-error-code job) "bulk_job_failed"))))
+    (when (eq (bulk-ingest-job-status job) :running)
+      (setf (bulk-ingest-job-status job) :failed
+            (bulk-ingest-job-error-code job) "bulk_job_failed"))
+    (setf (bulk-ingest-job-documents job) nil
+          (bulk-ingest-job-service-context job) nil))
   job)
 
 (defun bulk-worker-handler (job)
