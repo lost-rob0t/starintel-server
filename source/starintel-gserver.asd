@@ -34,6 +34,7 @@
    (:file "leases/valkey-list-store")
    (:file "gserver-settings")
    (:file "event-store/tek9")
+   (:file "event-store/documentation")
    (:file "databases/couchdb")
    (:file "databases/view-request")
    (:file "databases/export")
