@@ -25,6 +25,7 @@
    (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "http-contract-documents" :pathname "../cli/http-contract-documents")
    (:file "package")
+   (:file "event-store/package")
    (:file "leases/package")
    (:file "leases/protocol")
    (:file "leases/memory-store")
@@ -32,6 +33,7 @@
    (:file "leases/valkey-store")
    (:file "leases/valkey-list-store")
    (:file "gserver-settings")
+   (:file "event-store/tek9")
    (:file "databases/couchdb")
    (:file "databases/view-request")
    (:file "databases/export")
@@ -55,10 +57,10 @@
    (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "addons")
-(:file "observability-gserver")
-    (:file "observability-consumers")
-    (:file "lease-store-runtime")
-    (:file "init-loader")
+   (:file "observability-gserver")
+   (:file "observability-consumers")
+   (:file "lease-store-runtime")
+   (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
    (:file "target-repository")
@@ -94,7 +96,7 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel-observability #:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
+  (#:starintel-observability #:starintel #:tek9 #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
    #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre
