@@ -19,6 +19,14 @@
          (node (star.http.contract:operation-fbp-node-object operation)))
     (is (string= "starintel.operation/targets.create" (jsown:val node "id")))
     (is (string= "targets.create" (jsown:val node "operation_id")))
+    (is (string= (string-downcase
+                  (symbol-name (star.http.contract:http-operation-method operation)))
+                 (jsown:val node "method")))
+    (is (string= (star.http.contract:http-operation-path operation)
+                 (jsown:val node "path")))
+    (is (string= (string-downcase
+                  (symbol-name (star.http.contract:http-operation-authority operation)))
+                 (jsown:val node "authority")))
     (is (member "targets:dispatch" (jsown:val node "scopes") :test #'string=))
     (is (equal (star.http.contract:http-operation-idempotency operation)
                (jsown:val node "idempotency")))))
