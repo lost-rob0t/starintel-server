@@ -5,12 +5,11 @@
    #:migration-candidate-error
    #:migration-candidate-error-code
    #:migration-candidate-error-reason
-   #:migration-current-schema-version
    #:migration-effective-tenant
    #:migration-source-schema
    #:prepare-migration-candidate)
   (:documentation
-   "Pure StarIntel document-migration validation and invariant helpers."))
+   "Pure StarIntel document-migration invariant helpers with injected validation."))
 
 (in-package :star.migrations)
 
@@ -32,10 +31,6 @@
       "Stable machine-readable rejection code for a migration candidate.")
 (setf (documentation 'migration-candidate-error-reason 'function)
       "Human-readable rejection reason for a migration candidate.")
-
-(defun migration-current-schema-version ()
-  "Return the immutable StarIntel document schema accepted by this runtime."
-  starintel:+starintel-doc-version+)
 
 (defun copy-json-object (document)
   (jsown:with-injective-reader
@@ -97,7 +92,8 @@
        "Migration must preserve ~a (current=~s candidate=~s)"
        key before after))))
 
-(defun validate-migration-invariants (current candidate)
+(defun validate-migration-invariants
+    (current candidate target-schema)
   (unless (and (consp current) (eq (car current) :obj))
     (reject-candidate
      "current_document_required"
@@ -121,61 +117,42 @@
        "tenant_changed"
        "Migration must preserve tenant (current=~s candidate=~s)"
        current-tenant candidate-tenant)))
-  (let ((target (document-value candidate "schema_version"))
-        (expected (migration-current-schema-version)))
-    (unless (and (stringp target)
-                 (string= target expected))
+  (let ((target (document-value candidate "schema_version")))
+    (unless (and (non-empty-string-p target-schema)
+                 (stringp target)
+                 (string= target target-schema))
       (reject-candidate
        "unsupported_target_schema"
-       "Migration candidate targets ~s, but this runtime accepts ~s"
-       target expected)))
+       "Migration candidate targets ~s, but the caller accepts ~s"
+       target target-schema)))
   t)
 
-(defun strip-internal-tenancy (document)
-  (let ((tenant-id (document-value document "tenant_id"))
-        (tenant (document-value document "tenant")))
-    (when (jsown:keyp document "tenant_id")
-      (jsown:remkey document "tenant_id"))
-    (when (jsown:keyp document "tenant")
-      (jsown:remkey document "tenant"))
-    (values document tenant-id tenant)))
+(defun normalize-with-validator (candidate validator)
+  (handler-case
+      (funcall validator (copy-json-object candidate))
+    (migration-candidate-error (condition)
+      (error condition))
+    (error (condition)
+      (reject-candidate
+       "invalid_target_schema"
+       "Migrated document failed strict validation: ~a"
+       condition))))
 
-(defun restore-internal-tenancy (document tenant-id tenant)
-  (when tenant-id
-    (setf (jsown:val document "tenant_id") tenant-id))
-  (when tenant
-    (setf (jsown:val document "tenant") tenant))
-  document)
+(defun prepare-migration-candidate
+    (current candidate target-schema validator)
+  "Validate migration invariants and return VALIDATOR's normalized candidate.
 
-(defun strict-normalize-candidate (candidate)
-  (let ((copy (copy-json-object candidate)))
-    (multiple-value-bind (public tenant-id tenant)
-        (strip-internal-tenancy copy)
-      (handler-case
-          (progn
-            (star.documents:validate-v09-document public)
-            (let ((ensured (star.documents:ensure-document public)))
-              (restore-internal-tenancy ensured tenant-id tenant)))
-        (star.documents:document-schema-validation-error (condition)
-          (reject-candidate
-           "invalid_target_schema"
-           "Migrated document failed strict v0.9 validation: ~a"
-           condition))
-        (error (condition)
-          (reject-candidate
-           "invalid_target_document"
-           "Migrated document normalization failed: ~a"
-           condition))))))
+CURRENT is the document re-read immediately before commit. CANDIDATE is the
+Prolog view output. TARGET-SCHEMA comes from the caller's live schema authority;
+this library intentionally owns no schema-version constant. VALIDATOR is called
+on a defensive copy and must reject invalid target documents.
 
-(defun prepare-migration-candidate (current candidate)
-  "Validate migration invariants and return a strict normalized commit candidate.
-
-CURRENT must be the document re-read immediately before commit. CANDIDATE is
-the document emitted by the Prolog migration view. `_id`, `_rev`, dataset,
-tenant, and date_added are immutable across this operation; schema_version may
-change only to the runtime's current immutable schema. The returned document
-has passed the same strict v0.9 validator used by normal StarIntel ingest."
-  (validate-migration-invariants current candidate)
-  (let ((normalized (strict-normalize-candidate candidate)))
-    (validate-migration-invariants current normalized)
+`_id`, `_rev`, dataset, tenant, and date_added are immutable across migration.
+The normalized result is checked again so the validator cannot accidentally
+break those CAS/resource invariants."
+  (validate-migration-invariants current candidate target-schema)
+  (let ((normalized
+          (normalize-with-validator candidate validator)))
+    (validate-migration-invariants
+     current normalized target-schema)
     normalized))
