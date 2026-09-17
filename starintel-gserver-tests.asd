@@ -7,7 +7,6 @@
   :depends-on
   (#:starintel-gserver
    #:starintel-gserver-client
-   #:starintel-expert-shell
    #:star-cli
    #:star-ui
    #:star-migrations
@@ -58,7 +57,6 @@
      (:file "http-contract-documents-test")
      (:file "runtime-lifecycle-test")
      (:file "observability-test")
-     (:file "expert-shell-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
