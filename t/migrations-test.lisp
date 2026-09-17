@@ -74,6 +74,28 @@
        (lambda ()
          (migration-test-prepare current candidate)))))))
 
+(test migration-canonicalizes-legacy-dataset-alias
+  (let* ((current (migration-test-current-document))
+         (candidate (migration-test-candidate current))
+         (dataset (jsown:val current "dataset")))
+    (jsown:remkey current "dataset")
+    (setf (jsown:val current "source_dataset") dataset)
+    (is (eq candidate
+            (migration-test-prepare current candidate)))
+    (is
+     (string=
+      dataset
+      (star.migrations:migration-effective-dataset current)))))
+
+(test migration-allows-deterministic-date-added-fill
+  (let* ((current (migration-test-current-document))
+         (candidate (migration-test-candidate current))
+         (updated (jsown:val current "date_updated")))
+    (jsown:remkey current "date_added")
+    (setf (jsown:val candidate "date_added") updated)
+    (is (eq candidate
+            (migration-test-prepare current candidate)))))
+
 (test migration-dry-run-validates-without-saving
   (let* ((current (migration-test-current-document))
          (candidate (migration-test-candidate current))
@@ -130,6 +152,27 @@
     (is-false
      (star.frontends.http-api::migration-document-scope-p
       candidate "tenant-a" "other-dataset"))))
+
+(test migration-scope-understands-legacy-dataset-alias
+  (let ((legacy (migration-test-current-document)))
+    (jsown:remkey legacy "dataset")
+    (setf (jsown:val legacy "source_dataset") "migration-tests")
+    (is-true
+     (star.frontends.http-api::migration-document-scope-p
+      legacy "tenant-a" "migration-tests"))))
+
+(test migration-authorization-shadow-does-not-mutate-legacy-document
+  (let ((legacy (migration-test-current-document)))
+    (jsown:remkey legacy "dataset")
+    (setf (jsown:val legacy "source_dataset") "migration-tests")
+    (let ((shadow
+            (star.frontends.http-api::migration-authorization-shadow
+             legacy "tenant-a" "migration-tests")))
+      (is (string= "migration-tests" (jsown:val shadow "dataset")))
+      (is (string= "tenant-a" (jsown:val shadow "tenant_id")))
+      (is-false (jsown:keyp legacy "dataset"))
+      (is (string= "migration-tests"
+                   (jsown:val legacy "source_dataset"))))))
 
 (test migration-route-actions-use-existing-capabilities
   (is
