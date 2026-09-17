@@ -42,6 +42,11 @@
   (is (= (* 24 60 60)
          (star.actors:llm-budget-seconds 0.1 100.0))))
 
+(test llm-budget-rejects-non-positive-costs
+  (signals error (star.actors:llm-budget-seconds 0 10))
+  (signals error (star.actors:llm-budget-seconds 1 0))
+  (signals error (star.actors:llm-budget-seconds -1 10)))
+
 (test llm-model-name-accepts-repository-style-identifiers
   (is-true (star.actors::llm-safe-model-name-p "Qwen/Qwen3-8B"))
   (is-true (star.actors::llm-safe-model-name-p "org/model_1.0")))
@@ -65,6 +70,18 @@
   (let ((request (test-fine-tune-request)))
     (setf (jsown:val (jsown:val (jsown:val request "dataset") "artifact") "kind")
           "arbitrary-url")
+    (signals error
+      (star.actors::llm-fine-tune-request-values request))))
+
+(test llm-fine-tune-request-rejects-zero-spend-cap
+  (signals error
+    (star.actors::llm-fine-tune-request-values
+     (test-fine-tune-request :max-total 0))))
+
+(test llm-fine-tune-request-rejects-unsupported-gpu-provider
+  (let* ((request (test-fine-tune-request))
+         (policy (jsown:val request "provider_policy")))
+    (setf (jsown:val policy "gpu") "surprise-cloud")
     (signals error
       (star.actors::llm-fine-tune-request-values request))))
 
