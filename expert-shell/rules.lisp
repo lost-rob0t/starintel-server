@@ -49,6 +49,39 @@
   (lisa:retract request)
   nil)
 
+(defun client-condition-code (condition)
+  (cond
+    ((typep condition 'star.api.client:client-authentication-error)
+     :authentication-error)
+    ((typep condition 'star.api.client:client-authorization-error)
+     :authorization-error)
+    ((typep condition 'star.api.client:client-not-found-error)
+     :not-found)
+    ((typep condition 'star.api.client:client-conflict-error)
+     :conflict)
+    ((typep condition 'star.api.client:client-validation-error)
+     :validation-error)
+    ((typep condition 'star.api.client:client-rate-limit-error)
+     :rate-limited)
+    ((typep condition 'star.api.client:client-server-unavailable-error)
+     :server-unavailable)
+    ((typep condition 'star.api.client:client-timeout-error)
+     :timeout)
+    ((typep condition 'star.api.client:client-connection-error)
+     :connection-error)
+    ((typep condition 'star.api.client:client-protocol-error)
+     :protocol-error)
+    ((typep condition 'star.api.client:star-client-error)
+     :client-error)
+    (t :operation-failed)))
+
+(defun client-condition-details (condition)
+  (when (typep condition 'star.api.client:client-http-error)
+    (list :status (star.api.client:client-http-error-status condition)
+          :server-code (star.api.client:client-http-error-code condition)
+          :correlation-id (star.api.client:client-http-error-correlation-id condition)
+          :operation-id (star.api.client:client-http-error-operation-id condition))))
+
 (defun execute-planned-operation (plan)
   (unwind-protect
        (handler-case
@@ -63,15 +96,18 @@
                :code :ok
                :value (perform-operation *current-session* plan))))
          (error (condition)
-           (trace-event :error
-                        :operation (shell-plan-operation plan)
-                        :condition (princ-to-string condition))
-           (finish-result
-            (make-result
-             :success-p nil
-             :operation (shell-plan-operation plan)
-             :code :operation-failed
-             :message (princ-to-string condition)))))
+           (let ((code (client-condition-code condition)))
+             (trace-event :error
+                          :operation (shell-plan-operation plan)
+                          :code code
+                          :condition (princ-to-string condition))
+             (finish-result
+              (make-result
+               :success-p nil
+               :operation (shell-plan-operation plan)
+               :code code
+               :value (client-condition-details condition)
+               :message (princ-to-string condition))))))
     (ignore-errors (lisa:retract plan))))
 
 (defparameter *shell-rule-forms*
@@ -86,6 +122,24 @@
       =>
       (plan-request ?request :server-info :read 'plan-server-info
                     "Read StarIntel server metadata and protocol information."))
+
+    (lisa:defrule plan-auth-context (:salience 30)
+      (?request (shell-request (verb :context) (resource :auth)))
+      =>
+      (plan-request ?request :auth-context :read 'plan-auth-context
+                    "Read the authenticated StarIntel principal and authorization context."))
+
+    (lisa:defrule plan-openapi (:salience 30)
+      (?request (shell-request (verb :openapi) (resource :server)))
+      =>
+      (plan-request ?request :openapi :read 'plan-openapi
+                    "Fetch the server OpenAPI contract."))
+
+    (lisa:defrule plan-client-manifest (:salience 30)
+      (?request (shell-request (verb :manifest) (resource :server)))
+      =>
+      (plan-request ?request :client-manifest :read 'plan-client-manifest
+                    "Fetch the machine-readable StarIntel client manifest."))
 
     (lisa:defrule plan-document-get (:salience 30)
       (?request (shell-request (verb :get) (resource :document)))
@@ -218,6 +272,10 @@
       (?request (shell-request))
       =>
       (unsupported-request ?request))))
+
+(defun shell-rule-names ()
+  "Return the names of rules installed by the StarIntel expert shell."
+  (mapcar #'second *shell-rule-forms*))
 
 (defun install-shell-rules (engine)
   (lisa:with-inference-engine (engine)
