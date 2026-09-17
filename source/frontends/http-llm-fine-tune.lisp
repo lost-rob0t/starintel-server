@@ -2,8 +2,7 @@
 
 (in-package :star.frontends.http-api)
 
-(defparameter +llm-synthesis-timeout-seconds+ 3600)
-(defparameter +llm-fine-tune-submit-timeout-seconds+ 30)
+(defparameter +llm-submit-timeout-seconds+ 30)
 (defparameter +llm-status-timeout-seconds+ 10)
 
 (defun require-llm-administrator ()
@@ -28,31 +27,75 @@
        "llm_actor_unavailable"
        "llm.starintel.actor is not available")))
 
+(defun llm-actor-ask (message &optional (timeout +llm-status-timeout-seconds+))
+  (sento.actor:ask-s (require-llm-actor) message :time-out timeout))
+
 (defun handle-llm-dataset-synthesize-route (params)
   (declare (ignore params))
   (with-http-boundary ()
     (require-llm-administrator)
     (let* ((request (require-json-object (parse-json-request)))
-           (actor (require-llm-actor))
-           (body
-             (sento.actor:ask-s
-              actor
-              (list :op :synthesize :request request)
-              :time-out +llm-synthesis-timeout-seconds+)))
-      (set-response-content-type "application/x-ndjson; charset=utf-8")
-      body)))
+           (receipt
+             (llm-actor-ask
+              (list :op :synthesize-submit :request request)
+              +llm-submit-timeout-seconds+)))
+      (setf (lack.response:response-status *response*) 202)
+      (jsown:to-json receipt))))
+
+(defun handle-llm-dataset-synthesis-status-route (params)
+  (with-http-boundary ()
+    (require-llm-administrator)
+    (let* ((job-id (query-value params "job-id"))
+           (job
+             (and job-id
+                  (llm-actor-ask
+                   (list :op :synthesize-status :job-id job-id)))))
+      (unless job
+        (signal-http-input-error
+         404
+         "synthesis_job_not_found"
+         "Dataset synthesis job was not found"))
+      (jsown:to-json job))))
+
+(defun handle-llm-dataset-synthesis-result-route (params)
+  (with-http-boundary ()
+    (require-llm-administrator)
+    (let* ((job-id (query-value params "job-id"))
+           (result
+             (and job-id
+                  (llm-actor-ask
+                   (list :op :synthesize-result :job-id job-id)))))
+      (unless result
+        (signal-http-input-error
+         404
+         "synthesis_job_not_found"
+         "Dataset synthesis job was not found"))
+      (let ((status (jsown:val result "status")))
+        (cond
+          ((string= status "succeeded")
+           (set-response-content-type "application/x-ndjson; charset=utf-8")
+           (jsown:val result "output"))
+          ((string= status "failed")
+           (signal-http-input-error
+            502
+            "synthesis_failed"
+            (or (jsown:val-safe result "error")
+                "Dataset synthesis failed")))
+          (t
+           (signal-http-input-error
+            409
+            "synthesis_not_ready"
+            (format nil "Dataset synthesis is ~a" status))))))))
 
 (defun handle-llm-fine-tune-create-route (params)
   (declare (ignore params))
   (with-http-boundary ()
     (require-llm-administrator)
     (let* ((request (require-json-object (parse-json-request)))
-           (actor (require-llm-actor))
            (receipt
-             (sento.actor:ask-s
-              actor
+             (llm-actor-ask
               (list :op :fine-tune :request request)
-              :time-out +llm-fine-tune-submit-timeout-seconds+)))
+              +llm-submit-timeout-seconds+)))
       (setf (lack.response:response-status *response*) 202)
       (jsown:to-json receipt))))
 
@@ -60,13 +103,10 @@
   (with-http-boundary ()
     (require-llm-administrator)
     (let* ((job-id (query-value params "job-id"))
-           (actor (require-llm-actor))
            (job
              (and job-id
-                  (sento.actor:ask-s
-                   actor
-                   (list :op :status :job-id job-id)
-                   :time-out +llm-status-timeout-seconds+))))
+                  (llm-actor-ask
+                   (list :op :status :job-id job-id)))))
       (unless job
         (signal-http-input-error
          404
@@ -76,6 +116,12 @@
 
 (setf (ningle:route *app* "/v1/dataset/synthesize" :method :post)
       #'handle-llm-dataset-synthesize-route)
+
+(setf (ningle:route *app* "/v1/dataset/synthesize/:job-id" :method :get)
+      #'handle-llm-dataset-synthesis-status-route)
+
+(setf (ningle:route *app* "/v1/dataset/synthesize/:job-id/result" :method :get)
+      #'handle-llm-dataset-synthesis-result-route)
 
 (setf (ningle:route *app* "/v1/fine-tunes" :method :post)
       #'handle-llm-fine-tune-create-route)
