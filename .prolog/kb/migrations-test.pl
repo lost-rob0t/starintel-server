@@ -32,12 +32,37 @@ test(promote_current_emits_scoped_full_document) :-
              [[["tenant-a", "dataset-a"], Migrated]]),
     get_dict('_id', Migrated, "fixture-legacy-1"),
     get_dict('_rev', Migrated, "3-fixture"),
+    get_dict(tenant_id, Migrated, "tenant-a"),
     get_dict(schema_version, Migrated, "0.9.0"),
     get_dict(version, Migrated, 7),
     get_dict(data, Migrated, Data),
     get_dict(name, Data, "Alice Example"),
     get_dict(lineage, Migrated, Lineage),
-    get_dict(migration_from, Lineage, "0.8.0").
+    get_dict(migration_from, Lineage, "0.8.0"),
+    get_dict(schema_org, Migrated, SchemaOrg),
+    get_dict('@context', SchemaOrg, "https://schema.org/"),
+    get_dict('@type', SchemaOrg, "Person"),
+    get_dict('@id', SchemaOrg, "fixture-legacy-1"),
+    get_dict(additionalType, SchemaOrg,
+             "https://starintel.dev/dtype/person").
+
+test(legacy_tenant_is_canonicalized_to_server_tenant_id) :-
+    legacy_fixture(Base),
+    del_dict(tenant_id, Base, _, WithoutTenantId),
+    put_dict(tenant, WithoutTenantId, "tenant-b", Legacy),
+    map_view(promote_current, Legacy,
+             [[["tenant-b", "dataset-a"], Migrated]]),
+    get_dict(tenant_id, Migrated, "tenant-b"),
+    \+ get_dict(tenant, Migrated, _).
+
+test(legacy_metadata_is_preserved_in_data) :-
+    legacy_fixture(Base),
+    put_dict(metadata, Base, _{source:"legacy"}, Legacy),
+    map_view(promote_current, Legacy,
+             [[["tenant-a", "dataset-a"], Migrated]]),
+    get_dict(data, Migrated, Data),
+    get_dict(metadata, Data, Metadata),
+    get_dict(source, Metadata, "legacy").
 
 test(current_document_has_no_migration_candidate) :-
     legacy_fixture(Legacy),
