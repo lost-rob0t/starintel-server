@@ -20,7 +20,7 @@ protocol_output=$(
     '["add_fun","migration_view(version_distribution)"]' \
     '["map_doc",{"_id":"fixture-protocol","tenant_id":"tenant-a","dataset":"dataset-a","dtype":"person","schema_version":"0.8.0"}]' \
     '["reset"]' \
-    '["add_fun","call(shell('id'))"]' \
+    '["add_fun","call(shell)"]' \
   | swipl -q -s scripts/starintel-prolog-view-server.pl
 )
 
@@ -29,7 +29,7 @@ true
 true
 [[[["tenant-a","dataset-a","0.8.0","person"],1]]]
 true
-["error","unsupported_function","Unsupported StarIntel migration map function: call(shell('id'))"]
+["error","unsupported_function","Unsupported StarIntel migration map function: call(shell)"]
 EOF
 )
 
