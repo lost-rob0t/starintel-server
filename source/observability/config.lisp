@@ -1,10 +1,11 @@
 (in-package :star.observability)
 
 (defparameter *observability-enabled*
-  (or (uiop:getenv "STAR_OBSERVABILITY_ENABLED") "true")
-  "Whether telemetry is exported. Enabled by default per the locked
-observability-slice decision; set STAR_OBSERVABILITY_ENABLED=false to disable.
-Disabled mode starts no exporter thread and performs no network I/O.")
+  (or (uiop:getenv "STAR_OBSERVABILITY_ENABLED") "false")
+  "Whether telemetry is exported. Disabled by default: hosted deployments
+must opt in explicitly (the StarIntel Biz/infra policy propagates
+STAR_OBSERVABILITY_ENABLED=true). Disabled mode starts no exporter thread and
+performs no network I/O.")
 
 (defparameter *observability-endpoint*
   (or (uiop:getenv "STAR_OBSERVABILITY_ENDPOINT")
