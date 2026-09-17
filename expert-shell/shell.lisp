@@ -4,33 +4,41 @@
   (find character " \t\n\r" :test #'char=))
 
 (defun tokenize-command-line (line)
-  "Split LINE like a small shell. Quotes group tokens; backslash escapes one char."
+  "Split LINE like a small shell while preserving quoted empty tokens."
   (let ((tokens '())
         (buffer '())
         (quote-char nil)
-        (escaped-p nil))
+        (escaped-p nil)
+        (token-started-p nil))
     (labels ((flush ()
-               (when buffer
+               (when token-started-p
                  (push (coerce (nreverse buffer) 'string) tokens)
-                 (setf buffer nil))))
+                 (setf buffer nil
+                       token-started-p nil))))
       (loop for character across line do
         (cond
           (escaped-p
            (push character buffer)
-           (setf escaped-p nil))
+           (setf escaped-p nil
+                 token-started-p t))
           ((char= character #\\)
-           (setf escaped-p t))
+           (setf escaped-p t
+                 token-started-p t))
           (quote-char
            (if (char= character quote-char)
                (setf quote-char nil)
-               (push character buffer)))
+               (progn
+                 (push character buffer)
+                 (setf token-started-p t))))
           ((or (char= character #\")
                (char= character #\'))
-           (setf quote-char character))
+           (setf quote-char character
+                 token-started-p t))
           ((whitespace-char-p character)
            (flush))
           (t
-           (push character buffer))))
+           (push character buffer)
+           (setf token-started-p t))))
       (when escaped-p
         (push #\\ buffer))
       (when quote-char
@@ -48,36 +56,55 @@
 (defun token= (token name)
   (string= (token-name token) (string-downcase name)))
 
+(defun marker-name (token)
+  (cond
+    ((keywordp token)
+     (string-downcase (symbol-name token)))
+    ((and (stringp token)
+          (> (length token) 2)
+          (string= token "--" :end1 2 :end2 2))
+     (string-downcase (subseq token 2)))
+    (t nil)))
+
 (defun yes-marker-p (token)
-  (or (and (stringp token) (string= token "--yes"))
-      (eq token :yes)))
+  (string= (or (marker-name token) "") "yes"))
 
 (defun transient-marker-p (token)
-  (or (and (stringp token) (string= token "--transient"))
-      (eq token :transient)))
+  (string= (or (marker-name token) "") "transient"))
 
 (defun option-marker-p (token name)
-  (or (and (stringp token)
-           (string= token (format nil "--~a" name)))
-      (and (keywordp token)
-           (string-equal (symbol-name token) name))))
+  (string= (or (marker-name token) "") (string-downcase name)))
+
+(defun require-option-value (tail option-name)
+  (let ((value (second tail)))
+    (when (or (null value) (marker-name value))
+      (error "--~a requires a value" option-name))
+    value))
 
 (defun option-value (items name &optional default)
   (loop for tail on items
         for item = (first tail)
         when (option-marker-p item name)
-          do (return (or (second tail) default))
+          do (return (require-option-value tail name))
         finally (return default)))
 
 (defun positional-items (items option-names &key flags)
   (let ((result '()))
     (loop while items do
-      (let ((item (pop items)))
+      (let* ((item (pop items))
+             (marker (marker-name item)))
         (cond
-          ((some (lambda (name) (option-marker-p item name)) option-names)
-           (when items (pop items)))
           ((some (lambda (predicate) (funcall predicate item)) flags)
            nil)
+          (marker
+           (if (member marker option-names :test #'string=)
+               (progn
+                 (unless items
+                   (error "--~a requires a value" marker))
+                 (when (marker-name (first items))
+                   (error "--~a requires a value" marker))
+                 (pop items))
+               (error "Unknown option --~a" marker)))
           (t
            (push item result)))))
     (nreverse result)))
@@ -96,10 +123,19 @@
     ((null value) nil)
     ((integerp value) value)
     ((stringp value)
-     (or (parse-integer value :junk-allowed t)
-         (error "~a must be an integer" option-name)))
+     (multiple-value-bind (number position)
+         (parse-integer value :junk-allowed t)
+       (unless (and number (= position (length value)))
+         (error "~a must be an integer" option-name))
+       number))
     (t
      (error "~a must be an integer" option-name))))
+
+(defun parse-limit-option (value option-name default)
+  (let ((limit (or (parse-integer-option value option-name) default)))
+    (unless (plusp limit)
+      (error "~a must be greater than zero" option-name))
+    limit))
 
 (defun command-form (line)
   (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) line)))
@@ -111,8 +147,10 @@
               (read-from-string trimmed nil nil)
             (unless form
               (error "Empty command form"))
-            (unless (zerop (length (string-trim '(#\Space #\Tab #\Newline #\Return)
-                                                (subseq trimmed position))))
+            (unless (zerop
+                     (length
+                      (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                   (subseq trimmed position))))
               (error "Unexpected input after command form"))
             (unless (listp form)
               (error "Command form must be a list"))
@@ -132,8 +170,29 @@
   (or (nth index items)
       (error "Missing ~a" description)))
 
+(defun require-no-extra-positionals (items description)
+  (when items
+    (error "Unexpected ~a: ~{~a~^ ~}" description items)))
+
+(defun require-json-object-string (value description)
+  (let ((text (stringify value)))
+    (handler-case
+        (let ((parsed (jsown:parse text)))
+          (unless (and (consp parsed) (eq (first parsed) :obj))
+            (error "~a must be a JSON object" description))
+          text)
+      (error (condition)
+        (error "Invalid ~a: ~a" description condition)))))
+
+(defun require-api-path (value)
+  (let ((path (stringify value)))
+    (unless (and (plusp (length path))
+                 (char= (char path 0) #\/))
+      (error "Raw API paths must begin with /"))
+    path))
+
 (defun parse-command (line)
-  "Parse LINE into a SHELL-REQUEST. No input is EVALed."
+  "Parse LINE into a SHELL-REQUEST. Input is data only and is never EVALed."
   (let* ((items (command-form line))
          (head (first items))
          (confirmed-p (some #'yes-marker-p items)))
@@ -151,19 +210,44 @@
             (token= (second items) "info"))
        (make-request :info :server line))
 
+      ((token= head "whoami")
+       (make-request :context :auth line))
+
+      ((and (token= head "auth")
+            (second items)
+            (token= (second items) "context"))
+       (make-request :context :auth line))
+
+      ((token= head "openapi")
+       (make-request :openapi :server line))
+
+      ((token= head "manifest")
+       (make-request :manifest :server line))
+
+      ((and (token= head "client")
+            (second items)
+            (token= (second items) "manifest"))
+       (make-request :manifest :server line))
+
       ((or (token= head "doc") (token= head "document"))
        (let* ((action (require-positional items 1 "document action"))
               (tail (cddr items)))
          (cond
            ((token= action "get")
-            (make-request :get :document line
-                          :args (list :id (stringify
-                                           (require-positional tail 0 "document id")))))
+            (let ((positionals (positional-items tail '())))
+              (require-no-extra-positionals (rest positionals) "document arguments")
+              (make-request :get :document line
+                            :args (list :id
+                                        (stringify
+                                         (require-positional positionals 0 "document id"))))))
+
            ((token= action "search")
-            (let* ((limit (or (parse-integer-option (option-value tail "limit") "--limit") 25))
+            (let* ((limit (parse-limit-option
+                           (option-value tail "limit") "--limit" 25))
                    (bookmark (option-value tail "bookmark"))
                    (sort (option-value tail "sort"))
-                   (positionals (positional-items tail '("limit" "bookmark" "sort"))))
+                   (positionals
+                     (positional-items tail '("limit" "bookmark" "sort"))))
               (unless positionals
                 (error "Missing search query"))
               (make-request :search :document line
@@ -171,27 +255,41 @@
                                         :limit limit
                                         :bookmark (and bookmark (stringify bookmark))
                                         :sort (and sort (stringify sort))))))
+
            ((or (token= action "submit") (token= action "create"))
-            (let* ((positionals (positional-items tail '() :flags (list #'yes-marker-p)))
-                   (dtype (stringify (require-positional positionals 0 "document type")))
+            (let* ((positionals
+                     (positional-items tail '() :flags (list #'yes-marker-p)))
+                   (dtype
+                     (stringify
+                      (require-positional positionals 0 "document type")))
                    (json-parts (rest positionals)))
               (unless json-parts
                 (error "Missing document JSON"))
               (make-request :submit :document line
                             :confirmed-p confirmed-p
-                            :args (list :dtype dtype :json (join-items json-parts)))))
+                            :args (list :dtype dtype
+                                        :json
+                                        (require-json-object-string
+                                         (join-items json-parts)
+                                         "document JSON")))))
+
            ((token= action "delete")
-            (let ((positionals (positional-items tail '() :flags (list #'yes-marker-p))))
+            (let ((positionals
+                    (positional-items tail '() :flags (list #'yes-marker-p))))
+              (require-no-extra-positionals (rest positionals) "document arguments")
               (make-request :delete :document line
                             :confirmed-p confirmed-p
-                            :args (list :id (stringify
-                                             (require-positional positionals 0 "document id"))))))
+                            :args (list :id
+                                        (stringify
+                                         (require-positional positionals 0 "document id"))))))
+
            (t
             (make-request :unknown :document line)))))
 
       ((token= head "search")
        (let* ((tail (rest items))
-              (limit (or (parse-integer-option (option-value tail "limit") "--limit") 25))
+              (limit (parse-limit-option
+                      (option-value tail "limit") "--limit" 25))
               (positionals (positional-items tail '("limit"))))
          (unless positionals
            (error "Missing search query"))
@@ -200,35 +298,55 @@
                                    :limit limit))))
 
       ((token= head "get")
-       (make-request :get :document line
-                     :args (list :id (stringify
-                                      (require-positional (rest items) 0 "document id")))))
+       (let ((positionals (positional-items (rest items) '())))
+         (require-no-extra-positionals (rest positionals) "document arguments")
+         (make-request :get :document line
+                       :args (list :id
+                                   (stringify
+                                    (require-positional positionals 0 "document id"))))))
 
       ((or (token= head "target") (token= head "targets"))
        (let* ((action (require-positional items 1 "target action"))
               (tail (cddr items)))
          (cond
            ((token= action "list")
-            (make-request :list :target line
-                          :args (list :actor (stringify
-                                              (require-positional tail 0 "actor")))))
+            (let ((positionals (positional-items tail '())))
+              (require-no-extra-positionals (rest positionals) "target arguments")
+              (make-request :list :target line
+                            :args (list :actor
+                                        (stringify
+                                         (require-positional positionals 0 "actor"))))))
+
            ((token= action "get")
-            (make-request :get :target line
-                          :args (list :id (stringify
-                                           (require-positional tail 0 "target id")))))
+            (let ((positionals (positional-items tail '())))
+              (require-no-extra-positionals (rest positionals) "target arguments")
+              (make-request :get :target line
+                            :args (list :id
+                                        (stringify
+                                         (require-positional positionals 0 "target id"))))))
+
            ((or (token= action "create") (token= action "submit"))
-            (let* ((positionals (positional-items tail '()
-                                                  :flags (list #'yes-marker-p
-                                                               #'transient-marker-p)))
-                   (actor (stringify (require-positional positionals 0 "actor")))
+            (let* ((positionals
+                     (positional-items tail '()
+                                       :flags (list #'yes-marker-p
+                                                    #'transient-marker-p)))
+                   (actor
+                     (stringify
+                      (require-positional positionals 0 "actor")))
                    (json-parts (rest positionals)))
               (unless json-parts
                 (error "Missing target JSON"))
               (make-request :create :target line
                             :confirmed-p confirmed-p
                             :args (list :actor actor
-                                        :json (join-items json-parts)
-                                        :transient (some #'transient-marker-p tail)))))
+                                        :json
+                                        (require-json-object-string
+                                         (join-items json-parts)
+                                         "target JSON")
+                                        :transient
+                                        (not (null
+                                              (some #'transient-marker-p tail)))))))
+
            (t
             (make-request :unknown :target line)))))
 
@@ -236,36 +354,50 @@
        (let ((action (require-positional items 1 "dataset action"))
              (tail (cddr items)))
          (if (token= action "size")
-             (make-request :size :dataset line
-                           :args (list :dataset
-                                       (stringify
-                                        (require-positional tail 0 "dataset name"))))
+             (let ((positionals (positional-items tail '())))
+               (require-no-extra-positionals (rest positionals) "dataset arguments")
+               (make-request :size :dataset line
+                             :args (list :dataset
+                                         (stringify
+                                          (require-positional
+                                           positionals 0 "dataset name")))))
              (make-request :unknown :dataset line))))
 
       ((token= head "groups")
        (let* ((tail (rest items))
-              (limit (or (parse-integer-option (option-value tail "limit") "--limit") 50)))
+              (limit (parse-limit-option
+                      (option-value tail "limit") "--limit" 50))
+              (positionals (positional-items tail '("limit"))))
+         (require-no-extra-positionals positionals "group arguments")
          (make-request :list :groups line :args (list :limit limit))))
 
       ((token= head "messages")
-       (let* ((qualifier-token (require-positional items 1 "messages qualifier"))
+       (let* ((qualifier-token
+                (require-positional items 1 "messages qualifier"))
               (tail (cddr items))
-              (limit (or (parse-integer-option (option-value tail "limit") "--limit") 50))
+              (limit (parse-limit-option
+                      (option-value tail "limit") "--limit" 50))
               (positionals (positional-items tail '("limit"))))
          (cond
            ((token= qualifier-token "user")
+            (require-no-extra-positionals (rest positionals) "message arguments")
             (make-request :list :messages line
                           :qualifier :user
-                          :args (list :user (stringify
-                                             (require-positional positionals 0 "user"))
+                          :args (list :user
+                                      (stringify
+                                       (require-positional positionals 0 "user"))
                                       :limit limit)))
            ((token= qualifier-token "platform")
+            (require-no-extra-positionals (rest positionals) "message arguments")
             (make-request :list :messages line
                           :qualifier :platform
-                          :args (list :platform (stringify
-                                                 (require-positional positionals 0 "platform"))
+                          :args (list :platform
+                                      (stringify
+                                       (require-positional
+                                        positionals 0 "platform"))
                                       :limit limit)))
            ((token= qualifier-token "group")
+            (require-no-extra-positionals positionals "message arguments")
             (make-request :list :messages line
                           :qualifier :group
                           :args (list :limit limit)))
@@ -273,43 +405,55 @@
             (make-request :unknown :messages line)))))
 
       ((token= head "social")
-       (let* ((qualifier-token (require-positional items 1 "social qualifier"))
+       (let* ((qualifier-token
+                (require-positional items 1 "social qualifier"))
               (tail (cddr items))
-              (limit (or (parse-integer-option (option-value tail "limit") "--limit") 50))
+              (limit (parse-limit-option
+                      (option-value tail "limit") "--limit" 50))
               (positionals (positional-items tail '("limit"))))
          (if (token= qualifier-token "user")
-             (make-request :list :social line
-                           :qualifier :user
-                           :args (list :user (stringify
-                                              (require-positional positionals 0 "user"))
-                                       :limit limit))
+             (progn
+               (require-no-extra-positionals (rest positionals) "social arguments")
+               (make-request :list :social line
+                             :qualifier :user
+                             :args (list :user
+                                         (stringify
+                                          (require-positional positionals 0 "user"))
+                                         :limit limit)))
              (make-request :unknown :social line))))
 
       ((or (token= head "raw") (token= head "api"))
        (let* ((method-token (require-positional items 1 "HTTP method"))
               (tail (cddr items))
-              (positionals (positional-items tail '() :flags (list #'yes-marker-p)))
-              (path (stringify (require-positional positionals 0 "API path")))
+              (positionals
+                (positional-items tail '() :flags (list #'yes-marker-p)))
+              (path
+                (require-api-path
+                 (require-positional positionals 0 "API path")))
               (body-parts (rest positionals)))
          (cond
            ((token= method-token "get")
+            (require-no-extra-positionals body-parts "GET arguments")
             (make-request :get :raw line :args (list :path path)))
            ((token= method-token "post")
             (make-request :post :raw line
                           :confirmed-p confirmed-p
                           :args (list :path path
-                                      :body (and body-parts (join-items body-parts)))))
+                                      :body (and body-parts
+                                                 (join-items body-parts)))))
            ((token= method-token "put")
             (make-request :put :raw line
                           :confirmed-p confirmed-p
                           :args (list :path path
-                                      :body (and body-parts (join-items body-parts)))))
+                                      :body (and body-parts
+                                                 (join-items body-parts)))))
            ((token= method-token "delete")
+            (require-no-extra-positionals body-parts "DELETE arguments")
             (make-request :delete :raw line
                           :confirmed-p confirmed-p
                           :args (list :path path)))
            (t
-            (make-request :unknown :raw line))))))
+            (make-request :unknown :raw line)))))
 
       (t
        (make-request :unknown :unknown line)))))
@@ -329,6 +473,12 @@
        (star.api.client:health client))
       (:server-info
        (star.api.client:server-info client))
+      (:auth-context
+       (star.api.client:auth-context client))
+      (:openapi
+       (star.api.client:fetch-openapi-document client))
+      (:client-manifest
+       (star.api.client:fetch-client-manifest client))
       (:document-get
        (star.api.client:get-document client (require-plan-arg plan :id)))
       (:document-search
@@ -384,38 +534,44 @@
       (:raw-get
        (star.api.client:api-request client (require-plan-arg plan :path)))
       (:raw-post
-       (star.api.client:api-request client (require-plan-arg plan :path)
-                                    :method :post
-                                    :content (getf (shell-plan-args plan) :body)))
+       (star.api.client:api-request
+        client (require-plan-arg plan :path)
+        :method :post
+        :content (getf (shell-plan-args plan) :body)))
       (:raw-put
-       (star.api.client:api-request client (require-plan-arg plan :path)
-                                    :method :put
-                                    :content (getf (shell-plan-args plan) :body)))
+       (star.api.client:api-request
+        client (require-plan-arg plan :path)
+        :method :put
+        :content (getf (shell-plan-args plan) :body)))
       (:raw-delete
-       (star.api.client:api-request client (require-plan-arg plan :path)
-                                    :method :delete))
+       (star.api.client:api-request
+        client (require-plan-arg plan :path)
+        :method :delete))
       (otherwise
        (error "No executor for operation ~s" (shell-plan-operation plan))))))
 
 (defun make-shell-session (&key client
                                 (base-url "http://127.0.0.1:5000")
                                 api-key)
-  (let* ((client (or client
-                     (let ((base (star.api.client:make-star-client
-                                  :base-url base-url)))
-                       (if api-key
-                           (star.api.client:client-with-api-key base api-key)
-                           base))))
+  (let* ((client
+           (or client
+               (let ((base
+                       (star.api.client:make-star-client :base-url base-url)))
+                 (if api-key
+                     (star.api.client:client-with-api-key base api-key)
+                     base))))
          (engine (lisa:make-inference-engine))
-         (session (make-instance 'shell-session
-                                 :client client
-                                 :engine engine)))
+         (session
+           (make-instance 'shell-session :client client :engine engine)))
     (install-shell-rules engine)
     session))
 
 (defparameter *operation-catalog*
   '("health | status"
     "info | server info"
+    "whoami | auth context"
+    "openapi"
+    "manifest | client manifest"
     "doc get ID"
     "doc search QUERY [--limit N] [--bookmark B] [--sort FIELD]"
     "doc submit DTYPE JSON --yes"
@@ -435,7 +591,8 @@
     "raw delete PATH --yes"
     "why"
     "rules"
-    "help"
+    "facts"
+    "commands | help"
     "quit | exit"))
 
 (defun help-text ()
@@ -444,71 +601,146 @@
     (format stream "Commands:~%")
     (dolist (entry *operation-catalog*)
       (format stream "  ~a~%" entry))
-    (format stream "~%Lisp syntax is also accepted, e.g. (doc search \"alice\" :limit 10).~%")
-    (format stream "Mutation rules require --yes (or :yes in Lisp syntax). Input forms are read as data with *READ-EVAL* disabled.~%")))
+    (format stream
+            "~%Lisp syntax is accepted, e.g. (doc search \"alice\" :limit 10).~%")
+    (format stream
+            "Mutation rules require --yes (or :yes in Lisp syntax). Input forms are data with *READ-EVAL* disabled.~%")))
 
 (defun last-explanation (session)
-  (let ((plan (shell-session-last-plan session)))
+  (let ((plan (shell-session-last-plan session))
+        (trace (copy-tree (shell-session-trace session))))
     (if plan
         (list :rule (shell-plan-rule-name plan)
               :operation (shell-plan-operation plan)
               :risk (shell-plan-risk plan)
               :reason (shell-plan-reason plan)
-              :trace (copy-tree (shell-session-trace session)))
-        (list :message "No Lisa plan has run in this session yet."))))
+              :trace trace)
+        (list :message "No Lisa plan is associated with the last command."
+              :trace trace))))
+
+(defun session-facts (session)
+  (lisa:with-inference-engine ((shell-session-engine session))
+    (mapcar #'prin1-to-string
+            (lisa:get-fact-list (lisa:inference-engine)))))
 
 (defun meta-command-result (session line)
-  (let ((trimmed (string-downcase
-                  (string-trim '(#\Space #\Tab #\Newline #\Return) line))))
+  (let ((trimmed
+          (string-downcase
+           (string-trim '(#\Space #\Tab #\Newline #\Return) line))))
     (cond
-      ((member trimmed '("help" "?") :test #'string=)
-       (make-result :success-p t :operation :help :code :ok :value (help-text)))
+      ((member trimmed '("help" "?" "commands") :test #'string=)
+       (make-result :success-p t
+                    :operation :help
+                    :code :ok
+                    :value (help-text)))
       ((string= trimmed "rules")
-       (make-result :success-p t :operation :rules :code :ok
-                    :value (copy-list *operation-catalog*)))
+       (make-result :success-p t
+                    :operation :rules
+                    :code :ok
+                    :value (mapcar (lambda (name)
+                                     (string-downcase (symbol-name name)))
+                                   (shell-rule-names))))
+      ((string= trimmed "facts")
+       (make-result :success-p t
+                    :operation :facts
+                    :code :ok
+                    :value (session-facts session)))
       ((string= trimmed "why")
-       (make-result :success-p t :operation :why :code :ok
+       (make-result :success-p t
+                    :operation :why
+                    :code :ok
                     :value (last-explanation session)))
       (t nil))))
+
+(defun reset-command-state (session)
+  (setf (shell-session-last-result session) nil
+        (shell-session-last-plan session) nil
+        (shell-session-trace session) nil)
+  session)
+
+(defun finalize-trace (session)
+  (setf (shell-session-trace session)
+        (nreverse (shell-session-trace session)))
+  session)
 
 (defun run-command (session line)
   "Run one LINE through the Lisa planner and return a SHELL-RESULT."
   (or (meta-command-result session line)
-      (handler-case
-          (let ((request (parse-command line)))
-            (setf (shell-session-last-result session) nil
-                  (shell-session-last-plan session) nil
-                  (shell-session-trace session) nil)
-            (let ((*current-session* session))
-              (trace-event :request
-                           :verb (shell-request-verb request)
-                           :resource (shell-request-resource request)
-                           :qualifier (shell-request-qualifier request)
-                           :confirmed-p (shell-request-confirmed-p request))
-              (lisa:with-inference-engine ((shell-session-engine session))
-                (lisa:assert-instance request)
-                (lisa:run))
-              (setf (shell-session-trace session)
-                    (nreverse (shell-session-trace session)))
-              (or (shell-session-last-result session)
-                  (make-result :success-p nil
-                               :code :no-result
-                               :message "Lisa reached quiescence without producing a result."))))
-        (error (condition)
-          (let ((result (make-result :success-p nil
-                                     :code :invalid-command
-                                     :message (princ-to-string condition))))
-            (setf (shell-session-last-result session) result)
-            result)))))
+      (progn
+        (reset-command-state session)
+        (let ((*current-session* session))
+          (let ((request
+                  (handler-case
+                      (parse-command line)
+                    (error (condition)
+                      (trace-event :parse-error
+                                   :condition (princ-to-string condition))
+                      (let ((result
+                              (finish-result
+                               (make-result
+                                :success-p nil
+                                :code :invalid-command
+                                :message (princ-to-string condition)))))
+                        (finalize-trace session)
+                        (return-from run-command result))))))
+            (trace-event :request
+                         :verb (shell-request-verb request)
+                         :resource (shell-request-resource request)
+                         :qualifier (shell-request-qualifier request)
+                         :confirmed-p (shell-request-confirmed-p request))
+            (handler-case
+                (lisa:with-inference-engine ((shell-session-engine session))
+                  (lisa:assert-instance request)
+                  (lisa:run))
+              (error (condition)
+                (trace-event :inference-error
+                             :condition (princ-to-string condition))
+                (unless (shell-session-last-result session)
+                  (finish-result
+                   (make-result
+                    :success-p nil
+                    :code :inference-error
+                    :message (princ-to-string condition))))))
+            (finalize-trace session)
+            (or (shell-session-last-result session)
+                (make-result
+                 :success-p nil
+                 :code :no-result
+                 :message "Lisa reached quiescence without producing a result.")))))))
 
 (defun json-ish-p (value)
   (and (consp value)
-       (member (first value) '(:obj :array) :test #'eq)))
+       (eq (first value) :obj)))
+
+(defun plist-value-p (value)
+  (and (listp value)
+       (evenp (length value))
+       (loop for (key ignored) on value by #'cddr
+             always (progn
+                      (declare (ignore ignored))
+                      (keywordp key)))))
+
+(defun json-safe-value (value)
+  (cond
+    ((null value) :null)
+    ((member value '(:true :false :null) :test #'eq) value)
+    ((or (stringp value) (numberp value)) value)
+    ((json-ish-p value) value)
+    ((keywordp value) (string-downcase (symbol-name value)))
+    ((symbolp value) (string-downcase (symbol-name value)))
+    ((plist-value-p value)
+     (cons :obj
+           (loop for (key item) on value by #'cddr
+                 collect
+                 (cons (string-downcase (symbol-name key))
+                       (json-safe-value item)))))
+    ((listp value)
+     (mapcar #'json-safe-value value))
+    (t (prin1-to-string value))))
 
 (defun print-value (value stream)
   (cond
-    ((null value)
-     nil)
+    ((null value) nil)
     ((stringp value)
      (write-string value stream)
      (unless (and (plusp (length value))
@@ -523,17 +755,17 @@
   (jsown:to-json
    (jsown:new-js
      ("ok" (if (shell-result-success-p result) :true :false))
-     ("operation" (and (shell-result-operation result)
-                       (string-downcase
-                        (symbol-name (shell-result-operation result)))))
-     ("code" (and (shell-result-code result)
-                  (string-downcase (symbol-name (shell-result-code result)))))
-     ("message" (shell-result-message result))
-     ("value" (let ((value (shell-result-value result)))
-                (cond
-                  ((or (null value) (stringp value) (numberp value)) value)
-                  ((json-ish-p value) value)
-                  (t (prin1-to-string value)))))))))
+     ("operation"
+      (if (shell-result-operation result)
+          (string-downcase
+           (symbol-name (shell-result-operation result)))
+          :null))
+     ("code"
+      (if (shell-result-code result)
+          (string-downcase (symbol-name (shell-result-code result)))
+          :null))
+     ("message" (or (shell-result-message result) :null))
+     ("value" (json-safe-value (shell-result-value result))))))
 
 (defun render-result (result &key (stream *standard-output*) json)
   (if json
@@ -548,12 +780,15 @@
   result)
 
 (defun quit-command-p (line)
-  (member (string-downcase
-           (string-trim '(#\Space #\Tab #\Newline #\Return) line))
-          '("quit" "exit" ":q")
-          :test #'string=))
+  (member
+   (string-downcase
+    (string-trim '(#\Space #\Tab #\Newline #\Return) line))
+   '("quit" "exit" ":q")
+   :test #'string=))
 
-(defun start-repl (session &key (input *standard-input*) (output *standard-output*))
+(defun start-repl (session &key
+                              (input *standard-input*)
+                              (output *standard-output*))
   (format output "StarIntel expert shell (Lisa). Type 'help' for commands.~%")
   (loop
     (format output "star> ")
@@ -563,12 +798,28 @@
         (return t))
       (when (quit-command-p line)
         (return t))
-      (unless (zerop (length (string-trim '(#\Space #\Tab #\Newline #\Return) line)))
+      (unless (zerop
+               (length
+                (string-trim '(#\Space #\Tab #\Newline #\Return) line)))
         (render-result (run-command session line) :stream output)))))
 
 (defun default-base-url ()
   (or (uiop:getenv "STAR_SERVER_URL")
       "http://127.0.0.1:5000"))
+
+(defun escaped-command-token (token)
+  "Quote one argv TOKEN so reparsing preserves its bytes exactly."
+  (with-output-to-string (stream)
+    (write-char #\" stream)
+    (loop for character across token do
+      (when (or (char= character #\\)
+                (char= character #\"))
+        (write-char #\\ stream))
+      (write-char character stream))
+    (write-char #\" stream)))
+
+(defun command-from-argv (arguments)
+  (format nil "~{~a~^ ~}" (mapcar #'escaped-command-token arguments)))
 
 (defun parse-main-args (args)
   (let ((base-url (default-base-url))
@@ -581,11 +832,14 @@
       (let ((arg (pop args)))
         (cond
           ((member arg '("--url" "-u") :test #'string=)
-           (setf base-url (or (pop args) (error "--url requires a value"))))
+           (setf base-url
+                 (or (pop args) (error "--url requires a value"))))
           ((member arg '("--api-key" "-k") :test #'string=)
-           (setf api-key (or (pop args) (error "--api-key requires a value"))))
+           (setf api-key
+                 (or (pop args) (error "--api-key requires a value"))))
           ((member arg '("--command" "-c") :test #'string=)
-           (setf command (or (pop args) (error "--command requires a value"))))
+           (setf command
+                 (or (pop args) (error "--command requires a value"))))
           ((string= arg "--json")
            (setf json t))
           ((member arg '("--help" "-h") :test #'string=)
@@ -593,7 +847,7 @@
           (t
            (push arg positionals)))))
     (when (and (null command) positionals)
-      (setf command (format nil "~{~a~^ ~}" (nreverse positionals))))
+      (setf command (command-from-argv (nreverse positionals))))
     (values base-url api-key command json help)))
 
 (defun main ()
@@ -603,7 +857,8 @@
         (when help
           (write-string (help-text))
           (uiop:quit 0))
-        (let ((session (make-shell-session :base-url base-url :api-key api-key)))
+        (let ((session
+                (make-shell-session :base-url base-url :api-key api-key)))
           (if command
               (let ((result (run-command session command)))
                 (render-result result :json json)
