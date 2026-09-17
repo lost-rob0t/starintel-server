@@ -17,44 +17,35 @@ jobs:
   lisa-shell:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      LISP: sbcl-bin
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Common Lisp build prerequisites
+      - name: Install native build prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
-            sbcl \
             libssl-dev \
             libffi-dev \
             librabbitmq-dev \
             pkg-config
 
-      - name: Install Qlot
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --location --show-error https://qlot.tech/installer | sh
-          echo "$HOME/.qlot/bin" >> "$GITHUB_PATH"
-          "$HOME/.qlot/bin/qlot" --version
-
-      - name: Install locked Lisp dependencies
-        run: qlot install
+      - name: Set up Common Lisp and locked dependencies
+        uses: 40ants/setup-lisp@v4
 
       - name: Run expert-shell tests
-        shell: bash
+        shell: lispsh -eo pipefail {0}
         run: |
-          set -euo pipefail
           qlot exec sbcl --non-interactive --no-userinit --no-sysinit \
             --eval '(require :asdf)' \
             --eval '(asdf:test-system :starintel-expert-shell-tests)'
 
       - name: Build star-expert executable
-        shell: bash
+        shell: lispsh -eo pipefail {0}
         run: |
-          set -euo pipefail
           qlot exec sbcl --non-interactive --no-userinit --no-sysinit \
             --eval '(require :asdf)' \
             --eval '(asdf:make :starintel-expert-shell)'
