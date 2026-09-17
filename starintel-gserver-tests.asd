@@ -57,6 +57,7 @@
      (:file "http-contract-documents-test")
      (:file "runtime-lifecycle-test")
      (:file "observability-test")
+     (:file "migrations-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
