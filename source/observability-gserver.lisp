@@ -117,7 +117,7 @@ status and duration. Tests that swap the transport keep full control."
   (unless (get 'star-observability-transport 'installed)
     (setf *couchdb-view-transport*
           (observability-couchdb-transport *couchdb-view-transport*)
-          (get 'starintel-couchdb-observability 'installed) t)))
+          (get 'star-observability-transport 'installed) t)))
 
 (defun observability-couchdb-transport (transport)
   "Wrap a CouchDB view transport function (CLIENT REQUEST) with a client
