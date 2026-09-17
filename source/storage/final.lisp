@@ -13,6 +13,18 @@
     (not (null
           (object-slot-object extensions +document-storage-extension-key+)))))
 
+(defun canonical-storage-payload (document)
+  "Serialize only canonical public document content for external storage.
+
+CouchDB revision, durable outbox state, mutation ledgers, and placement metadata
+remain in CouchDB. This keeps the object hash stable when only server bookkeeping
+changes and lets cold/archive stubs recover/publish outbox entries independently."
+  (let ((copy
+          (star.databases.couchdb::public-document-copy
+           (clone-json document))))
+    (remove-storage-metadata! copy)
+    (jsown:to-json copy)))
+
 (defun storage-object-key (document &optional content-sha256)
   "Return a tenant/dataset scoped object key.
 
@@ -31,6 +43,28 @@ currently committed CouchDB revision."
             (and content-sha256
                  (safe-key-component content-sha256)))))
 
+(defun cleanup-old-object-copy (old-metadata new-document)
+  "Best-effort retirement of the object superseded by NEW-DOCUMENT.
+
+Cleanup is deliberately post-commit. A failure can leak an orphan but must not
+turn a successful CouchDB commit into a false transaction failure."
+  (let* ((old-backend (normalize-storage-token
+                       (jsown:val-safe old-metadata "backend")))
+         (old-key (jsown:val-safe old-metadata "object_key"))
+         (new-backend (document-storage-backend-name new-document))
+         (new-key (document-storage-object-key new-document)))
+    (when (and (stringp old-backend)
+               (not (string= old-backend "couchdb"))
+               (stringp old-key)
+               (or (not (string= old-backend new-backend))
+                   (not (and new-key (string= old-key new-key)))))
+      (handler-case
+          (storage-delete (resolve-storage-backend old-backend) old-key)
+        (error (condition)
+          (log:warn "Post-commit object cleanup failed for ~a: ~a"
+                    old-key condition)
+          nil)))))
+
 (defun save-document-placement (client database document tier)
   "Persist DOCUMENT in TIER using an immutable external object commit.
 
@@ -46,6 +80,18 @@ observe the committed revision rather than the pre-write candidate."
          (object-key
            (and external-p
                 (storage-object-key document content-sha256)))
+         (old-metadata
+           (and (document-storage-metadata-present-p document)
+                (document-storage-metadata document)))
+         (same-object-p
+           (and old-metadata
+                external-p
+                (string= backend-name
+                         (normalize-storage-token
+                          (jsown:val-safe old-metadata "backend")))
+                (stringp (jsown:val-safe old-metadata "object_key"))
+                (string= object-key
+                         (jsown:val-safe old-metadata "object_key"))))
          (metadata
            (storage-metadata
             normalized-tier
@@ -60,7 +106,7 @@ observe the committed revision rather than the pre-write candidate."
            (if (offloaded-tier-p normalized-tier)
                (storage-document-stub document metadata)
                (set-storage-metadata! (clone-json document) metadata))))
-    (when external-p
+    (when (and external-p (not same-object-p))
       (storage-put
        (resolve-storage-backend backend-name)
        object-key
