@@ -28,23 +28,27 @@ OpenObserve client. OpenObserve stays replaceable.
 ** Telemetry lifecycle (explicit opt-in)
 
 - The addon is registered at gserver load (metadata only).
-- Nothing runs until the operator adds =(load-addon :starintel-observability)=
-  to the trusted init file. Without it: no exporter thread, no queues, no
-  ids, no counters (verified by the =disabled-addon-costs-nothing= test).
-- Export is additionally fail-safe gated by =STAR_OBSERVABILITY_ENABLED=,
-  which defaults to =false=. The addon starts an exporter only when the value
-  is explicitly set to =true= (or another documented truthy value).
-- Hosted deployments get that explicit flag from the StarIntel Biz/infra
-  =starintel.biz.observability.enable= switch; loading the addon alone is not
-  consent to export telemetry.
-- =stop-runtime= is NOT wired to telemetry; the addon lifecycle owns
-  start/stop, exactly like =starintel-bixby=.
+- =STAR_OBSERVABILITY_ENABLED= defaults to =false=. With the gate off, the
+  actor-start hook is a strict no-op: no exporter thread, queues, ids or
+  counters are started.
+- When the gate is explicitly true, =maybe-autoload-observability-addon= runs
+  from =*actors-start-hook*= after the trusted init file and actor system have
+  started, but before the HTTP listener. It starts the normal addon lifecycle;
+  this is not a second exporter path.
+- A trusted init file may still call =(load-addon :starintel-observability)=
+  explicitly. =load-addon= is idempotent, so an explicit init call and the
+  hosted autoload gate safely converge on the same addon instance.
+- Hosted deployments set the export gate from
+  =starintel.biz.observability.enable=. Thus one explicit Biz opt-in is enough
+  to activate StarIntel application telemetry while the default remains off.
+- =stop-runtime= is NOT wired directly to telemetry; the addon lifecycle owns
+  exporter start/stop, exactly like =starintel-bixby=.
 
 ** What is instrumented
 
 | Boundary | Signals | Where |
 |----------+---------+-------|
-| HTTP requests | server span + =starintel_http_requests_total=, duration, traceparent response header | =observability-http-middleware=, outermost in the lack builder (active only when the addon is loaded) |
+| HTTP requests | server span + =starintel_http_requests_total=, duration, traceparent response header | =observability-http-middleware=, outermost in the lack builder while the addon is active |
 | Search queries | =search.query= structured log for every query entering the authorization boundary + =starintel_search_queries_total= | =authorized-search-query= final implementation; includes denied attempts once a principal exists |
 | RabbitMQ publish | =traceparent= AMQP header (never message body), =starintel_rabbit_publish_total= / =_failures_total= | =star.actors:publish= choke-point |
 | RabbitMQ consume | consume/join spans via header extraction, =starintel_rabbit_consumed_total= / =_failures_total= | =consume= around-method in =source/observability-consumers.lisp=; properties captured in =rabbit-queue-stream= |
@@ -76,8 +80,8 @@ scope clauses. Query text is bounded at 16 KiB per event; oversized inputs keep
 the digest and original length. Do not place credentials or secrets inside a
 search expression.
 
-Like all application telemetry, query audit emission is a no-op unless the
-observability addon is loaded and log export is explicitly enabled.
+Like all application telemetry, query audit emission is a no-op unless log
+export is explicitly enabled and the addon lifecycle is active.
 
 ** Redaction
 
@@ -151,7 +155,7 @@ Run: =nix run .#star-unit-tests=.
 
 | Symptom | Check |
 |---------+-------|
-| No telemetry at the gateway | Is =STAR_OBSERVABILITY_ENABLED=true=? Was the addon loaded in init.lisp? Is =STAR_OBSERVABILITY_ENDPOINT= reachable (compose: =http://otelcol:4318=)? |
+| No telemetry at the gateway | Is =STAR_OBSERVABILITY_ENABLED=true=? Is =STAR_OBSERVABILITY_ENDPOINT= reachable (compose: =http://otelcol:4318=)? In a custom non-hosted runtime, was the addon explicitly loaded or did the actor-start hook run? |
 | Search queries absent from logs | Verify logs are included in =STAR_OBSERVABILITY_SIGNALS= and the request reaches =authorized-search-query= with an established principal. |
 | Collector export 401 | Gateway ingest token rotated: re-run =openobserve-provision= on observe (infra side); the sidecar itself holds no credential |
 | Spans missing but logs present | =STAR_OBSERVABILITY_SIGNALS= contents; collector =tail_sampling= baseline (5%) |
