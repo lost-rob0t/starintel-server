@@ -34,6 +34,13 @@
     (star.migrations:migration-candidate-error (condition)
       (star.migrations:migration-candidate-error-code condition))))
 
+(defun migration-test-prepare (current candidate)
+  (star.migrations:prepare-migration-candidate
+   current
+   candidate
+   starintel:+starintel-doc-version+
+   #'identity))
+
 (test migration-target-is-immutable-schema-not-release
   (let* ((current (migration-test-current-document))
          (candidate (migration-test-candidate current)))
@@ -43,8 +50,7 @@
       "unsupported_target_schema"
       (migration-error-code
        (lambda ()
-         (star.migrations:prepare-migration-candidate
-          current candidate)))))))
+         (migration-test-prepare current candidate)))))))
 
 (test migration-rejects-stale-revision
   (let* ((current (migration-test-current-document))
@@ -55,8 +61,7 @@
       "stale_revision"
       (migration-error-code
        (lambda ()
-         (star.migrations:prepare-migration-candidate
-          current candidate)))))))
+         (migration-test-prepare current candidate)))))))
 
 (test migration-rejects-tenant-switch
   (let* ((current (migration-test-current-document))
@@ -67,8 +72,7 @@
       "tenant_changed"
       (migration-error-code
        (lambda ()
-         (star.migrations:prepare-migration-candidate
-          current candidate)))))))
+         (migration-test-prepare current candidate)))))))
 
 (test migration-dry-run-validates-without-saving
   (let* ((current (migration-test-current-document))
