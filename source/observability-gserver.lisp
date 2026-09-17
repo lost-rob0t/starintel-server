@@ -43,18 +43,18 @@ any single segment; the empty leading segment must match."
 ;; ---- HTTP middleware wiring -----------------------------------------------
 
 (defparameter *observability-active* nil
-  "Non-nil while the observability addon has been started via the init-file
-addon lifecycle. The HTTP boundary stays a pass-through until then.")
+  "Non-nil while the observability addon has been started via the addon
+lifecycle. The HTTP boundary stays a pass-through until then.")
 
 (defun observability-active-p ()
-  "True when the observability addon was loaded via init.lisp and is active."
+  "True when the observability addon is active and export is explicitly enabled."
   (and *observability-active*
        (star.observability:observability-enabled-p)))
 
 (defun observability-maybe-wrap (app)
-  "Wrap APP with request-time observability gating. When the addon has been
-loaded through init.lisp, requests flow through the telemetry middleware;
-otherwise APP is called directly with no telemetry work."
+  "Wrap APP with request-time observability gating. When the addon is active,
+requests flow through the telemetry middleware; otherwise APP is called
+directly with no telemetry work."
   (let (memo)
     (lambda (env)
       (if (observability-active-p)
@@ -66,7 +66,7 @@ otherwise APP is called directly with no telemetry work."
 
 (defun observability-wrapped-server (app)
   "Build the observability layer used in the lack builder: a request-time
-gate that only instruments when the addon was loaded via init.lisp."
+gate that only instruments while the addon is active."
   (observability-maybe-wrap app))
 
 ;; ---- Lease metrics ---------------------------------------------------------
@@ -98,9 +98,8 @@ counter. Stale fencing-token rejections get a dedicated counter."
 ;; ---- Lifecycle -------------------------------------------------------------
 
 (defun start-observability ()
-  "Addon start (init.lisp: =load-addon :starintel-observability=): start the
-exporter thread and wire the instrumented CouchDB view transport. Safe to
-call repeatedly."
+  "Addon start: start the exporter thread and wire the instrumented CouchDB
+view transport. Safe to call repeatedly."
   (star.observability:start-exporter)
   (install-observability-couchdb-transport)
   (setf *observability-active* t))
@@ -177,6 +176,9 @@ a string or a quri URI."
 (defparameter *observability-addon-registered* nil
   "Guard so the addon registration is idempotent across ASDF reloads.")
 
+(defparameter *observability-autoload-hook-registered* nil
+  "Guard for the hosted opt-in actor-start hook across ASDF reloads.")
+
 (defun start-observability-addon ()
   "Addon start: exporter thread + transport wiring."
   (start-observability))
@@ -195,12 +197,25 @@ Registration is metadata only; the addon starts via the addon lifecycle."
                     :stop #'stop-observability-addon)
     (setf *observability-addon-registered* t)))
 
-;; Registration is metadata only (the addon-design contract): it makes the
-;; addon visible to the lifecycle and loadable from init.lisp, and it never
-;; starts telemetry by itself. Operators opt in with:
-;;
-;;   (load-addon :starintel-observability)
-;;
-;; in the trusted init file. Without that line no exporter thread, no queue,
-;; no ids, and no counters ever run.
+(defun maybe-autoload-observability-addon ()
+  "Start the registered observability addon when the explicit export gate is on.
+
+Hosted deployments set STAR_OBSERVABILITY_ENABLED from the Biz opt-in switch.
+This hook runs after the trusted init file and actor-system startup but before
+the HTTP listener, making that one explicit deployment switch sufficient to
+activate StarIntel telemetry. With the gate off it is a strict no-op. A trusted
+init file may still load the addon explicitly; LOAD-ADDON is idempotent."
+  (when (star.observability:observability-enabled-p)
+    (load-addon :starintel-observability)))
+
+(defun ensure-observability-autoload-hook ()
+  "Install the explicit-opt-in autoload hook once."
+  (unless *observability-autoload-hook-registered*
+    (nhooks:add-hook *actors-start-hook* #'maybe-autoload-observability-addon)
+    (setf *observability-autoload-hook-registered* t)))
+
+;; Registration itself remains metadata-only. The addon starts only when either
+;; a trusted init file explicitly calls LOAD-ADDON or the explicit deployment
+;; gate STAR_OBSERVABILITY_ENABLED is true when the actor-start hook runs.
 (ensure-observability-addon)
+(ensure-observability-autoload-hook)
