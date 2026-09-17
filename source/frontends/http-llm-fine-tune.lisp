@@ -21,7 +21,7 @@
           (list* :content-type content-type headers))))
 
 (defun require-llm-actor ()
-  (or star.actors:*llm-actor*
+  (or star.actors::*llm-actor*
       (signal-http-input-error
        503
        "llm_actor_unavailable"
