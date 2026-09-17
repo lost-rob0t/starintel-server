@@ -46,22 +46,27 @@ server process.
 
 ** Observability configuration
 
-Telemetry is OFF until the operator opts in from the init file:
+Telemetry export requires two explicit opt-ins:
+
+1. the deployment sets =STAR_OBSERVABILITY_ENABLED=true=; and
+2. the trusted init file loads the addon:
 
 #+begin_src lisp
 (load-addon :starintel-observability)
 #+end_src
 
-Loading the addon starts the exporter thread and wires the instrumented
-CouchDB transport. Without that line, no exporter thread, no queues, no
-ids, and no counters run; the application has no telemetry dependency. The
-env kill switch below still overrides everything.
+Loading the addon with the export gate disabled starts no exporter. Leaving the
+addon unloaded starts no exporter thread, queues, ids, or counters. Hosted
+StarIntel deployments render the export gate from
+=starintel.biz.observability.enable=, which defaults to false. This keeps both
+package installation and addon availability separate from consent to export
+telemetry.
 
 Observability env variables (read by the =star.observability= library):
 
 | Variable | Default | Meaning |
 |----------+---------+---------|
-| =STAR_OBSERVABILITY_ENABLED= | =true= | kill switch; =false= disables all export |
+| =STAR_OBSERVABILITY_ENABLED= | =false= | explicit export gate; set =true= to permit export when the addon is loaded |
 | =STAR_OBSERVABILITY_ENDPOINT= | =http://127.0.0.1:4318= | OTLP/HTTP collector endpoint (compose: =http://otelcol:4318=) |
 | =STAR_OBSERVABILITY_SIGNALS= | =logs,metrics,traces= | comma-separated signals to record |
 | =STAR_TRACE_SAMPLE_RATE= | =1.0= | SDK-side rate; the collector tail-samples authoritatively (5% baseline) |
@@ -121,10 +126,11 @@ as an environment variable.
 The initializer attaches =star:observability-lease-metrics-hook= to the
 store, so =starintel_lease_stale_writer_rejections_total=,
 =starintel_lease_conflicts_total= and =starintel_lease_acquisitions_total=
-flow whenever the observability addon is loaded. When Valkey is unreachable,
-lease operations degrade per the adapter's bounded retry contract: they
-return retryable =:backend-unavailable= / =:timeout= / =:outcome-unknown=
-outcomes within the caller's deadline instead of signaling.
+flow when the observability addon is loaded and the explicit export gate is
+enabled. When Valkey is unreachable, lease operations degrade per the adapter's
+bounded retry contract: they return retryable =:backend-unavailable= / =:timeout=
+/ =:outcome-unknown= outcomes within the caller's deadline instead of
+signaling.
 
 The init file can override any knob before runtime start (the environment is
 read only when the image loads):

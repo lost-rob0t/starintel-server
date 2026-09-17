@@ -25,13 +25,18 @@ OpenObserve client. OpenObserve stays replaceable.
 
 * CURRENT implementation
 
-** Telemetry lifecycle (opt-in via init file)
+** Telemetry lifecycle (explicit opt-in)
 
 - The addon is registered at gserver load (metadata only).
 - Nothing runs until the operator adds =(load-addon :starintel-observability)=
   to the trusted init file. Without it: no exporter thread, no queues, no
   ids, no counters (verified by the =disabled-addon-costs-nothing= test).
-- The env kill switch =STAR_OBSERVABILITY_ENABLED=false= overrides the addon.
+- Export is additionally fail-safe gated by =STAR_OBSERVABILITY_ENABLED=,
+  which defaults to =false=. The addon starts an exporter only when the value
+  is explicitly set to =true= (or another documented truthy value).
+- Hosted deployments get that explicit flag from the StarIntel Biz/infra
+  =starintel.biz.observability.enable= switch; loading the addon alone is not
+  consent to export telemetry.
 - =stop-runtime= is NOT wired to telemetry; the addon lifecycle owns
   start/stop, exactly like =starintel-bixby=.
 
@@ -80,7 +85,8 @@ CouchDB joins one distributed trace when each hop carries the header.
 =star.observability= is covered by =t/observability-test.lisp= (FiveAM,
 hermetic):
 
-- config: enabled by default; disabled addon costs nothing;
+- config: disabled by default; explicit truthy opt-in; disabled addon costs
+  nothing;
 - W3C traceparent round-trip + malformed rejection;
 - child context keeps trace id and records parent;
 - structural redaction incl. case-insensitive forbidden keys;
@@ -115,7 +121,7 @@ Run: =nix run .#star-unit-tests=.
 
 | Symptom | Check |
 |---------+-------|
-| No telemetry at the gateway | Was the addon loaded in init.lisp? Is =STAR_OBSERVABILITY_ENDPOINT= reachable (compose: =http://otelcol:4318=)? |
+| No telemetry at the gateway | Is =STAR_OBSERVABILITY_ENABLED=true=? Was the addon loaded in init.lisp? Is =STAR_OBSERVABILITY_ENDPOINT= reachable (compose: =http://otelcol:4318=)? |
 | Collector export 401 | Gateway ingest token rotated: re-run =openobserve-provision= on observe (infra side); the sidecar itself holds no credential |
 | Spans missing but logs present | =STAR_OBSERVABILITY_SIGNALS= contents; collector =tail_sampling= baseline (5%) |
 | Telemetry volume explosion | =STAR_ACTOR_DETAIL=, =STAR_PROLOG_DETAIL=, span budget test |
