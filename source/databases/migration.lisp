@@ -68,9 +68,27 @@ simple bounded drain."
   (let ((schema (and document
                      (jsown:val-safe document "schema_version"))))
     (and (stringp schema)
-         (string=
-          schema
-          (star.migrations:migration-current-schema-version)))))
+         (string= schema starintel:+starintel-doc-version+))))
+
+(defun strict-normalize-migration-document (candidate)
+  "Validate CANDIDATE through the canonical StarIntel document boundary.
+
+Server-private tenant fields are temporarily removed because they are not part
+of the public v0.9.0 document schema, then restored after strict validation and
+normalization."
+  (let ((tenant-id (jsown:val-safe candidate "tenant_id"))
+        (tenant (jsown:val-safe candidate "tenant")))
+    (when (jsown:keyp candidate "tenant_id")
+      (jsown:remkey candidate "tenant_id"))
+    (when (jsown:keyp candidate "tenant")
+      (jsown:remkey candidate "tenant"))
+    (star.documents:validate-v09-document candidate)
+    (let ((normalized (star.documents:ensure-document candidate)))
+      (when tenant-id
+        (setf (jsown:val normalized "tenant_id") tenant-id))
+      (when tenant
+        (setf (jsown:val normalized "tenant") tenant))
+      normalized)))
 
 (defun apply-migration-candidate
     (load-fn save-fn candidate
@@ -79,7 +97,7 @@ simple bounded drain."
 
 LOAD-FN receives the candidate `_id`. AUTHORIZE-FN, when supplied, receives
 the freshly loaded current document before validation or persistence. SAVE-FN
-receives the normalized candidate and must implement optimistic persistence.
+receives the validated candidate and must implement optimistic persistence.
 When WRITE-P is NIL the complete validation path runs but SAVE-FN is never
 called."
   (let ((id (and candidate
@@ -111,7 +129,10 @@ called."
       (handler-case
           (let ((prepared
                   (star.migrations:prepare-migration-candidate
-                   current candidate)))
+                   current
+                   candidate
+                   starintel:+starintel-doc-version+
+                   #'strict-normalize-migration-document)))
             (if write-p
                 (handler-case
                     (let ((saved (funcall save-fn prepared)))
