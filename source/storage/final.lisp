@@ -83,7 +83,8 @@ observe the committed revision rather than the pre-write candidate."
 
 Legacy/unplaced inserts adopt the tenant default. Once a document has an
 explicit placement record, including explicit HOT placement with no object key,
-later updates preserve that tier until a lifecycle transition changes it."
+later updates preserve that tier until a lifecycle transition changes it.
+External object cleanup occurs only after the CouchDB compare-and-swap commits."
   (star.databases.couchdb:upsert-document-update
    (lambda (id)
      (handler-case
@@ -91,12 +92,15 @@ later updates preserve that tier until a lifecycle transition changes it."
        (dex:http-request-not-found () nil)))
    (lambda (candidate)
      (handler-case
-         (let ((tier
-                 (if (document-storage-metadata-present-p candidate)
-                     (document-storage-tier candidate)
-                     (tenant-default-storage-tier
-                      (document-tenant candidate)))))
-           (save-document-placement client database candidate tier))
+         (let* ((old-metadata (document-storage-metadata candidate))
+                (tier
+                  (if (document-storage-metadata-present-p candidate)
+                      (document-storage-tier candidate)
+                      (tenant-default-storage-tier
+                       (document-tenant candidate))))
+                (saved (save-document-placement client database candidate tier)))
+           (cleanup-old-object-copy old-metadata saved)
+           saved)
        (dex:http-request-conflict ()
          (error 'star.databases.couchdb:document-update-store-conflict))))
    document-id
