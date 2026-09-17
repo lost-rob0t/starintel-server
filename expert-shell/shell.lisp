@@ -715,10 +715,8 @@
 (defun plist-value-p (value)
   (and (listp value)
        (evenp (length value))
-       (loop for (key ignored) on value by #'cddr
-             always (progn
-                      (declare (ignore ignored))
-                      (keywordp key)))))
+       (loop for tail on value by #'cddr
+             always (keywordp (first tail)))))
 
 (defun json-safe-value (value)
   (cond
