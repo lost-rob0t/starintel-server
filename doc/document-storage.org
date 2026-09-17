@@ -50,7 +50,7 @@ Example response:
   "tier": "cold",
   "backend": "s3",
   "state": "offloaded",
-  "object_key": "tenants/acme/datasets/example/documents/01J....json",
+  "object_key": "tenants/acme/datasets/example/documents/01J....<sha256>.json",
   "content_sha256": "...",
   "updated_at": "2026-09-16T23:00:00Z"
 }
@@ -89,8 +89,8 @@ STAR_STORAGE_TIER_BACKENDS='hot=couchdb,warm=s3,cold=s3,archive=s3'
 * S3 configuration
 
 The built-in =s3= backend uses AWS Signature Version 4 and path-style bucket
-addressing. It works with AWS S3 and S3-compatible endpoints such as MinIO when
-the endpoint supports path-style access.
+addressing. It works with AWS S3 general-purpose buckets and S3-compatible
+endpoints such as MinIO when the endpoint supports path-style access.
 
 #+begin_src sh
 STAR_S3_REGION=us-east-1
@@ -114,11 +114,20 @@ Credentials are never stored in StarIntel documents or lifecycle responses.
 
 * Failure and consistency model
 
-A transition to an external tier writes the object first and updates CouchDB
-second. Cleanup of the prior external copy occurs only after CouchDB records the
-new placement. Therefore an interrupted move may leave an orphaned object, but
-it does not delete the only canonical payload before the new placement is
-committed.
+External payloads are immutable and content-addressed. Their object keys have
+the form:
+
+#+begin_src text
+tenants/<tenant>/datasets/<dataset>/documents/<document-id>.<sha256>.json
+#+end_src
+
+A transition to an external tier stages that immutable object first and treats
+the subsequent CouchDB revision write as the commit point. Cleanup of the prior
+external copy occurs only after CouchDB records the new placement. Therefore an
+interrupted transition or optimistic concurrency conflict may leave an
+unreferenced staged object, but it cannot overwrite the external payload named
+by the currently committed CouchDB revision and cannot delete the only
+canonical payload before the new placement is committed.
 
 Deletion removes the CouchDB document first and then best-effort removes the
 external object. If object cleanup fails, the API does not falsely report that
