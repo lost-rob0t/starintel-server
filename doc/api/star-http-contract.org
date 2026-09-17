@@ -23,13 +23,25 @@ Every operation in the client contract manifest.
 :KIND: fn
 :PACKAGE: STAR.HTTP.CONTRACT
 :END:
-The full client manifest as a JSON document.
+The full client manifest and its lossless FBP projection.
 *** client-manifest-json
 :PROPERTIES:
 :KIND: fn
 :PACKAGE: STAR.HTTP.CONTRACT
 :END:
-The full client manifest serialized to JSON.
+Serialize the full client manifest and its lossless FBP projection as JSON.
+*** fbp-node-catalog-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Typed FBP descriptors derived only from the canonical HTTP operation registry.
+*** fbp-node-catalog-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Serialize the canonical HTTP-operation FBP projection as JSON.
 *** find-http-operation
 :PROPERTIES:
 :KIND: fn
@@ -178,6 +190,15 @@ The OpenAPI document serialized to JSON.
 (openapi-path (STAR.HTTP.CONTRACT::OPERATION))
 #+end_src
 Path entry of the OpenAPI document.
+*** operation-fbp-node-object
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(operation-fbp-node-object (STAR.HTTP.CONTRACT::OPERATION))
+#+end_src
+Project one canonical HTTP operation into a typed FBP component descriptor.
 *** operation-request-symbol-name
 :PROPERTIES:
 :KIND: fn
@@ -187,25 +208,3 @@ Path entry of the OpenAPI document.
 (operation-request-symbol-name (STAR.HTTP.CONTRACT::OPERATION))
 #+end_src
 Client symbol name generated for the operation.
-
-
-*** operation-fbp-node-object
-:PROPERTIES:
-:KIND: fn
-:PACKAGE: STAR.HTTP.CONTRACT
-:END:
-Project one canonical HTTP operation into a typed FBP component descriptor.
-
-*** fbp-node-catalog-document
-:PROPERTIES:
-:KIND: fn
-:PACKAGE: STAR.HTTP.CONTRACT
-:END:
-Typed FBP descriptors derived only from the canonical HTTP operation registry.
-
-*** fbp-node-catalog-json
-:PROPERTIES:
-:KIND: fn
-:PACKAGE: STAR.HTTP.CONTRACT
-:END:
-Serialize the canonical HTTP-operation FBP projection as JSON.
