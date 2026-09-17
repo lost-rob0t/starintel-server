@@ -65,7 +65,10 @@
                          (cons "required" (and (getf parameter :required) t))
                          (cons "schema" (or (getf parameter :schema) (string-schema))))
             ports))
-    (unless ports
+    ;; A node without a required input is otherwise perpetually runnable in an
+    ;; FBP scheduler.  Keep optional request inputs, but require one explicit
+    ;; control packet to start the operation.
+    (unless (some (lambda (port) (jsown:val port "required")) ports)
       (push (json-object (cons "name" "trigger")
                          (cons "source" "control")
                          (cons "required" t)
@@ -89,8 +92,19 @@
    (cons "id" (format nil "starintel.operation/~A" (http-operation-id operation)))
    (cons "component" "starintel.operation")
    (cons "operation_id" (http-operation-id operation))
+   (cons "client_name" (http-operation-client-name operation))
+   (cons "summary" (http-operation-summary operation))
+   (cons "tags" (or (http-operation-tags operation) nil))
    (cons "method" (string-downcase (symbol-name (http-operation-method operation))))
    (cons "path" (http-operation-path operation))
+   (cons "openapi_path" (openapi-path operation))
+   (cons "path_parameters" (or (http-operation-path-parameters operation) nil))
+   (cons "query_parameters"
+         (mapcar #'query-parameter-manifest-object
+                 (http-operation-query-parameters operation)))
+   (cons "request_schema" (or (http-operation-request-schema operation) :null))
+   (cons "responses" (mapcar #'response-manifest-object
+                              (http-operation-responses operation)))
    (cons "label" (http-operation-summary operation))
    (cons "category"
          (if (http-operation-tags operation)
@@ -110,7 +124,7 @@
                   (cons "type" "string")
                   (cons "pattern" "^credential:[A-Za-z0-9_.-]+$")
                   (cons "description" "Reference only; secret values are forbidden."))))
-          :required '("operation")
+          :required '("operation" "credentialReference")
           :additional-properties nil))))
 
 (defun fbp-node-catalog-document ()
