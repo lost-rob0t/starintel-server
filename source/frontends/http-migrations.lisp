@@ -52,8 +52,7 @@
     (star.migrations:migration-effective-tenant document)
     tenant)
    (let ((document-dataset
-           (star.documents:document-value
-            document "dataset" nil)))
+           (star.migrations:migration-effective-dataset document)))
      (and (stringp document-dataset)
           (string= document-dataset dataset)))))
 
@@ -63,6 +62,23 @@
      "Migration view scope mismatch for document ~s"
      (star.documents:document-value document "_id" nil)))
   document)
+
+(defun migration-authorization-shadow (document tenant dataset)
+  "Return a canonical resource-only copy for policy evaluation.
+
+Legacy persisted documents may still carry `tenant` and `source_dataset`
+aliases that the normal authorization resource extractor intentionally does not
+interpret as the modern dataset field. The migration path first proves those
+legacy aliases exactly match the requested scope, then supplies a canonical copy
+to the existing policy engine. The original persisted document is untouched."
+  (let ((copy
+          (jsown:with-injective-reader
+            (jsown:parse (jsown:to-json document)))))
+    (setf (jsown:val copy "tenant_id") tenant
+          (jsown:val copy "dataset") dataset)
+    (when (jsown:keyp copy "tenant")
+      (jsown:remkey copy "tenant"))
+    copy))
 
 (defun public-migration-document (document)
   (let ((copy
@@ -185,7 +201,7 @@
   (require-migration-document-scope document tenant dataset)
   (star.authorization:authorize-document!
    "documents:write"
-   document
+   (migration-authorization-shadow document tenant dataset)
    :principal (current-policy-principal)
    :metadata
    (route-policy-metadata
