@@ -54,14 +54,18 @@
     (signals star.storage:storage-backend-error
       (star.storage:storage-get backend "a/b.json"))))
 
-(test storage-object-key-is-tenant-and-dataset-scoped
-  (let ((key (star.storage:storage-object-key
-              (make-storage-test-document
-               :id "doc/unsafe"
-               :tenant "tenant/a"
-               :dataset "dataset/a"))))
+(test storage-object-key-is-tenant-dataset-and-content-scoped
+  (let* ((document
+           (make-storage-test-document
+            :id "doc/unsafe"
+            :tenant "tenant/a"
+            :dataset "dataset/a"))
+         (logical-key (star.storage:storage-object-key document))
+         (immutable-key (star.storage::storage-object-key document "abcd")))
     (is (string= "tenants/tenant_2F_a/datasets/dataset_2F_a/documents/doc_2F_unsafe.json"
-                 key))))
+                 logical-key))
+    (is (string= "tenants/tenant_2F_a/datasets/dataset_2F_a/documents/doc_2F_unsafe.abcd.json"
+                 immutable-key))))
 
 (test cold-storage-stub-retains-authorization-envelope-only
   (let* ((document (make-storage-test-document))
@@ -71,7 +75,7 @@
              ("tier" "cold")
              ("backend" "s3")
              ("state" "offloaded")
-             ("object_key" "tenants/tenant-a/datasets/dataset-a/documents/doc-storage-1.json")))
+             ("object_key" "tenants/tenant-a/datasets/dataset-a/documents/doc-storage-1.hash.json")))
          (stub (star.storage::storage-document-stub document metadata)))
     (is (string= "doc-storage-1" (jsown:val stub "_id")))
     (is (string= "tenant-a" (jsown:val stub "tenant_id")))
@@ -81,8 +85,9 @@
     (is (string= "cold" (star.storage:document-storage-tier stub)))
     (is (string= "s3" (star.storage:document-storage-backend-name stub)))))
 
-(test canonical-object-payload-removes-couchdb-and-placement-state
+(test canonical-object-payload-removes-couchdb-and-server-private-state
   (let* ((document (make-storage-test-document))
+         (extensions (jsown:val document "extensions"))
          (metadata
            (jsown:new-js
              ("version" 1)
@@ -90,15 +95,41 @@
              ("backend" "memory")
              ("state" "mirrored")
              ("object_key" "object.json"))))
+    (setf (jsown:val extensions star.databases.couchdb::+outbox-extension-key+)
+          (vector (jsown:new-js ("status" "pending")))
+          (jsown:val extensions star.databases.couchdb::+mutation-ledger-extension-key+)
+          (jsown:new-js ("mutation-a" "hash-a")))
     (star.storage::set-storage-metadata! document metadata)
     (let* ((payload (star.storage::canonical-storage-payload document))
            (parsed (jsown:parse payload))
-           (extensions (jsown:val parsed "extensions")))
+           (public-extensions (jsown:val parsed "extensions")))
       (is-false (jsown:keyp parsed "_rev"))
       (is-false
-       (jsown:keyp extensions star.storage:+document-storage-extension-key+))
+       (jsown:keyp public-extensions
+                   star.storage:+document-storage-extension-key+))
+      (is-false
+       (jsown:keyp public-extensions
+                   star.databases.couchdb::+outbox-extension-key+))
+      (is-false
+       (jsown:keyp public-extensions
+                   star.databases.couchdb::+mutation-ledger-extension-key+))
       (is (string= "payload"
                    (jsown:val (jsown:val parsed "data") "body"))))))
+
+(test rabbit-ingest-discards-actor-supplied-placement-state
+  (let* ((document (make-storage-test-document))
+         (metadata
+           (jsown:new-js
+             ("version" 1)
+             ("tier" "archive")
+             ("backend" "evil-backend")
+             ("state" "offloaded")
+             ("object_key" "attacker-controlled"))))
+    (star.storage::set-storage-metadata! document metadata)
+    (let ((incoming (star.rabbit::public-incoming-storage-document document)))
+      (is-false (star.storage::document-storage-metadata-present-p incoming))
+      (is (string= "payload"
+                   (jsown:val (jsown:val incoming "data") "body"))))))
 
 (test ordinary-document-egress-redacts-placement-and-injected-tenant
   (let* ((document (make-storage-test-document))
@@ -124,7 +155,7 @@
              ("tier" "cold")
              ("backend" "s3")
              ("state" "offloaded")
-             ("object_key" "tenants/tenant-a/datasets/dataset-a/documents/doc-storage-1.json")
+             ("object_key" "tenants/tenant-a/datasets/dataset-a/documents/doc-storage-1.abcd.json")
              ("content_sha256" "abcd")
              ("updated_at" "2026-09-16T00:00:00Z"))))
     (star.storage::set-storage-metadata! document metadata)
