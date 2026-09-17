@@ -1,0 +1,50 @@
+name: Request Audit
+on:
+  push:
+    branches: ["codex/200-request-audit-refusal-20260916"]
+  pull_request:
+    paths:
+      - 'addons/request-audit/**'
+      - 'tools/request-audit/**'
+      - 'tests/request-audit/**'
+      - 'starintel-request-audit.asd'
+      - '.github/workflows/request-audit.yml'
+permissions:
+  contents: read
+concurrency:
+  group: request-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pure-lisp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y sbcl
+      - run: sbcl --script tests/request-audit/core.lisp
+      - run: sbcl --script tests/request-audit/runtime.lisp
+  couchdb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      couchdb:
+        image: couchdb:3.5.2
+        ports: ["5984:5984"]
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: request-audit-ci-only
+        options: >-
+          --health-cmd "curl -f http://localhost:5984/_up || exit 1"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m unittest discover -s tests/request-audit -p 'test_*.py' -v
+      - run: python tests/request-audit/couchdb.py
+        env:
+          REQUEST_AUDIT_TEST_ADMIN_PASSWORD: request-audit-ci-only
