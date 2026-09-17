@@ -22,6 +22,7 @@ github mdbergmann/cl-gserver
 github lokedhs/cl-rabbit
 github jolby/cl-ulid
 github atlas-engineer/nhooks
+github youngde811/Lisa
 
 # GitLab repository
 git cms-ulid https://gitlab.com/colinstrickland/cms-ulid.git
