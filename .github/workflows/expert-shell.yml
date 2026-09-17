@@ -38,8 +38,8 @@ jobs:
           set -euo pipefail
           curl --fail --location --show-error https://qlot.tech/installer \
             | QLOT_BIN_DIR="$HOME/.qlot/bin" sh
+          test -x "$HOME/.qlot/bin/qlot"
           echo "$HOME/.qlot/bin" >> "$GITHUB_PATH"
-          "$HOME/.qlot/bin/qlot" --version
 
       - name: Install locked Lisp dependencies
         shell: bash
