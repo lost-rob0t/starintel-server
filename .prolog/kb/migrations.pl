@@ -122,15 +122,138 @@ dtype_alias("organization", "org").
 dtype_alias("organisation", "org").
 dtype_alias("investigation_target", "investigation-target").
 
+known_dtype("actor-manifest").
+known_dtype("address").
+known_dtype("alert").
+known_dtype("analysis").
+known_dtype("asset").
+known_dtype("breach").
+known_dtype("campaign-finance").
+known_dtype("claim").
+known_dtype("concept").
+known_dtype("contract").
+known_dtype("dataset-manifest").
+known_dtype("document").
+known_dtype("domain").
+known_dtype("education").
+known_dtype("email").
+known_dtype("email-message").
+known_dtype("employment").
+known_dtype("entity").
+known_dtype("event").
+known_dtype("evidence-record").
+known_dtype("file").
+known_dtype("financial-observation").
+known_dtype("geo").
+known_dtype("grant").
+known_dtype("host").
+known_dtype("investigation-target").
+known_dtype("legal-case").
+known_dtype("lobbying-filing").
+known_dtype("location").
+known_dtype("media").
+known_dtype("meeting").
+known_dtype("message").
+known_dtype("network").
+known_dtype("observation").
+known_dtype("operation").
+known_dtype("org").
+known_dtype("ownership").
+known_dtype("person").
+known_dtype("phone").
+known_dtype("policy").
+known_dtype("procurement").
+known_dtype("product").
+known_dtype("relation").
+known_dtype("research-node").
+known_dtype("research-pass").
+known_dtype("social-media-post").
+known_dtype("source").
+known_dtype("target").
+known_dtype("task").
+known_dtype("url").
+known_dtype("user").
+
+canonical_dtype(Raw, Dtype) :-
+    dtype_alias(Raw, Alias),
+    !,
+    Dtype = Alias.
+canonical_dtype(Raw, Raw) :-
+    known_dtype(Raw),
+    !.
+canonical_dtype(_, "document").
+
 document_dtype(Doc, Dtype) :-
     ( dict_string(Doc, dtype, Raw)
     ; dict_string(Doc, type, Raw)
     ),
     !,
-    ( dtype_alias(Raw, Dtype) -> true ; Dtype = Raw ).
+    canonical_dtype(Raw, Dtype).
 document_dtype(_, "document").
 
-date_value(Doc, Canonical, Alias, Value) :-
+schema_org_type("actor-manifest", "CreativeWork").
+schema_org_type("address", "PostalAddress").
+schema_org_type("alert", "SpecialAnnouncement").
+schema_org_type("analysis", "CreativeWork").
+schema_org_type("asset", "Thing").
+schema_org_type("breach", "Event").
+schema_org_type("campaign-finance", "CreativeWork").
+schema_org_type("claim", "Claim").
+schema_org_type("concept", "DefinedTerm").
+schema_org_type("contract", "DigitalDocument").
+schema_org_type("dataset-manifest", "Dataset").
+schema_org_type("document", "CreativeWork").
+schema_org_type("domain", "WebSite").
+schema_org_type("education", "EducationalOccupationalCredential").
+schema_org_type("email", "ContactPoint").
+schema_org_type("email-message", "Message").
+schema_org_type("employment", "OrganizationRole").
+schema_org_type("entity", "Thing").
+schema_org_type("event", "Event").
+schema_org_type("evidence-record", "CreativeWork").
+schema_org_type("file", "DigitalDocument").
+schema_org_type("financial-observation", "CreativeWork").
+schema_org_type("geo", "GeoCoordinates").
+schema_org_type("grant", "Grant").
+schema_org_type("host", "Thing").
+schema_org_type("investigation-target", "Thing").
+schema_org_type("legal-case", "CreativeWork").
+schema_org_type("lobbying-filing", "DigitalDocument").
+schema_org_type("location", "Place").
+schema_org_type("media", "MediaObject").
+schema_org_type("meeting", "Event").
+schema_org_type("message", "Message").
+schema_org_type("network", "Thing").
+schema_org_type("observation", "CreativeWork").
+schema_org_type("operation", "Action").
+schema_org_type("org", "Organization").
+schema_org_type("ownership", "Role").
+schema_org_type("person", "Person").
+schema_org_type("phone", "ContactPoint").
+schema_org_type("policy", "CreativeWork").
+schema_org_type("procurement", "DigitalDocument").
+schema_org_type("product", "Product").
+schema_org_type("relation", "Role").
+schema_org_type("research-node", "Action").
+schema_org_type("research-pass", "CreativeWork").
+schema_org_type("social-media-post", "SocialMediaPosting").
+schema_org_type("source", "CreativeWork").
+schema_org_type("target", "Thing").
+schema_org_type("task", "Action").
+schema_org_type("url", "WebPage").
+schema_org_type("user", "Person").
+
+schema_org_metadata(Dtype, Id, SchemaOrg) :-
+    ( schema_org_type(Dtype, Type) -> true ; Type = "Thing" ),
+    string_concat("https://starintel.dev/dtype/", Dtype, AdditionalType),
+    SchemaOrg = _{
+        '@context':"https://schema.org/",
+        '@type':Type,
+        '@id':Id,
+        additionalType:AdditionalType
+    }.
+
+date_value(Doc, Canonical, _, Value) :-
     dict_string(Doc, Canonical, Value),
     !.
 date_value(Doc, _, Alias, Value) :-
@@ -189,18 +312,15 @@ common_key(notes).
 common_key(schema_org).
 common_key(data).
 common_key(extensions).
-% Server-private tenancy is intentionally preserved internally.  The HTTP
-% boundary strips it again before returning a candidate to clients.
+% tenant_id is server-private and survives internally; HTTP strips it.
 common_key(tenant_id).
-common_key(tenant).
 
 legacy_alias_key(type).
+legacy_alias_key(tenant).
 legacy_alias_key(source_dataset).
 legacy_alias_key(sourceDataset).
 legacy_alias_key(dateAdded).
 legacy_alias_key(dateUpdated).
-legacy_alias_key(metadata).
-legacy_alias_key(private_metadata).
 
 split_top_level([], [], []).
 split_top_level([Key-Value|Rest], Known, Extra) :-
@@ -231,6 +351,7 @@ existing_lineage(Doc, Lineage) :-
 existing_lineage(_, _{}).
 
 base_v09(Id, Dataset, Dtype, Added, Updated, Version, Base) :-
+    schema_org_metadata(Dtype, Id, SchemaOrg),
     Base = _{
         '_id':Id,
         dataset:Dataset,
@@ -254,8 +375,8 @@ base_v09(Id, Dataset, Dtype, Added, Updated, Version, Base) :-
         temporal:_{},
         provenance:_{},
         assessment:_{},
-        verification:_{},
-        handling:_{},
+        verification:_{status:"unverified", verified:false},
+        handling:_{visibility:"public", sensitive:false, pii:false},
         lineage:_{},
         quality:_{},
         workflow:_{},
@@ -263,6 +384,7 @@ base_v09(Id, Dataset, Dtype, Added, Updated, Version, Base) :-
         attachments:[],
         related_ids:[],
         notes:[],
+        schema_org:SchemaOrg,
         data:_{},
         extensions:_{}
     }.
@@ -270,6 +392,7 @@ base_v09(Id, Dataset, Dtype, Added, Updated, Version, Base) :-
 canonicalize_v09(Doc, From, Migrated) :-
     document_id(Doc, Id),
     document_dataset(Doc, Dataset),
+    document_tenant(Doc, Tenant),
     document_dtype(Doc, Dtype),
     document_dates(Doc, Added, Updated),
     canonical_version(Doc, Version),
@@ -293,7 +416,11 @@ canonicalize_v09(Doc, From, Migrated) :-
         date_updated:Updated,
         data:Data,
         lineage:Lineage
-    }, Stage0, Migrated).
+    }, Stage0, Stage1),
+    ( Tenant = "default" ->
+        ( del_dict(tenant_id, Stage1, _, Migrated) -> true ; Migrated = Stage1 )
+    ; put_dict(tenant_id, Stage1, Tenant, Migrated)
+    ).
 
 migrate_to_current(Doc, From, Migrated) :-
     current_schema_version(Current),
