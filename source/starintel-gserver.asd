@@ -68,6 +68,7 @@
    (:file "actor-systems/event-actor")
    (:file "actor-systems/matcher-actor")
    (:file "actor-systems/llm-actor")
+   (:file "actor-systems/llm-actor-validation")
    (:file "rabbit")
    (:file "frontends/http-api")
    (:file "couchdb-session-hardening")
