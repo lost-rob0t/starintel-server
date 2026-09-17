@@ -1,4 +1,8 @@
-(in-package :star-server-tests)
+(uiop:define-package :star.expert.shell.tests
+  (:use :cl :fiveam)
+  (:export #:run-expert-shell-tests))
+
+(in-package :star.expert.shell.tests)
 
 (def-suite expert-shell-tests
   :description "Lisa-backed StarIntel operator expert shell")
@@ -119,3 +123,9 @@
                   :parsed)
               (error () :rejected))))
       (is (eq :rejected result)))))
+
+(defun run-expert-shell-tests ()
+  "Run the standalone expert-shell suite and signal on failure."
+  (unless (run! 'expert-shell-tests)
+    (error "StarIntel expert-shell tests failed"))
+  t)
