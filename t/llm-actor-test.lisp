@@ -1,7 +1,7 @@
 (in-package :star-server-tests)
 
 (def-suite llm-actor-tests
-  :description "llm.starintel.actor request, budget, and HTTP exposure tests")
+  :description "llm.starintel.actor request, budget, chat, and HTTP exposure tests")
 
 (in-suite llm-actor-tests)
 
@@ -34,6 +34,19 @@
        ("max_hourly_gpu_usd" max-hourly)
        ("max_total_gpu_usd" max-total)))))
 
+(defun test-chat-request (&key
+                            (model "openai/gpt-5.4-mini")
+                            (max-tokens 4096)
+                            (temperature 0.4))
+  (jsown:new-js
+    ("model" model)
+    ("messages"
+     (list
+      (jsown:new-js ("role" "system") ("content" "Return JSON."))
+      (jsown:new-js ("role" "user") ("content" "Generate one example."))))
+    ("temperature" temperature)
+    ("max_tokens" max-tokens)))
+
 (test llm-budget-converts-total-cost-to-runtime
   (is (= 1800 (star.actors::llm-budget-seconds 2.0 1.0)))
   (is (= 3600 (star.actors::llm-budget-seconds 0.5 0.5))))
@@ -54,6 +67,33 @@
 (test llm-model-name-rejects-shell-syntax
   (is-false (star.actors::llm-safe-model-name-p "Qwen/Qwen3-8B;curl evil"))
   (is-false (star.actors::llm-safe-model-name-p "$(touch /tmp/nope)")))
+
+(test llm-chat-request-validates-bounded-openai-shape
+  (multiple-value-bind (model messages temperature max-tokens)
+      (star.actors::llm-validate-chat-request (test-chat-request))
+    (is (string= model "openai/gpt-5.4-mini"))
+    (is (= 2 (length messages)))
+    (is (= temperature 0.4))
+    (is (= max-tokens 4096))))
+
+(test llm-chat-request-rejects-shell-model-and-unbounded-output
+  (signals error
+    (star.actors::llm-validate-chat-request
+     (test-chat-request :model "x;touch /tmp/nope")))
+  (signals error
+    (star.actors::llm-validate-chat-request
+     (test-chat-request :max-tokens 999999))))
+
+(test llm-chat-provider-policy-cannot-be-supplied-by-caller
+  (let ((request (test-chat-request)))
+    (setf (jsown:val request "provider")
+          (jsown:new-js ("sort" "throughput")))
+    ;; Validation accepts the request shape, but llm-openrouter-chat-completion
+    ;; constructs a fresh allowlisted payload and never copies provider.
+    (multiple-value-bind (model messages temperature max-tokens)
+        (star.actors::llm-validate-chat-request request)
+      (declare (ignore messages temperature max-tokens))
+      (is (string= model "openai/gpt-5.4-mini")))))
 
 (test llm-fine-tune-request-parses-canonical-artifact
   (multiple-value-bind (base-model max-seq-length gpu-ram max-hourly max-total artifact)
@@ -86,6 +126,7 @@
       (star.actors::llm-fine-tune-request-values request))))
 
 (test llm-spend-bearing-routes-are-not-public
-  (dolist (path '("/v1/dataset/synthesize"
+  (dolist (path '("/v1/chat/completions"
+                  "/v1/dataset/synthesize"
                   "/v1/fine-tunes"))
     (is (not (member path star:*auth-public-paths* :test #'string=)))))
