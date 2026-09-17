@@ -130,4 +130,5 @@
    (cons "fbp_nodes" (mapcar #'operation-fbp-node-object (all-http-operations)))))
 
 (defun client-manifest-json ()
+  "Serialize the full client manifest and its lossless FBP projection as JSON."
   (jsown:to-json (client-manifest-document)))
