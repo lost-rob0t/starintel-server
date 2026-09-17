@@ -89,6 +89,8 @@
    (cons "id" (format nil "starintel.operation/~A" (http-operation-id operation)))
    (cons "component" "starintel.operation")
    (cons "operation_id" (http-operation-id operation))
+   (cons "method" (string-downcase (symbol-name (http-operation-method operation))))
+   (cons "path" (http-operation-path operation))
    (cons "label" (http-operation-summary operation))
    (cons "category"
          (if (http-operation-tags operation)
