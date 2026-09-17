@@ -68,6 +68,7 @@
    (:file "actor-systems/event-actor")
    (:file "actor-systems/matcher-actor")
    (:file "actor-systems/llm-actor")
+   (:file "actor-systems/llm-actor-openrouter-policy")
    (:file "actor-systems/llm-actor-validation")
    (:file "actor-systems/llm-actor-private-api")
    (:file "rabbit")
