@@ -87,7 +87,7 @@
     (when (and state (eq :active (star:addon-state-status state)))
       (star:unload-addon :starintel-observability)))
   (let ((star.observability::*observability-enabled* "false"))
-    (star:maybe-autoload-observability-addon)
+    (star::maybe-autoload-observability-addon)
     (let ((state (star:addon-status :starintel-observability)))
       (is (or (null state)
               (not (eq :active (star:addon-state-status state))))))
@@ -97,7 +97,7 @@
   (let ((star.observability::*observability-enabled* "true"))
     (unwind-protect
          (progn
-           (star:maybe-autoload-observability-addon)
+           (star::maybe-autoload-observability-addon)
            (let ((state (star:addon-status :starintel-observability)))
              (is state)
              (is (eq :active (star:addon-state-status state))))
