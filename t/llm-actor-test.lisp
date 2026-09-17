@@ -35,17 +35,17 @@
        ("max_total_gpu_usd" max-total)))))
 
 (test llm-budget-converts-total-cost-to-runtime
-  (is (= 1800 (star.actors:llm-budget-seconds 2.0 1.0)))
-  (is (= 3600 (star.actors:llm-budget-seconds 0.5 0.5))))
+  (is (= 1800 (star.actors::llm-budget-seconds 2.0 1.0)))
+  (is (= 3600 (star.actors::llm-budget-seconds 0.5 0.5))))
 
 (test llm-budget-is-capped-at-one-day
   (is (= (* 24 60 60)
-         (star.actors:llm-budget-seconds 0.1 100.0))))
+         (star.actors::llm-budget-seconds 0.1 100.0))))
 
 (test llm-budget-rejects-non-positive-costs
-  (signals error (star.actors:llm-budget-seconds 0 10))
-  (signals error (star.actors:llm-budget-seconds 1 0))
-  (signals error (star.actors:llm-budget-seconds -1 10)))
+  (signals error (star.actors::llm-budget-seconds 0 10))
+  (signals error (star.actors::llm-budget-seconds 1 0))
+  (signals error (star.actors::llm-budget-seconds -1 10)))
 
 (test llm-model-name-accepts-repository-style-identifiers
   (is-true (star.actors::llm-safe-model-name-p "Qwen/Qwen3-8B"))
