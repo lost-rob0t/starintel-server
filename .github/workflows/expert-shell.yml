@@ -1,0 +1,61 @@
+name: Expert Shell
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expert-shell-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lisa-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Common Lisp build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            sbcl \
+            libssl-dev \
+            libffi-dev \
+            librabbitmq-dev \
+            pkg-config
+
+      - name: Install Qlot
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --show-error https://qlot.tech/installer | sh
+          echo "$HOME/.qlot/bin" >> "$GITHUB_PATH"
+          "$HOME/.qlot/bin/qlot" --version
+
+      - name: Install locked Lisp dependencies
+        run: qlot install
+
+      - name: Run expert-shell tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          qlot exec sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval '(require :asdf)' \
+            --eval '(asdf:test-system :starintel-expert-shell-tests)'
+
+      - name: Build star-expert executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          qlot exec sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval '(require :asdf)' \
+            --eval '(asdf:make :starintel-expert-shell)'
+          test -x star-expert
