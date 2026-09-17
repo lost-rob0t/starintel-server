@@ -80,8 +80,8 @@
          (dataset (jsown:val current "dataset")))
     (jsown:remkey current "dataset")
     (setf (jsown:val current "source_dataset") dataset)
-    (is (eq candidate
-            (migration-test-prepare current candidate)))
+    (let ((prepared (migration-test-prepare current candidate)))
+      (is (string= dataset (jsown:val prepared "dataset"))))
     (is
      (string=
       dataset
@@ -93,8 +93,8 @@
          (updated (jsown:val current "date_updated")))
     (jsown:remkey current "date_added")
     (setf (jsown:val candidate "date_added") updated)
-    (is (eq candidate
-            (migration-test-prepare current candidate)))))
+    (let ((prepared (migration-test-prepare current candidate)))
+      (is (string= updated (jsown:val prepared "date_added"))))))
 
 (test migration-dry-run-validates-without-saving
   (let* ((current (migration-test-current-document))
