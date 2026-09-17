@@ -57,9 +57,9 @@
     (reply result *sender*))
   result)
 
-(defun document-storage-error-result (command condition &key code)
+(defun document-storage-error-result (command condition &key code (status :error))
   (make-document-storage-result
-   :status :error
+   :status status
    :operation (and command (document-storage-command-operation command))
    :document-id (and command (document-storage-command-document-id command))
    :error-code (or code "storage_operation_failed")
@@ -195,6 +195,11 @@
                             (document-storage-command-document-id command))
           :error-code "document_not_found"
           :error-message "Document not found"))
+       (dex:http-request-conflict (condition)
+         (document-storage-error-result
+          command condition
+          :status :conflict
+          :code "document_conflict"))
        (star.storage:storage-backend-error (condition)
          (document-storage-error-result
           command condition :code "storage_backend_error"))
