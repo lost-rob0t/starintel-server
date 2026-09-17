@@ -5,4 +5,4 @@
   :serial       t
   :license      "GNU GPL, version 3"
   :components   ((:file "migrations"))
-  :depends-on   (#:starintel #:jsown))
+  :depends-on   (#:jsown))
