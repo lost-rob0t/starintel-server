@@ -19,8 +19,7 @@
    :metadata (route-policy-metadata path method)))
 
 (defun migration-request-target-schema (requested)
-  (let ((current
-          (star.migrations:migration-current-schema-version)))
+  (let ((current starintel:+starintel-doc-version+))
     (when (and requested
                (not (string= requested current)))
       (signal-http-input-error
