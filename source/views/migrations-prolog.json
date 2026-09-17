@@ -1,0 +1,1 @@
+{"_id":"_design/migrations_prolog","language":"starintel_prolog","views":{"version_distribution":{"map":"migration_view(version_distribution)","reduce":"_sum"},"outdated_by_version":{"map":"migration_view(outdated_by_version)"},"promote_current":{"map":"migration_view(promote_current)"}}}
