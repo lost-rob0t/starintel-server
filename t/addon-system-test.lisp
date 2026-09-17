@@ -81,3 +81,27 @@
            '("https://playground-starIntelIntelligence.oauth.aibixby.com/auth/external/cb")
            (star.auth:oauth-client-record-redirect-uris client))))
     (star:unload-addon :starintel-bixby)))
+
+(test observability-hosted-autoload-is-noop-when-gate-is-off
+  (let ((state (star:addon-status :starintel-observability)))
+    (when (and state (eq :active (star:addon-state-status state)))
+      (star:unload-addon :starintel-observability)))
+  (let ((star.observability::*observability-enabled* "false"))
+    (star:maybe-autoload-observability-addon)
+    (let ((state (star:addon-status :starintel-observability)))
+      (is (or (null state)
+              (not (eq :active (star:addon-state-status state))))))
+    (is-false (star:observability-active-p))))
+
+(test observability-hosted-autoload-starts-normal-addon-when-gate-is-on
+  (let ((star.observability::*observability-enabled* "true"))
+    (unwind-protect
+         (progn
+           (star:maybe-autoload-observability-addon)
+           (let ((state (star:addon-status :starintel-observability)))
+             (is state)
+             (is (eq :active (star:addon-state-status state))))
+           (is-true (star:observability-active-p)))
+      (let ((state (star:addon-status :starintel-observability)))
+        (when (and state (eq :active (star:addon-state-status state)))
+          (star:unload-addon :starintel-observability))))))
