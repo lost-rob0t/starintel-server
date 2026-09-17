@@ -72,9 +72,9 @@ No secret is logged or copied into document metadata."
    (sha256-octets (utf8-octets value))))
 
 (defun hmac-sha256 (key data)
-  (let ((hmac (ironclad:make-hmac key :sha256)))
-    (ironclad:update-hmac hmac data)
-    (ironclad:hmac-digest hmac)))
+  (let ((mac (ironclad:make-mac :hmac key :sha256)))
+    (ironclad:update-mac mac data)
+    (ironclad:produce-mac mac)))
 
 (defun hmac-sha256-string (key value)
   (hmac-sha256 key (utf8-octets value)))
