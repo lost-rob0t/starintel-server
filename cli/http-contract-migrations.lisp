@@ -1,5 +1,14 @@
 (in-package :star.http.contract)
 
+(defun migration-limit-schema ()
+  "Return the migration batch-limit schema without widening the shared helper API."
+  (let ((schema
+          (integer-schema
+           :minimum 1
+           :description "Maximum migration candidates returned; runtime maximum is 100.")))
+    (setf (jsown:val schema "maximum") 100)
+    schema))
+
 (defparameter +migration-preview-query-parameters+
   (list
    (list :name "tenant"
@@ -26,11 +35,7 @@
           :description
           "Optional target schema; must equal the runtime current schema."))
    (list :name "limit"
-         :schema
-         (integer-schema
-          :minimum 1
-          :maximum 100
-          :description "Maximum migration candidates returned."))))
+         :schema (migration-limit-schema))))
 
 (defparameter +migration-apply-request-schema+
   (object-schema
@@ -39,7 +44,7 @@
     (cons "dataset" (string-schema :min-length 1))
     (cons "from_schema" (string-schema :min-length 1))
     (cons "to_schema" (string-schema :min-length 1))
-    (cons "limit" (integer-schema :minimum 1 :maximum 100))
+    (cons "limit" (migration-limit-schema))
     (cons "dry_run" (boolean-schema)))
    :required '("tenant" "dataset")
    :additional-properties nil
