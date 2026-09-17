@@ -187,3 +187,25 @@ Path entry of the OpenAPI document.
 (operation-request-symbol-name (STAR.HTTP.CONTRACT::OPERATION))
 #+end_src
 Client symbol name generated for the operation.
+
+
+*** operation-fbp-node-object
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Project one canonical HTTP operation into a typed FBP component descriptor.
+
+*** fbp-node-catalog-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Typed FBP descriptors derived only from the canonical HTTP operation registry.
+
+*** fbp-node-catalog-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Serialize the canonical HTTP-operation FBP projection as JSON.
