@@ -25,6 +25,7 @@
     http-tenant-injection-tests
     gserver-client-tests
     http-contract-documents-tests
+    document-storage-tests
     runtime-lifecycle-tests
     observability-tests))
 
