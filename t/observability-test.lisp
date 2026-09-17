@@ -18,9 +18,16 @@
          (funcall thunk)
       (star.observability:reset-exporter-state))))
 
-(test config-enabled-by-default
-  "Telemetry is enabled by default per the locked slice decision."
-  (is (star.observability:observability-enabled-p)))
+(test config-disabled-by-default
+  "Telemetry requires an explicit deployment opt-in."
+  (let ((star.observability::*observability-enabled* "false"))
+    (is (not (star.observability:observability-enabled-p)))))
+
+(test config-explicit-opt-in
+  "The deployment gate accepts the documented truthy values."
+  (dolist (value '("1" "true" "yes" "on" "TRUE"))
+    (let ((star.observability::*observability-enabled* value))
+      (is (star.observability:observability-enabled-p)))))
 
 (test disabled-addon-costs-nothing
   "When the addon was never loaded (no exporter thread), the signal API is a
