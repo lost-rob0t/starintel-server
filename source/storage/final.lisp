@@ -1,5 +1,11 @@
 (in-package :star.storage)
 
+(defun hmac-sha256 (key data)
+  "Return HMAC-SHA256(DATA, KEY) using Ironclad's generic MAC interface."
+  (let ((mac (ironclad:make-mac :hmac key :sha256)))
+    (ironclad:update-mac mac data)
+    (ironclad:produce-mac mac)))
+
 (defun document-storage-metadata-present-p (document)
   "True when DOCUMENT carries an explicit server-owned placement record."
   (let* ((object (parse-json-document document))
