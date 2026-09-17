@@ -5,6 +5,7 @@
    #:migration-candidate-error
    #:migration-candidate-error-code
    #:migration-candidate-error-reason
+   #:migration-effective-dataset
    #:migration-effective-tenant
    #:migration-source-schema
    #:prepare-migration-candidate)
@@ -50,20 +51,37 @@
          :code code
          :reason (apply #'format nil control arguments)))
 
+(defun distinct-non-empty-strings (&rest values)
+  (remove-duplicates
+   (remove-if-not #'non-empty-string-p values)
+   :test #'string=))
+
 (defun migration-effective-tenant (document)
   "Return DOCUMENT's internal tenant, rejecting conflicting tenant fields."
-  (let ((tenant-id (document-value document "tenant_id"))
-        (tenant (document-value document "tenant")))
-    (when (and (non-empty-string-p tenant-id)
-               (non-empty-string-p tenant)
-               (not (string= tenant-id tenant)))
+  (let* ((tenant-id (document-value document "tenant_id"))
+         (tenant (document-value document "tenant"))
+         (values (distinct-non-empty-strings tenant-id tenant)))
+    (when (> (length values) 1)
       (reject-candidate
        "conflicting_tenant"
-       "Document tenant_id ~s conflicts with tenant ~s"
-       tenant-id tenant))
-    (or (and (non-empty-string-p tenant-id) tenant-id)
-        (and (non-empty-string-p tenant) tenant)
-        "default")))
+       "Document tenant aliases conflict: ~s"
+       values))
+    (or (first values) "default")))
+
+(defun migration-effective-dataset (document)
+  "Return DOCUMENT's canonical or historical dataset, rejecting conflicts."
+  (let* ((dataset (document-value document "dataset"))
+         (source-dataset (document-value document "source_dataset"))
+         (source-dataset-camel (document-value document "sourceDataset"))
+         (values
+           (distinct-non-empty-strings
+            dataset source-dataset source-dataset-camel)))
+    (when (> (length values) 1)
+      (reject-candidate
+       "conflicting_dataset"
+       "Document dataset aliases conflict: ~s"
+       values))
+    (first values)))
 
 (defun migration-source-schema (document)
   "Return the source schema recorded in a migrated candidate's lineage."
@@ -83,14 +101,35 @@
        "Migration must preserve ~a (current=~s candidate=~s)"
        key before after))))
 
-(defun require-same-optional-string-field (current candidate key code)
-  (let ((before (document-value current key))
-        (after (document-value candidate key)))
-    (unless (equal before after)
+(defun historical-date-added (document)
+  (or (let ((value (document-value document "date_added")))
+        (and (non-empty-string-p value) value))
+      (let ((value (document-value document "dateAdded")))
+        (and (non-empty-string-p value) value))))
+
+(defun require-migrated-dataset (current candidate)
+  (let ((before (migration-effective-dataset current))
+        (after (migration-effective-dataset candidate)))
+    (unless (and (non-empty-string-p before)
+                 (non-empty-string-p after)
+                 (string= before after))
       (reject-candidate
-       code
-       "Migration must preserve ~a (current=~s candidate=~s)"
-       key before after))))
+       "dataset_changed"
+       "Migration must preserve effective dataset (current=~s candidate=~s)"
+       before after))))
+
+(defun require-migrated-date-added (current candidate)
+  (let ((before (historical-date-added current))
+        (after (document-value candidate "date_added")))
+    (unless (non-empty-string-p after)
+      (reject-candidate
+       "date_added_required"
+       "Migrated document must contain canonical date_added"))
+    (when (and before (not (string= before after)))
+      (reject-candidate
+       "date_added_changed"
+       "Migration must preserve existing date_added (current=~s candidate=~s)"
+       before after))))
 
 (defun validate-migration-invariants
     (current candidate target-schema)
@@ -104,12 +143,10 @@
      "Migration candidate is not a JSON object"))
   (require-same-string-field
    current candidate "_id" "document_id_changed")
-  (require-same-string-field
-   current candidate "dataset" "dataset_changed")
+  (require-migrated-dataset current candidate)
   (require-same-string-field
    current candidate "_rev" "stale_revision")
-  (require-same-optional-string-field
-   current candidate "date_added" "date_added_changed")
+  (require-migrated-date-added current candidate)
   (let ((current-tenant (migration-effective-tenant current))
         (candidate-tenant (migration-effective-tenant candidate)))
     (unless (string= current-tenant candidate-tenant)
@@ -147,9 +184,11 @@ Prolog view output. TARGET-SCHEMA comes from the caller's live schema authority;
 this library intentionally owns no schema-version constant. VALIDATOR is called
 on a defensive copy and must reject invalid target documents.
 
-`_id`, `_rev`, dataset, tenant, and date_added are immutable across migration.
-The normalized result is checked again so the validator cannot accidentally
-break those CAS/resource invariants."
+`_id`, `_rev`, effective dataset, tenant, and any existing date_added value are
+preserved. Historical dataset/date aliases may be canonicalized and a missing
+date_added may be filled deterministically by the migration projection. The
+normalized result is checked again so the validator cannot break CAS/resource
+invariants."
   (validate-migration-invariants current candidate target-schema)
   (let ((normalized
           (normalize-with-validator candidate validator)))
