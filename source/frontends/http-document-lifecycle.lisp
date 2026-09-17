@@ -6,6 +6,9 @@
     (:not-found
      (setf (lack.response:response-status *response*) 404)
      nil)
+    (:conflict
+     (setf (lack.response:response-status *response*) 409)
+     nil)
     (otherwise
      (let ((code (star.actors:document-storage-result-error-code result)))
        (setf (lack.response:response-status *response*)
