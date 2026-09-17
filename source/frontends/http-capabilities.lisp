@@ -45,6 +45,11 @@
     ("features"
      (jsown:new-js
        ("documents" :true)
+       ("document_lifecycle"
+        (jsown:new-js
+          ("available" :true)
+          ("tiers" star.storage:+document-storage-tiers+)
+          ("external_backends" (list "s3"))))
        ("bulk_ingest" :true)
        ("search" :true)
        ("stats" :true)
@@ -110,6 +115,14 @@
       (capability-endpoint
        "document_delete_v1" "DELETE" "/api/v1/documents/:id"
        :scopes '("documents:delete"))
+      (capability-endpoint
+       "document_lifecycle_read_v1" "GET"
+       "/api/v1/documents/:id/lifecycle"
+       :scopes '("documents:read"))
+      (capability-endpoint
+       "document_lifecycle_update_v1" "PUT"
+       "/api/v1/documents/:id/lifecycle"
+       :scopes '("documents:write"))
       (capability-endpoint
        "document_search_v1" "GET" "/api/v1/documents/search"
        :scopes '("search:read"))))

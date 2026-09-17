@@ -1,0 +1,155 @@
+#+title: Tenant Document Lifecycle and Storage
+
+* Overview
+
+StarIntel keeps CouchDB as the tenant-aware metadata, authorization, indexing,
+and revision plane while allowing document payloads to move through logical
+storage tiers.
+
+The storage actor is declared in =spec/document-storage.star= and runs as the
+native Sento actor =document-storage= on a pinned dispatcher so blocking
+CouchDB/S3 I/O does not occupy ordinary actor dispatcher threads.
+
+Clients choose only a logical tier. Physical backends, S3 endpoint, bucket,
+credentials, and tenant defaults are server-owned configuration.
+
+* Tiers
+
+| Tier    | CouchDB representation | External object | Intended use |
+|---------+------------------------+-----------------+--------------|
+| hot     | full document          | no              | active/search-heavy data |
+| warm    | full document          | mirrored        | active data with object-store copy |
+| cold    | metadata/auth stub     | authoritative   | infrequently read payloads |
+| archive | metadata/auth stub     | authoritative   | archival payloads |
+
+Cold/archive CouchDB stubs retain document id, tenant, dataset, dtype, schema
+version, timestamps, hashes, deletion state, and server extensions needed for
+authorization/indexing. A direct document GET hydrates the canonical payload
+from the configured backend only *after* the CouchDB stub has passed tenant and
+dataset authorization.
+
+Search/view results intentionally remain metadata projections for cold/archive
+objects; direct document reads hydrate the full payload.
+
+* HTTP lifecycle API
+
+** Read lifecycle state
+
+#+begin_src text
+GET /api/v1/documents/:id/lifecycle
+scope: documents:read
+#+end_src
+
+Example response:
+
+#+begin_src json
+{
+  "document_id": "01J...",
+  "tenant": "acme",
+  "dataset": "example",
+  "tier": "cold",
+  "backend": "s3",
+  "state": "offloaded",
+  "object_key": "tenants/acme/datasets/example/documents/01J....<sha256>.json",
+  "content_sha256": "...",
+  "updated_at": "2026-09-16T23:00:00Z"
+}
+#+end_src
+
+** Move a document
+
+#+begin_src text
+PUT /api/v1/documents/:id/lifecycle
+Content-Type: application/json
+scope: documents:write
+
+{"tier":"cold"}
+#+end_src
+
+Allowed values are =hot=, =warm=, =cold=, and =archive=. The API deliberately
+rejects backend/bucket/endpoint parameters; callers cannot redirect storage or
+inject credentials.
+
+Normal document responses redact both the injected =tenant_id= and the
+=extensions._server_storage= placement record. Placement details are exposed
+only through the authorized lifecycle endpoint.
+
+* Tenant defaults
+
+New Rabbit-ingested documents adopt the configured tenant default. Updates
+preserve the document's existing explicit tier, including an explicit =hot=
+choice, until a lifecycle transition changes it.
+
+#+begin_src sh
+STAR_STORAGE_DEFAULT_TIER=hot
+STAR_STORAGE_TENANT_TIERS='default=hot,bulk-archive=cold'
+STAR_STORAGE_TIER_BACKENDS='hot=couchdb,warm=s3,cold=s3,archive=s3'
+#+end_src
+
+* S3 configuration
+
+The built-in =s3= backend uses AWS Signature Version 4 and path-style bucket
+addressing. It works with AWS S3 general-purpose buckets and S3-compatible
+endpoints such as MinIO when the endpoint supports path-style access.
+
+#+begin_src sh
+STAR_S3_REGION=us-east-1
+STAR_S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
+STAR_S3_BUCKET=starintel-documents
+STAR_S3_ACCESS_KEY_ID=...
+STAR_S3_SECRET_ACCESS_KEY_FILE=/run/secrets/star_s3_secret
+# Optional STS token:
+STAR_S3_SESSION_TOKEN_FILE=/run/secrets/star_s3_session_token
+#+end_src
+
+For MinIO:
+
+#+begin_src sh
+STAR_S3_ENDPOINT=https://minio.internal.example
+STAR_S3_REGION=us-east-1
+STAR_S3_BUCKET=starintel-documents
+#+end_src
+
+Credentials are never stored in StarIntel documents or lifecycle responses.
+
+* Failure and consistency model
+
+External payloads are immutable and content-addressed. Their object keys have
+the form:
+
+#+begin_src text
+tenants/<tenant>/datasets/<dataset>/documents/<document-id>.<sha256>.json
+#+end_src
+
+A transition to an external tier stages that immutable object first and treats
+the subsequent CouchDB revision write as the commit point. Cleanup of the prior
+external copy occurs only after CouchDB records the new placement. Therefore an
+interrupted transition or optimistic concurrency conflict may leave an
+unreferenced staged object, but it cannot overwrite the external payload named
+by the currently committed CouchDB revision and cannot delete the only
+canonical payload before the new placement is committed.
+
+Deletion removes the CouchDB document first and then best-effort removes the
+external object. If object cleanup fails, the API does not falsely report that
+the document still exists; operators can garbage-collect the orphan later.
+
+Rabbit ingestion does not acknowledge a delivery until tenant placement is
+complete. This keeps storage placement inside the durable ingest boundary.
+
+* Star-Lang actor contract
+
+The server-owned contract is:
+
+#+begin_src lisp
+(actor document-storage
+  (:runtime native
+   :service-uri "star://starintel:localhost:document-storage"
+   :accepts (org.starintel/storage-command@1)
+   :produces (org.starintel/storage-result@1)
+   :handler document-storage-handler
+   :restart permanent
+   :mailbox (bounded 256)))
+#+end_src
+
+Runtime commands support =get=, =lifecycle=, =transition=, =upsert=, =delete=,
+and =apply-policy=. S3/CouchDB calls execute on the actor's pinned dispatcher.
