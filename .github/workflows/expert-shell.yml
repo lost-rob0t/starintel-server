@@ -35,6 +35,8 @@ jobs:
 
       - name: Set up Common Lisp and locked dependencies
         uses: 40ants/setup-lisp@v4
+        with:
+          asdf-system: starintel-expert-shell-tests
 
       - name: Run expert-shell tests
         shell: lispsh -eo pipefail {0}
