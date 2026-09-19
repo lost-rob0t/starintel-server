@@ -573,6 +573,7 @@ PY
             --set TEMP /tmp \
             --run 'export HOME=''${HOME:-$(mktemp -d)}' \
             --run 'export XDG_CONFIG_HOME=''${XDG_CONFIG_HOME:-$HOME/.config}' \
+            --run 'export XDG_CACHE_HOME=''${XDG_CACHE_HOME:-$HOME/.cache}' \
             --run 'mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"' \
             --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}" \
         '';
