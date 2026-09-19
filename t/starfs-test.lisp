@@ -102,6 +102,7 @@
        (lambda (content-id bytes)
          (let* ((hex (hex-of content-id))
                 (partial (block-file-path content-id "blk-tmp")))
+           (declare (ignore hex))
            (ensure-directories-exist
             (uiop:pathname-directory-pathname partial))
            (with-open-file (out partial
@@ -189,6 +190,47 @@
 
 (test starfs-local-backend-satisfies-contract
   (assert-backend-neutral-starfs-contract (make-local-contract-fixture)))
+
+(test starfs-local-concurrent-same-content-puts-are-idempotent
+  (let* ((store (star.starfs:make-local-block-store :root (starfs-test-root)))
+         ;; Large enough to keep concurrent attempts overlapping after the
+         ;; start gate opens, without turning this into a stress/timeout test.
+         (bytes (starfs-sample-bytes (* 1024 1024) 77))
+         (expected-id (star.starfs:content-id-from-bytes bytes))
+         (gate-lock (bt:make-lock "starfs-concurrent-put-gate"))
+         (start nil)
+         (results (make-array 12 :initial-element nil))
+         (threads
+           (loop for index below (length results)
+                 collect
+                 (let ((slot index))
+                   (bt:make-thread
+                    (lambda ()
+                      (loop until
+                        (bt:with-lock-held (gate-lock) start)
+                            do (sleep 0.001))
+                      (setf (aref results slot)
+                            (handler-case
+                                (star.starfs:put-block store bytes)
+                              (error (condition) condition))))
+                    :name (format nil "starfs-put-~d" slot))))))
+    (bt:with-lock-held (gate-lock)
+      (setf start t))
+    (dolist (thread threads)
+      (bt:join-thread thread))
+    (loop for result across results
+          do (is (stringp result))
+             (when (stringp result)
+               (is (string= expected-id result))))
+    (is-true (star.starfs:block-exists-p store expected-id))
+    (is (equalp bytes (star.starfs:get-block store expected-id)))
+    (let* ((block-path (star.starfs::block-path store expected-id))
+           (directory (uiop:pathname-directory-pathname block-path))
+           (temps
+             (remove-if-not
+              (lambda (path) (string= "blk-tmp" (pathname-type path)))
+              (uiop:directory-files directory))))
+      (is (null temps)))))
 
 (test starfs-memory-fake-backend-satisfies-contract
   (assert-backend-neutral-starfs-contract (make-fake-contract-fixture)))
