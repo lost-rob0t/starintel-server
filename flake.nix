@@ -60,7 +60,7 @@
 
         postPatch = ''
           cat > cl-gserver.asd <<'EOF'
-;;;; Compatibility shim: provide ASDF system "cl-gserver" (real system is "sento")
+;;;; Compatibility shim: provide ASDF system "cl-gserver" (real system is SENTO."
 (asdf:defsystem "cl-gserver"
   :description "Compatibility alias for the cl-gserver repository; real system is SENTO."
   :depends-on ("sento")
@@ -86,7 +86,7 @@ EOF
           rev   = "9603204715bb13f09243dc286c5ad4bd51b4fd7b";
           hash  = "sha256-SkbXB6+4SuVg+urQMPEF2WAIZTXVA3mmMnn1jTuGNeA=";
         };
-        lispLibs = with pkgs.sbclPackages; [ cffi cffi-grovel cffi-libffi babel cl-ppcre ];
+        lispLibs = with pkgs.sbclPackages; [ cffi cffi-grovel cffi-libffi babel cl-ppre ];
         nativeLibs = with pkgs; [ rabbitmq-c libffi ];
       };
 
@@ -131,7 +131,7 @@ EOF
           jsown
           bordeaux-threads
           ironclad
-          cl-ppcre
+          cl-ppre
           lack
         ];
         systems = [ "starintel-observability" ];
@@ -147,6 +147,7 @@ EOF
 
         lispLibs = with sbcl'.pkgs; [
           starintel-observability
+          star-migrations-lib
           starintel
           cl-couch
           serapeum
@@ -163,7 +164,7 @@ EOF
           nhooks
           lparallel
           cl-stream
-          cl-ppcre
+          cl-ppre
           cms-ulid
           bordeaux-threads
           usocket
@@ -301,6 +302,7 @@ EOF
           lparallel
           dexador
           cl-couch
+          jsown
         ];
 
         systems = [ "star-migrations" ];
