@@ -99,7 +99,7 @@
          (progn
            (star::maybe-autoload-observability-addon)
            (let ((state (star:addon-status :starintel-observability)))
-             (is state)
+             (is (not (null state)))
              (is (eq :active (star:addon-state-status state))))
            (is-true (star:observability-active-p)))
       (let ((state (star:addon-status :starintel-observability)))
