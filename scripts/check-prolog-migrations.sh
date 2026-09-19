@@ -20,6 +20,10 @@ swipl -q \
   -g run_tests \
   -t halt
 
+protocol_stderr=$(mktemp)
+trap 'rm -f "$protocol_stderr"' EXIT HUP INT TERM
+
+set +e
 protocol_output=$(
   printf '%s\n' \
     '["reset"]' \
@@ -27,8 +31,26 @@ protocol_output=$(
     '["map_doc",{"_id":"fixture-protocol","tenant_id":"tenant-a","dataset":"dataset-a","dtype":"person","schema_version":"0.8.0"}]' \
     '["reset"]' \
     '["add_fun","call(shell)"]' \
-  | swipl -q -s scripts/starintel-prolog-view-server.pl
+  | swipl -q -s scripts/starintel-prolog-view-server.pl 2>"$protocol_stderr"
 )
+protocol_status=$?
+set -e
+
+if [ "$protocol_status" -ne 0 ]; then
+  echo "check-prolog-migrations: query-server exited $protocol_status" >&2
+  if [ -s "$protocol_stderr" ]; then
+    echo "--- query-server stderr ---" >&2
+    cat "$protocol_stderr" >&2
+  fi
+  if [ -n "$protocol_output" ]; then
+    echo "--- query-server stdout ---" >&2
+    printf '%s\n' "$protocol_output" >&2
+  fi
+  exit "$protocol_status"
+fi
+
+rm -f "$protocol_stderr"
+trap - EXIT HUP INT TERM
 
 expected=$(cat <<'EOF'
 true
