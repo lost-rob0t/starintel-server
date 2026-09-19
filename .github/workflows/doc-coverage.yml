@@ -28,6 +28,17 @@ jobs:
       - name: Regenerate API reference (org)
         run: nix run .#gen-api-docs
 
+      - name: Capture generated docs diff
+        run: git diff -- doc/api/ > generated-docs.diff
+
+      - name: Upload generated docs diff
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-docs-diff
+          path: generated-docs.diff
+          retention-days: 1
+
       - name: Fail if generated docs drifted from source
         run: |
           if ! git diff --exit-code -- doc/api/; then
