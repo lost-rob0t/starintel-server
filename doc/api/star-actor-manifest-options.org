@@ -40,7 +40,8 @@ the same target option semantics. Explicit target options always win.
 :PACKAGE: STAR.ACTOR-MANIFEST-OPTIONS
 :END:
 #+begin_src lisp
-(target-option-value (STAR.ACTOR-MANIFEST-OPTIONS::OPTIONS STAR.ACTOR-MANIFEST-OPTIONS::KEY &OPTIONAL STAR.ACTOR-MANIFEST-OPTIONS::DEFAULT))
+(target-option-value (STAR.ACTOR-MANIFEST-OPTIONS::OPTIONS STAR.ACTOR-MANIFEST-OPTIONS::KEY
+ &OPTIONAL STAR.ACTOR-MANIFEST-OPTIONS::DEFAULT))
 #+end_src
 Read KEY from actor-defined target OPTIONS.
 
