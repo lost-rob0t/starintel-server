@@ -31,11 +31,20 @@
                     (jsown:to-json
                      (star.observability::otlp-payload signal records))))
             :ok)))
+    ;; These variables are intentionally rebound to run the audit path without
+    ;; starting the background exporter thread. Declare them SPECIAL here so
+    ;; this fixture remains correct even when ASDF compiles the test file before
+    ;; loading the observability implementation's DEFVAR/DEFPARAMETER forms.
+    (declare (special star.observability::*observability-enabled*
+                      star.observability::*observability-signals*
+                      star.observability::*export-batch-fn*))
     (star.observability:reset-exporter-state)
     (unwind-protect
          (let ((star.observability::*exporter-running* t))
+           (declare (special star.observability::*exporter-running*))
            (funcall thunk)
            (let ((star.observability::*exporter-stop* t))
+             (declare (special star.observability::*exporter-stop*))
              (star.observability:flush-once))
            captured)
       (star.observability:reset-exporter-state))))
