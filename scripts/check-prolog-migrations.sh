@@ -9,13 +9,13 @@ command -v swipl >/dev/null 2>&1 || {
   exit 127
 }
 
-# Run PlUnit as a one-shot process. The explicit conditional preserves failing
-# suite status while halting immediately after a successful run; -t halt(1)
-# remains the fail-closed fallback if the initial goal itself cannot run.
+# Follow SWI-Prolog's documented non-interactive PlUnit lifecycle: run_tests
+# determines the process status, while -t halt exits instead of entering the
+# interactive top level after the initial goal completes.
 swipl -q \
   -s .prolog/kb/migrations-test.pl \
-  -g '(run_tests -> halt(0) ; halt(1))' \
-  -t 'halt(1)'
+  -g run_tests \
+  -t halt
 
 protocol_stderr=$(mktemp)
 trap 'rm -f "$protocol_stderr"' EXIT HUP INT TERM
