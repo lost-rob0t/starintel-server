@@ -9,16 +9,13 @@ command -v swipl >/dev/null 2>&1 || {
   exit 127
 }
 
-# Use SWI-Prolog's documented non-interactive PlUnit contract: run_tests/0
-# is the initialization goal and halt/0 is the top-level. A failing suite
-# exits before the top-level with status 1; a passing suite reaches halt/0
-# and exits 0. Do not embed halt/0 in the test goal while also overriding
-# the top-level with halt(1), because that can turn a completed test run into
-# a false-red process status.
+# Run PlUnit as a one-shot process. The explicit conditional preserves failing
+# suite status while halting immediately after a successful run; -t halt(1)
+# remains the fail-closed fallback if the initial goal itself cannot run.
 swipl -q \
   -s .prolog/kb/migrations-test.pl \
-  -g run_tests \
-  -t halt
+  -g '(run_tests -> halt(0) ; halt(1))' \
+  -t 'halt(1)'
 
 protocol_stderr=$(mktemp)
 trap 'rm -f "$protocol_stderr"' EXIT HUP INT TERM
