@@ -83,7 +83,8 @@
         (is (string= "USD" (jsown:val preview "currency")))
         (is (= 300000 (jsown:val preview "total_micros")))
         (is-true (jsown:val preview "preview"))
-        (is-false (jsown:val-safe preview "charged"))
+        (let ((wire-preview (jsown:parse (jsown:to-json preview))))
+          (is-false (jsown:val-safe wire-preview "charged")))
         (is (= 123456 (jsown:val preview "created_at")))
         (is (string= "GPL-3.0-or-later"
                      (jsown:val preview "license")))))))
@@ -105,8 +106,8 @@
                  ("export_id" "test-export")
                  ("dataset" "demo")
                  ("path" (namestring path))
-                 ("bytes" 8)
-                 ("sha256" (make-string 64 :initial-element #\a))
+                 ("bytes" 0)
+                 ("sha256" "")
                  ("license" "GPL-3.0-or-later")))
              (calls 0))
         (unwind-protect
@@ -117,6 +118,16 @@
                                        :if-exists :supersede
                                        :if-does-not-exist :create)
                  (write-string "{}" stream))
+               (setf (jsown:val manifest "bytes")
+                     (with-open-file
+                         (stream path
+                                 :direction :input
+                                 :element-type '(unsigned-byte 8))
+                       (file-length stream))
+                     (jsown:val manifest "sha256")
+                     (string-downcase
+                      (ironclad:byte-array-to-hex-string
+                       (ironclad:digest-file :sha256 path))))
                (let ((result
                        (funcall
                         publish-fn
@@ -139,3 +150,68 @@
           (when (probe-file directory)
             (ignore-errors (uiop:delete-directory-tree directory
                                                        :validate t))))))))
+
+
+(test issue-238-users-me-never-serializes-auth-secrets
+  (let* ((store (star.auth:make-memory-credential-store))
+         (star.auth:*credential-store* store)
+         (star:*auth-pepper* "issue-238-test-pepper")
+         (user
+           (star.auth:create-user
+            "alice"
+            "issue-238-password"
+            "user"
+            '("identity:read")
+            :must-change-password nil
+            :store store))
+         (principal
+           (star.auth::%make-request-principal
+            :id "alice"
+            :type "user"
+            :scopes '("identity:read")
+            :credential-id "credential-test"))
+         (context
+           (star.auth::%make-request-security-context
+            :principal principal
+            :correlation-id "issue-238-correlation"
+            :deadline nil
+            :authenticated-at 1))
+         (star.auth:*request-security-context* context)
+         (document (star.frontends.http-api::self-user-document))
+         (wire (jsown:to-json document)))
+    (declare (ignore user))
+    (is (string=
+         "alice"
+         (jsown:val (jsown:val document "user") "username")))
+    (is-false (search "password_hash" wire :test #'char-equal))
+    (is-false (search "verifier" wire :test #'char-equal))
+    (is-false (search "pepper" wire :test #'char-equal))))
+
+(test issue-238-export-service-keeps-artifact-under-owned-root
+  (let* ((root
+           (merge-pathnames
+            (format nil "starintel-export-root-~d/"
+                    (random most-positive-fixnum))
+            (uiop:temporary-directory)))
+         (dataset "owned-root")
+         (documents (list (make-export-document dataset 1))))
+    (unwind-protect
+         (multiple-value-bind (query-fn calls-fn)
+             (make-export-query documents)
+           (declare (ignore calls-fn))
+           (let* ((manifest
+                    (star.exports:create-dataset-export
+                     nil nil dataset
+                     :export-root root
+                     :query-fn query-fn))
+                  (path (pathname (jsown:val manifest "path"))))
+             (is-true
+              (star.exports:export-artifact-owned-p
+               path :export-root root))
+             (is-false
+              (search ".."
+                      (file-namestring path)
+                      :test #'char=))))
+      (when (probe-file root)
+        (ignore-errors
+          (uiop:delete-directory-tree root :validate t))))))
