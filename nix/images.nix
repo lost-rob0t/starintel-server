@@ -109,12 +109,14 @@ let
     copyToRoot = couchdbMigrationRoot;
 
     extraCommands = ''
+      chmod u+w opt
       install -Dm755 ${../docker/couchdb-entrypoint.sh} \
         usr/local/bin/starintel-couchdb-entrypoint
       install -Dm644 ${../docker/couchdb-search.ini} \
         opt/couchdb/etc/local.d/starintel-search.ini
       install -Dm644 ${../docker/couchdb-migrations.ini} \
         opt/couchdb/etc/local.d/starintel-migrations.ini
+      chmod 0755 opt
     '';
 
     config = {
