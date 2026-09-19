@@ -26,7 +26,8 @@
     gserver-client-tests
     http-contract-documents-tests
     runtime-lifecycle-tests
-    observability-tests))
+    observability-tests
+    ipfs-export-user-api-tests))
 
 (defun run-all-gserver-tests ()
   "Run every hermetic unit suite and fail on empty, skipped, or failed tests."
