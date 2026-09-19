@@ -4,13 +4,28 @@
 
 * Current availability
 
-The =star.leases= package provides the backend-neutral protocol and a production
-Valkey adapter.  The in-memory implementation remains limited to deterministic
-unit tests.  Application code uses the same protocol operations with either
-backend; only the composition root selects =make-valkey-lease-store=.
+The =star.leases= package provides the backend-neutral protocol, a production
+Valkey adapter, and the in-memory implementation for deterministic unit tests.
+Application code uses the same protocol operations with either backend.
 
-The authenticated HTTP lease routes remain a separate issue and continue to
-return =501= until issue #32 wires this store into request and target execution.
+The runtime composition root is =star:initialize-lease-store=. It runs during
+=start-runtime= (and is idempotent) and installs the global =star:*lease-store*=
+according to =star:*lease-store-backend*= (=STAR_LEASE_STORE_BACKEND=): the
+default =memory= backend matches the historical inline lease behavior, while
+="valkey"= builds =make-valkey-lease-store= from =VALKEY_HOST=, =VALKEY_PORT=
+and =VALKEY_PASSWORD_FILE=. =star:shutdown-lease-store= closes and uninstalls
+the store during =stop-runtime=.
+
+The initializer attaches =star:observability-lease-metrics-hook= to the store's
+existing =metrics-hook= seam, so =starintel_lease_stale_writer_rejections_total=
+(stale fencing-token rejections), =starintel_lease_conflicts_total=,
+=starintel_lease_acquisitions_total= and the bounded
+=starintel_lease_outcomes_total= flow to the observability addon whenever it is
+loaded.
+
+Target and HTTP consumers still use the inline document lease fields; issue #32
+wires request and target execution to this store, after which the HTTP lease
+routes stop returning =501=.
 
 * Load the package
 
@@ -34,6 +49,29 @@ and a non-empty request identifier.
 In production, request identifiers must be unique for the logical operation.
 Reusing one identifier with different inputs produces
 =:idempotency-conflict=.
+
+* Backend selection and degradation
+
+The runtime selects the backend once per process:
+
+#+begin_src lisp
+(or (uiop:getenv "STAR_LEASE_STORE_BACKEND") "memory")
+;; => "memory" unless the operator opted into "valkey"
+#+end_src
+
+When the =valkey= backend is selected, constructing the store is
+configuration-only: the pool opens lazily per operation, so an unreachable
+Valkey does not affect startup. Each operation then degrades per the
+adapter's bounded retry contract: =call-valkey-request= retries up to
+=reconnect-attempts= (default 2) with a bounded backoff inside the caller's
+deadline and returns a retryable outcome instead of signaling —
+=:backend-unavailable= for connection/server failures, =:timeout= when the
+deadline expires, and =:outcome-unknown= when a mutation was submitted but
+the response was lost (retry the identical request ID to resolve it
+idempotently). Health can be probed with =backend-health=. A missing
+password file, in contrast, is a configuration error that fails startup.
+
+* Build the canonical lease identity
 
 * Build the canonical lease identity
 
@@ -291,9 +329,11 @@ the Valkey ACL and the adapter prefix to match.
 
 Application code should depend only on =lease-store= operations and accept the
 store or =lease-runtime= as an owned dependency.  It should not import the
-in-memory class or a future Valkey class.  The service composition root chooses
-the concrete backend, while actors, HTTP routes, and target execution retain the
-same protocol calls and typed outcomes.
+in-memory class or the Valkey class.  The runtime composition root
+(=star:initialize-lease-store=) chooses the concrete backend from
+=star:*lease-store-backend*= and installs =star:*lease-store*=, while actors,
+HTTP routes, and target execution retain the same protocol calls and typed
+outcomes.
 
 See [[file:target-lease-semantics.org][Distributed target lease semantics]] for the normative identity, fencing,
 deadline, recovery, and commit rules.

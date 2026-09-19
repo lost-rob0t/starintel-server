@@ -123,6 +123,13 @@
   (dolist (response (http-operation-responses operation))
     (normalize-schema-json-values (getf response :schema))))
 
+(defun query-parameter-openapi-object (parameter)
+  (json-object
+   (cons "name" (getf parameter :name))
+   (cons "in" "query")
+   (cons "required" (and (getf parameter :required) t))
+   (cons "schema" (or (getf parameter :schema) (string-schema)))))
+
 (defun operation-openapi-object (operation)
   (let* ((object
            (json-object
@@ -141,6 +148,11 @@
                   (cons "in" "path")
                   (cons "required" t)
                   (cons "schema" (string-schema :min-length 1))))))
+    (when (http-operation-query-parameters operation)
+      (setf parameters
+            (append parameters
+                    (mapcar #'query-parameter-openapi-object
+                            (http-operation-query-parameters operation)))))
     (when (eq :bootstrap (http-operation-authority operation))
       (setf parameters
             (append parameters

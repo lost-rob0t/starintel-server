@@ -2,6 +2,14 @@
   (:nicknames :star)
   (:use :cl)
   (:export
+   #:*observability-active*
+   #:observability-active-p
+   #:observability-wrapped-server
+   #:observability-route-template
+   #:observability-lease-metrics-hook
+   #:start-observability
+   #:stop-observability
+   #:ensure-observability-addon
    #:*rabbit-password*
    #:*rabbit-user*
    #:*rabbit-port*
@@ -57,6 +65,18 @@
    #:load-init-file
    #:safe-load-init
    #:*bulk-max-documents*
+   #:*tenant-dataset-map*
+   #:*tenant-fallback*
+   #:parse-tenant-dataset-map
+   #:parse-tenant-fallback
+   #:tenant-adaptation-for
+   #:*lease-store*
+   #:initialize-lease-store
+   #:shutdown-lease-store
+   #:*lease-store-backend*
+   #:*valkey-lease-host*
+   #:*valkey-lease-port*
+   #:*valkey-lease-password-file*
    #:repl/main))
 
 (uiop:define-package :star.databases.couchdb

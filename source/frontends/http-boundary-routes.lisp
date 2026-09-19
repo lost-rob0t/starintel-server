@@ -91,11 +91,12 @@
             (setf (jsown:val query "sort") sort))
           (when bookmark
             (setf (jsown:val query "bookmark") bookmark))
-          (cl-couch:fts-search client
-                               (jsown:to-json query)
-                               db
-                               "search"
-                               "fts"))))))
+          (strip-server-tenant-from-search-body
+           (cl-couch:fts-search client
+                                (jsown:to-json query)
+                                db
+                                "search"
+                                "fts")))))))
 
 (setf (ningle:route *app* "/new/document/:dtype" :method :post)
       #'handle-new-document-route)

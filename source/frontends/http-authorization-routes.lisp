@@ -17,13 +17,20 @@
        (format nil "Route parameter ~a is required" name)))
     value))
 
-(defun handle-authorized-new-document-route (params)
+(defun authorized-new-document (params route &optional path-dtype-key)
+  "Validate and publish one document; PATH-DTYPE-KEY names the optional
+legacy path parameter that must match the document dtype."
   (with-http-boundary ()
-    (let* ((path-dtype (require-path-string params "dtype"))
+    (let* ((path-dtype
+             (when path-dtype-key
+               (require-path-string params path-dtype-key)))
            (document (require-json-object (parse-json-request))))
       (validate-document-input document :path-dtype path-dtype)
       (publish-document document)
-      (jsown:to-json document))))
+      (jsown:to-json (strip-server-tenant-fields document)))))
+
+(defun handle-authorized-new-document-route (params)
+  (authorized-new-document params "/new/document/:dtype" "dtype"))
 
 (defun handle-authorized-new-target-route (params)
   (with-http-boundary ()
@@ -44,12 +51,12 @@
                    "/new/target/:actor" "POST"))
       (jsown:to-json document))))
 
-(defun handle-authorized-bulk-route (params)
+(defun handle-authorized-bulk-route (params &optional (route "/documents/bulk"))
   (declare (ignore params))
   (with-http-boundary ()
     (let* ((documents (require-json-array (parse-json-request)))
            (document-count (length documents))
-           (metadata (route-policy-metadata "/documents/bulk" "POST")))
+           (metadata (route-policy-metadata route "POST")))
       (when (> document-count star:*bulk-max-documents*)
         (signal-http-input-error
          413
@@ -81,7 +88,8 @@
                         (bulk-ingest-job-id job)))
                ("correlation_id" (current-correlation-id)))))))))
 
-(defun handle-authorized-search-route (params)
+(defun handle-authorized-search-route
+    (params &optional (route "/search"))
   (with-http-boundary ()
     (let* ((q (require-query-string params "q"))
            (limit (bounded-query-integer
@@ -94,7 +102,7 @@
               :principal (current-policy-principal)
               :requested-dataset dataset
               :requested-tenant tenant
-              :metadata (route-policy-metadata "/search" "GET"))))
+              :metadata (route-policy-metadata route "GET"))))
       (couchdb-handler (client *couchdb-pool*)
         (let* ((db star:*couchdb-default-database*)
                (bookmark (query-value params "bookmark"))
@@ -107,27 +115,34 @@
             (setf (jsown:val query "sort") sort))
           (when bookmark
             (setf (jsown:val query "bookmark") bookmark))
-          (cl-couch:fts-search
-           client
-           (jsown:to-json query)
-           db
-           "search"
-           "fts"))))))
+          (strip-server-tenant-from-search-body
+           (cl-couch:fts-search
+            client
+            (jsown:to-json query)
+            db
+            "search"
+            "fts")))))))
 
-(defun handle-authorized-document-get-route (params)
+
+
+
+(defun handle-authorized-document-get-route
+    (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let ((document-id (require-path-string params "id")))
       (couchdb-handler (client *couchdb-pool*)
-        (star.authorization:authorized-fetch-document
-         document-id
-         (lambda (id)
-           (cl-couch:get-document
-            client star:*couchdb-default-database* id))
-         :principal (current-policy-principal)
-         :metadata
-         (route-policy-metadata "/document/:id" "GET"))))))
+        (strip-server-tenant-fields
+         (star.authorization:authorized-fetch-document
+          document-id
+          (lambda (id)
+            (cl-couch:get-document
+             client star:*couchdb-default-database* id))
+          :principal (current-policy-principal)
+          :metadata
+          (route-policy-metadata route "GET")))))))
 
-(defun handle-authorized-document-delete-route (params)
+(defun handle-authorized-document-delete-route
+    (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let ((document-id (require-path-string params "id")))
       (couchdb-handler (client *couchdb-pool*)
@@ -142,12 +157,13 @@
               client star:*couchdb-default-database* id revision))
            :principal (current-policy-principal)
            :metadata
-           (route-policy-metadata "/document/:id" "DELETE"))
+           (route-policy-metadata route "DELETE"))
           (status-msg
            (format nil "Document ~a deleted" document-id)
             'success))))))
 
-(defun handle-authorized-document-update-route (params)
+(defun handle-authorized-document-update-route
+    (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let* ((document-id (require-path-string params "id"))
            (patch (request-json-body)))
@@ -169,40 +185,84 @@
              candidate)))
          :principal (current-policy-principal)
          :metadata
-         (route-policy-metadata "/document/:id" "PUT"))))))
+         (route-policy-metadata route "PUT"))))))
+
+(defun target-list-tenant (params)
+  "Resolve the target-list tenant, preserving the legacy default explicitly."
+  (let ((tenant (query-value params "tenant")))
+    (cond
+      ((null tenant) "default")
+      ((non-empty-string-p tenant) tenant)
+      (t
+       (signal-http-input-error
+        400
+        "invalid_tenant"
+        "Tenant must be a non-empty string")))))
+
+(defun target-document-tenant-id (document)
+  "Return the effective tenant of DOCUMENT using the legacy default rule."
+  (or (star.documents:document-value document "tenant_id" nil)
+      (star.documents:document-value document "tenant" nil)
+      "default"))
+
+(defun target-document-in-tenant-p (document tenant)
+  "True only when DOCUMENT belongs to the exact requested TENANT."
+  (let ((document-tenant (target-document-tenant-id document)))
+    (and (stringp document-tenant)
+         (string= tenant document-tenant))))
+
+(defun query-authorized-target-documents
+    (client database actor tenant principal metadata
+     &key (query-fn #'query-view))
+  "Authorize and fetch target documents through a tenant+actor scoped view.
+
+Authorization runs before backend I/O.  Returned documents are checked against
+TENANT again so a stale, poisoned, or incorrectly indexed backend response
+cannot widen the caller's requested tenant scope."
+  (star.authorization:authorize!
+   "targets:read"
+   :principal principal
+   :resource
+   (star.authorization:make-authorization-resource
+    :tenant-id tenant
+    :actor-name actor)
+   :metadata metadata)
+  (let* ((view
+           (funcall query-fn
+                    client
+                    database
+                    "targets"
+                    "by_tenant_actor"
+                    :include-docs t
+                    :key (list tenant actor)
+                    :reduce nil))
+         (rows (or (jsown:val-safe view "rows") nil))
+         (documents
+           (loop for row in rows
+                 for document = (jsown:val-safe row "doc")
+                 when (and document
+                           (target-document-in-tenant-p document tenant))
+                   collect document)))
+    (star.authorization:authorized-target-documents
+     documents actor "targets:read"
+     :principal principal
+     :metadata metadata)))
 
 (defun handle-authorized-targets-route (params)
   (with-http-boundary ()
     (let* ((actor (require-path-string params "actor"))
+           (tenant (target-list-tenant params))
+           (principal (current-policy-principal))
            (metadata (route-policy-metadata "/targets/:actor" "GET")))
-      (star.authorization:authorize!
-       "targets:read"
-       :principal (current-policy-principal)
-       :resource
-       (star.authorization:make-authorization-resource
-        :tenant-id "default"
-        :actor-name actor)
-       :metadata metadata)
       (couchdb-handler (client *couchdb-pool*)
-        (let* ((view
-                 (query-view
-                  client
-                  star:*couchdb-default-database*
-                  "targets"
-                  "by_actor"
-                  :include-docs t
-                  :key actor
-                  :reduce nil))
-               (rows (or (jsown:val-safe view "rows") nil))
-               (documents
-                 (loop for row in rows
-                       for document = (jsown:val-safe row "doc")
-                       when document collect document)))
-          (jsown:to-json
-           (star.authorization:authorized-target-documents
-            documents actor "targets:read"
-            :principal (current-policy-principal)
-            :metadata metadata)))))))
+        (jsown:to-json
+         (query-authorized-target-documents
+          client
+          star:*couchdb-default-database*
+          actor
+          tenant
+          principal
+          metadata))))))
 
 (defun safe-view-name-p (value)
   (and (non-empty-string-p value)
@@ -239,12 +299,13 @@
                  :limit limit
                  :reduce nil)))
           (jsown:to-json
-           (star.authorization:authorized-view-response
-            response
-            :principal (current-policy-principal)
-            :requested-dataset dataset
-            :requested-tenant tenant
-            :metadata metadata)))))))
+           (strip-server-tenant-from-rows
+            (star.authorization:authorized-view-response
+             response
+             :principal (current-policy-principal)
+             :requested-dataset dataset
+             :requested-tenant tenant
+             :metadata metadata))))))))
 
 (defun handle-authorized-dataset-size-route (params)
   (with-http-boundary ()

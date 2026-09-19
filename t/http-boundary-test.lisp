@@ -283,6 +283,49 @@
   (is (eq :async
           (star.frontends.http-api:bulk-request-mode 11))))
 
+(test terminal-bulk-jobs-release-request-payloads-but-remain-pollable
+  (dolist (scenario '(:completed :completed-with-errors :failed))
+    (let* ((documents
+             (list (make-boundary-document :id "terminal-doc-1")
+                   (make-boundary-document :id "terminal-doc-2")))
+           (job
+             (star.frontends.http-api::make-bulk-ingest-job
+              :id "terminal-job"
+              :principal "terminal-principal"
+              :documents documents
+              :correlation-id "terminal-correlation"
+              :service-context '(:request-only))))
+      (when (eq scenario :failed)
+        ;; A malformed sequence exercises the outer job failure handler.
+        (setf (star.frontends.http-api::bulk-ingest-job-documents job)
+              (cons (first documents) :invalid-tail)))
+      (star.frontends.http-api:execute-bulk-job
+       job
+       :publish-fn
+       (lambda (document)
+         (declare (ignore document))
+         (when (eq scenario :completed-with-errors)
+           (error "Synthetic per-document publish failure"))))
+      (let ((info (star.frontends.http-api::bulk-job-info-json job)))
+        (is (eq scenario
+                (star.frontends.http-api::bulk-ingest-job-status job)))
+        (is (= 2 (jsown:val info "total")))
+        (is (string= "terminal-job" (jsown:val info "job_id")))
+        (is (string= "terminal-correlation"
+                     (jsown:val info "correlation_id")))
+        (is (string= "terminal-principal"
+                     (star.frontends.http-api::bulk-ingest-job-principal job)))
+        (is (= (case scenario
+                 (:completed 2)
+                 (:failed 1)
+                 (otherwise 0))
+               (jsown:val info "succeeded")))
+        (is (= (if (eq scenario :completed-with-errors) 2 0)
+               (jsown:val info "failed")))
+        (is (null (star.frontends.http-api::bulk-ingest-job-documents job)))
+        (is (null (star.frontends.http-api::bulk-ingest-job-service-context
+                   job)))))))
+
 (test asynchronous-bulk-submission-does-not-wait-for-worker
   (let* ((fake-system (list :test-system))
          (sent-worker nil)

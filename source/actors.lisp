@@ -306,15 +306,17 @@ Sento agent semantics: do the publish *inside* the agent via `agent-get`, so the
 producer state (connection/channel) is touched from one pinned thread.
 
 BODY is expected to be a JSON string, but accept a JSOWN object as a convenience
-and normalize it to JSON.
-
-"
+and normalize it to JSON. The current trace context rides in AMQP headers
+(never in message bodies); publish outcomes are counted."
   (assert agent () "publish: producer agent is NIL")
   (let ((normalized-body
           (cond
             ((stringp body) body)
             ((null body) (error "publish: body is NIL"))
-            (t (jsown:to-json body)))))
+            (t (jsown:to-json body))))
+        (properties
+          (when (star:observability-active-p)
+            (star.observability:inject-rabbit-trace-context properties))))
     (handler-case
         (bt:with-timeout (*publish-timeout-seconds*)
           (agent-get agent
@@ -322,11 +324,20 @@ and normalize it to JSON.
                        (star.producers:publish producer
                                                :body normalized-body
                                                :properties properties
-                                               :routing-key routing-key))))
+                                               :routing-key routing-key)))
+          (star.observability:record-counter
+           "starintel_rabbit_publish_total" 1
+           :attributes (list (cons "routing_key" (or routing-key "default")))))
       (bt:timeout (e)
+        (star.observability:record-counter
+         "starintel_rabbit_publish_failures_total" 1
+         :attributes (list (cons "routing_key" (or routing-key "default"))))
         (log:error "Rabbit publish timeout (routing-key=~a): ~a" routing-key e)
         (error e))
       (error (e)
+        (star.observability:record-counter
+         "starintel_rabbit_publish_failures_total" 1
+         :attributes (list (cons "routing_key" (or routing-key "default"))))
         (log:error "Rabbit publish failed (routing-key=~a): ~a" routing-key e)
         (error e)))))
 

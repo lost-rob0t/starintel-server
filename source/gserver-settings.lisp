@@ -248,6 +248,38 @@ Keep this list minimal; everything else is authenticated.")
 (defparameter *rabbit-password*
   (environment-secret "RABBITMQ_PASSWORD" "RABBITMQ_PASSWORD_FILE")
   "RabbitMQ password, from =RABBITMQ_PASSWORD= or =RABBITMQ_PASSWORD_FILE=.")
+
+;;;; Target lease store
+(defparameter *lease-store-backend*
+  (or (uiop:getenv "STAR_LEASE_STORE_BACKEND") "memory")
+  "Target lease backend selected by =initialize-lease-store=: =memory= (the
+in-process default; matches the historical inline lease behavior and has no
+external dependency) or =valkey=.
+
+- env: =STAR_LEASE_STORE_BACKEND=
+- default: =memory=")
+(defparameter *valkey-lease-host*
+  (or (uiop:getenv "VALKEY_HOST") "127.0.0.1")
+  "Valkey lease backend host, used when =*lease-store-backend*= is =valkey=.
+
+- env: =VALKEY_HOST=
+- default: =127.0.0.1=")
+(defparameter *valkey-lease-port*
+  (environment-integer "VALKEY_PORT" 6379)
+  "Valkey lease backend port, used when =*lease-store-backend*= is =valkey=.
+
+- env: =VALKEY_PORT=
+- default: =6379=")
+(defparameter *valkey-lease-password-file*
+  (uiop:getenv "VALKEY_PASSWORD_FILE")
+  "Path of the Valkey password secret file, read once by the lease-store
+constructor. Required when =*lease-store-backend*= is =valkey=; the password
+value itself is never read from the environment, only from this file
+(compose mounts it at =/run/secrets/valkey_password=).
+
+- env: =VALKEY_PASSWORD_FILE=
+- default: unset")
+
 (defparameter *slynk-port* 4009
   "Port for the SLY/Slynk REPL when =start-debugger= is invoked.")
 
@@ -268,6 +300,46 @@ Populated by plugins; see =addons.lisp=.")
   "Event sourced log database; outbox and settlement events land here.")
 (defparameter *bulk-max-documents* 500
   "Maximum documents accepted by the bulk ingest endpoint per request.")
+
+;;;; Ingest tenant adaptation
+(defun parse-tenant-dataset-map (value)
+  "Parse a comma-separated =dataset=tenant= setting into an alist."
+  (loop for entry in (split-comma-setting value)
+        for separator = (position #\= entry)
+        when (and separator (plusp separator))
+          collect (cons (string-trim '(#\Space)
+                                     (subseq entry 0 separator))
+                        (string-trim '(#\Space)
+                                     (subseq entry (1+ separator))))))
+
+(defun parse-tenant-fallback (value)
+  "Treat blank or absent fallback values as unset."
+  (and value (plusp (length value)) value))
+
+(defparameter *tenant-dataset-map*
+  (parse-tenant-dataset-map (uiop:getenv "STAR_TENANT_DATASET_MAP"))
+  "Alist mapping datasets to the authorization tenant applied when a
+document arrives without tenant_id/tenant.
+
+- env: =STAR_TENANT_DATASET_MAP= (comma-separated =dataset=tenant=)
+- default: empty")
+
+(defparameter *tenant-fallback*
+  (parse-tenant-fallback (uiop:getenv "STAR_TENANT_FALLBACK"))
+  "Tenant applied when a document carries no tenancy and its dataset has
+no =*tenant-dataset-map*= entry.
+
+- env: =STAR_TENANT_FALLBACK=
+- default: unset (documents keep the historical =default= tenant)")
+
+(defun tenant-adaptation-for (dataset)
+  "Resolve the server-side adapted tenant for a tenant-less document.
+
+Returns nil when no adaptation is configured, leaving the historical
+=default= tenant in effect."
+  (or (and dataset
+           (cdr (assoc dataset *tenant-dataset-map* :test #'string=)))
+      *tenant-fallback*))
 
 ;;;; Rabbit retry and quarantine
 (defparameter *rabbit-max-retries* 4

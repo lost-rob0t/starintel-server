@@ -109,7 +109,25 @@
        :legacy t :scopes '("targets:dispatch"))
       (capability-endpoint
        "targets_by_actor" "GET" "/targets/:actor"
-       :legacy t :scopes '("targets:read"))))
+       :legacy t :scopes '("targets:read"))
+      (capability-endpoint
+       "document_create_v1" "POST" "/api/v1/documents"
+       :scopes '("documents:write"))
+      (capability-endpoint
+       "document_bulk_create_v1" "POST" "/api/v1/documents/bulk"
+       :scopes '("documents:bulk"))
+      (capability-endpoint
+       "document_read_v1" "GET" "/api/v1/documents/:id"
+       :scopes '("documents:read"))
+      (capability-endpoint
+       "document_update_v1" "PUT" "/api/v1/documents/:id"
+       :scopes '("documents:write"))
+      (capability-endpoint
+       "document_delete_v1" "DELETE" "/api/v1/documents/:id"
+       :scopes '("documents:delete"))
+      (capability-endpoint
+       "document_search_v1" "GET" "/api/v1/documents/search"
+       :scopes '("search:read"))))
     ("compatibility"
      (jsown:new-js
        ("legacy_routes" :true)

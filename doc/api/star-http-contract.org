@@ -9,7 +9,7 @@ System: =starintel-gserver=
 :PACKAGE: STAR.HTTP.CONTRACT
 :END:
 One documented HTTP operation of the client contract.
-- Slots: =id=, =client-name=, =method=, =path=, =summary=, =tags=, =authority=, =scopes=, =path-parameters=, =request-schema=, =responses=, =idempotency=
+- Slots: =id=, =client-name=, =method=, =path=, =summary=, =tags=, =authority=, =scopes=, =path-parameters=, =query-parameters=, =request-schema=, =responses=, =idempotency=
 
 * Functions
 *** all-http-operations
@@ -102,6 +102,16 @@ Path template of the operation.
 (http-operation-path-parameters (SB-KERNEL:INSTANCE))
 #+end_src
 Path parameters and their constraints.
+*** http-operation-query-parameters
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(http-operation-query-parameters (SB-KERNEL:INSTANCE))
+#+end_src
+Query parameters of the operation as =(:name ... :required ... :schema ...)=
+property lists.
 *** http-operation-request-schema
 :PROPERTIES:
 :KIND: fn

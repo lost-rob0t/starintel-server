@@ -98,6 +98,10 @@ Parse one Rabbit delivery and classify malformed payloads permanently.
 Canonical document mutation queues validate before transport normalization.
 The remaining non-strict decode is transport-metadata inspection
 (=transient-p=); target deliveries validate like every other dtype.
+
+The server-injected tenant_id is exempted from strict envelope validation:
+it is removed before validation and restored on the ensured document so
+persistence keeps tenancy while the client contract stays v0.9.0.
 *** emit-document
 :PROPERTIES:
 :KIND: fn

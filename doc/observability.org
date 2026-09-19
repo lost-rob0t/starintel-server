@@ -1,0 +1,162 @@
+#+TITLE: Observability
+
+This document is the StarIntel server contract for the shared observability
+subsystem. The infrastructure side (observe host, OpenObserve, gateway
+collector, dashboards, alerts) is documented in
+starintel-infra:docs/observability.org.
+
+* Architecture
+
+#+BEGIN_EXAMPLE
+star-server (OTLP/HTTP-JSON, no credentials)
+   |
+   v
+otelcol sidecar (docker compose; scrapes rabbitmq/couchdb prometheus)
+   |
+   v  OTLP, no credentials
+observe gateway collector (OTLP 4317/4318)
+   |
+   v  Basic auth with the OpenObserve org ingestion token
+OpenObserve
+#+END_EXAMPLE
+
+Applications depend on the =star.observability= library, never on an
+OpenObserve client. OpenObserve stays replaceable.
+
+* CURRENT implementation
+
+** Telemetry lifecycle (explicit opt-in)
+
+- The addon is registered at gserver load (metadata only).
+- =STAR_OBSERVABILITY_ENABLED= defaults to =false=. With the gate off, the
+  actor-start hook is a strict no-op: no exporter thread, queues, ids or
+  counters are started.
+- When the gate is explicitly true, =maybe-autoload-observability-addon= runs
+  from =*actors-start-hook*= after the trusted init file and actor system have
+  started, but before the HTTP listener. It starts the normal addon lifecycle;
+  this is not a second exporter path.
+- A trusted init file may still call =(load-addon :starintel-observability)=
+  explicitly. =load-addon= is idempotent, so an explicit init call and the
+  hosted autoload gate safely converge on the same addon instance.
+- Hosted deployments set the export gate from
+  =starintel.biz.observability.enable=. Thus one explicit Biz opt-in is enough
+  to activate StarIntel application telemetry while the default remains off.
+- =stop-runtime= is NOT wired directly to telemetry; the addon lifecycle owns
+  exporter start/stop, exactly like =starintel-bixby=.
+
+** What is instrumented
+
+| Boundary | Signals | Where |
+|----------+---------+-------|
+| HTTP requests | server span + =starintel_http_requests_total=, duration, traceparent response header | =observability-http-middleware=, outermost in the lack builder while the addon is active |
+| Search queries | =search.query= structured log for every query entering the authorization boundary + =starintel_search_queries_total= | =authorized-search-query= final implementation; includes denied attempts once a principal exists |
+| RabbitMQ publish | =traceparent= AMQP header (never message body), =starintel_rabbit_publish_total= / =_failures_total= | =star.actors:publish= choke-point |
+| RabbitMQ consume | consume/join spans via header extraction, =starintel_rabbit_consumed_total= / =_failures_total= | =consume= around-method in =source/observability-consumers.lisp=; properties captured in =rabbit-queue-stream= |
+| CouchDB views | client span per request, =starintel_couchdb_requests_total=, conflicts counter | transport wrapper installed at addon start; document bodies never recorded |
+| Leases | =starintel_lease_stale_writer_rejections_total=, =_conflicts_total=, =_acquisitions_total=, bounded =_outcomes_total= | =star:observability-lease-metrics-hook= attached to the runtime lease store (=star:initialize-lease-store=; memory default, Valkey via =STAR_LEASE_STORE_BACKEND=valkey=) |
+| Security events | =security-event= structured logs: authn ok/failed, authz denied, tenant-boundary rejection | authentication + authorization middleware |
+| Structured events | =event.name= JSON log events with trace_id/span_id | =emit-log-event= |
+
+** Search query audit
+
+Every call to =authorized-search-query= emits one =search.query= event before
+the capability/resource decision. That means permitted searches and attempts
+later denied by authorization are both visible to the operator. Requests that
+never establish a StarIntel principal are rejected earlier by the HTTP/auth
+boundary and are represented by the existing authentication/security events.
+
+The event records:
+
+- the raw user search expression as =query.text=;
+- =query.sha256= and the original UTF-8 byte count;
+- whether the retained text was truncated;
+- principal id, requested tenant and requested dataset;
+- normalized HTTP route/method and correlation id when request metadata exists.
+
+Query text is retained because the operator explicitly requested a complete
+search audit trail. The record never includes authorization headers, cookies,
+request bodies, credentials, or the backend-expanded query containing injected
+scope clauses. Query text is bounded at 16 KiB per event; oversized inputs keep
+the digest and original length. Do not place credentials or secrets inside a
+search expression.
+
+Like all application telemetry, query audit emission is a no-op unless log
+export is explicitly enabled and the addon lifecycle is active.
+
+** Redaction
+
+1. Application emission policy: =redact-attributes= deletes forbidden keys
+   (authorization, cookie, set-cookie, password, secret, token, api_key,
+   access_token, refresh_token, client_secret, request/response/document/
+   message bodies) structurally; regex scans are not the mechanism.
+2. Collector: =transform/redact= enforces the same namespace (infra).
+3. OpenObserve: private admin path only.
+
+Payloads: =STAR_INCLUDE_PAYLOADS= stays =nil= unless an explicit debug
+policy sets it. Actor message bodies and CouchDB document bodies are never
+recorded.
+
+** Telemetry schema
+
+Resource attributes: =service.name=, =service.version=,
+=service.instance.id=, =deployment.environment.name=, =host.name=,
+=starintel.node.id=, =starintel.component=, =starintel.runtime=.
+
+Contextual attributes (traces and structured logs only):
+=starintel.actor.system/type/id=, =starintel.operation.id=,
+=starintel.run.id=, =starintel.tenant.id=. The collector deletes the ID
+namespace from metric labels; applications must not emit them as labels.
+
+Trace propagation: W3C =traceparent= over HTTP headers and RabbitMQ AMQP
+headers. A request like HTTP -> actor send -> RabbitMQ -> actor receive ->
+CouchDB joins one distributed trace when each hop carries the header.
+
+** Tests
+
+=star.observability= is covered by =t/observability-test.lisp= (FiveAM,
+hermetic), and search audit behavior is covered by
+=t/authorization-services-final-test.lisp=:
+
+- config: disabled by default; explicit truthy opt-in; disabled addon costs
+  nothing;
+- W3C traceparent round-trip + malformed rejection;
+- child context keeps trace id and records parent;
+- structural redaction incl. case-insensitive forbidden keys;
+- backend failure: bounded drop counters, no signal, no wedge;
+- correlation: one request through the HTTP middleware with nested spans
+  shares one trace id at the collector, secrets injected under forbidden
+  keys never appear, span count per request stays bounded;
+- allowed search records query text plus principal/dataset/correlation context;
+- denied search attempts are still recorded before authorization rejects them.
+
+Run: =nix run .#star-unit-tests=.
+
+* Credential ownership
+
+| Credential | Owner | Never held by |
+|------------+-------+----------------|
+| OpenObserve org ingestion token | observe gateway collector only | star-server, otelcol sidecar, applications |
+| OpenObserve admin credential | OpenObserve itself (first-boot env) | anything else |
+
+* FUTURE work (not implemented here)
+
+- Prolog/RLM trace hierarchy (rlm.run/spec/plan/execute/verify): the
+  span helpers exist; no Prolog boundary exists in the server yet.
+- LLM telemetry contract (model, provider, tokens, cost): attributes
+  documented, no model calls exist in the server.
+- Predicate-level Prolog tracing: debug mode only; never default.
+- Lease consumer adoption: the runtime lease store (memory or Valkey) and
+  the =starintel_lease_*= counters are wired through
+  =star:initialize-lease-store=; request/target execution still uses the
+  inline document lease fields until issue #32 switches consumers to the
+  store.
+
+* Troubleshooting
+
+| Symptom | Check |
+|---------+-------|
+| No telemetry at the gateway | Is =STAR_OBSERVABILITY_ENABLED=true=? Is =STAR_OBSERVABILITY_ENDPOINT= reachable (compose: =http://otelcol:4318=)? In a custom non-hosted runtime, was the addon explicitly loaded or did the actor-start hook run? |
+| Search queries absent from logs | Verify logs are included in =STAR_OBSERVABILITY_SIGNALS= and the request reaches =authorized-search-query= with an established principal. |
+| Collector export 401 | Gateway ingest token rotated: re-run =openobserve-provision= on observe (infra side); the sidecar itself holds no credential |
+| Spans missing but logs present | =STAR_OBSERVABILITY_SIGNALS= contents; collector =tail_sampling= baseline (5%) |
+| Telemetry volume explosion | =STAR_ACTOR_DETAIL=, =STAR_PROLOG_DETAIL=, span budget test |

@@ -40,6 +40,128 @@
    :exchange-name "test-exchange"
    :routing-key "test.key"))
 
+(defun make-mock-retrying-rabbit-stream ()
+  (make-instance
+   'star.consumers:retrying-rabbit-queue-stream
+   :host "localhost"
+   :port 5672
+   :queue-name "test-retrying-queue"
+   :exchange-name "test-exchange"
+   :routing-key "test.key"))
+
+(define-condition test-rabbitmq-server-error (error) ())
+
+(defclass test-failed-settlement-stream ()
+  ((closed-p :initform nil :accessor test-stream-closed-p)
+   (settlements :initform 0 :accessor test-stream-settlement-attempts)))
+
+(defmethod star.consumers:open-stream ((stream test-failed-settlement-stream))
+  stream)
+
+(defmethod star.consumers:close-stream ((stream test-failed-settlement-stream))
+  (setf (test-stream-closed-p stream) t))
+
+(defmethod star.consumers:stream-settle
+    ((stream test-failed-settlement-stream) delivery settlement)
+  (declare (ignore delivery settlement))
+  (incf (test-stream-settlement-attempts stream))
+  (error 'test-rabbitmq-server-error))
+
+(defclass test-failed-settlement-consumer (star.consumers:consumer) ())
+
+(defmethod star.consumers:consumer-read
+    ((consumer test-failed-settlement-consumer))
+  (declare (ignore consumer))
+  "delivery")
+
+(test concurrent-server-ulids-remain-distinct
+  ;; The pinned cms-ulid generator has one process-wide mutable LAST value.
+  ;; Both workers would enter RANDOM and choose the same value without the
+  ;; server lock. The timeout also lets the locked implementation finish.
+  (let* ((arrivals 0)
+         (arrival-lock (bt:make-lock "ulid-test-arrivals"))
+         (timestamp 123456789000000)
+         (random (lambda (limit)
+                   (declare (ignore limit))
+                   (bt:with-lock-held (arrival-lock)
+                     (incf arrivals))
+                   (let ((deadline (+ (get-internal-real-time)
+                                      (/ internal-time-units-per-second 10))))
+                     (loop until (or (= 2 arrivals)
+                                     (>= (get-internal-real-time) deadline))
+                           do (sleep 0.001)))
+                   17))
+         (left (bt:make-thread
+                (lambda () (star.ids:ulid :time timestamp :random random))))
+         (right (bt:make-thread
+                 (lambda () (star.ids:ulid :time timestamp :random random))))
+         (ids (list (bt:join-thread left) (bt:join-thread right))))
+    (is (= 26 (length (first ids))))
+    (is (= 26 (length (second ids))))
+    (is (not (string= (first ids) (second ids))))))
+
+(test concurrent-quarantine-records-have-distinct-ids
+  (let* ((timestamp 123456789000111)
+         (arrivals 0)
+         (arrival-lock (bt:make-lock "quarantine-ulid-test"))
+         (original-clock (symbol-function 'cms-ulid::unix-ts-ms))
+         (original-random (symbol-function 'crypto:strong-random))
+         (ids nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'cms-ulid::unix-ts-ms)
+                 (lambda () timestamp)
+                 (symbol-function 'crypto:strong-random)
+                 (lambda (limit)
+                   (declare (ignore limit))
+                   (bt:with-lock-held (arrival-lock)
+                     (incf arrivals))
+                   (let ((deadline (+ (get-internal-real-time)
+                                      (/ internal-time-units-per-second 10))))
+                     (loop until (or (= 2 arrivals)
+                                     (>= (get-internal-real-time) deadline))
+                           do (sleep 0.001)))
+                   17))
+           (setf ids
+                 (loop for index below 2
+                       collect
+                       (bt:make-thread
+                        (lambda ()
+                          (let ((stream (make-mock-retrying-rabbit-stream)))
+                            (setf (star.consumers:retry-stream-current-properties
+                                   stream)
+                                  (list (cons :message-id
+                                              (format nil "delivery-~d" index))
+                                        (cons :correlation-id "trace")))
+                            (jsown:val
+                             (star.consumers::quarantine-record
+                              stream (star.consumers:settlement-reject))
+                             "_id"))))))
+           (setf ids (mapcar #'bt:join-thread ids)))
+      (setf (symbol-function 'cms-ulid::unix-ts-ms) original-clock
+            (symbol-function 'crypto:strong-random) original-random))
+    (is (= 2 (length ids)))
+    (is (every (lambda (id) (and (stringp id)
+                                 (= 37 (length id))
+                                 (search "quarantine:" id :end2 11)))
+               ids))
+    (is (not (string= (first ids) (second ids))))))
+
+(test failed-settlement-closes-worker-without-acknowledging
+  (let* ((stream (make-instance 'test-failed-settlement-stream))
+         (consumer (make-instance
+                    'test-failed-settlement-consumer
+                    :name "failed-settlement"
+                    :stream stream
+                    :fn (lambda (self delivery)
+                          (declare (ignore self delivery))
+                          (star.consumers:settlement-reject)))))
+    (star.consumers:run-consumer consumer)
+    (is (test-stream-closed-p stream))
+    (is (= 1 (test-stream-settlement-attempts stream)))
+    (is (= 1 (star.consumers:consumer-unsettled consumer)))
+    (is (= 0 (star.consumers:consumer-settlement-count consumer :reject)))))
+
 (test consumer-creation
   (let ((consumer (make-test-consumer :name "test" :workers 2)))
     (is (string= "test" (star.consumers:consumer-name consumer)))
@@ -182,6 +304,82 @@
              policy
              (make-condition 'star.consumers:permanent-delivery-error)
              0)))))
+
+(test rabbit-startup-retry-recovers-from-transient-server-error
+  (let* ((stream (make-mock-retrying-rabbit-stream))
+         (policy
+           (star.consumers:make-retry-policy
+            :max-retries 2
+            :base-delay-ms 10
+            :max-delay-ms 100
+            :jitter-ratio 0.0d0))
+         (attempts 0)
+         (sleeps nil)
+         (result
+           (star.consumers::call-with-rabbit-startup-retry
+            stream
+            policy
+            (lambda ()
+              (incf attempts)
+              (if (< attempts 3)
+                  (progn
+                    (setf (star.consumers:rabbit-stream-owner-thread stream)
+                          (bt:current-thread))
+                    (error 'test-rabbitmq-server-error))
+                  :opened))
+            :sleep-fn (lambda (seconds) (push seconds sleeps)))))
+    (is (eq :opened result))
+    (is (= 3 attempts))
+    (is (equal '(0.01d0 0.02d0) (reverse sleeps)))
+    (is (null (star.consumers:rabbit-stream-owner-thread stream)))
+    (is (null (star.consumers:rabbit-stream-connection stream)))
+    (is (not (star.consumers:rabbit-stream-open-p stream)))))
+
+(test rabbit-startup-retry-exhaustion-is-visible
+  (let* ((stream (make-mock-retrying-rabbit-stream))
+         (policy
+           (star.consumers:make-retry-policy
+            :max-retries 2
+            :base-delay-ms 1
+            :max-delay-ms 10
+            :jitter-ratio 0.0d0))
+         (attempts 0)
+         (sleeps 0))
+    (signals test-rabbitmq-server-error
+      (star.consumers::call-with-rabbit-startup-retry
+       stream
+       policy
+       (lambda ()
+         (incf attempts)
+         (error 'test-rabbitmq-server-error))
+       :sleep-fn (lambda (seconds)
+                   (declare (ignore seconds))
+                   (incf sleeps))))
+    (is (= 3 attempts))
+    (is (= 2 sleeps))))
+
+(test rabbit-startup-retry-does-not-hide-programming-errors
+  (let* ((stream (make-mock-retrying-rabbit-stream))
+         (policy
+           (star.consumers:make-retry-policy
+            :max-retries 5
+            :base-delay-ms 1
+            :max-delay-ms 10
+            :jitter-ratio 0.0d0))
+         (attempts 0)
+         (sleeps 0))
+    (signals simple-error
+      (star.consumers::call-with-rabbit-startup-retry
+       stream
+       policy
+       (lambda ()
+         (incf attempts)
+         (error "programming bug"))
+       :sleep-fn (lambda (seconds)
+                   (declare (ignore seconds))
+                   (incf sleeps))))
+    (is (= 1 attempts))
+    (is (zerop sleeps))))
 
 (test transient-document-predicate
   (let ((transient

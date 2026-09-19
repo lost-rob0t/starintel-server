@@ -23,8 +23,8 @@ Default response headers applied to API responses.
 :KIND: struct
 :PACKAGE: STARINTEL-GSERVER-HTTP-API
 :END:
-One bulk ingest job: documents plus options.
-- Slots: =id=, =principal=, =documents=, =correlation-id=, =service-context=, =submitted-at=, =status=, =succeeded=, =failed=, =error-code=
+One bulk ingest job; terminal jobs retain counts, not request payloads.
+- Slots: =id=, =principal=, =documents=, =total=, =correlation-id=, =service-context=, =submitted-at=, =status=, =succeeded=, =failed=, =error-code=
 
 * Conditions
 *** http-input-error
@@ -161,6 +161,15 @@ Authorize at the embedded publish boundary before any Rabbit side effect.
 (publish-target-document-unchecked (STARINTEL-GSERVER-HTTP-API::DOCUMENT))
 #+end_src
 Publish a legacy target directly to the target compatibility consumer.
+*** resolved-server-tenant
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(resolved-server-tenant (STARINTEL-GSERVER-HTTP-API::DOCUMENT))
+#+end_src
+Tenant adopted by a document that carries no tenancy of its own.
 *** service-context-properties
 :PROPERTIES:
 :KIND: fn
@@ -171,6 +180,55 @@ Publish a legacy target directly to the target compatibility consumer.
  *CURRENT-AUTHORIZATION-DECISION*))
 #+end_src
 Build server-owned Rabbit properties. Caller-supplied document fields are ignored.
+*** stamp-server-tenant!
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(stamp-server-tenant! (STARINTEL-GSERVER-HTTP-API::DOCUMENT))
+#+end_src
+Inject the resolved tenant_id ahead of MQ publish or persistence.
+
+A document that already declares tenant_id or tenant keeps it untouched.
+*** strip-server-tenant-fields
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(strip-server-tenant-fields (STARINTEL-GSERVER-HTTP-API::DOCUMENT))
+#+end_src
+Remove the server-injected tenant_id from an outgoing document.
+
+Accepts either a parsed jsown object or a raw JSON string; strings are
+parsed, stripped, and re-serialized so the surrounding handler keeps
+operating on the type it started with.
+*** strip-server-tenant-from-rows
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(strip-server-tenant-from-rows (STARINTEL-GSERVER-HTTP-API::RESPONSE))
+#+end_src
+Strip tenant_id from every embedded document of a row response.
+
+Covers the FTS stored-fields projection (=fields=), the embedded document
+(=doc=), and outbox payloads recorded inside =doc.extensions=.
+*** strip-server-tenant-from-search-body
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(strip-server-tenant-from-search-body (STARINTEL-GSERVER-HTTP-API::BODY))
+#+end_src
+Strip tenant_id from docs embedded in a CouchDB FTS response body.
+
+Accepts either a parsed jsown object or a raw JSON string; strings are
+parsed, stripped, and re-serialized so the surrounding handler keeps
+operating on the type it started with.
 *** submit-bulk-ingest-job
 :PROPERTIES:
 :KIND: fn

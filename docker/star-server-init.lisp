@@ -1,5 +1,12 @@
 (in-package :star)
 
+(setf *tenant-fallback*
+      (or (parse-tenant-fallback (uiop:getenv "STAR_TENANT_FALLBACK"))
+          *tenant-fallback*)
+      *tenant-dataset-map*
+      (or (parse-tenant-dataset-map (uiop:getenv "STAR_TENANT_DATASET_MAP"))
+          *tenant-dataset-map*))
+
 (setf *couchdb-host*
       (or (uiop:getenv "COUCHDB_HOST") *couchdb-host*)
       *couchdb-default-database*

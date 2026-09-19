@@ -8,7 +8,7 @@
 LISP ?= sbcl
 EMACS ?= emacs
 
-.PHONY: all test integration-test test-emacs images load-images compose-config stack-test docs-api doc-coverage
+.PHONY: all test integration-test test-emacs images load-images compose-config stack-test docs-api doc-coverage youtube-actor-image prolog-shard-image
 
 all: test
 
@@ -27,8 +27,20 @@ integration-test:
 test-emacs:
 	$(EMACS) -Q --batch -L . -l client-test.el -f ert-run-tests-batch-and-exit
 
+ACTOR_FLAKE ?= ../starintel-pro-actors
+
 images:
 	nix build .#star-server-image .#couchdb-image .#clouseau-image .#rabbitmq-image
+
+youtube-actor-image:
+	nix build $(ACTOR_FLAKE)#starintel-youtube-image --no-link --print-out-paths > /tmp/actor-image-path && \
+	docker load < $$(cat /tmp/actor-image-path)
+
+PROLOG_ACTOR_FLAKE ?= github:lost-rob0t/starintel-pro-actors/9ef1caf119fc465f7da7f979775b6bf29a21a148
+
+prolog-shard-image:
+	@set -eu; image_path=$$(nix build $(PROLOG_ACTOR_FLAKE)#prolog-shard-image --no-link --print-out-paths); \
+	docker load < "$$image_path"
 
 load-images:
 	nix run .#load-images
@@ -61,3 +73,4 @@ clean:
 	rm -v ./star-server
 
 # Makefile:1 ends here
+

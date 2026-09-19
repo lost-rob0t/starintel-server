@@ -56,6 +56,30 @@
 ;;; Example:
 ;;; (load #P"/etc/starintel/actors/domain-enricher.lisp")
 
+;;; Optional addons ---------------------------------------------------------
+;;;
+;;; Addons are trusted operator code loaded through the addon lifecycle and
+;;; started explicitly. Nothing below runs unless the operator adds it here.
+;;;
+;;; Observability: OTLP export of logs, metrics and traces to the local
+;;; OpenTelemetry Collector. Off unless this line is present; the export
+;;; target and signal mix are controlled by STAR_OBSERVABILITY_* env vars.
+;;; The application holds no OpenObserve credentials.
+;;;
+;;; (load-addon :starintel-observability)
+;;;
+;;; Example:
+;;; (load-addon :starintel-bixby)
+
+;;; Optional durable target leases ------------------------------------------
+;;;
+;;; The lease store is initialized during start-runtime. The default
+;;; *lease-store-backend* is "memory" (in-process, no external dependency).
+;;; To make target leases durable, select the Valkey backend; compose already
+;;; provides VALKEY_HOST, VALKEY_PORT and VALKEY_PASSWORD_FILE.
+;;;
+;;; (setf *lease-store-backend* "valkey")
+
 ;;; Optional SLYNK debugger ------------------------------------------------
 ;;;
 ;;; SLYNK is remote code execution. Use loopback/SSH forwarding only.

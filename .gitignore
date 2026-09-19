@@ -24,4 +24,6 @@ stack-test-artifacts/
 # Local deployment configuration and secrets
 .env
 secrets/
-.prolog/
+
+# Transient prolog-verify lock (tracked .prolog state excludes only this)
+.prolog/.facts.lock

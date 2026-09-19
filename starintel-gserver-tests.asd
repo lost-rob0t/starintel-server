@@ -13,7 +13,9 @@
    #:fiveam
    #:dexador
    #:bordeaux-threads
-   #:jsown)
+   #:jsown
+   #:usocket
+   #:alexandria)
   :components
   ((:module "t"
     :serial t
@@ -32,6 +34,7 @@
      (:file "dataset-export-test")
      (:file "couchdb-view-request-test")
      (:file "lease-store-contract-test")
+     (:file "lease-store-runtime-test")
      (:file "http-boundary-test")
      (:file "http-target-v1-test")
      (:file "json-literal-preservation-test")
@@ -46,11 +49,15 @@
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")
+     (:file "http-target-tenant-test")
+     (:file "http-tenant-injection-test")
      (:file "authorization-services-final-test")
      (:file "authorization-quota-test")
      (:file "gserver-client-test")
      (:file "gserver-client-final-test")
+     (:file "http-contract-documents-test")
      (:file "runtime-lifecycle-test")
+     (:file "observability-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)
