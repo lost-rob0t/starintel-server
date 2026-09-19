@@ -3,7 +3,7 @@
 ;;;; Local content-addressed filesystem backend.
 ;;;;
 ;;;; Immutable blocks live as one file per content id under a two-hex-digit
-;;;; fan-out directory below ROOT. Writes go to a .starfs-tmp sibling and are
+;;;; fan-out directory below ROOT. Writes go to a unique temp sibling and are
 ;;;; renamed into place, so a reader can never observe a partial block and a
 ;;;; crashed or interrupted put leaves no gettable address behind. The
 ;;;; backend is dumb-bytes CAS: it owns no namespace, no keys, and no
@@ -48,20 +48,14 @@
       :type "blk")
      root)))
 
-(defun atomic-write-block-file (path bytes)
-  "Write BYTES to a temp sibling of PATH then rename it into place so PATH only ever names complete content."
-  (ensure-directories-exist (uiop:pathname-directory-pathname path))
-  (let ((temp-path
-          (make-pathname :name (pathname-name path)
-                         :type "blk-tmp"
-                         :defaults path)))
-    (with-open-file (stream temp-path
-                            :direction :output
-                            :if-exists :supersede
-                            :if-does-not-exist :create
-                            :element-type '(unsigned-byte 8))
-      (write-sequence bytes stream))
-    (rename-file temp-path path)))
+(defun temporary-block-path (path)
+  "Return a unique temp sibling of PATH for one atomic write attempt."
+  (make-pathname
+   :name (format nil "~a-~a"
+                 (pathname-name path)
+                 (string-downcase (star.ids:ulid)))
+   :type "blk-tmp"
+   :defaults path))
 
 (defun read-block-file-bytes (path)
   "Read PATH into a fresh (unsigned-byte 8) vector."
@@ -79,6 +73,34 @@
                  (content-id-from-bytes (read-block-file-bytes path)))
       (file-error () nil))))
 
+(defun atomic-write-block-file (path bytes content-id)
+  "Write BYTES to a unique temp sibling of PATH, then atomically publish it. Concurrent writers of the same CONTENT-ID may race to publish identical bytes; all successful final states must still verify against CONTENT-ID."
+  (ensure-directories-exist (uiop:pathname-directory-pathname path))
+  (let ((temp-path (temporary-block-path path)))
+    (unwind-protect
+         (progn
+           (with-open-file (stream temp-path
+                                   :direction :output
+                                   :if-exists :error
+                                   :if-does-not-exist :create
+                                   :element-type '(unsigned-byte 8))
+             (write-sequence bytes stream))
+           ;; A concurrent writer may have published the same immutable block
+           ;; while this attempt was writing. Avoid replacing a verified final
+           ;; file when it is already correct; otherwise publish our complete
+           ;; temp file. On platforms where rename-file rejects an existing
+           ;; target, accept that race only if the winner verifies.
+           (unless (block-file-matches-content-id-p path content-id)
+             (handler-case
+                 (rename-file temp-path path)
+               (file-error (condition)
+                 (unless (block-file-matches-content-id-p path content-id)
+                   (error condition))))))
+           (unless (block-file-matches-content-id-p path content-id)
+             (error 'block-integrity-error :content-id content-id)))
+      (when (uiop:file-exists-p temp-path)
+        (ignore-errors (delete-file temp-path))))))
+
 (defmethod put-block ((store local-block-store) bytes)
   (let* ((content-id (content-id-from-bytes bytes))
          (path (block-path store content-id)))
@@ -87,7 +109,7 @@
     ;; an out-of-band-corrupted file atomically from the caller's verified
     ;; bytes instead of returning a false success that get-block cannot read.
     (unless (block-file-matches-content-id-p path content-id)
-      (atomic-write-block-file path bytes))
+      (atomic-write-block-file path bytes content-id))
     content-id))
 
 (defmethod get-block ((store local-block-store) content-id)
