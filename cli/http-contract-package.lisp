@@ -1,6 +1,8 @@
 (uiop:define-package :star.http.contract
   (:use :cl)
   (:export
+   #:+software-license+
+   #:+source-repository+
    #:http-operation
    #:http-operation-id
    #:http-operation-client-name
