@@ -71,13 +71,22 @@
       (read-sequence bytes stream)
       bytes)))
 
+(defun block-file-matches-content-id-p (path content-id)
+  "Return true only when PATH exists and its exact bytes hash to CONTENT-ID."
+  (when (uiop:file-exists-p path)
+    (handler-case
+        (string= content-id
+                 (content-id-from-bytes (read-block-file-bytes path)))
+      (file-error () nil))))
+
 (defmethod put-block ((store local-block-store) bytes)
   (let* ((content-id (content-id-from-bytes bytes))
          (path (block-path store content-id)))
-    ;; Idempotent: an existing complete block is its own proof (blocks are
-    ;; only ever named by the digest of complete bytes and were integrity
-    ;; checked on their first write).
-    (unless (probe-file path)
+    ;; Idempotency is content-addressed, not path-addressed: an existing path
+    ;; is reusable only when its bytes still hash to the requested id. Repair
+    ;; an out-of-band-corrupted file atomically from the caller's verified
+    ;; bytes instead of returning a false success that get-block cannot read.
+    (unless (block-file-matches-content-id-p path content-id)
       (atomic-write-block-file path bytes))
     content-id))
 
@@ -92,7 +101,9 @@
 
 (defmethod block-exists-p ((store local-block-store) content-id)
   (and (content-id-p content-id)
-       (uiop:file-exists-p (block-path store content-id))))
+       (block-file-matches-content-id-p
+        (block-path store content-id)
+        content-id)))
 
 (defmethod delete-block ((store local-block-store) content-id)
   (when (content-id-p content-id)
