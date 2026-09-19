@@ -99,7 +99,7 @@
    :required '("principal_id" "currency" "items" "total_micros"
                "preview" "charged" "created_at" "license"
                "source_repository" "correlation_id")
-   :additional-properties false
+   :additional-properties nil
    :description "Deterministic non-mutating billing example."))
 
 (upsert-http-operation
