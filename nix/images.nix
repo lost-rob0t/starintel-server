@@ -93,17 +93,10 @@ let
     pathsToLink = [ "/bin" ];
   };
 
-  couchdbMigrationRoot = pkgs.runCommand "couchdb-migration-query-server-root" { } ''
-    install -Dm755 ${../scripts/starintel-prolog-view-server.pl} \
-      "$out/opt/starintel/query-server/starintel-prolog-view-server.pl"
-    install -Dm644 ${../.prolog/kb/migrations.pl} \
-      "$out/opt/starintel/.prolog/kb/migrations.pl"
-  '';
-
   couchdbMigrationEnv = pkgs.buildEnv {
     name = "couchdb-migration-query-server-environment";
-    paths = [ pkgs.swi-prolog couchdbMigrationRoot ];
-    pathsToLink = [ "/bin" "/lib" "/share" "/opt" ];
+    paths = [ pkgs.swi-prolog ];
+    pathsToLink = [ "/bin" "/lib" "/share" ];
   };
 
   couchdbImage = pkgs.dockerTools.buildImage {
@@ -119,6 +112,10 @@ let
         opt/couchdb/etc/local.d/starintel-search.ini
       install -Dm644 ${../docker/couchdb-migrations.ini} \
         opt/couchdb/etc/local.d/starintel-migrations.ini
+      install -Dm755 ${../scripts/starintel-prolog-view-server.pl} \
+        opt/starintel/query-server/starintel-prolog-view-server.pl
+      install -Dm644 ${../.prolog/kb/migrations.pl} \
+        opt/starintel/.prolog/kb/migrations.pl
     '';
 
     config = {
