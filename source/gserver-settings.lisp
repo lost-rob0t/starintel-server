@@ -283,6 +283,42 @@ value itself is never read from the environment, only from this file
 (defparameter *slynk-port* 4009
   "Port for the SLY/Slynk REPL when =start-debugger= is invoked.")
 
+;;;; Export and IPFS artifact transport
+(defparameter *export-root*
+  (or (uiop:getenv "STAR_EXPORT_ROOT")
+      (namestring
+       (uiop:merge-pathnames*
+        "starintel/exports/"
+        (uiop:temporary-directory))))
+  "Server-owned directory for completed export artifacts.
+
+- env: =STAR_EXPORT_ROOT=
+- default: a =starintel/exports/= directory under the process temporary root
+
+Production deployments should set this to durable storage.")
+
+(defparameter *export-page-size*
+  (environment-integer "STAR_EXPORT_PAGE_SIZE" 100)
+  "Default CouchDB page size used by the HTTP export service.")
+
+(defparameter *export-max-page-size*
+  (environment-integer "STAR_EXPORT_MAX_PAGE_SIZE" 1000)
+  "Hard upper bound for the HTTP export page size.")
+
+(defparameter *ipfs-api-url*
+  (or (uiop:getenv "STAR_IPFS_API_URL") "http://127.0.0.1:5001")
+  "Operator-owned Kubo/IPFS HTTP RPC base URL.
+
+The API never accepts an IPFS endpoint from a client request.")
+
+(defparameter *ipfs-request-timeout-seconds*
+  (environment-integer "STAR_IPFS_REQUEST_TIMEOUT_SECONDS" 30)
+  "Bound for IPFS HTTP RPC and actor ask operations, in seconds.")
+
+(defparameter *ipfs-max-publish-bytes*
+  (environment-integer "STAR_IPFS_MAX_PUBLISH_BYTES" 1073741824)
+  "Maximum completed export size accepted by the IPFS actor. Default: 1 GiB.")
+
 ;;;; Actors and patterns
 (defparameter *actors-start-hook* (make-instance 'nhooks:hook-void)
   "Hook run after the actor system boots.
