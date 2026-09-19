@@ -1,0 +1,173 @@
+#+TITLE: API Reference — STAR.STARFS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Variables and Constants
+*** +content-id-prefix+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.STARFS
+:END:
+Canonical content-id scheme prefix followed by 64 lowercase hex digits.
+
+* Types and Classes
+*** block-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.STARFS
+:END:
+Protocol base class for StarFS block-store backends.
+*** content-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.STARFS
+:END:
+End-to-end encrypted logical content view over a block-store backend.
+- Slots: =backend=
+*** local-block-store
+:PROPERTIES:
+:KIND: class
+:PACKAGE: STAR.STARFS
+:END:
+Content-addressed block store rooted at a filesystem directory.
+- Slots: =root=
+
+* Conditions
+*** block-integrity-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.STARFS
+:END:
+Signaled when stored bytes do not hash to their address.
+- Slots: =content-id=
+*** block-not-found
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.STARFS
+:END:
+Signaled when a block address has no stored content.
+- Slots: =content-id=
+*** content-authentication-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.STARFS
+:END:
+Signaled when AEAD authentication fails on decryption: wrong key, forged record, or corrupted ciphertext.
+*** starfs-error
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.STARFS
+:END:
+Base condition for all StarFS storage errors.
+
+* Functions
+*** content-id-from-bytes
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(content-id-from-bytes (STAR.STARFS::BYTES))
+#+end_src
+Compute the canonical content id of BYTES: the sha256 hex digest of the exact octets. Content ids never derive from anything but the stored octets.
+*** content-id-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(content-id-p (STAR.STARFS::OBJECT))
+#+end_src
+Return true when OBJECT is a canonical StarFS content id: the sha256 prefix followed by exactly 64 lowercase hex digits.
+*** get-content
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(get-content (STAR.STARFS::STORE STAR.STARFS::CONTENT-ID &KEY STAR.STARFS::KEY))
+#+end_src
+Fetch the record addressed by CONTENT-ID through STORE's backend, verify its authentication tag with KEY, and return the plaintext. Failures fail closed with content-authentication-error.
+*** make-content-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(make-content-store (STAR.STARFS::BACKEND))
+#+end_src
+Wrap BLOCK-STORE backend BACKEND so put-content/get-content store and fetch encrypted content records.
+*** make-local-block-store
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(make-local-block-store (&KEY STAR.STARFS::ROOT))
+#+end_src
+Create a local block store under directory ROOT, creating it when missing.
+*** put-content
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(put-content (STAR.STARFS::STORE STAR.STARFS::PLAINTEXT &KEY STAR.STARFS::KEY))
+#+end_src
+Encrypt PLAINTEXT with KEY (fresh nonce every call) and store the record immutably via STORE's backend. Returns the content id of the stored ciphertext record.
+
+* Generic Functions
+*** block-exists-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(block-exists-p (STAR.STARFS::STORE STAR.STARFS::CONTENT-ID))
+#+end_src
+Return true when STORE holds complete content addressed by CONTENT-ID. Partially written blocks do not exist.
+*** block-not-found-content-id
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(block-not-found-content-id (CONDITION))
+#+end_src
+The =content-id= slot of =block-not-found=.
+*** delete-block
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(delete-block (STAR.STARFS::STORE STAR.STARFS::CONTENT-ID))
+#+end_src
+Delete the block addressed by CONTENT-ID from STORE. Return true when content was deleted and nil when the address was already absent, so deletion is idempotent. Deleting unknown addresses never signals.
+*** get-block
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(get-block (STAR.STARFS::STORE STAR.STARFS::CONTENT-ID))
+#+end_src
+Return the bytes stored under CONTENT-ID in STORE. Verify that the stored bytes hash back to CONTENT-ID and signal block-integrity-error otherwise; signal block-not-found when the address has no content.
+*** local-block-store-root
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(local-block-store-root (SB-PCL::OBJECT))
+#+end_src
+The =root= directory pathname of a =local-block-store=.
+*** put-block
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.STARFS
+:END:
+#+begin_src lisp
+(put-block (STAR.STARFS::STORE STAR.STARFS::BYTES))
+#+end_src
+Store BYTES immutably in STORE under their content id and return that content id. Putting the same bytes again is idempotent: it returns the same content id without duplicating storage. Backends must make partial writes invisible: a block is gettable only after it is complete.
