@@ -89,7 +89,9 @@ process_request(Request) :-
 read_request(Result) :-
     catch(json_read_dict(current_input,
                          Request,
-                         [value_string_as(string)]),
+                         [ value_string_as(string),
+                           end_of_file(end_of_file)
+                         ]),
           Error,
           Result = read_error(Error)),
     ( var(Result) -> Result = request(Request) ; true ).
