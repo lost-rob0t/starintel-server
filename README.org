@@ -228,6 +228,7 @@ The same path can be supplied through =STAR_SERVER_INIT_FILE=.
 | [[file:doc/document-spec.org][doc/document-spec.org]] | StarIntel 0.9 and legacy 0.8 documents, types, relations, IDs, metadata, and provenance |
 | [[file:doc/configuration.org][doc/configuration.org]] | Environment, init files, secrets, advanced examples, and tuning |
 | [[file:doc/http-api-docs.org][doc/http-api-docs.org]] | HTTP endpoint reference and examples |
+| [[file:doc/ipfs-export-user-api.org][doc/ipfs-export-user-api.org]] | IPFS exports, self-service users, billing previews, and GPL/source metadata |
 | [[file:doc/lease-store-usage.org][doc/lease-store-usage.org]] | Backend-neutral target lease protocol examples and lifecycle |
 | [[file:DOCKER.md][DOCKER.md]] | Nix-built container stack and operations |
 | [[file:doc/testing.md][doc/testing.md]] | Unit, integration, and stack tests |

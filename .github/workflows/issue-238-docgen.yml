@@ -1,0 +1,33 @@
+name: Issue 238 temporary API doc regeneration
+
+on:
+  push:
+    branches:
+      - feat/238-ipfs-export-user-billing-preview
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    if: "!contains(github.event.head_commit.message, '[docgen-238]')"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/238-ipfs-export-user-billing-preview
+          fetch-depth: 0
+      - uses: DeterminateSystems/nix-installer-action@v17
+      - name: Regenerate checked-in API reference
+        run: nix run .#gen-api-docs
+      - name: Commit generated API reference only
+        run: |
+          if git diff --quiet -- doc/api/; then
+            echo "doc/api already current"
+            exit 0
+          fi
+          git config user.name "starintel-docgen"
+          git config user.email "starintel-docgen@users.noreply.github.com"
+          git add doc/api/
+          git commit -m "docs: regenerate API reference [docgen-238]"
+          git push origin HEAD:feat/238-ipfs-export-user-billing-preview

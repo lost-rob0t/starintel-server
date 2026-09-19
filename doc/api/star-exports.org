@@ -1,0 +1,47 @@
+#+TITLE: API Reference — STAR.EXPORTS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+Server-owned dataset export artifacts and stable export receipts.
+
+* Functions
+*** create-dataset-export
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.EXPORTS
+:END:
+#+begin_src lisp
+(create-dataset-export (STAR.EXPORTS::CLIENT STAR.EXPORTS::DATABASE STAR.EXPORTS::DATASET &KEY
+ (STAR.EXPORTS::EXPORT-ROOT STARINTEL-GSERVER:*EXPORT-ROOT*)
+ (STAR.EXPORTS::PAGE-SIZE STARINTEL-GSERVER:*EXPORT-PAGE-SIZE*)
+ (STAR.EXPORTS::CREATED-AT (STAR.EXPORTS::EXPORT-UNIX-NOW))
+ (STAR.EXPORTS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
+#+end_src
+Create one server-owned JSONL DATASET export and return its internal manifest.
+
+The caller supplies CouchDB CLIENT and DATABASE but never a destination path.
+A server-generated ULID selects the artifact filename under EXPORT-ROOT. The
+underlying exporter remains an atomic monotonic key scan. On failure this
+function signals an error and removes no previously completed export.
+*** export-artifact-owned-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.EXPORTS
+:END:
+#+begin_src lisp
+(export-artifact-owned-p (STAR.EXPORTS::PATH &KEY
+ (STAR.EXPORTS::EXPORT-ROOT STARINTEL-GSERVER:*EXPORT-ROOT*)))
+#+end_src
+Return true only when existing PATH resolves beneath the server EXPORT-ROOT.
+
+Both paths are canonicalized through =TRUENAME= before comparison, preventing
+symlink and =..= traversal from turning an IPFS publish into arbitrary file
+access.
+*** export-receipt-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.EXPORTS
+:END:
+#+begin_src lisp
+(export-receipt-json (STAR.EXPORTS::MANIFEST &KEY STAR.EXPORTS::CID STAR.EXPORTS::CORRELATION-ID))
+#+end_src
+Return the public export receipt for MANIFEST without leaking its file path.

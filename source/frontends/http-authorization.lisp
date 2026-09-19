@@ -16,6 +16,11 @@
      :public)
     ((and (eq method :get) (string= path "/auth/context"))
      "identity:read")
+    ((and (eq method :post) (string= path "/api/v1/exports"))
+     "documents:read")
+    ((and (path-prefix-p "/api/v1/users/me" path)
+          (member method '(:get :post)))
+     "identity:read")
     ((string= path "/auth/credentials")
      (case method
        (:get "credentials:read")

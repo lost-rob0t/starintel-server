@@ -51,6 +51,8 @@ that mix public and private datasets must explicitly configure this list.")
        ("event_log" star:*couchdb-event-log-database*)
        ("server" "starintel-gserver")
        ("version" star:*star-server-version*)
+       ("license" star.http.contract:+software-license+)
+       ("source_repository" star.http.contract:+source-repository+)
        ("openapi" "/openapi.json")
        ("client_manifest" "/client-manifest.json")))))
 
@@ -232,6 +234,10 @@ server-owned public scopes. No caller principal or caller scope enters here."
 (mount-http-operation "schema.client-manifest.get" #'handle-client-manifest-route)
 (mount-http-operation "public.search.get" #'handle-public-search-route)
 (mount-http-operation "stats.get" #'handle-public-stats-route)
+(mount-http-operation "exports.create" #'handle-export-create-route)
+(mount-http-operation "users.me.get" #'handle-user-me-route)
+(mount-http-operation "users.me.billing.preview"
+                      #'handle-user-billing-preview-route)
 
 (mount-http-operation "auth.login" #'handle-auth-login-route)
 (mount-http-operation "auth.bootstrap" #'handle-auth-bootstrap-route)

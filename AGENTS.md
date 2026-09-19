@@ -348,3 +348,27 @@ Report:
 - any follow-up issue created or remaining blocker.
 
 Do not claim a service, integration, CI, hardware, or security test ran unless it actually ran.
+
+## GPL source and generated-code compliance
+
+StarIntel Server is licensed under **GPL-3.0-or-later**. Human contributors,
+coding agents, code generators, and release automation must preserve the
+repository's license notices and applicable source obligations when conveying
+covered StarIntel software or derivatives.
+
+- Keep existing copyright/license notices and SPDX identifiers intact.
+- New first-party source files should use
+  `SPDX-License-Identifier: GPL-3.0-or-later` where practical.
+- Generated or transformed StarIntel code must not silently strip the license,
+  source locator, notices, or corresponding-source information.
+- When distributing binaries or modified covered software, follow the GPL's
+  corresponding-source and license-copy requirements for that mode of
+  distribution.
+- Do **not** claim that ordinary remote use of the StarIntel HTTP API alone
+  triggers an AGPL-style network source-disclosure requirement. This repository
+  is GPL-3.0-or-later, not AGPL.
+- API and export receipts use `license_scope=server-software`. That metadata
+  describes the StarIntel software producing the receipt; it does not
+  automatically relicense user datasets under the GPL.
+
+Agents must treat these rules as release/patch invariants, not optional prose.

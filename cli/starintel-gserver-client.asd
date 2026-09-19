@@ -3,12 +3,13 @@
   :description  "Reusable Common Lisp client for the StarIntel gserver HTTP protocol."
   :author       "nsaspy@airmail.cc"
   :serial       t
-  :license      "GNU GPL, version 3"
+  :license      "GPL-3.0-or-later"
   :components   ((:file "http-contract-package")
                  (:file "http-contract")
                  (:file "http-contract-final")
                  (:file "http-contract-targets")
                  (:file "http-contract-documents")
+                 (:file "http-contract-self-service")
                  (:file "client-package")
                  (:file "client-runtime")
                  (:file "client-compat")
