@@ -2,6 +2,7 @@
 #+OPTIONS: toc:nil num:nil
 
 * Packages
+- [[file:star-actor-manifest-options.org][STAR.ACTOR-MANIFEST-OPTIONS]] — 4 symbols
 - [[file:star-actors.org][STAR.ACTORS]] — 140 symbols
 - [[file:star-actors-matcher.org][STAR.ACTORS.MATCHER]] — 12 symbols
 - [[file:star-auth.org][STAR.AUTH]] — 132 symbols

@@ -5,6 +5,7 @@
     consumer-tests
     init-loader-tests
     target-routing-tests
+    actor-manifest-options-tests
     system-load-tests
     couchdb-actor-tests
     couchdb-session-tests
