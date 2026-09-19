@@ -25,17 +25,9 @@ reset_query_server :-
 handle_request(["reset"|_], true) :-
     !,
     reset_query_server.
-handle_request(["add_fun", Source], true) :-
-    !,
-    string(Source),
-    allowed_source(Source, View),
-    assertz(registered_map(View)).
 handle_request(["add_fun", Source], Reply) :-
     !,
-    format(string(Reason),
-           "Unsupported StarIntel migration map function: ~w",
-           [Source]),
-    protocol_error("unsupported_function", Reason, Reply).
+    handle_add_fun(Source, Reply).
 handle_request(["map_doc", Doc], Reply) :-
     !,
     findall(Rows,
@@ -63,6 +55,23 @@ handle_request(Request, Reply) :-
            "Unsupported CouchDB query-server request: ~w",
            [Request]),
     protocol_error("unsupported_command", Reason, Reply).
+
+handle_add_fun(Source, true) :-
+    string(Source),
+    allowed_source(Source, View),
+    !,
+    assertz(registered_map(View)).
+handle_add_fun(Source, Reply) :-
+    string(Source),
+    !,
+    format(string(Reason),
+           "Unsupported StarIntel migration map function: ~s",
+           [Source]),
+    protocol_error("unsupported_function", Reason, Reply).
+handle_add_fun(_, Reply) :-
+    protocol_error("unsupported_function",
+                   "Unsupported StarIntel migration map function: selector must be a string.",
+                   Reply).
 
 write_reply(Reply) :-
     json_write_dict(current_output, Reply, [width(0)]),
