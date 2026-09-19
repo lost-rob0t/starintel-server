@@ -6,3 +6,4 @@
 :- ensure_loaded('git-remotes.pl').
 :- ensure_loaded('ulid-quarantine.pl').
 :- ensure_loaded('bulk-jobs.pl').
+:- ensure_loaded('migrations.pl').

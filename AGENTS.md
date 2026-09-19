@@ -53,6 +53,28 @@ At the time this rule was added, this lock resolves release `0.9.1` over immutab
 base schema `0.9.0`; future agents must read the live lock instead of trusting this
 historical value.
 
+## Migration expert-system synchronization
+
+The checked-in Prolog migration expert system is a schema authority that must move
+with every real document-contract migration:
+
+- Any change that introduces, removes, or alters a supported document migration
+  edge or changes how legacy document fields map into the current schema **must**
+  update `.prolog/kb/migrations.pl` and `.prolog/kb/migrations-test.pl` in the same
+  change. Do not merge schema-dependent migration behavior with stale KB fixtures.
+- Keep `scripts/starintel-prolog-view-server.pl` and
+  `source/views/migrations-prolog.json` synchronized when migration view selectors
+  or emitted row shapes change.
+- The migration graph terminates at the live lock's immutable `schema_version`.
+  A `release_version`/profile bump alone is **not** a migration edge and must never
+  be written into document `schema_version` merely because the release advanced.
+- Migration view output is a proposal, not a persistence bypass. Apply paths must
+  continue to re-read the current document, enforce tenant/dataset scope and `_rev`
+  CAS invariants, run the canonical strict validator, and only then persist.
+- Unknown or unrecognized legacy shapes fail closed: add an explicit KB rule and a
+  fixture before making them migratable. Never add arbitrary tenant/client Prolog
+  evaluation to the CouchDB query server.
+
 ## Local research lookup
 
 Prefer a sibling checkout named `starintel-auto-research` near this repository. If needed, locate an already-present local checkout. Do not clone/fetch a research repository merely to begin an issue run.

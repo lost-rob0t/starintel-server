@@ -147,6 +147,7 @@ EOF
 
         lispLibs = with sbcl'.pkgs; [
           starintel-observability
+          star-migrations-lib
           starintel
           cl-couch
           serapeum

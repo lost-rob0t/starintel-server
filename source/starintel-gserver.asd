@@ -24,6 +24,7 @@
    (:file "http-contract-final" :pathname "../cli/http-contract-final")
    (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "http-contract-documents" :pathname "../cli/http-contract-documents")
+   (:file "http-contract-migrations" :pathname "../cli/http-contract-migrations")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
@@ -40,6 +41,7 @@
    (:file "databases/view-registry")
    (:file "databases/document-update-package")
    (:file "databases/document-update")
+   (:file "databases/migration")
    (:file "databases/quarantine")
    (:file "databases/target-acceptance")
    (:file "auth/core")
@@ -55,10 +57,10 @@
    (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "addons")
-(:file "observability-gserver")
-    (:file "observability-consumers")
-    (:file "lease-store-runtime")
-    (:file "init-loader")
+   (:file "observability-gserver")
+   (:file "observability-consumers")
+   (:file "lease-store-runtime")
+   (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
    (:file "target-repository")
@@ -87,6 +89,8 @@
    (:file "frontends/http-auth-job-routes")
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
+   (:file "frontends/http-migrations")
+   (:file "frontends/http-migrations-auth")
    (:file "frontends/http-contract-routes")
    (:file "runtime-lifecycle")
    (:file "admin")
@@ -94,11 +98,12 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel-observability #:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
-   #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
-   #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
-   #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre
-   #:cms-ulid #:bordeaux-threads #:usocket #:cl+ssl #:jsown #:closer-mop))
+  (#:starintel-observability #:starintel #:star-migrations #:com.inuoe.jzon
+   #:cl-couch #:serapeum #:alexandria #:cl-rabbit #:sento #:babel #:yason
+   #:ironclad #:dexador #:quri #:uuid #:anypool #:clack
+   #:lack/middleware/accesslog #:clack-handler-hunchentoot #:ningle #:clingon
+   #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre #:cms-ulid
+   #:bordeaux-threads #:usocket #:cl+ssl #:jsown #:closer-mop))
 
 ;;;; StarIntel Gserver is a processing framework for StarIntel documents.
 ;;;; Runtime documentation lives in ../docs and must track behavior changes.
