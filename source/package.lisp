@@ -65,6 +65,12 @@
    #:load-init-file
    #:safe-load-init
    #:*bulk-max-documents*
+   #:*export-root*
+   #:*export-page-size*
+   #:*export-max-page-size*
+   #:*ipfs-api-url*
+   #:*ipfs-request-timeout-seconds*
+   #:*ipfs-max-publish-bytes*
    #:*tenant-dataset-map*
    #:*tenant-fallback*
    #:parse-tenant-dataset-map
