@@ -13,6 +13,7 @@
     couchdb-view-request-tests
     lease-store-contract-tests
     lease-store-runtime-tests
+    starfs-tests
     http-boundary-tests
     http-target-v1-tests
     v09-runtime-tests
