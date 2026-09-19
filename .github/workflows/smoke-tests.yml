@@ -31,6 +31,9 @@ jobs:
       - name: Evaluate flake
         run: nix flake check --show-trace
 
+      - name: Verify Prolog migration expert system
+        run: nix shell nixpkgs#swi-prolog --command sh scripts/check-prolog-migrations.sh
+
       - name: Build server
         run: nix build .#default --no-link --print-build-logs
 
