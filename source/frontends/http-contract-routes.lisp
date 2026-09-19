@@ -51,6 +51,8 @@ that mix public and private datasets must explicitly configure this list.")
        ("event_log" star:*couchdb-event-log-database*)
        ("server" "starintel-gserver")
        ("version" star:*star-server-version*)
+       ("license" star.http.contract:+software-license+)
+       ("source_repository" star.http.contract:+source-repository+)
        ("openapi" "/openapi.json")
        ("client_manifest" "/client-manifest.json")))))
 
