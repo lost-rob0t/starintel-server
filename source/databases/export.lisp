@@ -16,6 +16,19 @@
 (defun dataset-export-error-type (condition)
   (string-downcase (princ-to-string (type-of condition))))
 
+(defun dataset-export-file-bytes (path)
+  "Return the exact byte length of the completed export at PATH."
+  (with-open-file (stream path
+                          :direction :input
+                          :element-type '(unsigned-byte 8))
+    (file-length stream)))
+
+(defun dataset-export-sha256 (path)
+  "Return the lowercase SHA-256 hex digest of the completed export at PATH."
+  (string-downcase
+   (ironclad:byte-array-to-hex-string
+    (ironclad:digest-file :sha256 path))))
+
 (defun export-by-dataset* (client database dataset path
                            &key
                              (page-size +dataset-export-page-size+)
@@ -83,14 +96,23 @@ structured error details when the export fails."
                         (return)))
                  (finish-output out))
                (uiop:rename-file-overwriting-target temporary-path target-path)
-               (setf completed t)
-               (list :ok t
-                     :dataset dataset
-                     :path (namestring target-path)
-                     :exported total-exported
-                     :pages pages-exported
-                     :page-size page-size
-                     :consistency +dataset-export-consistency+))
+               (let ((bytes (dataset-export-file-bytes target-path))
+                     (sha256 (dataset-export-sha256 target-path)))
+                 (setf completed t)
+                 (list :ok t
+                       :dataset dataset
+                       :path (namestring target-path)
+                       :format "jsonl"
+                       :exported total-exported
+                       :pages pages-exported
+                       :page-size page-size
+                       :consistency +dataset-export-consistency+
+                       :bytes bytes
+                       :sha256 sha256
+                       :license star.http.contract:+software-license+
+                       :license-scope "server-software"
+                       :source-repository
+                       star.http.contract:+source-repository+)))
            (error (condition)
              (list :ok nil
                    :dataset dataset

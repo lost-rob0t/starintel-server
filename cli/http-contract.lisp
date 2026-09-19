@@ -1,5 +1,12 @@
 (in-package :star.http.contract)
 
+(defparameter +software-license+ "GPL-3.0-or-later"
+  "SPDX identifier for the StarIntel Server software license.")
+
+(defparameter +source-repository+
+  "https://github.com/lost-rob0t/starintel-server"
+  "Canonical public source repository for StarIntel Server software.")
+
 (defstruct (http-operation
             (:constructor make-http-operation
                 (&key id client-name method path summary tags authority scopes
@@ -563,7 +570,12 @@ property lists.")
             (cons "title" "StarIntel GServer HTTP API")
             (cons "version" "1.0.0")
             (cons "description"
-                  "Machine-readable contracted StarIntel control-plane HTTP surface.")))
+                  "Machine-readable contracted StarIntel control-plane HTTP surface.")
+            (cons "license"
+                  (json-object
+                   (cons "name" "GNU General Public License v3.0 or later")
+                   (cons "identifier" +software-license+)))
+            (cons "x-starintel-source-repository" +source-repository+)))
      (cons "paths" paths)
      (cons "components"
            (json-object
@@ -617,6 +629,8 @@ property lists.")
   (json-object
    (cons "schema" "starintel-client-manifest-v1")
    (cons "openapi" "3.1.2")
+   (cons "license" +software-license+)
+   (cons "source_repository" +source-repository+)
    (cons "operations"
          (mapcar #'operation-manifest-object *http-operations*))))
 

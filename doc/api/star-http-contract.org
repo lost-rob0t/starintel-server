@@ -2,6 +2,20 @@
 System: =starintel-gserver=
 #+OPTIONS: toc:2 num:nil
 
+* Variables and Constants
+*** +software-license+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+SPDX identifier for the StarIntel Server software license.
+*** +source-repository+
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Canonical public source repository for StarIntel Server software.
+
 * Types and Classes
 *** http-operation
 :PROPERTIES:

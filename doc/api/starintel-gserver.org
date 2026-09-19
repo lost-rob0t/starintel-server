@@ -219,6 +219,29 @@ Loaded from the =views/= directory of the system source.
 Pattern matchers applied to every ingested document.
 
 Populated by plugins; see =addons.lisp=.
+*** *export-max-page-size*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Hard upper bound for the HTTP export page size.
+*** *export-page-size*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Default CouchDB page size used by the HTTP export service.
+*** *export-root*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Server-owned directory for completed export artifacts.
+
+- env: =STAR_EXPORT_ROOT=
+- default: a =starintel/exports/= directory under the process temporary root
+
+Production deployments should set this to durable storage.
 *** *http-api-address*
 :PROPERTIES:
 :KIND: var
@@ -288,6 +311,26 @@ Effective scheme, =http= or =https=, derived from TLS configuration.
 :PACKAGE: STARINTEL-GSERVER
 :END:
 Number of parallel ingest workers consuming the ingest queue.
+*** *ipfs-api-url*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Operator-owned Kubo/IPFS HTTP RPC base URL.
+
+The API never accepts an IPFS endpoint from a client request.
+*** *ipfs-max-publish-bytes*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Maximum completed export size accepted by the IPFS actor. Default: 1 GiB.
+*** *ipfs-request-timeout-seconds*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STARINTEL-GSERVER
+:END:
+Bound for IPFS HTTP RPC and actor ask operations, in seconds.
 *** *lease-store*
 :PROPERTIES:
 :KIND: var
@@ -325,8 +368,8 @@ Lifetime of issued OAuth authorization codes.
 :KIND: var
 :PACKAGE: STARINTEL-GSERVER
 :END:
-Non-nil while the observability addon has been started via the init-file
-addon lifecycle. The HTTP boundary stays a pass-through until then.
+Non-nil while the observability addon has been started via the addon
+lifecycle. The HTTP boundary stays a pass-through until then.
 *** *rabbit-address*
 :PROPERTIES:
 :KIND: var
@@ -649,7 +692,7 @@ Subcommands:
 :KIND: fn
 :PACKAGE: STARINTEL-GSERVER
 :END:
-True when the observability addon was loaded via init.lisp and is active.
+True when the observability addon is active and export is explicitly enabled.
 *** observability-lease-metrics-hook
 :PROPERTIES:
 :KIND: fn
@@ -679,7 +722,7 @@ request identifiers never become metric labels.
 (observability-wrapped-server (STARINTEL-GSERVER::APP))
 #+end_src
 Build the observability layer used in the lack builder: a request-time
-gate that only instruments when the addon was loaded via init.lisp.
+gate that only instruments while the addon is active.
 *** parse-tenant-dataset-map
 :PROPERTIES:
 :KIND: fn
@@ -778,9 +821,8 @@ Connect from Emacs with =M-x sly-connect= and the port configured by
 :KIND: fn
 :PACKAGE: STARINTEL-GSERVER
 :END:
-Addon start (init.lisp: =load-addon :starintel-observability=): start the
-exporter thread and wire the instrumented CouchDB view transport. Safe to
-call repeatedly.
+Addon start: start the exporter thread and wire the instrumented CouchDB
+view transport. Safe to call repeatedly.
 *** stop-observability
 :PROPERTIES:
 :KIND: fn

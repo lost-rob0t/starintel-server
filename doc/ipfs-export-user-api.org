@@ -1,0 +1,141 @@
+#+title: IPFS exports, self-service users, and billing previews
+#+startup: overview
+
+* Scope
+
+Issue #238 adds one bounded export pipeline:
+
+1. authorize a dataset read;
+2. write a server-owned JSON Lines artifact;
+3. return byte count and SHA-256 integrity metadata;
+4. optionally hand the completed artifact to the local =ipfs= Sento actor;
+5. return the resulting CID.
+
+The feature does not create a payment ledger and does not accept arbitrary
+filesystem paths or arbitrary IPFS endpoints from API callers.
+
+* HTTP API
+
+** Create an export
+
+#+begin_src http
+POST /api/v1/exports
+Authorization: Bearer star_sk_v1_...
+
+{
+  "dataset": "investigation-2026-09",
+  "tenant": "default",
+  "publish_ipfs": true
+}
+#+end_src
+
+The caller needs =documents:read= for the requested tenant/dataset. If
+=publish_ipfs=true=, the request also needs =targets:dispatch= for actor =ipfs=.
+
+A successful response is a receipt, not the file body:
+
+#+begin_src json
+{
+  "export_id": "01K...",
+  "dataset": "investigation-2026-09",
+  "format": "jsonl",
+  "exported": 421,
+  "bytes": 884211,
+  "sha256": "...",
+  "consistency": "monotonic-key-scan",
+  "created_at": 1789776000,
+  "status": "published",
+  "cid": "bafy...",
+  "license": "GPL-3.0-or-later",
+  "license_scope": "server-software",
+  "source_repository": "https://github.com/lost-rob0t/starintel-server",
+  "correlation_id": "01K..."
+}
+#+end_src
+
+The consistency mode is deliberately honest: the exporter walks CouchDB keys
+monotonically. It does not claim database-snapshot semantics.
+
+** Read the authenticated principal
+
+#+begin_src http
+GET /api/v1/users/me
+Authorization: Bearer star_sk_v1_...
+#+end_src
+
+This returns the authenticated principal, scopes, credential identifier, and
+matching human-user metadata when one exists. Password hashes, API-key
+verifiers, raw keys, salts, and server peppers are never returned.
+
+** Build a billing example
+
+#+begin_src http
+POST /api/v1/users/me/billing/preview
+Authorization: Bearer star_sk_v1_...
+
+{
+  "currency": "USD",
+  "items": [
+    {
+      "description": "dataset export",
+      "quantity": 2,
+      "unit_price_micros": 125000
+    },
+    {
+      "description": "IPFS publication",
+      "quantity": 1,
+      "unit_price_micros": 50000
+    }
+  ]
+}
+#+end_src
+
+The response is deterministic integer arithmetic in millionths of the currency
+unit. It always includes =preview=true= and =charged=false=. It does not call a
+payment provider, mutate a balance, or claim that usage was billed. This makes
+it safe for UI examples, SDK examples, AI-agent planning, and a future billing
+service to consume without turning StarIntel Server into a second ledger.
+
+* IPFS actor
+
+The local actor is registered as =ipfs=. HTTP code sends it a private Common
+Lisp command object, not a generic JSON target. Generic target messages therefore
+cannot inject a filename.
+
+Before uploading, the actor:
+
+- resolves the artifact beneath =STAR_EXPORT_ROOT= using =TRUENAME=;
+- rejects paths outside that root, including symlink and =..= traversal;
+- enforces =STAR_IPFS_MAX_PUBLISH_BYTES=;
+- recomputes byte length and SHA-256 and compares both with the export receipt;
+- sends only the validated pathname to the operator-configured
+  =STAR_IPFS_API_URL=.
+
+The default IPFS endpoint is =http://127.0.0.1:5001=. Production operators can
+override it, but API clients cannot.
+
+* Configuration
+
+| Variable | Default | Purpose |
+|-
+| =STAR_EXPORT_ROOT= | process temp =starintel/exports/= | Server-owned export directory |
+| =STAR_EXPORT_PAGE_SIZE= | =100= | CouchDB export page size |
+| =STAR_EXPORT_MAX_PAGE_SIZE= | =1000= | Hard page-size bound |
+| =STAR_IPFS_API_URL= | =http://127.0.0.1:5001= | Kubo HTTP RPC endpoint |
+| =STAR_IPFS_REQUEST_TIMEOUT_SECONDS= | =30= | RPC/actor timeout |
+| =STAR_IPFS_MAX_PUBLISH_BYTES= | =1073741824= | Max artifact size, 1 GiB |
+
+* GPL and source metadata
+
+The server software is =GPL-3.0-or-later=. OpenAPI, the generated-client
+manifest, export receipts, and billing previews expose that SPDX identifier plus
+the canonical source repository so humans and automated clients can preserve
+the provenance of covered StarIntel software.
+
+The =license_scope= value =server-software= is intentional. It does not assert
+that user-provided or collected dataset contents are GPL-licensed.
+
+When covered StarIntel code or modified derivatives are conveyed, preserve the
+GPL notices and satisfy the corresponding-source obligations that apply to that
+distribution. Ordinary network use of this GPL-licensed API is not an AGPL
+network-source trigger.

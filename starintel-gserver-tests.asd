@@ -57,6 +57,7 @@
      (:file "http-contract-documents-test")
      (:file "runtime-lifecycle-test")
      (:file "observability-test")
+     (:file "ipfs-export-user-api-test")
      (:file "run-tests"))))
   :perform
   (test-op (operation component)

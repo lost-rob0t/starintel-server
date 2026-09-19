@@ -343,7 +343,9 @@ Authorize at the publish boundary, bind the server decision, then publish.
 #+begin_src lisp
 (authorized-search-query (QUERY &KEY PRINCIPAL REQUESTED-DATASET (REQUESTED-TENANT "default") METADATA))
 #+end_src
-Return a backend-scoped Clouseau query, never an unscoped post-filter query.
+Audit and return a backend-scoped Clouseau query, never an unscoped
+post-filter query. Every call emits a structured =search.query= event when
+observability logging is enabled, including calls later rejected by policy.
 *** authorized-target-documents
 :PROPERTIES:
 :KIND: fn

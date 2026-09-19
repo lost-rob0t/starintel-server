@@ -1,0 +1,50 @@
+#+TITLE: API Reference — STAR.ACTORS.IPFS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+Local Sento actor for publishing completed StarIntel-owned export artifacts to IPFS.
+
+* Variables and Constants
+*** *ipfs-actor*
+:PROPERTIES:
+:KIND: var
+:PACKAGE: STAR.ACTORS.IPFS
+:END:
+Local Sento actor registered as =ipfs= in the StarIntel actor index.
+
+* Functions
+*** publish-export
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.IPFS
+:END:
+#+begin_src lisp
+(publish-export (STAR.ACTORS.IPFS::MANIFEST))
+#+end_src
+Publish MANIFEST through the running IPFS actor and return its successful receipt.
+
+This API wraps the actor in an internal command type, so target JSON delivered
+through the generic target router cannot smuggle arbitrary filesystem paths
+into the IPFS publisher.
+*** publish-export-manifest
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.IPFS
+:END:
+#+begin_src lisp
+(publish-export-manifest (STAR.ACTORS.IPFS::MANIFEST &KEY
+ (STAR.ACTORS.IPFS::EXPORT-ROOT STARINTEL-GSERVER:*EXPORT-ROOT*)
+ (STAR.ACTORS.IPFS::ADD-FN #'STAR.ACTORS.IPFS::IPFS-ADD-FILE)))
+#+end_src
+Publish one completed export MANIFEST through IPFS and return a CID receipt.
+
+The artifact path must resolve beneath EXPORT-ROOT, its byte count and SHA-256
+must still match the export receipt, and its size must not exceed
+=*ipfs-max-publish-bytes*=. ADD-FN is injectable for hermetic tests and receives
+only the validated server-owned pathname. The configured IPFS endpoint is
+operator-owned; callers cannot supply a remote URL.
+*** start-ipfs-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS.IPFS
+:END:
+Start and register the local =ipfs= actor in the existing actor index.

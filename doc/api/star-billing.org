@@ -1,0 +1,22 @@
+#+TITLE: API Reference — STAR.BILLING
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+Pure, non-charging billing example helpers for StarIntel API clients.
+
+* Functions
+*** make-billing-preview
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.BILLING
+:END:
+#+begin_src lisp
+(make-billing-preview (STAR.BILLING::PRINCIPAL-ID STAR.BILLING::CURRENCY STAR.BILLING::ITEMS &KEY
+ (STAR.BILLING::CREATED-AT (STAR.BILLING::BILLING-UNIX-NOW))))
+#+end_src
+Build a deterministic, non-mutating billing example for PRINCIPAL-ID.
+
+CURRENCY is normalized to an upper-case three-letter code. ITEMS is a bounded
+list of JSON objects containing =description=, positive integer =quantity=, and
+non-negative integer =unit_price_micros=. The result is integer-only and marks
+itself as a preview with =charged=false=. No account balance, payment provider,
+or usage ledger is read or mutated.
