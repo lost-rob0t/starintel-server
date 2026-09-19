@@ -64,48 +64,51 @@
 (defun make-local-contract-fixture ()
   (let* ((store (star.starfs:make-local-block-store :root (starfs-test-root)))
          (root (star.starfs:local-block-store-root store)))
-    (make-starfs-contract-fixture
-     :store store
-     :stored-count
-     (lambda ()
-       (length (uiop:directory-files (uiop:ensure-directory-pathname root) "*")))
-     :corrupt-stored
-     (lambda (content-id)
-       (let* ((hex (subseq content-id (length star.starfs:+content-id-prefix+)))
-              (path (merge-pathnames
-                     (make-pathname :directory
-                                    (append (cdr (pathname-directory root))
-                                            (list (subseq hex 0 2)))
-                                    :name hex
-                                    :type nil)
-                     root)))
-         (with-open-file (stream path :element-type '(unsigned-byte 8))
-           (let ((bytes (make-array (file-length stream)
-                                    :element-type '(unsigned-byte 8))))
-             (read-sequence bytes stream)
-             (setf (aref bytes 0) (logxor (aref bytes 0) #xff))
-             (with-open-file (out path
-                                  :direction :output
-                                  :element-type '(unsigned-byte 8)
-                                  :if-exists :supersede)
-               (write-sequence bytes out))))))
-     :inject-partial-write
-     (lambda (content-id bytes)
-       (let* ((hex (subseq content-id (length star.starfs:+content-id-prefix+)))
-              (dir (merge-pathnames
-                    (make-pathname :directory
-                                   (append (cdr (pathname-directory root))
-                                           (list (subseq hex 0 2))))
-                    root))
-              (partial
-                (merge-pathnames (format nil "~A.starfs-tmp" hex) dir)))
-         (ensure-directories-exist dir)
-         (with-open-file (out partial
-                              :direction :output
-                              :element-type '(unsigned-byte 8)
-                              :if-exists :supersede)
-           (write-sequence (subseq bytes 0 (max 1 (floor (length bytes) 2))) out))
-         partial)))))
+    (labels ((hex-of (content-id)
+               (subseq content-id
+                       (length star.starfs:+content-id-prefix+)))
+             (block-file-path (content-id &optional (type "blk"))
+               (let ((hex (hex-of content-id)))
+                 (merge-pathnames
+                  (make-pathname
+                   :directory (append (pathname-directory root)
+                                      (list (subseq hex 0 2)))
+                   :name hex
+                   :type type)
+                  root)))
+             (fan-out-file-count ()
+               (loop for dir in (uiop:subdirectories root)
+                     sum (length (uiop:directory-files dir)))))
+      (make-starfs-contract-fixture
+       :store store
+       :stored-count #'fan-out-file-count
+       :corrupt-stored
+       (lambda (content-id)
+         (let ((path (block-file-path content-id)))
+           (with-open-file (stream path :element-type '(unsigned-byte 8))
+             (let ((bytes (make-array (file-length stream)
+                                      :element-type '(unsigned-byte 8))))
+               (read-sequence bytes stream)
+               (setf (aref bytes 0) (logxor (aref bytes 0) #xff))
+               (with-open-file (out path
+                                    :direction :output
+                                    :element-type '(unsigned-byte 8)
+                                    :if-exists :supersede)
+                 (write-sequence bytes out))))))
+       :inject-partial-write
+       (lambda (content-id bytes)
+         (let* ((hex (hex-of content-id))
+                (partial (block-file-path content-id "blk-tmp")))
+           (ensure-directories-exist
+            (uiop:pathname-directory-pathname partial))
+           (with-open-file (out partial
+                                :direction :output
+                                :if-exists :supersede
+                                :if-does-not-exist :create
+                                :element-type '(unsigned-byte 8))
+             (write-sequence
+              (subseq bytes 0 (max 1 (floor (length bytes) 2))) out))
+           partial))))))
 
 (defun make-fake-contract-fixture ()
   (let ((store (make-fake-block-store)))
@@ -136,7 +139,7 @@
     (let* ((bytes (starfs-sample-bytes 64 1))
            (content-id (star.starfs:put-block store bytes)))
       (is (star.starfs:content-id-p content-id))
-      (is (equal bytes (star.starfs:get-block store content-id)))
+      (is (equalp bytes (star.starfs:get-block store content-id)))
       (is-true (star.starfs:block-exists-p store content-id))
       ;; Idempotent put: same bytes -> same content id, no duplicate storage.
       (is (string= content-id (star.starfs:put-block store bytes)))
@@ -152,7 +155,7 @@
     (dolist (size (list 0 1 4096))
       (let* ((bytes (starfs-sample-bytes size size))
              (content-id (star.starfs:put-block store bytes)))
-        (is (equal bytes (star.starfs:get-block store content-id)))))
+        (is (equalp bytes (star.starfs:get-block store content-id)))))
     ;; Missing block signals block-not-found and never fabricates content.
     (signals star.starfs:block-not-found
       (star.starfs:get-block
@@ -173,7 +176,7 @@
         (signals star.starfs:block-not-found
           (star.starfs:get-block store content-id))
         (is (string= content-id (star.starfs:put-block store bytes)))
-        (is (equal bytes (star.starfs:get-block store content-id)))))))
+        (is (equalp bytes (star.starfs:get-block store content-id)))))))
 
 (test starfs-local-backend-satisfies-contract
   (assert-backend-neutral-starfs-contract (make-local-contract-fixture)))
@@ -189,11 +192,12 @@
   (make-array 32 :element-type '(unsigned-byte 8)
                 :initial-contents (loop for i below 32 collect i)))
 
-(defmacro with-content-store ((store-var backend-var) &body body)
-  `(let* ((,backend-var
-            (star.starfs:make-local-block-store :root (starfs-test-root)))
-          (,store-var (star.starfs:make-content-store ,backend-var)))
-     ,@body))
+(defmacro with-content-store ((store-var &optional backend-var) &body body)
+  (let ((backend (or backend-var (gensym "BACKEND"))))
+    `(let* ((,backend
+              (star.starfs:make-local-block-store :root (starfs-test-root)))
+            (,store-var (star.starfs:make-content-store ,backend)))
+       ,@body)))
 
 (test content-store-roundtrips-plaintext
   (with-content-store (store backend)
@@ -201,10 +205,10 @@
       (let* ((plaintext (starfs-sample-bytes size (+ size 11)))
              (content-id (star.starfs:put-content
                           store plaintext :key *starfs-test-key*)))
-        (is (equal plaintext
-                   (star.starfs:get-content
-                    store content-id :key *starfs-test-key*)))
-        (is-true (star.starfs:block-exists-p backend content-id))))))
+         (is (equalp plaintext
+                    (star.starfs:get-content
+                     store content-id :key *starfs-test-key*)))
+         (is-true (star.starfs:block-exists-p backend content-id))))))
 
 (test content-store-stores-only-ciphertext
   (with-content-store (store backend)
@@ -212,7 +216,7 @@
            (content-id (star.starfs:put-content
                         store plaintext :key *starfs-test-key*))
            (stored (star.starfs:get-block backend content-id)))
-      (is (not (equal plaintext stored)))
+      (is (not (equalp plaintext stored)))
       ;; Content ID addresses ciphertext, never plaintext-derived material.
       (is (not (string= content-id
                         (star.starfs:content-id-from-bytes plaintext))))
@@ -229,12 +233,12 @@
         ;; Randomized encryption: identical plaintext never yields a shared
         ;; address, so content IDs cannot become a cross-tenant dedup oracle.
         (is (not (string= first-id second-id)))
-        (is (not (equal (star.starfs:get-block backend first-id)
+        (is (not (equalp (star.starfs:get-block backend first-id)
                         (star.starfs:get-block backend second-id))))
-        (is (equal plaintext
+        (is (equalp plaintext
                    (star.starfs:get-content
                     store first-id :key *starfs-test-key*)))
-        (is (equal plaintext
+        (is (equalp plaintext
                    (star.starfs:get-content
                     store second-id :key *starfs-test-key*)))))))
 
@@ -258,9 +262,10 @@
            (record (star.starfs:get-block backend content-id))
            (forged (copy-seq record)))
       ;; A record with a valid address but tampered ciphertext must fail
-      ;; authentication rather than decrypt to garbage.
-      (setf (aref forged (+ 28 (floor (length record) 2)))
-            (logxor (aref forged (+ 28 (floor (length record) 2))) #x01))
+      ;; authentication rather than decrypt to garbage. The ciphertext starts
+      ;; after nonce (16) and mac (32).
+      (setf (aref forged (+ 48 (floor (length record) 2)))
+            (logxor (aref forged (+ 48 (floor (length record) 2))) #x01))
       (let ((forged-id (star.starfs:put-block backend forged)))
         (signals star.starfs:content-authentication-error
           (star.starfs:get-content
