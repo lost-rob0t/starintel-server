@@ -36,7 +36,10 @@
     (copy-seq bytes)))
 
 (defmethod star.starfs:block-exists-p ((store fake-block-store) content-id)
-  (nth-value 1 (gethash content-id (fake-block-store-blocks store))))
+  (multiple-value-bind (bytes found-p)
+      (gethash content-id (fake-block-store-blocks store))
+    (and found-p
+         (string= content-id (star.starfs:content-id-from-bytes bytes)))))
 
 (defmethod star.starfs:delete-block ((store fake-block-store) content-id)
   (if (remhash content-id (fake-block-store-blocks store))
@@ -161,12 +164,18 @@
       (star.starfs:get-block
        store (star.starfs:content-id-from-bytes
               (starfs-sample-bytes 16 99))))
-    ;; Integrity on retrieval: out-of-band corruption must be detected.
+    ;; Integrity on retrieval: out-of-band corruption must be detected. A
+    ;; corrupt path is not a complete block and a retry must repair it from
+    ;; the caller's bytes instead of returning a false idempotent success.
     (let* ((bytes (starfs-sample-bytes 128 3))
            (content-id (star.starfs:put-block store bytes)))
       (funcall corrupt-stored content-id)
+      (is-false (star.starfs:block-exists-p store content-id))
       (signals star.starfs:block-integrity-error
-        (star.starfs:get-block store content-id)))
+        (star.starfs:get-block store content-id))
+      (is (string= content-id (star.starfs:put-block store bytes)))
+      (is-true (star.starfs:block-exists-p store content-id))
+      (is (equalp bytes (star.starfs:get-block store content-id))))
     ;; Atomic visibility: a partially written temp file is invisible.
     (when inject-partial-write
       (let* ((bytes (starfs-sample-bytes 48 5))
