@@ -134,6 +134,14 @@ services:
       STAR_TENANT_DATASET_MAP: ${STAR_TENANT_DATASET_MAP:-}
       STAR_AUTH_PASSWORD_ITERATIONS: ${STAR_AUTH_PASSWORD_ITERATIONS:-600000}
       STAR_SERVER_INIT_FILE: ${STAR_SERVER_INIT_FILE:-/etc/starintel/init.lisp}
+      # Explicit opt-in: software and Compose both remain telemetry-off by
+      # default. When enabled, the app sends only to the credential-free local
+      # sidecar; the observe gateway owns the OpenObserve ingestion credential.
+      STAR_OBSERVABILITY_ENABLED: ${STAR_OBSERVABILITY_ENABLED:-false}
+      STAR_OBSERVABILITY_ENDPOINT: ${STAR_OBSERVABILITY_ENDPOINT:-http://otelcol:4318}
+      STAR_OBSERVABILITY_SIGNALS: ${STAR_OBSERVABILITY_SIGNALS:-logs,metrics,traces}
+      STAR_SERVICE_NAME: ${STAR_SERVICE_NAME:-starintel-server}
+      STARINTEL_COMPONENT: ${STARINTEL_COMPONENT:-ingest}
     secrets:
       - couchdb_password
       - rabbitmq_password
@@ -156,6 +164,8 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+      otelcol:
+        condition: service_started
     healthcheck:
       test: [CMD, curl, --fail, --silent, http://localhost:5000/health]
       interval: 10s
@@ -166,9 +176,9 @@ services:
   # OpenTelemetry Collector sidecar: the ONLY egress path for application
   # telemetry. Holds NO OpenObserve credentials; it forwards OTLP to the
   # observe gateway collector, which owns the ingest credential. Scrapes
-  # rabbitmq/couchdb prometheus endpoints for broker health. The app itself
-  # stays telemetry-free unless the operator loads the addon in init.lisp
-  # and points STAR_OBSERVABILITY_ENDPOINT at otelcol:4318.
+  # RabbitMQ/CouchDB Prometheus endpoints for broker health. The application
+  # stays telemetry-free unless STAR_OBSERVABILITY_ENABLED is explicitly true;
+  # when enabled the hosted actor-start hook starts the normal addon lifecycle.
   otelcol:
     image: otel/opentelemetry-collector-contrib:${OTELCOL_VERSION:-0.155.0}
     hostname: otelcol
