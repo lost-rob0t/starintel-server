@@ -154,7 +154,12 @@ add-on and therefore remains safe to repeat during ASDF reload."
   (let ((canonical-system (canonical-addon-system system)))
     (handler-case
         (progn
-          (asdf:load-system canonical-system)
+          ;; Add-on systems register their lifecycle while ASDF loads them. If a
+          ;; definition is already present, the system is therefore already
+          ;; loaded and invoking ASDF again is both redundant and unsafe from an
+          ;; enclosing ASDF operation such as TEST-OP.
+          (unless (addon-definition-for-system canonical-system)
+            (asdf:load-system canonical-system))
           (let ((definition (ensure-addon-definition canonical-system))
                 (state (addon-status canonical-system)))
             (if (and state (eq :active (addon-state-status state)))

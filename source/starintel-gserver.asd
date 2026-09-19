@@ -12,6 +12,7 @@
   ((:file "ids")
    (:file "document-access-package")
    (:file "document-access")
+   (:file "actor-manifest-options")
    (:file "consumers/package")
    (:file "consumers/consumers")
    (:file "consumers/owner-fixes")

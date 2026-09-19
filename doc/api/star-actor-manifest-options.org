@@ -1,0 +1,49 @@
+#+TITLE: API Reference — STAR.ACTOR-MANIFEST-OPTIONS
+System: =starintel-gserver=
+#+OPTIONS: toc:2 num:nil
+
+* Functions
+*** actor-manifest-actor
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTOR-MANIFEST-OPTIONS
+:END:
+#+begin_src lisp
+(actor-manifest-actor (STAR.ACTOR-MANIFEST-OPTIONS::DOCUMENT))
+#+end_src
+Return the actor identity advertised by an actor-manifest document.
+*** actor-manifest-target-options
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTOR-MANIFEST-OPTIONS
+:END:
+#+begin_src lisp
+(actor-manifest-target-options (STAR.ACTOR-MANIFEST-OPTIONS::DOCUMENT))
+#+end_src
+Return the target option declarations from an actor-manifest document.
+*** merge-target-options-with-manifest
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTOR-MANIFEST-OPTIONS
+:END:
+#+begin_src lisp
+(merge-target-options-with-manifest (STAR.ACTOR-MANIFEST-OPTIONS::MANIFEST STAR.ACTOR-MANIFEST-OPTIONS::OPTIONS))
+#+end_src
+Merge actor-manifest defaults into OPTIONS and enforce required declarations.
+
+The server deliberately does not interpret actor-specific values. It only
+provides one generic contract so external RabbitMQ actors and local actors use
+the same target option semantics. Explicit target options always win.
+*** target-option-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTOR-MANIFEST-OPTIONS
+:END:
+#+begin_src lisp
+(target-option-value (STAR.ACTOR-MANIFEST-OPTIONS::OPTIONS STAR.ACTOR-MANIFEST-OPTIONS::KEY
+ &OPTIONAL STAR.ACTOR-MANIFEST-OPTIONS::DEFAULT))
+#+end_src
+Read KEY from actor-defined target OPTIONS.
+
+Both supported option forms are accepted: {"key": KEY, "value": VALUE}
+and the compact {KEY: VALUE} object used by existing actors.

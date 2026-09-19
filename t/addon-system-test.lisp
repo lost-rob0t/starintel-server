@@ -24,6 +24,21 @@
              (or (star:addon-error-cause condition)
                  condition)))))
 
+(test pre-registered-addon-load-does-not-reenter-asdf
+  (let ((started nil)
+        (system :starintel-test-preloaded-addon))
+    (star:register-addon
+     :test-preloaded
+     :system system
+     :start (lambda () (setf started t)))
+    (unwind-protect
+         (let ((state (star:load-addon system)))
+           (is-true started)
+           (is (eq :active (star:addon-state-status state))))
+      (let ((state (star:addon-status system)))
+        (when (and state (eq :active (star:addon-state-status state)))
+          (star:unload-addon system))))))
+
 (test bixby-is-an-optional-asdf-addon-over-core-oauth
   (let ((before (star:addon-status :starintel-bixby)))
     (when (and before
@@ -99,7 +114,7 @@
          (progn
            (star::maybe-autoload-observability-addon)
            (let ((state (star:addon-status :starintel-observability)))
-             (is state)
+             (is (not (null state)))
              (is (eq :active (star:addon-state-status state))))
            (is-true (star:observability-active-p)))
       (let ((state (star:addon-status :starintel-observability)))
