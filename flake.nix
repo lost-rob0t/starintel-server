@@ -60,7 +60,7 @@
 
         postPatch = ''
           cat > cl-gserver.asd <<'EOF'
-;;;; Compatibility shim: provide ASDF system "cl-gserver" (real system is "sento")
+;;;; Compatibility shim: provide ASDF system "cl-gserver" (real system is SENTO.)
 (asdf:defsystem "cl-gserver"
   :description "Compatibility alias for the cl-gserver repository; real system is SENTO."
   :depends-on ("sento")
@@ -147,6 +147,7 @@ EOF
 
         lispLibs = with sbcl'.pkgs; [
           starintel-observability
+          star-migrations-lib
           starintel
           cl-couch
           serapeum
