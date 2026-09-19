@@ -102,68 +102,7 @@ Allowed classes for this workflow are:
 Naming rules:
 
 1. Names are lowercase ASCII and must remain valid under the runtime actor-name
-   contract `^[A-Za-z0-9][A-Za-z0-9._:-]*# StarIntel Server agent contract
-
-This repository is worked **issue-first**. Do not invent a roadmap while an issue already owns the work.
-
-## Authority for an issue run
-
-For `/issue N`, task-specific authority is intentionally bounded to:
-
-1. GitHub issue `lost-rob0t/starintel-server#N`, including its current body and status.
-2. The current local `starintel-server` checkout.
-3. The current local `starintel-auto-research` checkout, but only the research/design records directly relevant to the issue.
-
-Treat remote research links in old issue prose as locators for the local `starintel-auto-research` checkout. Do not recursively browse unrelated repositories or load the whole research corpus. A cross-repository implementation dependency named by the issue may be inspected only when it is necessary to verify a hard boundary; do not turn that into scope expansion.
-
-Current source beats stale factual claims in an issue. The issue still owns intent and acceptance criteria. If current source proves part of the issue is already fixed, narrow the issue instead of reimplementing it.
-
-## StarIntel schema/version preflight
-
-Before any work that reads, writes, validates, serializes, ingests, migrates, indexes,
-or reasons about StarIntel documents or schema-dependent API behavior, resolve and
-verify this repository's schema lock:
-
-```bash
-python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
-```
-
-If the reusable `starintel-spec-version` skill is installed, also use its read-only
-resolver to make the version dimensions explicit:
-
-```bash
-python3 "$HOME/skills/skills/starintel-spec-version/scripts/starintel_spec_version.py" \
-  current --lock schema/starintel-schema.lock.json
-```
-
-Rules:
-
-- `schema/starintel-schema.lock.json` is the consumer authority for the canonical
-  repository, canonical commit, active `release_version`, and immutable
-  `schema_version`.
-- Report/use `release_version` as the active StarIntel release. Do **not** infer the
-  release from `starintel-doc-v0.9.0.schema.json` or another schema filename.
-- The v0.9 base schema may remain `schema_version = 0.9.0` while the release/profile
-  advances through `0.9.1`, `0.9.2`, and later additive releases.
-- Issue prose, research notes, README text, and remembered version numbers never
-  override the lock and pinned canonical manifest.
-- Never hand-edit a release/profile bump in this repository. Canonical release
-  changes occur through the canonical schema repository's bump script; this
-  repository then repins its lock through the existing schema sync/lock workflow.
-- A lock/manifest/commit mismatch is a hard blocker. Do not implement against an
-  unverified or guessed contract.
-
-At the time this rule was added, this lock resolves release `0.9.1` over immutable
-base schema `0.9.0`; future agents must read the live lock instead of trusting this
-historical value.
-
-## Local research lookup
-
-Prefer a sibling checkout named `starintel-auto-research` near this repository. If needed, locate an already-present local checkout. Do not clone/fetch a research repository merely to begin an issue run.
-
-Load only directly linked or strongly matching research/design files. Record the exact local paths used in the final evidence.
-
-.
+   contract `^[A-Za-z0-9][A-Za-z0-9._:-]*$`.
 2. Protocol segments use `:`; words inside a segment use kebab-case.
 3. The exact registered string is the actor identity. Do not silently rename an
    actor after targets or leases exist; add an explicit compatibility alias or
