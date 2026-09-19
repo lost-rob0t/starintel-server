@@ -95,7 +95,7 @@
                  (rename-file temp-path path)
                (file-error (condition)
                  (unless (block-file-matches-content-id-p path content-id)
-                   (error condition))))))
+                   (error condition)))))
            (unless (block-file-matches-content-id-p path content-id)
              (error 'block-integrity-error :content-id content-id)))
       (when (uiop:file-exists-p temp-path)
