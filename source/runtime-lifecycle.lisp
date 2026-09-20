@@ -199,6 +199,7 @@
      #:star-runtime-state
      #:star-runtime-consumers
      #:star-runtime-event-consumer
+     #:star-runtime-event-store
      #:star-runtime-http-server
      #:star-runtime-actor-system
      #:star-runtime-kernel
@@ -229,6 +230,7 @@
                     actor-system
                     consumers
                     event-consumer
+                    event-store
                     http-server
                     kernel
                     started-at
@@ -238,6 +240,7 @@
   actor-system
   consumers
   event-consumer
+  event-store
   http-server
   kernel
   started-at
@@ -290,6 +293,7 @@
             :rabbit nil
             :consumers nil
             :actors nil
+            :event-store nil
             :kernel nil
             :http nil
             :ready nil)
@@ -303,6 +307,11 @@
              (actors (and (eq :running state)
                           (star-runtime-actor-system runtime)
                           t))
+             (event-store
+               (and (eq :running state)
+                    (star-runtime-event-store runtime)
+                    (star.event-store:event-store-open-p
+                     (star-runtime-event-store runtime))))
              (kernel (and (eq :running state)
                           (star-runtime-kernel runtime)
                           t))
@@ -314,9 +323,10 @@
               :rabbit rabbit
               :consumers consumers
               :actors actors
+              :event-store event-store
               :kernel kernel
               :http http
-              :ready (and couchdb rabbit consumers actors kernel http)))))
+              :ready (and couchdb rabbit consumers actors event-store kernel http)))))
 
 (defun runtime-live-p (&optional (runtime *runtime*))
   (and runtime
@@ -354,6 +364,7 @@
       ("rabbit" (availability-string (getf snapshot :rabbit)))
       ("consumers" (availability-string (getf snapshot :consumers)))
       ("actors" (availability-string (getf snapshot :actors)))
+      ("event_store" (availability-string (getf snapshot :event-store)))
       ("kernel" (availability-string (getf snapshot :kernel)))
       ("http" (availability-string (getf snapshot :http)))))))
 
@@ -418,6 +429,13 @@
     (star.actors::stop-actors
      :timeout-seconds *shutdown-timeout-seconds*))
   (setf (star-runtime-actor-system runtime) nil)
+  (when (star-runtime-event-store runtime)
+    (handler-case
+        (star.event-store:close-event-store
+         (star-runtime-event-store runtime))
+      (condition (condition)
+        (log:warn "Event-store shutdown failed: ~a" condition))))
+  (setf (star-runtime-event-store runtime) nil)
   (when (and (star-runtime-kernel runtime)
              (eq (star-runtime-kernel runtime) lparallel:*kernel*))
     (handler-case
@@ -455,6 +473,8 @@
                 (star-runtime-kernel runtime)
                 lparallel:*kernel*)
           (star.databases.couchdb:init-db)
+          (setf (star-runtime-event-store runtime)
+                (star.event-store:open-event-store))
           (star.auth:initialize-auth-store)
           (star.auth:ensure-initial-user)
           (star:initialize-lease-store)
