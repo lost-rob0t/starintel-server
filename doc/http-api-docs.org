@@ -182,3 +182,26 @@ semantics while still removing repetitive wire code.
 - The contracted API is emitted as OpenAPI 3.1.2 and a StarIntel client manifest.
 - Legacy routes remain intentionally outside the initial generated-client
   guarantee until migrated into the registry.
+
+
+* Runtime dataset policy administration
+
+Administrators can inspect and atomically replace the live public allowlist and
+planned dataset-to-tenant mapping:
+
+#+begin_src sh
+curl --fail \
+  -H "Authorization: Bearer $STAR_SERVER_API_KEY" \
+  http://127.0.0.1:5000/admin/dataset-policy
+
+curl --fail \
+  -H "Authorization: Bearer $STAR_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -X PUT \
+  -d '{"public_datasets":["public-intel"],"planned_datasets":{"pro-intel":"pro"}}' \
+  http://127.0.0.1:5000/admin/dataset-policy
+#+end_src
+
+The replacement is explicit and rejects wildcard public policy and overlap
+between public and planned datasets. The endpoint is intentionally runtime-only;
+durable operator desired state must be replayed after process restart.
