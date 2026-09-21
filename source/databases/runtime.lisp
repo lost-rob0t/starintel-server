@@ -28,7 +28,7 @@
 
 (defun normalize-database-access (value)
   (unless (member value
-                  '(:read :write :transaction :subscribe :admin)
+                  '(:read :write :transaction :subscribe :logic :admin)
                   :test #'eq)
     (fail-database-runtime
      :invalid-request
@@ -41,6 +41,7 @@
     (:write "database:write")
     (:transaction "database:transaction")
     (:subscribe "database:subscribe")
+    (:logic "database:read")
     (:admin "database:admin")))
 
 (defclass database-backend ()
@@ -319,9 +320,7 @@ classes they support."))
    (star.authorization:make-authorization-resource
     :tenant-id (database-call-context-tenant-id context)
     :dataset-id (database-call-context-dataset-id context)
-    :actor-name
-    (format nil "database:~A"
-            (database-operation-profile operation))
+    :database-id (database-operation-profile operation)
     :resource-id (database-operation-name operation))
    :metadata
    (list :correlation-id (context-correlation-id context))))
@@ -339,7 +338,7 @@ classes they support."))
   (let ((descriptor (database-operation-descriptor operation))
         (bindings (database-request-bindings request)))
     (ecase (database-operation-access operation)
-      (:read
+      ((:read :logic)
        (database-execute-read
         backend descriptor bindings context))
       (:write
