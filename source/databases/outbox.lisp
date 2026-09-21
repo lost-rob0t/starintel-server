@@ -92,7 +92,9 @@
            (copy-json-object-excluding
             (document-extensions source)
             (list +outbox-extension-key+
-                  +mutation-ledger-extension-key+))))
+                  +mutation-ledger-extension-key+
+                  "_server_storage"
+                  "_server_file"))))
     (setf (jsown:val public "extensions") extensions)
     public))
 
