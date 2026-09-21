@@ -269,6 +269,7 @@
    #:normalize-username
    #:create-user
    #:list-user-metadata
+   #:admin-update-user
    #:user-metadata-json
    #:authenticate-user-password
    #:login-user
