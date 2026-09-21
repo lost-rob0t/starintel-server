@@ -149,6 +149,19 @@ Signalled for OAuth protocol failures.
 Administratively reset USERNAME's password to NEW-PASSWORD.
 
 By default forces a change at next login via =:must-change-password=.
+*** admin-update-user
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTH
+:END:
+#+begin_src lisp
+(admin-update-user (STAR.AUTH::USERNAME &KEY STAR.AUTH::SCOPES STAR.AUTH::STATUS
+ (STAR.AUTH::STORE STAR.AUTH:*CREDENTIAL-STORE*)))
+#+end_src
+Update USERNAME authorization scopes and/or lifecycle STATUS.
+
+At least one of SCOPES or STATUS must be supplied. Password material is not
+changed by this operation.
 *** administrator-principal-p
 :PROPERTIES:
 :KIND: fn
