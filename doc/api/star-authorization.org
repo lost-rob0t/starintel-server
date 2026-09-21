@@ -430,6 +430,16 @@ True when the principal record grants CAPABILITY.
 (principal-has-wildcard-dataset-p (&OPTIONAL PRINCIPAL))
 #+end_src
 True when the principal may access any dataset.
+*** request-metadata
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTHORIZATION
+:END:
+#+begin_src lisp
+(request-metadata (&KEY STAR.AUTHORIZATION::ROUTE STAR.AUTHORIZATION::METHOD
+ STAR.AUTHORIZATION::CORRELATION-ID))
+#+end_src
+Build normalized authorization audit metadata for ROUTE, METHOD and CORRELATION-ID.
 *** resource-from-document
 :PROPERTIES:
 :KIND: fn
