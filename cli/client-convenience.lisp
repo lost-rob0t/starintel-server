@@ -73,6 +73,19 @@
 (defun list-users (client &key request-options)
   (request-auth-list-users client :request-options request-options))
 
+(defun update-user (client username &key scopes status request-options)
+  "Update USERNAME scopes and/or lifecycle STATUS."
+  (let ((body (jsown:new-js)))
+    (when scopes
+      (setf (jsown:val body "scopes") scopes))
+    (when status
+      (setf (jsown:val body "status") status))
+    (request-auth-update-user
+     client
+     :path-parameters (list (cons "username" username))
+     :body body
+     :request-options request-options)))
+
 (defun reset-user-password (client username password
                             &key (must-change-password t) request-options)
   (request-auth-reset-user-password
