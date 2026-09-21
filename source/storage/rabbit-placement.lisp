@@ -18,16 +18,23 @@
   "Choose placement from committed state for updates and tenant policy for creates."
   (or (and (eq operation :updated)
            (persisted-document-tier-before-mutation client database document))
+      (and (string= (or (star.documents:document-dtype document) "") "file")
+           "hot")
       (star.storage:tenant-default-storage-tier
        (or (star.documents:document-value document "tenant_id" nil)
            (star.documents:document-value document "tenant" nil)
            "default"))))
 
 (defun public-incoming-storage-document (document)
-  "Clone DOCUMENT while discarding any actor-supplied server placement record."
+  "Clone DOCUMENT, discard actor-owned placement, and materialize file artifacts."
   (let ((copy (star.storage::clone-json document)))
     (star.storage::remove-storage-metadata! copy)
-    copy))
+    (handler-case
+        (star.storage:prepare-file-artifact-document copy)
+      (star.storage:file-artifact-validation-error (condition)
+        (error 'star.consumers:schema-invalid-delivery-error
+               :cause condition
+               :reason (princ-to-string condition))))))
 
 (defun save-rabbit-state-with-placement (client database tier state)
   "Save one outbox state without ever committing public content ahead of placement.
