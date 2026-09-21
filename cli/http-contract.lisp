@@ -176,6 +176,15 @@ property lists.")
     (cons "must_change_password" (boolean-schema)))
    :required '("username" "password" "scopes")))
 
+(defparameter +update-user-request-schema+
+  (object-schema
+   (list
+    (cons "scopes" (array-schema (string-schema :min-length 1)))
+    (cons "status" (string-schema :min-length 1
+                                   :description "active or disabled")))
+   :additional-properties nil
+   :description "Administrator mutation of user authorization/lifecycle state."))
+
 (defparameter +reset-password-request-schema+
   (object-schema
    (list
@@ -344,6 +353,20 @@ property lists.")
     :responses (append
                 (list (response 200 "User metadata list."
                                 (array-schema +user-metadata-schema+)))
+                (standard-errors)))
+   (make-http-operation
+    :id "auth.users.update"
+    :client-name "auth-update-user"
+    :method :put
+    :path "/auth/users/:username"
+    :summary "Update a human user's scopes or lifecycle status"
+    :tags '("auth" "users")
+    :authority :administrator
+    :scopes '("admin")
+    :path-parameters '("username")
+    :request-schema +update-user-request-schema+
+    :responses (append
+                (list (response 200 "User updated." (user-status-schema)))
                 (standard-errors)))
    (make-http-operation
     :id "auth.users.password.reset"
