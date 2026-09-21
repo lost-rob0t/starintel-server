@@ -147,6 +147,7 @@ Representative routes include:
 | =/documents/messages/by-user= | =user= |
 | =/documents/messages/by-channel= | =group=, =channel= |
 | =/documents/messages/by-platform= | =platform= |
+| =/documents/messages/by-group= | =group= |
 | =/documents/messages/groups= | pagination parameters |
 | =/documents/socialmpost/by-user= | =user= |
 | =/documents/hosts/by-ip= | =ip= |
