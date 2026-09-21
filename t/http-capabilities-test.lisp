@@ -177,3 +177,42 @@
       (is (eq :false
               (jsown:val authentication
                          "capabilities_endpoint_requires_auth"))))))
+
+
+(test admin-runtime-dataset-policy-is-explicit-and-replayable
+  (let ((old-public star.frontends.http-api::*public-search-datasets*)
+        (old-map star::*tenant-dataset-map*)
+        (old-generation star.frontends.http-api::*dataset-policy-generation*))
+    (unwind-protect
+         (let ((document
+                 (star.frontends.http-api::replace-runtime-dataset-policy
+                  '("public-a" "public-b")
+                  '(("planned-a" . "pro")
+                    ("planned-b" . "research")))))
+           (is (equal '("public-a" "public-b")
+                      star.frontends.http-api::*public-search-datasets*))
+           (is (equal '(("planned-a" . "pro")
+                        ("planned-b" . "research"))
+                      star::*tenant-dataset-map*))
+           (is (string= "pro" (star::tenant-adaptation-for "planned-a")))
+           (is (search "dataset:\"public-a\""
+                       (star.frontends.http-api::public-search-authorized-query
+                        "alice")))
+           (is (null (search "planned-a"
+                             (star.frontends.http-api::public-search-authorized-query
+                              "alice"))))
+           (is (eq :true (jsown:val document "runtime_only")))
+           (is (eq :false (jsown:val document "legacy_public_wildcard")))
+           (is (> (jsown:val document "generation") old-generation)))
+      (setf star.frontends.http-api::*public-search-datasets* old-public
+            star::*tenant-dataset-map* old-map
+            star.frontends.http-api::*dataset-policy-generation* old-generation))))
+
+(test admin-runtime-dataset-policy-contract-is-administrator-only
+  (dolist (operation-id '("admin.dataset-policy.get"
+                          "admin.dataset-policy.put"))
+    (let ((operation (star.http.contract:find-http-operation operation-id)))
+      (is (eq :administrator
+              (star.http.contract:http-operation-authority operation)))
+      (is (equal '("admin")
+                 (star.http.contract:http-operation-scopes operation))))))
