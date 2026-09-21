@@ -5,7 +5,8 @@
     ((member code
              '("invalid_owner" "invalid_scopes" "invalid_expiry"
                "invalid_overlap" "invalid_username" "invalid_password"
-               "password_too_short")
+               "password_too_short" "invalid_user_status"
+               "empty_user_update")
              :test #'string=)
      422)
     ((member code '("credential_not_found" "user_not_found") :test #'string=)
@@ -221,6 +222,27 @@
        "Username is required"))
     username))
 
+(defun handle-auth-update-user-route (params)
+  (with-http-boundary ()
+    (require-administrator-context)
+    (with-credential-lifecycle-errors
+      (let* ((body (require-json-object (parse-json-request)))
+             (has-scopes (jsown:keyp body "scopes"))
+             (has-status (jsown:keyp body "status"))
+             (scopes (and has-scopes (require-scope-array body)))
+             (status (and has-status (require-auth-string body "status"))))
+        (unless (or has-scopes has-status)
+          (signal-http-input-error
+           422
+           "invalid_auth_request"
+           "At least one of scopes or status is required"))
+        (user-status-response
+         (star.auth:admin-update-user
+          (user-name-param params)
+          :scopes scopes
+          :status status)
+         "User updated")))))
+
 (defun handle-auth-reset-user-password-route (params)
   (with-http-boundary ()
     (require-administrator-context)
@@ -345,6 +367,9 @@
 
 (setf (ningle:route *app* "/auth/users" :method :get)
       #'handle-auth-list-users-route)
+
+(setf (ningle:route *app* "/auth/users/:username" :method :put)
+      #'handle-auth-update-user-route)
 
 (setf (ningle:route *app* "/auth/users/:username/password" :method :post)
       #'handle-auth-reset-user-password-route)
