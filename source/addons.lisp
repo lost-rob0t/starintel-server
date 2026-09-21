@@ -153,10 +153,16 @@ add-on and therefore remains safe to repeat during ASDF reload."
 (defun %load-addon (system)
   (let ((canonical-system (canonical-addon-system system)))
     (handler-case
-        (progn
-          (asdf:load-system canonical-system)
-          (let ((definition (ensure-addon-definition canonical-system))
-                (state (addon-status canonical-system)))
+        (let ((definition (addon-definition-for-system canonical-system)))
+          ;; Hosted add-ons may already be registered by the core image. In
+          ;; that case their code is loaded and a recursive ASDF LOAD-OP is
+          ;; unnecessary (and can be invalid while an enclosing TEST-OP or
+          ;; LOAD-OP is active). Optional add-ons such as Bixby still fall
+          ;; through to ASDF so loading the package performs registration.
+          (unless definition
+            (asdf:load-system canonical-system)
+            (setf definition (ensure-addon-definition canonical-system)))
+          (let ((state (addon-status canonical-system)))
             (if (and state (eq :active (addon-state-status state)))
                 state
                 (start-addon-definition definition))))
