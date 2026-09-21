@@ -237,10 +237,12 @@
            "invalid_auth_request"
            "At least one of scopes or status is required"))
         (user-status-response
-         (star.auth:admin-update-user
+         (apply
+          #'star.auth:admin-update-user
           (user-name-param params)
-          :scopes scopes
-          :status status)
+          (append
+           (when has-scopes (list :scopes scopes))
+           (when has-status (list :status status))))
          "User updated")))))
 
 (defun handle-auth-reset-user-password-route (params)
