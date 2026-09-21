@@ -3,6 +3,8 @@
   (:export
    #:+document-storage-extension-key+
    #:+document-storage-tiers+
+   #:+file-ingest-extension-key+
+   #:+file-storage-extension-key+
    #:storage-backend
    #:storage-backend-name
    #:memory-storage-backend
@@ -19,6 +21,12 @@
    #:storage-backend-error-operation
    #:storage-backend-error-key
    #:storage-backend-error-reason
+   #:file-artifact-validation-error
+   #:file-artifact-validation-reason
+   #:prepare-file-artifact-document
+   #:load-file-artifact
+   #:file-artifact-json
+   #:file-storage-metadata-object
    #:valid-storage-tier-p
    #:normalize-storage-tier
    #:tier-backend-name
