@@ -24,6 +24,7 @@
    (:file "http-contract-final" :pathname "../cli/http-contract-final")
    (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "http-contract-documents" :pathname "../cli/http-contract-documents")
+   (:file "http-contract-fbp" :pathname "../cli/http-contract-fbp")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")

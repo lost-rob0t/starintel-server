@@ -9,7 +9,7 @@
 - [[file:star-consumers.org][STAR.CONSUMERS]] — 107 symbols
 - [[file:star-databases-couchdb.org][STAR.DATABASES.COUCHDB]] — 127 symbols
 - [[file:star-documents.org][STAR.DOCUMENTS]] — 21 symbols
-- [[file:star-http-contract.org][STAR.HTTP.CONTRACT]] — 22 symbols
+- [[file:star-http-contract.org][STAR.HTTP.CONTRACT]] — 25 symbols
 - [[file:star-ids.org][STAR.IDS]] — 1 symbol
 - [[file:star-leases.org][STAR.LEASES]] — 73 symbols
 - [[file:star-producers.org][STAR.PRODUCERS]] — 19 symbols
