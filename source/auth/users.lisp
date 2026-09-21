@@ -146,6 +146,42 @@
      "Credential store is unavailable"))
   (mapcar #'user-metadata-json (user-store-list store)))
 
+(defun normalize-user-status (status)
+  "Normalize an administrator-supplied user STATUS."
+  (let ((normalized
+          (etypecase status
+            (keyword status)
+            (symbol (intern (string-upcase (symbol-name status)) :keyword))
+            (string (intern (string-upcase status) :keyword)))))
+    (unless (member normalized '(:active :disabled))
+      (signal-lifecycle-error
+       "invalid_user_status"
+       "User status must be active or disabled"))
+    normalized))
+
+(defun admin-update-user (username &key scopes status (store *credential-store*))
+  "Update USERNAME authorization scopes and/or lifecycle STATUS.
+
+At least one of SCOPES or STATUS must be supplied. Password material is not
+changed by this operation."
+  (unless store
+    (signal-lifecycle-error
+     "auth_store_unavailable"
+     "Credential store is unavailable"))
+  (let ((record (user-store-get store (normalize-username username))))
+    (unless record
+      (signal-lifecycle-error "user_not_found" "User was not found"))
+    (when (null scopes)
+      (unless status
+        (signal-lifecycle-error
+         "empty_user_update"
+         "At least one of scopes or status must be supplied")))
+    (when scopes
+      (setf (user-record-scopes record) (normalize-scopes scopes)))
+    (when status
+      (setf (user-record-status record) (normalize-user-status status)))
+    (user-store-update store record)))
+
 (defun authenticate-user-password (username password
                                     &key (store *credential-store*))
   "Verify a username/password pair; return the user record."
