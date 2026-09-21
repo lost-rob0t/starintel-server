@@ -4,11 +4,12 @@
   "Remove server-owned storage placement metadata from a client document."
   (when (and document (jsown:keyp document "extensions"))
     (let ((extensions (jsown:val document "extensions")))
-      (when (and extensions
-                 (jsown:keyp extensions
-                             star.storage:+document-storage-extension-key+))
-        (jsown:remkey extensions
-                      star.storage:+document-storage-extension-key+))))
+      (when extensions
+        (dolist (key (list star.storage:+document-storage-extension-key+
+                           star.storage:+file-storage-extension-key+
+                           star.storage:+file-ingest-extension-key+))
+          (when (jsown:keyp extensions key)
+            (jsown:remkey extensions key))))))
   document)
 
 (defun strip-server-tenant-fields (document)
