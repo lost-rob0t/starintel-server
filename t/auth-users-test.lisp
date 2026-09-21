@@ -211,3 +211,22 @@
                   (lambda ()
                     (star.auth:admin-update-user
                      "analyst" :store store)))))))
+
+
+(test administrator-user-update-can-explicitly-clear-scopes
+  (let* ((star:*auth-pepper* "unit-test-user-pepper")
+         (star:*auth-password-iterations* 1000)
+         (star:*auth-password-min-length* 12)
+         (store (star.auth:make-memory-credential-store)))
+    (star.auth:create-user
+     "clearable"
+     "clearable-password-123"
+     "user"
+     '("documents:read" "tenant:pro")
+     :store store)
+    (let ((updated
+            (star.auth:admin-update-user
+             "clearable"
+             :scopes '()
+             :store store)))
+      (is (null (star.auth:user-record-scopes updated))))))
