@@ -214,6 +214,20 @@ property lists.")
     (cons "overlap_seconds" (integer-schema :minimum 0)))
    :required '("overlap_seconds")))
 
+(defparameter +dataset-policy-request-schema+
+  (object-schema
+   (list
+    (cons "public_datasets"
+          (array-schema
+           (string-schema :min-length 1)
+           :description "Explicit public dataset allowlist; wildcard is rejected."))
+    (cons "planned_datasets"
+          (generic-object-schema
+           "Object mapping dataset names to tenant/plan ids.")))
+   :required '("public_datasets" "planned_datasets")
+   :additional-properties nil
+   :description "Complete runtime dataset visibility/plan policy replacement."))
+
 (defparameter +bootstrap-request-schema+
   (object-schema
    (list (cons "owner" (string-schema :min-length 1)))
@@ -293,6 +307,32 @@ property lists.")
     :tags '("schema")
     :authority :public
     :responses (list (response 200 "StarIntel client manifest." (generic-object-schema))))
+   (make-http-operation
+    :id "admin.dataset-policy.get"
+    :client-name "admin-dataset-policy"
+    :method :get
+    :path "/admin/dataset-policy"
+    :summary "Inspect live dataset visibility and plan mapping"
+    :tags '("admin" "datasets")
+    :authority :administrator
+    :scopes '("admin")
+    :responses (append
+                (list (response 200 "Runtime dataset policy." (generic-object-schema)))
+                (standard-errors)))
+   (make-http-operation
+    :id "admin.dataset-policy.put"
+    :client-name "admin-replace-dataset-policy"
+    :method :put
+    :path "/admin/dataset-policy"
+    :summary "Atomically replace live dataset visibility and plan mapping"
+    :tags '("admin" "datasets")
+    :authority :administrator
+    :scopes '("admin")
+    :request-schema +dataset-policy-request-schema+
+    :responses (append
+                (list (response 200 "Runtime dataset policy replaced."
+                                (generic-object-schema)))
+                (standard-errors)))
    (make-http-operation
     :id "auth.login"
     :client-name "auth-login"
