@@ -67,9 +67,17 @@ No secret is logged or copied into document metadata."
 (defun sha256-octets (octets)
   (ironclad:digest-sequence :sha256 octets))
 
-(defun sha256-string-hex (value)
+(defun content-octets (value)
+  (etypecase value
+    (string (utf8-octets value))
+    ((vector (unsigned-byte 8)) value)))
+
+(defun sha256-content-hex (value)
   (ironclad:byte-array-to-hex-string
-   (sha256-octets (utf8-octets value))))
+   (sha256-octets (content-octets value))))
+
+(defun sha256-string-hex (value)
+  (sha256-content-hex value))
 
 (defun hmac-sha256 (key data)
   (let ((mac (ironclad:make-mac :hmac key :sha256)))
@@ -213,7 +221,7 @@ No secret is logged or copied into document metadata."
 
 (defun s3-request (backend method key &key (content "") content-type)
   (let* ((body (or content ""))
-         (payload-hash (sha256-string-hex body))
+         (payload-hash (sha256-content-hex body))
          (canonical-path (s3-request-path backend key))
          (url (s3-request-url backend canonical-path))
          (headers
