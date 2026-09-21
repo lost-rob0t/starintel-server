@@ -159,11 +159,17 @@
        "User status must be active or disabled"))
     normalized))
 
-(defun admin-update-user (username &key scopes status (store *credential-store*))
+(defun admin-update-user
+    (username
+     &key
+       (scopes nil scopes-supplied-p)
+       (status nil status-supplied-p)
+       (store *credential-store*))
   "Update USERNAME authorization scopes and/or lifecycle STATUS.
 
-At least one of SCOPES or STATUS must be supplied. Password material is not
-changed by this operation."
+At least one of SCOPES or STATUS must be supplied. An explicitly supplied empty
+SCOPES list clears authorization scopes. Password material is not changed by
+this operation."
   (unless store
     (signal-lifecycle-error
      "auth_store_unavailable"
@@ -171,14 +177,13 @@ changed by this operation."
   (let ((record (user-store-get store (normalize-username username))))
     (unless record
       (signal-lifecycle-error "user_not_found" "User was not found"))
-    (when (null scopes)
-      (unless status
-        (signal-lifecycle-error
-         "empty_user_update"
-         "At least one of scopes or status must be supplied")))
-    (when scopes
+    (unless (or scopes-supplied-p status-supplied-p)
+      (signal-lifecycle-error
+       "empty_user_update"
+       "At least one of scopes or status must be supplied"))
+    (when scopes-supplied-p
       (setf (user-record-scopes record) (normalize-scopes scopes)))
-    (when status
+    (when status-supplied-p
       (setf (user-record-status record) (normalize-user-status status)))
     (user-store-update store record)))
 
