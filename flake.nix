@@ -8,7 +8,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     org-doc = {
-      url = "git+https://git.starintel.actor/nsaspy/org-doc";
+      url = "git+https://github.com/lost-rob0t/org-doc.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
