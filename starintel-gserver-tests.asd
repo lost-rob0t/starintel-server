@@ -55,6 +55,8 @@
      (:file "gserver-client-test")
      (:file "gserver-client-final-test")
      (:file "http-contract-documents-test")
+     (:file "document-storage-test")
+     (:file "s3-signature-test")
      (:file "runtime-lifecycle-test")
      (:file "observability-test")
      (:file "run-tests"))))
