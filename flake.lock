@@ -48,11 +48,11 @@
         "rev": "5bdb907a6dfbfdac594d661e0f475b5e65581ed2",
         "revCount": 7,
         "type": "git",
-        "url": "https://git.starintel.actor/nsaspy/org-doc"
+        "url": "https://github.com/lost-rob0t/org-doc.git"
       },
       "original": {
         "type": "git",
-        "url": "https://git.starintel.actor/nsaspy/org-doc"
+        "url": "https://github.com/lost-rob0t/org-doc.git"
       }
     },
     "root": {
