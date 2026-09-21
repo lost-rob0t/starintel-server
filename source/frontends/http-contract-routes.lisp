@@ -45,6 +45,10 @@ that mix public and private datasets must explicitly configure this list.")
     normalized))
 
 (defun require-public-dataset-list (body)
+  (unless (jsown:keyp body "public_datasets")
+    (signal-http-input-error
+     422 "invalid_dataset_policy"
+     "Field public_datasets is required"))
   (let ((value (jsown:val-safe body "public_datasets")))
     (unless (and (listp value)
                  (not (and (consp value) (eq :obj (first value)))))
@@ -60,6 +64,10 @@ that mix public and private datasets must explicitly configure this list.")
      #'string<)))
 
 (defun require-planned-dataset-map (body)
+  (unless (jsown:keyp body "planned_datasets")
+    (signal-http-input-error
+     422 "invalid_dataset_policy"
+     "Field planned_datasets is required"))
   (let ((value (jsown:val-safe body "planned_datasets")))
     (unless (and (consp value) (eq :obj (first value)))
       (signal-http-input-error
