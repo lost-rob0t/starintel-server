@@ -96,6 +96,11 @@
  'star.databases.couchdb:messages-by-platform
  "platform")
 
+(registered-view-route
+ "/documents/messages/by-group"
+ 'star.databases.couchdb:messages-by-group
+ "group")
+
 (setf (ningle:route *app* "/documents/messages/by-channel" :method :get)
       (lambda (params)
         (set-default-headers)
@@ -168,6 +173,7 @@
 (defparameter *http-view-registry-matrix*
   '(("/documents/messages/by-user" messages-by-user document)
     ("/documents/messages/by-platform" messages-by-platform document)
+    ("/documents/messages/by-group" messages-by-group document)
     ("/documents/messages/by-channel" by-channel map-or-reduced)
     ("/documents/messages/by-groups" by-channel map-or-reduced)
     ("/documents/messages/groups" groups reduced)
