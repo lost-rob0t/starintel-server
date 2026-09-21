@@ -235,3 +235,30 @@ Hermetic unit tests separately cover password policy, first-run idempotence,
 metadata redaction, login-to-API-key conversion, self-service password changes,
 administrator resets, generated client operations, normalized client errors,
 deadlines, and server-local administration helpers.
+
+
+* Administrator user scope/status update
+
+Administrators may update persisted authorization scopes or disable/reactivate a
+human user without changing password material:
+
+#+begin_src sh
+curl --fail \
+  -H "Authorization: Bearer $STAR_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -X PUT \
+  -d '{"scopes":["documents:read","search:read","tenant:pro","dataset:*"]}' \
+  http://127.0.0.1:5000/auth/users/analyst
+
+curl --fail \
+  -H "Authorization: Bearer $STAR_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -X PUT \
+  -d '{"status":"disabled"}' \
+  http://127.0.0.1:5000/auth/users/analyst
+#+end_src
+
+The accepted lifecycle statuses are =active= and =disabled=. A disabled user
+cannot authenticate by password. Disabling a user does not silently mutate
+credential records; an operator that needs immediate token invalidation should
+also revoke that user's credentials.

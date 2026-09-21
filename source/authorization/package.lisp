@@ -59,5 +59,6 @@
    #:authorized-target-documents
    #:authorized-search-query
    #:authorized-view-response
+   #:request-metadata
    #:principal-has-wildcard-dataset-p
    #:principal-has-capability-p))

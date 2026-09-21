@@ -22,6 +22,120 @@ that mix public and private datasets must explicitly configure this list.")
                 "/client-manifest.json"))
   (pushnew path star:*auth-public-paths* :test #'string=))
 
+(defparameter *dataset-policy-lock*
+  (bt:make-lock "starintel-runtime-dataset-policy")
+  "Serialize administrator replacement of the runtime dataset policy.")
+
+(defparameter *dataset-policy-generation* 0
+  "Monotonic in-process generation of explicitly applied dataset policy.")
+
+(defun runtime-policy-string (value field)
+  (unless (and (stringp value)
+               (plusp (length (string-trim '(#\Space #\Tab) value))))
+    (signal-http-input-error
+     422 "invalid_dataset_policy"
+     (format nil "Field ~a must contain non-empty strings" field)))
+  (let ((normalized (string-trim '(#\Space #\Tab) value)))
+    (when (or (string= normalized "*")
+              (find #\, normalized)
+              (find #\= normalized))
+      (signal-http-input-error
+       422 "invalid_dataset_policy"
+       (format nil "Field ~a contains a reserved dataset-policy token" field)))
+    normalized))
+
+(defun require-public-dataset-list (body)
+  (unless (jsown:keyp body "public_datasets")
+    (signal-http-input-error
+     422 "invalid_dataset_policy"
+     "Field public_datasets is required"))
+  (let ((value (jsown:val-safe body "public_datasets")))
+    (unless (and (listp value)
+                 (not (and (consp value) (eq :obj (first value)))))
+      (signal-http-input-error
+       422 "invalid_dataset_policy"
+       "Field public_datasets must be an array"))
+    (sort
+     (remove-duplicates
+      (mapcar (lambda (item)
+                (runtime-policy-string item "public_datasets"))
+              value)
+      :test #'string=)
+     #'string<)))
+
+(defun require-planned-dataset-map (body)
+  (unless (jsown:keyp body "planned_datasets")
+    (signal-http-input-error
+     422 "invalid_dataset_policy"
+     "Field planned_datasets is required"))
+  (let ((value (jsown:val-safe body "planned_datasets")))
+    (unless (and (consp value) (eq :obj (first value)))
+      (signal-http-input-error
+       422 "invalid_dataset_policy"
+       "Field planned_datasets must be an object"))
+    (sort
+     (loop for (dataset . tenant) in (rest value)
+           collect
+           (cons (runtime-policy-string dataset "planned_datasets dataset")
+                 (runtime-policy-string tenant "planned_datasets tenant")))
+     #'string<
+     :key #'car)))
+
+(defun validate-runtime-dataset-policy (public-datasets planned-datasets)
+  (dolist (entry planned-datasets)
+    (when (member (car entry) public-datasets :test #'string=)
+      (signal-http-input-error
+       422 "invalid_dataset_policy"
+       (format nil "Dataset ~a cannot be both public and planned" (car entry)))))
+  (values public-datasets planned-datasets))
+
+(defun planned-dataset-map-json (entries)
+  (let ((object (list :obj)))
+    (dolist (entry entries object)
+      (setf (jsown:val object (car entry)) (cdr entry)))))
+
+(defun runtime-dataset-policy-document ()
+  (bt:with-lock-held (*dataset-policy-lock*)
+    (jsown:new-js
+      ("status" "ok")
+      ("generation" *dataset-policy-generation*)
+      ("runtime_only" :true)
+      ("public_datasets" (copy-list *public-search-datasets*))
+      ("planned_datasets"
+       (planned-dataset-map-json (copy-tree star::*tenant-dataset-map*)))
+      ("legacy_public_wildcard"
+       (if (member "*" *public-search-datasets* :test #'string=)
+           :true
+           :false)))))
+
+(defun replace-runtime-dataset-policy (public-datasets planned-datasets)
+  "Atomically replace live public datasets and dataset-to-tenant plan mapping.
+
+This state is intentionally runtime-only. Durable desired state belongs to the
+operator configuration layer and must be replayed after process restart."
+  (validate-runtime-dataset-policy public-datasets planned-datasets)
+  (bt:with-lock-held (*dataset-policy-lock*)
+    (setf *public-search-datasets* (copy-list public-datasets)
+          star::*tenant-dataset-map* (copy-tree planned-datasets))
+    (incf *dataset-policy-generation*))
+  (runtime-dataset-policy-document))
+
+(defun handle-admin-dataset-policy-route (params)
+  (declare (ignore params))
+  (with-http-boundary ()
+    (require-administrator-context)
+    (jsown:to-json (runtime-dataset-policy-document))))
+
+(defun handle-admin-replace-dataset-policy-route (params)
+  (declare (ignore params))
+  (with-http-boundary ()
+    (require-administrator-context)
+    (let* ((body (require-json-object (parse-json-request)))
+           (public-datasets (require-public-dataset-list body))
+           (planned-datasets (require-planned-dataset-map body)))
+      (jsown:to-json
+       (replace-runtime-dataset-policy public-datasets planned-datasets)))))
+
 (defun mount-http-operation (operation-id handler)
   "Mount HANDLER using the canonical method/path for OPERATION-ID."
   (let ((operation (star.http.contract:find-http-operation operation-id)))
@@ -233,11 +347,17 @@ server-owned public scopes. No caller principal or caller scope enters here."
 (mount-http-operation "public.search.get" #'handle-public-search-route)
 (mount-http-operation "stats.get" #'handle-public-stats-route)
 
+(mount-http-operation "admin.dataset-policy.get"
+                      #'handle-admin-dataset-policy-route)
+(mount-http-operation "admin.dataset-policy.put"
+                      #'handle-admin-replace-dataset-policy-route)
+
 (mount-http-operation "auth.login" #'handle-auth-login-route)
 (mount-http-operation "auth.bootstrap" #'handle-auth-bootstrap-route)
 (mount-http-operation "auth.context.get" #'handle-auth-context-route)
 (mount-http-operation "auth.users.create" #'handle-auth-create-user-route)
 (mount-http-operation "auth.users.list" #'handle-auth-list-users-route)
+(mount-http-operation "auth.users.update" #'handle-auth-update-user-route)
 (mount-http-operation "auth.users.password.reset"
                       #'handle-auth-reset-user-password-route)
 (mount-http-operation "auth.password.change" #'handle-auth-change-password-route)

@@ -1,6 +1,7 @@
 (in-package :star.authorization)
 
 (defun request-metadata (&key route method correlation-id)
+  "Build normalized authorization audit metadata for ROUTE, METHOD and CORRELATION-ID."
   (list :route route
         :method method
         :correlation-id

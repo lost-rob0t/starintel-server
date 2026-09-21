@@ -156,3 +156,77 @@
     (is-true
      (star.frontends.http-api::optional-auth-boolean
       document "must_change_password" t))))
+
+
+(test administrator-can-update-user-plan-and-disable-login
+  (let* ((star:*auth-pepper* "unit-test-user-pepper")
+         (star:*auth-password-iterations* 1000)
+         (star:*auth-password-min-length* 12)
+         (store (star.auth:make-memory-credential-store)))
+    (star.auth:create-user
+     "analyst"
+     "analyst-password-123"
+     "user"
+     '("documents:read")
+     :must-change-password nil
+     :store store)
+    (let ((planned
+            (star.auth:admin-update-user
+             "analyst"
+             :scopes '("documents:read" "search:read"
+                       "tenant:pro" "dataset:*")
+             :store store)))
+      (is (equal '("documents:read" "search:read" "tenant:pro" "dataset:*")
+                 (star.auth:user-record-scopes planned))))
+    (let ((disabled
+            (star.auth:admin-update-user
+             "analyst"
+             :status "disabled"
+             :store store)))
+      (is (eq :disabled (star.auth:user-record-status disabled))))
+    (is (string= "invalid_credential"
+                 (captured-user-authentication-code
+                  (lambda ()
+                    (star.auth:authenticate-user-password
+                     "analyst" "analyst-password-123" :store store)))))))
+
+(test administrator-user-update-validates-status-and-nonempty-change
+  (let* ((star:*auth-pepper* "unit-test-user-pepper")
+         (star:*auth-password-iterations* 1000)
+         (star:*auth-password-min-length* 12)
+         (store (star.auth:make-memory-credential-store)))
+    (star.auth:create-user
+     "analyst"
+     "analyst-password-123"
+     "user"
+     '("documents:read")
+     :store store)
+    (is (string= "invalid_user_status"
+                 (captured-user-lifecycle-code
+                  (lambda ()
+                    (star.auth:admin-update-user
+                     "analyst" :status "revoked" :store store)))))
+    (is (string= "empty_user_update"
+                 (captured-user-lifecycle-code
+                  (lambda ()
+                    (star.auth:admin-update-user
+                     "analyst" :store store)))))))
+
+
+(test administrator-user-update-can-explicitly-clear-scopes
+  (let* ((star:*auth-pepper* "unit-test-user-pepper")
+         (star:*auth-password-iterations* 1000)
+         (star:*auth-password-min-length* 12)
+         (store (star.auth:make-memory-credential-store)))
+    (star.auth:create-user
+     "clearable"
+     "clearable-password-123"
+     "user"
+     '("documents:read" "tenant:pro")
+     :store store)
+    (let ((updated
+            (star.auth:admin-update-user
+             "clearable"
+             :scopes '()
+             :store store)))
+      (is (null (star.auth:user-record-scopes updated))))))

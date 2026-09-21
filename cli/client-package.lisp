@@ -83,6 +83,7 @@
    #:auth-context
    #:create-user
    #:list-users
+   #:update-user
    #:reset-user-password
    #:change-password
    #:create-credential

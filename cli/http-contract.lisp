@@ -176,6 +176,15 @@ property lists.")
     (cons "must_change_password" (boolean-schema)))
    :required '("username" "password" "scopes")))
 
+(defparameter +update-user-request-schema+
+  (object-schema
+   (list
+    (cons "scopes" (array-schema (string-schema :min-length 1)))
+    (cons "status" (string-schema :min-length 1
+                                   :description "active or disabled")))
+   :additional-properties nil
+   :description "Administrator mutation of user authorization/lifecycle state."))
+
 (defparameter +reset-password-request-schema+
   (object-schema
    (list
@@ -204,6 +213,20 @@ property lists.")
    (list
     (cons "overlap_seconds" (integer-schema :minimum 0)))
    :required '("overlap_seconds")))
+
+(defparameter +dataset-policy-request-schema+
+  (object-schema
+   (list
+    (cons "public_datasets"
+          (array-schema
+           (string-schema :min-length 1)
+           :description "Explicit public dataset allowlist; wildcard is rejected."))
+    (cons "planned_datasets"
+          (generic-object-schema
+           "Object mapping dataset names to tenant/plan ids.")))
+   :required '("public_datasets" "planned_datasets")
+   :additional-properties nil
+   :description "Complete runtime dataset visibility/plan policy replacement."))
 
 (defparameter +bootstrap-request-schema+
   (object-schema
@@ -285,6 +308,32 @@ property lists.")
     :authority :public
     :responses (list (response 200 "StarIntel client manifest." (generic-object-schema))))
    (make-http-operation
+    :id "admin.dataset-policy.get"
+    :client-name "admin-dataset-policy"
+    :method :get
+    :path "/admin/dataset-policy"
+    :summary "Inspect live dataset visibility and plan mapping"
+    :tags '("admin" "datasets")
+    :authority :administrator
+    :scopes '("admin")
+    :responses (append
+                (list (response 200 "Runtime dataset policy." (generic-object-schema)))
+                (standard-errors)))
+   (make-http-operation
+    :id "admin.dataset-policy.put"
+    :client-name "admin-replace-dataset-policy"
+    :method :put
+    :path "/admin/dataset-policy"
+    :summary "Atomically replace live dataset visibility and plan mapping"
+    :tags '("admin" "datasets")
+    :authority :administrator
+    :scopes '("admin")
+    :request-schema +dataset-policy-request-schema+
+    :responses (append
+                (list (response 200 "Runtime dataset policy replaced."
+                                (generic-object-schema)))
+                (standard-errors)))
+   (make-http-operation
     :id "auth.login"
     :client-name "auth-login"
     :method :post
@@ -344,6 +393,20 @@ property lists.")
     :responses (append
                 (list (response 200 "User metadata list."
                                 (array-schema +user-metadata-schema+)))
+                (standard-errors)))
+   (make-http-operation
+    :id "auth.users.update"
+    :client-name "auth-update-user"
+    :method :put
+    :path "/auth/users/:username"
+    :summary "Update a human user's scopes or lifecycle status"
+    :tags '("auth" "users")
+    :authority :administrator
+    :scopes '("admin")
+    :path-parameters '("username")
+    :request-schema +update-user-request-schema+
+    :responses (append
+                (list (response 200 "User updated." (user-status-schema)))
                 (standard-errors)))
    (make-http-operation
     :id "auth.users.password.reset"
