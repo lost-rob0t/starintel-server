@@ -46,6 +46,7 @@
    (:file "storage/protocol")
    (:file "storage/s3")
    (:file "storage/final")
+   (:file "storage/files")
    (:file "storage/documentation")
    (:file "databases/quarantine")
    (:file "databases/target-acceptance")
