@@ -32,7 +32,7 @@ The initial contracted operations cover:
 
 - process health and server metadata;
 - password login and authenticated-context inspection;
-- human-user create/list/password lifecycle;
+- human-user create/list/password lifecycle and administrator user scope/status mutation;
 - API credential create/list/rotate/revoke/disable lifecycle;
 - versioned StarIntel document operations under =/api/v1/documents=:
   ingest (single and bounded bulk), read, deep-merge update, delete, and
