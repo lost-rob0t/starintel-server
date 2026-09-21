@@ -20,6 +20,23 @@ backend is named =s3= and CouchDB is the inline metadata/index plane.
 - env: =STAR_STORAGE_TIER_BACKENDS=
 - default: =hot=couchdb,warm=s3,cold=s3,archive=s3=")
 
+(defparameter *file-artifact-storage-tier*
+  (or (uiop:getenv "STAR_FILE_STORAGE_TIER") "warm")
+  "Logical storage tier used for raw file artifact bytes.
+
+The tier must resolve to an external backend; the default warm tier resolves to
+S3 under the default storage map.
+
+- env: =STAR_FILE_STORAGE_TIER=
+- default: =warm=")
+
+(defparameter *file-artifact-max-bytes*
+  (environment-integer "STAR_FILE_MAX_BYTES" 16777216)
+  "Maximum decoded size of one inline actor file artifact.
+
+- env: =STAR_FILE_MAX_BYTES=
+- default: 16777216 (16 MiB)")
+
 (defparameter *document-storage-tenant-tiers*
   (or (uiop:getenv "STAR_STORAGE_TENANT_TIERS") "")
   "Comma-separated tenant-to-default-tier map, for example
