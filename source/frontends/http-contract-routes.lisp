@@ -238,6 +238,7 @@ server-owned public scopes. No caller principal or caller scope enters here."
 (mount-http-operation "auth.context.get" #'handle-auth-context-route)
 (mount-http-operation "auth.users.create" #'handle-auth-create-user-route)
 (mount-http-operation "auth.users.list" #'handle-auth-list-users-route)
+(mount-http-operation "auth.users.update" #'handle-auth-update-user-route)
 (mount-http-operation "auth.users.password.reset"
                       #'handle-auth-reset-user-password-route)
 (mount-http-operation "auth.password.change" #'handle-auth-change-password-route)
