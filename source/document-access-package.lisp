@@ -19,6 +19,8 @@
    #:document-date-updated
    #:document-transient-p
    #:validate-v09-document
+   #:validate-v0101-document
+   #:migrate-v0101-document
    #:ensure-document
    #:document-json
    #:utc-now))

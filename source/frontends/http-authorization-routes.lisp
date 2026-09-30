@@ -25,9 +25,24 @@ legacy path parameter that must match the document dtype."
              (when path-dtype-key
                (require-path-string params path-dtype-key)))
            (document (require-json-object (parse-json-request))))
-      (validate-document-input document :path-dtype path-dtype)
-      (publish-document document)
-      (jsown:to-json (strip-server-tenant-fields document)))))
+      (let ((canonical
+              (canonical-document-input document :path-dtype path-dtype)))
+        ;; A legacy source may expand into multiple canonical documents. Make
+        ;; every authorization decision before the first Rabbit side effect.
+        (loop for migrated across canonical
+              for dtype = (star.documents:document-dtype migrated)
+              do (star.authorization:authorize-document!
+                  (if (string= dtype "target")
+                      "targets:dispatch"
+                      "documents:write")
+                  migrated
+                  :principal (current-policy-principal)
+                  :metadata (route-policy-metadata route "POST")))
+        (loop for migrated across canonical do (publish-document migrated))
+        (jsown:to-json
+         (if (= 1 (length canonical))
+             (strip-server-tenant-fields (aref canonical 0))
+             (jsown:new-js ("documents" canonical))))))))
 
 (defun handle-authorized-new-document-route (params)
   (authorized-new-document params "/new/document/:dtype" "dtype"))
@@ -64,29 +79,31 @@ legacy path parameter that must match the document dtype."
          "Bulk request exceeds the configured document limit"
          (jsown:new-js ("requested" document-count)
                        ("maximum" star:*bulk-max-documents*))))
-      (loop for document in documents
-            for index from 0
-            do (validate-document-input document :index index))
-      (star.authorization:authorize-bulk-documents!
-       documents
-       :principal (current-policy-principal)
-       :metadata metadata)
-      (if (eq :inline (bulk-request-mode document-count))
-          (process-inline-bulk documents)
-          (let ((job
-                  (submit-bulk-ingest-job
-                   documents
-                   (request-principal))))
-            (setf (lack.response:response-status *response*) 202)
-            (jsown:to-json
-             (jsown:new-js
-               ("status" "accepted")
-               ("job_id" (bulk-ingest-job-id job))
-               ("total" document-count)
-               ("status_url"
-                (format nil "/documents/bulk/~a"
-                        (bulk-ingest-job-id job)))
-               ("correlation_id" (current-correlation-id)))))))))
+      (multiple-value-bind (canonical quarantine)
+          (canonical-document-batch documents)
+        (star.authorization:authorize-bulk-documents!
+         canonical
+         :principal (current-policy-principal)
+         :metadata metadata)
+        (if (eq :inline (bulk-request-mode document-count))
+            (process-inline-bulk canonical :quarantine quarantine
+                                           :source-total document-count)
+            (let ((job
+                    (submit-bulk-ingest-job
+                     canonical
+                     (request-principal))))
+              (setf (lack.response:response-status *response*) 202)
+              (jsown:to-json
+               (jsown:new-js
+                 ("status" "accepted")
+                 ("job_id" (bulk-ingest-job-id job))
+                 ("total" document-count)
+                 ("canonicalDocuments" (length canonical))
+                 ("quarantined" (length quarantine))
+                 ("status_url"
+                  (format nil "/documents/bulk/~a"
+                          (bulk-ingest-job-id job)))
+                 ("correlation_id" (current-correlation-id))))))))))
 
 (defun handle-authorized-search-route
     (params &optional (route "/search"))

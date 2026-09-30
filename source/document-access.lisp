@@ -9,7 +9,7 @@
     :reader document-schema-validation-reason))
   (:report
    (lambda (condition stream)
-     (format stream "StarIntel v0.9 validation failed (~a): ~a"
+     (format stream "StarIntel document validation failed (~a): ~a"
              (document-schema-validation-category condition)
              (document-schema-validation-reason condition))))
   (:documentation "Signalled when a document fails v0.9 schema validation."))
@@ -74,8 +74,10 @@
       (t token))))
 
 (defun document-id (document)
-  "The =_id= of a document object."
-  (object-value (parse-document-object document) "_id" nil))
+  "The canonical =id= of a document object, with legacy =_id= fallback."
+  (let ((object (parse-document-object document)))
+    (or (object-value object "id" nil)
+        (object-value object "_id" nil))))
 
 (defun document-data (document)
   "The =data= payload of a document object."
@@ -106,14 +108,54 @@
 (defun document-date-added (document)
   "The =dateAdded= field of a document object."
   (let ((object (parse-document-object document)))
-    (or (object-value object "date_added" nil)
-        (object-value object "dateAdded" nil))))
+    (or (object-value object "dateAdded" nil)
+        (object-value object "date_added" nil))))
 
 (defun document-date-updated (document)
   "The =dateUpdated= field of a document object."
   (let ((object (parse-document-object document)))
-    (or (object-value object "date_updated" nil)
-        (object-value object "dateUpdated" nil))))
+    (or (object-value object "dateUpdated" nil)
+        (object-value object "date_updated" nil))))
+
+(defun jzon-to-jsown (value)
+  (jsown:with-injective-reader
+    (jsown:parse (com.inuoe.jzon:stringify value))))
+
+(defun jsown-to-jzon (value)
+  (com.inuoe.jzon:parse (jsown:to-json value)))
+
+(defun validate-v0101-document (document)
+  "Validate one canonical 0.10.1 document through star-cl."
+  (handler-case
+      (progn
+        (starintel-v0101:validate-document (jsown-to-jzon document))
+        document)
+    (starintel-v0101:starintel-validation-error (condition)
+      (error 'document-schema-validation-error
+             :category (starintel-v0101:validation-category condition)
+             :reason (starintel-v0101:validation-message condition)))))
+
+(defun migrate-v0101-document (document)
+  "Migrate one legacy or canonical document and return canonical documents.
+
+The returned vector can contain derived documents, such as person identifiers
+or transcripts. Snake-case aliases are accepted only inside star-cl's explicit
+legacy migration boundary; returned documents are canonical lowerCamelCase."
+  (handler-case
+      (map 'vector #'jzon-to-jsown
+           (starintel-v0101:migrate-document (jsown-to-jzon document)))
+    (starintel-v0101:migration-error (condition)
+      (error 'document-schema-validation-error
+             :category (starintel-v0101:migration-reason-code condition)
+             :reason (princ-to-string condition)))
+    (starintel-v0101:starintel-validation-error (condition)
+      (error 'document-schema-validation-error
+             :category (starintel-v0101:validation-category condition)
+             :reason (starintel-v0101:validation-message condition)))
+    (error (condition)
+      (error 'document-schema-validation-error
+             :category "migrationFailed"
+             :reason (princ-to-string condition)))))
 
 (defun document-transient-p (document)
   "True when the document is marked transient."
@@ -173,16 +215,21 @@ compatibility adapters can opt out without weakening canonical ingest."
           (error "Document payload is missing dtype")))
     (when (and route (not (string= dtype route)))
       (error "Route dtype ~a does not match document dtype ~a" route dtype))
-    (unless (let ((id (object-value object "_id" nil)))
-              (and (stringp id) (plusp (length id))))
+    ;; Canonical 0.10.1 documents carry =id=.  Do not leak CouchDB's private
+    ;; =_id= field back onto the wire.  Legacy documents that have neither
+    ;; form still receive their historical transport identifier.
+    (unless (or (let ((id (object-value object "id" nil)))
+                  (and (stringp id) (plusp (length id))))
+                (let ((id (object-value object "_id" nil)))
+                  (and (stringp id) (plusp (length id)))))
       (setf (jsown:val object "_id") (star.ids:ulid)))
     object))
 
 (defun document-json (document &key route-dtype)
-  "Serialize DOCUMENT to canonical JSON, enforcing identity invariants.
+  "Serialize DOCUMENT after enforcing wire identity and dtype invariants.
 
-Applies =ensure-document= (dtype routing, id stamping) then renders
-the JSON string sent over the wire and into CouchDB."
+Canonical 0.10.1 documents retain =id= and never gain CouchDB's private
+=_id= field. Legacy documents retain the historical normalization path."
   (jsown:to-json (ensure-document document :route-dtype route-dtype)))
 
 (defun utc-now ()

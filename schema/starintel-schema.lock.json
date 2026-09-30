@@ -1,23 +1,22 @@
 {
-  "schema_version": "0.9.0",
-  "release_version": "0.9.1",
-  "canonical_repository": "lost-rob0t/starintel-gpt-auto-dig",
-  "canonical_commit": "6479c0a9dc88ce9fed183515fc4df5d245de0b3a",
-  "canonical_pull_request": 2416,
-  "schema_path": "schemas/starintel-doc-v0.9.0.schema.json",
-  "expansion_path": "schemas/starintel-doc-v0.9.0.expansion.json",
-  "manifest_path": "schemas/starintel-doc-v0.9.0.manifest.json",
+  "schema_version": "0.10.1",
+  "release_version": "0.10.1",
+  "canonical_repository": "nsaspy/star-lang",
+  "canonical_commit": "919833266723edc9bddb337d606f72ae25fb8ced",
+  "schema_path": "specs/starintel/0.10.1/generated/schema.json",
+  "expansion_path": "specs/starintel/0.10.1/compatibility.json",
+  "manifest_path": "specs/starintel/0.10.1/schema-lock-manifest.json",
+  "release_lock_path": "specs/starintel/0.10.1/release-lock.json",
+  "authority_library": "org.starintel/core@1",
+  "canonical_key_style": "lowerCamelCase",
   "required_dtypes": [
-    "research-node",
-    "operation"
-  ],
-  "research_node_required_fields": [
-    "objective",
-    "status"
-  ],
-  "operation_required_fields": [
-    "mission",
-    "status",
-    "phases"
+    "file",
+    "picture",
+    "video",
+    "audio",
+    "transcript",
+    "person-identifier",
+    "geo-point",
+    "location"
   ]
 }

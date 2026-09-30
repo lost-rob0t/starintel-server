@@ -1,4 +1,20 @@
 #+title: StarIntel Server
+
+* StarIntel document authority
+
+StarIntel documents are governed by =nsaspy/star-lang= at the exact commit in
+=schema/starintel-schema.lock.json=.  Release 0.10.1 uses lowerCamelCase wire
+fields.  Snake-case fields exist only as accepted legacy input to the
+=star-cl= migration boundary; the server never publishes them as canonical
+documents.
+
+HTTP document ingress migrates both 0.9 and 0.10.1 inputs through
+=starintel-v0101= before authorization or Rabbit publication.  One source
+document may expand into derived transcript or person-identifier documents.
+Bulk input is normalized per source item: a migration or validation failure is
+reported in the quarantine results and later documents continue.  Authorization
+still evaluates the complete set of canonical documents before any publish side
+effect.
 #+options: toc:2
 
 * StarIntel Server

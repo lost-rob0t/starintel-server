@@ -16,6 +16,7 @@
     http-boundary-tests
     http-target-v1-tests
     v09-runtime-tests
+    v0101-ingest-tests
     http-auth-tests
     auth-users-tests
     oauth-authorization-code-tests

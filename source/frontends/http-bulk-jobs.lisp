@@ -108,12 +108,13 @@
       (star.auth:current-service-call-context)))
 
 (defun publish-document-unchecked (document)
-  (let* ((dtype (jsown:val document "dtype"))
+  (let* ((wire-document (star.documents:clone-document-object document))
+         (dtype (jsown:val wire-document "dtype"))
          (routing-key (format nil star.rabbit:+ingest-fmt-key+ dtype))
          (context (current-publish-service-context)))
     (star.actors:publish
      star.actors:*producer-agent*
-     :body (jsown:to-json (stamp-server-tenant! document))
+     :body (jsown:to-json (stamp-server-tenant! wire-document))
      :routing-key routing-key
      :properties
      (service-context-properties
@@ -123,13 +124,14 @@
 
 (defun publish-target-document-unchecked (document)
   "Publish a legacy target directly to the target compatibility consumer."
-  (let* ((actor (star.documents:document-value document "actor"))
+  (let* ((wire-document (star.documents:clone-document-object document))
+         (actor (star.documents:document-value wire-document "actor"))
          (routing-key
            (star.actors:compatibility-target-ingress-routing-key actor))
          (context (current-publish-service-context)))
     (star.actors:publish
      star.actors:*producer-agent*
-     :body (jsown:to-json (stamp-server-tenant! document))
+     :body (jsown:to-json (stamp-server-tenant! wire-document))
      :routing-key routing-key
      :properties
      (service-context-properties
@@ -286,9 +288,9 @@
       :inline
       :async))
 
-(defun process-inline-bulk (documents)
+(defun process-inline-bulk (documents &key (quarantine #()) source-total)
   (let ((succeeded 0)
-        (failed 0))
+        (failed (length quarantine)))
     (bt:with-timeout (+bulk-inline-deadline-seconds+)
       (loop for document in documents
             do (handler-case
@@ -304,9 +306,11 @@
                    (incf failed)))))
     (jsown:to-json
      (jsown:new-js
-       ("total" (length documents))
+       ("total" (or source-total (length documents)))
+       ("canonicalDocuments" (length documents))
        ("succeeded" succeeded)
        ("failed" failed)
+       ("quarantine" quarantine)
        ("correlation_id" (current-correlation-id))))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)

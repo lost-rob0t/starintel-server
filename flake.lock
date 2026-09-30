@@ -69,17 +69,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1788955972,
-        "narHash": "sha256-/sUn3L9xkv2nfoRJkj6Sg7TsNvo7NiVhBVmY2XtDnPU=",
-        "owner": "lost-rob0t",
-        "repo": "star-cl",
-        "rev": "9ce8f88f57fb7ac143851f7fd2c75dccd6a40cc3",
-        "type": "github"
+        "lastModified": 1790748845,
+        "narHash": "sha256-fEOhTgViha4S69r8OWyJ35MIkEDoSncrIEtQlJ0r1I8=",
+        "rev": "2ecbf77f99730e1e7423c87c40ea53f0b7afb4dd",
+        "revCount": 120,
+        "type": "git",
+        "url": "https://git.starintel.actor/nsaspy/star-cl"
       },
       "original": {
-        "owner": "lost-rob0t",
-        "repo": "star-cl",
-        "type": "github"
+        "type": "git",
+        "url": "https://git.starintel.actor/nsaspy/star-cl"
       }
     },
     "systems": {

@@ -9,9 +9,13 @@
          400
          "missing_path_parameter"
          "Route dtype is required"))
-      (validate-document-input document :path-dtype path-dtype)
-      (publish-document document)
-      (jsown:to-json document))))
+      (let ((canonical
+              (canonical-document-input document :path-dtype path-dtype)))
+        (loop for migrated across canonical do (publish-document migrated))
+        (jsown:to-json
+         (if (= 1 (length canonical))
+             (aref canonical 0)
+             (jsown:new-js ("documents" canonical))))))))
 
 (defun handle-new-target-route (params)
   (with-http-boundary ()
@@ -42,24 +46,26 @@
          "Bulk request exceeds the configured document limit"
          (jsown:new-js ("requested" document-count)
                        ("maximum" star:*bulk-max-documents*))))
-      (loop for document in documents
-            for index from 0
-            do (validate-document-input document :index index))
-      (if (eq :inline (bulk-request-mode document-count))
-          (process-inline-bulk documents)
-          (let ((job (submit-bulk-ingest-job
-                      documents
-                      (request-principal))))
-            (setf (lack.response:response-status *response*) 202)
-            (jsown:to-json
-             (jsown:new-js
-               ("status" "accepted")
-               ("job_id" (bulk-ingest-job-id job))
-               ("total" document-count)
-               ("status_url"
-                (format nil "/documents/bulk/~a"
-                        (bulk-ingest-job-id job)))
-               ("correlation_id" (current-correlation-id)))))))))
+      (multiple-value-bind (canonical quarantine)
+          (canonical-document-batch documents)
+        (if (eq :inline (bulk-request-mode document-count))
+            (process-inline-bulk canonical :quarantine quarantine
+                                           :source-total document-count)
+            (let ((job (submit-bulk-ingest-job
+                        canonical
+                        (request-principal))))
+              (setf (lack.response:response-status *response*) 202)
+              (jsown:to-json
+               (jsown:new-js
+                 ("status" "accepted")
+                 ("job_id" (bulk-ingest-job-id job))
+                 ("total" document-count)
+                 ("canonicalDocuments" (length canonical))
+                 ("quarantined" (length quarantine))
+                 ("status_url"
+                  (format nil "/documents/bulk/~a"
+                          (bulk-ingest-job-id job)))
+                 ("correlation_id" (current-correlation-id))))))))))
 
 (defun handle-bulk-status-route (params)
   (with-http-boundary ()

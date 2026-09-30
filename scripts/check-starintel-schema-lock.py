@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
-import sys
-import urllib.request
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -14,101 +14,75 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
-def load_json(url: str) -> dict[str, Any]:
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return json.load(response)
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def canonical_hash(value: Any) -> str:
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def branch_for_dtype(schema: dict[str, Any], dtype: str) -> dict[str, Any] | None:
-    return next(
-        (
-            branch
-            for branch in schema.get("allOf", [])
-            if branch.get("if", {}).get("properties", {}).get("dtype", {}).get("const")
-            == dtype
-        ),
-        None,
-    )
-
-
-def verify_dtype(
-    schema: dict[str, Any],
-    expansion: dict[str, Any],
-    dtype: str,
-    required_fields: list[str],
-) -> None:
-    branch = branch_for_dtype(schema, dtype)
-    if branch is None:
-        fail(f"canonical schema is missing dtype {dtype}")
-
-    data_schema = branch.get("then", {}).get("properties", {}).get("data", {})
-    if data_schema.get("additionalProperties") is not False:
-        fail(f"{dtype} data must reject undeclared fields")
-
-    schema_required = set(data_schema.get("required", []))
-    missing_schema_required = sorted(set(required_fields) - schema_required)
-    if missing_schema_required:
-        fail(f"{dtype} is missing required fields: {missing_schema_required}")
-
-    expansion_fields = set(expansion.get("dtype_fields", {}).get(dtype, []))
-    if not expansion_fields:
-        fail(f"schema expansion is missing dtype {dtype}")
-    missing_expansion_fields = sorted(set(required_fields) - expansion_fields)
-    if missing_expansion_fields:
-        fail(f"{dtype} expansion is missing fields: {missing_expansion_fields}")
+def load(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def main() -> int:
-    lock_path = Path(sys.argv[1] if len(sys.argv) > 1 else "schema/starintel-schema.lock.json")
-    lock = json.loads(lock_path.read_text(encoding="utf-8"))
-    release_version = lock.get("release_version")
-    if not release_version:
-        fail("lock is missing release_version")
-    repository = lock["canonical_repository"]
-    commit = lock["canonical_commit"]
-    base_url = f"https://raw.githubusercontent.com/{repository}/{commit}"
+    parser = argparse.ArgumentParser(description="Verify the pinned Star-Lang release")
+    parser.add_argument("lock", nargs="?", default="schema/starintel-schema.lock.json")
+    parser.add_argument("--canonical-root", type=Path)
+    parser.add_argument("--star-cl-root", type=Path)
+    args = parser.parse_args()
 
-    schema = load_json(f"{base_url}/{lock['schema_path']}")
-    expansion = load_json(f"{base_url}/{lock['expansion_path']}")
-    manifest = load_json(f"{base_url}/{lock['manifest_path']}")
-
-    if schema.get("$id") != "https://spec.starintel.actor/schema/starintel-doc-v0.9.0.json":
-        fail("unexpected canonical schema id")
-    if manifest.get("schema_version") != lock["schema_version"]:
-        fail("manifest schema version does not match lock")
-    if expansion.get("schema_version") != lock["schema_version"]:
-        fail("expansion schema version does not match lock")
-    if manifest.get("release_version") != release_version:
-        fail("manifest release version does not match lock")
-
-    required_by_dtype = {
-        "research-node": list(lock.get("research_node_required_fields", [])),
-        "operation": list(lock.get("operation_required_fields", [])),
+    lock = load(Path(args.lock))
+    required = {
+        "schema_version", "release_version", "canonical_repository",
+        "canonical_commit", "schema_path", "release_lock_path",
+        "authority_library", "canonical_key_style",
     }
-    for dtype in lock.get("required_dtypes", []):
-        if dtype not in required_by_dtype:
-            fail(f"lock is missing required fields for dtype {dtype}")
-        verify_dtype(schema, expansion, dtype, required_by_dtype[dtype])
+    missing = sorted(required - lock.keys())
+    if missing:
+        fail(f"lock is missing fields: {missing}")
+    if lock["release_version"] != "0.10.1" or lock["schema_version"] != "0.10.1":
+        fail("server requires StarIntel release/schema 0.10.1")
+    if lock["canonical_repository"] != "nsaspy/star-lang":
+        fail("Star-Lang must be the canonical schema repository")
+    if lock["canonical_key_style"] != "lowerCamelCase":
+        fail("canonical StarIntel keys must be lowerCamelCase")
 
-    if manifest.get("dtype_count") != len(expansion.get("dtype_fields", {})):
-        fail("schema manifest dtype count does not match expansion")
-    if manifest.get("expansion_content_hash") != canonical_hash(expansion):
-        fail("schema manifest expansion hash does not match canonical expansion")
+    if args.canonical_root:
+        root = args.canonical_root.resolve()
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True
+        ).strip()
+        if head != lock["canonical_commit"]:
+            fail(f"Star-Lang HEAD {head} does not match {lock['canonical_commit']}")
+        release_lock = load(root / lock["release_lock_path"])
+        if release_lock["releaseVersion"] != lock["release_version"]:
+            fail("release lock version disagrees with consumer lock")
+        for name, expected in release_lock["artifacts"].items():
+            path = root / "specs/starintel/0.10.1/generated" / name
+            if digest(path) != expected:
+                fail(f"Star-Lang artifact hash mismatch: {name}")
+        for name, expected in release_lock["sources"].items():
+            path = root / "specs/starintel/0.10.1" / name
+            if digest(path) != expected:
+                fail(f"Star-Lang source hash mismatch: {name}")
+
+    if args.star_cl_root:
+        star_cl_root = args.star_cl_root.resolve()
+        star_cl_head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=star_cl_root, text=True
+        ).strip()
+        star_cl_lock = load(star_cl_root / "schema/starintel-schema.lock.json")
+        for field in ("release_version", "schema_version", "canonical_repository", "canonical_commit"):
+            if star_cl_lock.get(field) != lock[field]:
+                fail(f"star-cl lock disagrees on {field}")
+        flake_star_cl = load(Path("flake.lock"))["nodes"]["star-cl"]
+        if flake_star_cl["locked"].get("rev") != star_cl_head:
+            fail("flake.lock does not pin the verified star-cl checkout")
+        expected_url = "https://git.starintel.actor/nsaspy/star-cl"
+        if flake_star_cl["locked"].get("url") != expected_url:
+            fail("flake.lock star-cl authority is not the canonical Forgejo repository")
 
     print(
-        "verified StarIntel",
-        lock["schema_version"],
-        "release",
-        lock.get("release_version", "unspecified"),
-        "required dtypes",
-        ", ".join(lock.get("required_dtypes", [])),
-        "at",
-        commit,
+        f"verified StarIntel {lock['release_version']} from "
+        f"{lock['canonical_repository']}@{lock['canonical_commit']}"
     )
     return 0
 

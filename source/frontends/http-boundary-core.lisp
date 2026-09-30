@@ -363,6 +363,69 @@ folds its historical envelope with =normalize-legacy-target-document=."
     (validate-document-schema document :index index)
     document))
 
+(defun canonical-document-input (document &key path-dtype index)
+  "Migrate one input document and return its validated 0.10.1 expansion.
+
+The source document is never mutated. Legacy aliases, including snake-case
+fields, are accepted only by star-cl's compatibility runtime."
+  (unless (json-object-p document)
+    (signal-http-input-error
+     422 "invalid_document"
+     (if index
+         (format nil "Document at index ~d must be a JSON object" index)
+         "Document must be a JSON object")))
+  (handler-case
+      (let* ((documents (star.documents:migrate-v0101-document document))
+             (primary (and (plusp (length documents)) (aref documents 0)))
+             (dtype (and primary (star.documents:document-dtype primary))))
+        (unless primary
+          (signal-http-input-error
+           422 "invalid_document_schema" "Migration produced no document"))
+        (when (and path-dtype (not (string-equal dtype path-dtype)))
+          (signal-http-input-error
+           422 "dtype_mismatch"
+           "Document dtype does not match the route dtype"
+           (jsown:new-js ("pathDtype" path-dtype)
+                         ("documentDtype" (or dtype :null))
+                         ("index" (or index :null)))))
+        documents)
+    (star.documents:document-schema-validation-error (condition)
+      (signal-http-input-error
+       422 "invalid_document_schema"
+       "Document could not be migrated and validated as StarIntel 0.10.1"
+       (jsown:new-js
+         ("reasonCode"
+          (princ-to-string
+           (star.documents:document-schema-validation-category condition)))
+         ("reason"
+          (star.documents:document-schema-validation-reason condition))
+         ("index" (or index :null)))))))
+
+(defun canonical-document-batch (documents)
+  "Normalize DOCUMENTS independently, returning documents and quarantine."
+  (let ((canonical nil)
+        (quarantine nil))
+    (loop for document in documents
+          for index from 0
+          do (handler-case
+                 (loop for migrated across
+                         (canonical-document-input document :index index)
+                       do (push migrated canonical))
+               (http-input-error (condition)
+                 (let* ((info (http-input-error-info condition))
+                        (migration-reason
+                          (and info
+                               (jsown:val-safe info "reasonCode"))))
+                   (push (jsown:new-js
+                           ("index" index)
+                           ("reasonCode"
+                            (or migration-reason
+                                (http-input-error-code condition)))
+                           ("errorCode" (http-input-error-code condition)))
+                         quarantine)))))
+    (values (nreverse canonical)
+            (coerce (nreverse quarantine) 'vector))))
+
 (defun fold-legacy-target-field (document data key)
   "Move one historical top-level target field into DATA when absent there."
   (when (jsown:keyp document key)
@@ -474,6 +537,8 @@ object."
             json-object-p
             json-array-p
             parse-json-octets
+            canonical-document-input
+            canonical-document-batch
             validate-document-input
             bounded-query-integer
             resolved-server-tenant

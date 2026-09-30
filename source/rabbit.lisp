@@ -84,9 +84,9 @@ Canonical document mutation queues validate before transport normalization.
 The remaining non-strict decode is transport-metadata inspection
 (=transient-p=); target deliveries validate like every other dtype.
 
-The server-injected tenant_id is exempted from strict envelope validation:
-it is removed before validation and restored on the ensured document so
-persistence keeps tenancy while the client contract stays v0.9.0."
+The server-injected tenant_id is exempted from strict envelope validation.
+Strict deliveries cross star-cl's compatibility boundary, then receive the
+server-private CouchDB =_id= only after canonical validation."
   (handler-case
       (let* ((document (star.documents:parse-document-object (car message)))
              (injected-tenant
@@ -94,13 +94,23 @@ persistence keeps tenancy while the client contract stays v0.9.0."
                     (jsown:val document "tenant_id"))))
         (when injected-tenant
           (jsown:remkey document "tenant_id"))
-        (let ((ensured
-                (progn
-                  (when strict-schema-p
-                    (star.documents:validate-v09-document document))
-                  (star.documents:ensure-document
-                   document
-                   :route-dtype route-dtype))))
+        (let* ((canonical
+                 (if strict-schema-p
+                     (let ((documents
+                             (star.documents:migrate-v0101-document document)))
+                       (unless (plusp (length documents))
+                         (error "Migration produced no canonical document"))
+                       (aref documents 0))
+                     document))
+               (ensured
+                 (star.documents:ensure-document
+                  canonical
+                  :route-dtype route-dtype)))
+          ;; =_id= is persistence metadata, never part of the canonical wire
+          ;; contract. Add it only on the consumer side, after validation.
+          (unless (jsown:keyp ensured "_id")
+            (setf (jsown:val ensured "_id")
+                  (star.documents:document-id ensured)))
           (when injected-tenant
             (setf (jsown:val ensured "tenant_id") injected-tenant))
           ensured))
