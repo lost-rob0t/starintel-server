@@ -1,7 +1,9 @@
 (in-package :star.databases.couchdb)
 
-(defparameter +geo-search-design-document+ "geo")
-(defparameter +geo-search-index+ "bbox")
+(defparameter +geo-search-design-document+ "geo"
+  "CouchDB design-document name containing the rebuildable JSON geo index.")
+(defparameter +geo-search-index+ "bbox"
+  "Clouseau search-index name used for numeric point bounding-box queries.")
 
 (define-condition invalid-geo-bbox (error)
   ((reason
@@ -9,7 +11,12 @@
     :reader invalid-geo-bbox-reason))
   (:report
    (lambda (condition stream)
-     (format stream "~a" (invalid-geo-bbox-reason condition)))))
+     (format stream "~a" (invalid-geo-bbox-reason condition))))
+  (:documentation
+   "Signalled when an HTTP bounding box cannot be compiled safely."))
+
+(setf (documentation 'INVALID-GEO-BBOX-REASON 'function)
+      "Human-readable validation reason for an invalid geographic bounding box.")
 
 (defun fail-geo-bbox (format-control &rest arguments)
   (error 'invalid-geo-bbox

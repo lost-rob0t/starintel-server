@@ -29,3 +29,24 @@ valid top-level longitude/latitude are not included.
 
 Anchored/derived GeoProjection rows are a follow-up to #263; those rows are
 ordinary server-owned CouchDB JSON and can feed the same numeric index.
+
+
+* Migration notes
+
+This slice is additive and requires no rewrite of existing CouchDB documents.
+
+- Existing non-geographic JSON documents remain unchanged and are not indexed by
+  =_design/geo=.
+- Canonical =geo-point= JSON with supported top-level =longitude= and =latitude=
+  can participate in direct bounding-box search after the design document is
+  installed or rebuilt.
+- The search index is disposable projection state. Rebuilding it must not write
+  coordinates back into canonical documents.
+- Address geocoding, media EXIF, wireless observations, routes and mission data
+  remain evidence/canonical documents first. Only supported direct geometry is
+  indexed as direct geography.
+- Explicit relation-based anchors and rule-derived geography are intentionally
+  deferred to the GeoProjection rebuild path tracked by #263; those coordinates
+  must not be copied onto the related document.
+- StarLang remains schema/spec authority. CouchDB JSON is the runtime storage and
+  indexing input for this slice.
