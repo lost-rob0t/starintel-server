@@ -1,0 +1,31 @@
+* CouchDB JSON geospatial search
+
+StarIntel geospatial lookup is implemented over CouchDB JSON documents.
+
+The production stack already runs CouchDB 3.5.2 with the official Clouseau
+search service. CouchDB search supports numeric latitude/longitude fields and
+range queries, which provides bounding-box retrieval.
+
+This implementation does not compile or index StarLang. StarLang defines the
+document contract only. At runtime the =_design/geo= index reads stored JSON
+fields =longitude= and =latitude= directly.
+
+** Endpoint
+
+#+begin_src text
+GET /api/v1/geo/bbox?bbox=west,south,east,north&dataset=<dataset>&limit=50
+#+end_src
+
+The endpoint requires =search:read=. Existing tenant/dataset search scoping is
+applied before the query reaches CouchDB.
+
+Antimeridian-crossing boxes are supported by specifying =west > east=.
+
+** Storage boundary
+
+The index is rebuildable. Canonical JSON documents remain durable truth. No
+coordinate is written back or transformed by the index. Documents without
+valid top-level longitude/latitude are not included.
+
+Anchored/derived GeoProjection rows are a follow-up to #263; those rows are
+ordinary server-owned CouchDB JSON and can feed the same numeric index.

@@ -33,6 +33,7 @@
    (:file "leases/valkey-list-store")
    (:file "gserver-settings")
    (:file "databases/couchdb")
+   (:file "databases/geo-search")
    (:file "databases/view-request")
    (:file "databases/export")
    (:file "databases/outbox")

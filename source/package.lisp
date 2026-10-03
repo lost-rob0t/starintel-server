@@ -99,6 +99,12 @@
    #:map-view-results
    #:get-neighbors
    #:search-fts
+   #:+geo-search-design-document+
+   #:+geo-search-index+
+   #:invalid-geo-bbox
+   #:invalid-geo-bbox-reason
+   #:geo-bbox-lucene-query
+   #:geo-bbox-search
    #:sort-docs-by-date
    #:messages-by-user
    #:messages-by-platform

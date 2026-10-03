@@ -37,6 +37,9 @@
     ((and (eq method :get)
           (string= path "/api/v1/documents/search"))
      "search:read")
+    ((and (eq method :get)
+          (string= path "/api/v1/geo/bbox"))
+     "search:read")
     ((path-prefix-p "/api/v1/documents/" path)
      (case method
        (:get "documents:read")

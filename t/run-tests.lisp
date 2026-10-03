@@ -11,6 +11,7 @@
     event-actor-tests
     dataset-export-tests
     couchdb-view-request-tests
+    geo-search-tests
     lease-store-contract-tests
     lease-store-runtime-tests
     http-boundary-tests

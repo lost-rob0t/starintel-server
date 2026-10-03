@@ -143,6 +143,43 @@ legacy path parameter that must match the document dtype."
 
 
 
+
+(defun handle-authorized-geo-bbox-route (params)
+  "Search CouchDB JSON documents whose indexed point lies inside BBOX.
+
+BBOX uses west,south,east,north ordering. The query is compiled only from
+validated numeric coordinates; raw caller text is never passed to Lucene."
+  (with-http-boundary ()
+    (let* ((bbox (require-query-string params "bbox"))
+           (limit (bounded-query-integer
+                   params "limit" :default 50 :minimum 1))
+           (dataset (query-value params "dataset"))
+           (tenant (or (query-value params "tenant") "default"))
+           (base-query
+             (handler-case
+                 (star.databases.couchdb:geo-bbox-lucene-query bbox)
+               (star.databases.couchdb:invalid-geo-bbox (condition)
+                 (signal-http-input-error
+                  400
+                  "invalid_bbox"
+                  (star.databases.couchdb:invalid-geo-bbox-reason
+                   condition)))))
+           (scoped-query
+             (star.authorization:authorized-search-query
+              base-query
+              :principal (current-policy-principal)
+              :requested-dataset dataset
+              :requested-tenant tenant
+              :metadata
+              (route-policy-metadata "/api/v1/geo/bbox" "GET"))))
+      (couchdb-handler (client *couchdb-pool*)
+        (strip-server-tenant-from-search-body
+         (star.databases.couchdb:geo-bbox-search
+          client
+          star:*couchdb-default-database*
+          scoped-query
+          :limit limit))))))
+
 (defun handle-authorized-document-get-route
     (params &optional (route "/document/:id"))
   (with-http-boundary ()
@@ -426,6 +463,8 @@ cannot widen the caller's requested tenant scope."
       #'handle-authorized-bulk-route)
 (setf (ningle:route *app* "/search" :method :get)
       #'handle-authorized-search-route)
+(setf (ningle:route *app* "/api/v1/geo/bbox" :method :get)
+      #'handle-authorized-geo-bbox-route)
 (setf (ningle:route *app* "/document/:id" :method :get)
        #'handle-authorized-document-get-route)
 (setf (ningle:route *app* "/document/:id" :method :put)
