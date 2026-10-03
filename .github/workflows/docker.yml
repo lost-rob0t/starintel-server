@@ -2,7 +2,7 @@ name: Container Stack
 
 on:
   push:
-    branches: [master]
+    branches: [master, "agent/263-couchdb-geo-bbox"]
   pull_request:
     branches: [master]
 
