@@ -157,6 +157,65 @@ jobs:
 
           echo "Services ready!"
 
+      - name: Verify CouchDB JSON geo bounding-box search
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --silent --show-error \
+            --user admin:password \
+            --request PUT \
+            --header 'Content-Type: application/json' \
+            --data-binary @source/views/geo.json \
+            http://localhost:5984/starintel/_design/geo >/dev/null
+
+          curl --fail --silent --show-error --user admin:password \
+            --request PUT --header 'Content-Type: application/json' \
+            --data '{"id":"geo-ci-inside","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-a","tenant_id":"default","geometryType":"point","longitude":"-83.0000","latitude":"40.0000"}' \
+            http://localhost:5984/starintel/geo-ci-inside >/dev/null
+
+          curl --fail --silent --show-error --user admin:password \
+            --request PUT --header 'Content-Type: application/json' \
+            --data '{"id":"geo-ci-outside","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-a","tenant_id":"default","geometryType":"point","longitude":"-84.0000","latitude":"40.0000"}' \
+            http://localhost:5984/starintel/geo-ci-outside >/dev/null
+
+          curl --fail --silent --show-error --user admin:password \
+            --request PUT --header 'Content-Type: application/json' \
+            --data '{"id":"geo-ci-other-dataset","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-b","tenant_id":"default","geometryType":"point","longitude":"-83.0100","latitude":"40.0100"}' \
+            http://localhost:5984/starintel/geo-ci-other-dataset >/dev/null
+
+          query='(geo_lat:[39.8 TO 40.2] AND geo_lon:[-83.2 TO -82.8]) AND dataset:"dataset-a"'
+          response=''
+          for _ in $(seq 1 60); do
+            response="$(
+              curl --fail --silent --show-error \
+                --user admin:password \
+                --get \
+                --data-urlencode "q=${query}" \
+                --data-urlencode 'include_docs=true' \
+                --data-urlencode 'limit=20' \
+                http://localhost:5984/starintel/_design/geo/_search/bbox || true
+            )"
+            if jq --exit-status \
+              '([.rows[]?.doc?._id // empty] | index("geo-ci-inside")) != null' \
+              <<<"$response" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+
+          jq --exit-status \
+            '([.rows[]?.doc?._id // empty] | index("geo-ci-inside")) != null
+             and ([.rows[]?.doc?._id // empty] | index("geo-ci-outside")) == null
+             and ([.rows[]?.doc?._id // empty] | index("geo-ci-other-dataset")) == null' \
+            <<<"$response" >/dev/null
+
+          info="$(
+            curl --fail --silent --show-error --user admin:password \
+              http://localhost:5984/starintel/_design/geo/_search_info/bbox
+          )"
+          jq --exit-status '.search_index.doc_count >= 1' <<<"$info" >/dev/null
+
       - name: Run service-backed integration tests
         env:
           COUCHDB_USER: admin
