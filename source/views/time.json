@@ -1,1 +1,1 @@
-{"_id":"_design/time","language":"javascript","views":{"timeline":{"map":"function(doc){var value=doc.date_added!==undefined?doc.date_added:doc.dateAdded;if(value!==undefined){emit(value,doc._id);}}","reduce":"_count"}}}
+{"_id":"_design/time","language":"javascript","views":{"timeline":{"map":"function(doc){var value=doc.createdAt!==undefined?doc.createdAt:(doc.date_added!==undefined?doc.date_added:doc.dateAdded);if(value!==undefined){emit(value,doc._id);}}","reduce":"_count"}}}

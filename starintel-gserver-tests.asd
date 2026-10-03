@@ -38,6 +38,7 @@
      (:file "http-target-v1-test")
      (:file "json-literal-preservation-test")
      (:file "v09-runtime-test")
+     (:file "v0101-runtime-test")
      (:file "http-capabilities-test")
      (:file "http-auth-test")
      (:file "auth-users-test")

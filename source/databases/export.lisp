@@ -75,7 +75,8 @@ structured error details when the export fails."
                                  (error "Dataset export row belongs to ~s, expected ~s"
                                         (jsown:val-safe document "dataset")
                                         dataset))
-                               (write-string (jsown:to-json document) out)
+                               (write-string
+                                (jsown:to-json (star.documents:canonical-wire-document document)) out)
                                (terpri out)
                                (incf total-exported)
                                (setf last-key row-key))

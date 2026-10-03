@@ -238,7 +238,9 @@ operating on the type it started with."
     (list
      (when (jsown:keyp document "tenant_id")
        (jsown:remkey document "tenant_id"))
-     document)))
+     (if (star.documents:canonical-document-p document)
+         (star.documents:canonical-wire-document document)
+         document))))
 
 (defun strip-outbox-payload-tenants (extensions)
   "Strip tenant_id from outbox payloads embedded in server extensions.
@@ -300,8 +302,9 @@ operating on the type it started with."
      (strip-server-tenant-from-rows body))))
 
 (defun validate-schema-version (document &key index)
-  (let ((schema-version (jsown:val-safe document "schema_version"))
-        (expected starintel:+starintel-doc-version+))
+  (let* ((canonical (star.documents:canonical-document-p document))
+         (schema-version (jsown:val-safe document (if canonical "schemaVersion" "schema_version")))
+         (expected (if canonical (starintel.canonical:schema-version) starintel:+starintel-doc-version+)))
     (unless schema-version
       (signal-http-input-error
        422
@@ -321,12 +324,12 @@ operating on the type it started with."
 
 (defun validate-document-schema (document &key index)
   (handler-case
-      (star.documents:validate-v09-document document)
+      (star.documents:validate-document document)
     (star.documents:document-schema-validation-error (condition)
       (signal-http-input-error
        422
        "invalid_document_schema"
-       "Document does not conform to the StarIntel v0.9 schema"
+       "Document does not conform to the pinned StarIntel schema"
        (jsown:new-js
          ("category"
           (star.documents:document-schema-validation-category condition))
@@ -348,7 +351,9 @@ folds its historical envelope with =normalize-legacy-target-document=."
      (if index
          (format nil "Document at index ~d must be a JSON object" index)
          "Document must be a JSON object")))
-  (require-document-string document "_id" :index index)
+  (require-document-string document
+                           (if (star.documents:canonical-document-p document) "id" "_id")
+                           :index index)
   (require-document-string document "dataset" :index index)
   (let ((dtype (require-document-string document "dtype" :index index)))
     (when (and path-dtype

@@ -11,6 +11,12 @@ on:
     paths:
       - "schema/starintel-schema.lock.json"
       - "scripts/check-starintel-schema-lock.py"
+      - "scripts/sync-starintel-schema.py"
+      - "scripts/check-starintel-dependency-lock.py"
+      - "flake.lock"
+      - "qlfile"
+      - "qlfile.lock"
+      - "schemas/starintel-0.10.1/**"
       - ".github/workflows/starintel-schema-lock.yml"
   workflow_dispatch:
 
@@ -26,5 +32,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - name: Verify canonical required dtypes
+      - name: Verify immutable StarLang-generated release
         run: python scripts/check-starintel-schema-lock.py
+      - name: Verify star-cl consumes the identical release
+        run: python scripts/check-starintel-dependency-lock.py
