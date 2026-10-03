@@ -4,11 +4,11 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     star-cl = {
-      url = "git+https://git.starintel.actor/nsaspy/star-cl";
+      url = "git+https://github.com/lost-rob0t/star-cl";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     org-doc = {
-      url = "git+https://git.starintel.actor/nsaspy/org-doc";
+      url = "git+https://github.com/lost-rob0t/org-doc";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
