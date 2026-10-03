@@ -54,6 +54,8 @@
      "documents:write")
     ((path-prefix-p "/documents/bulk" path)
      "documents:bulk")
+    ((and (eq method :post) (string= path "/warstar/observations"))
+     "documents:bulk")
     ((and (eq method :get) (string= path "/search"))
      "search:read")
     ((and (eq method :post)

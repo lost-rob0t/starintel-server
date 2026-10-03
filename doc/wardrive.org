@@ -1,0 +1,30 @@
+#+title: Wardrive add-on
+
+Load with =(star:load-addon :starintel-wardrive)= after installing
+=starintel-wardrive.asd=. The add-on registers
+=POST /warstar/observations=, authorized as =documents:bulk=. It accepts
+up to 100 Wi-Fi/Bluetooth observations per request using a stable installation
+UUID and local observation ID. WiGLE CSV/CSV.GZ is parsed in the Android client
+and sent through the same bounded request contract. The Android client can
+also send every row of its local observation database.
+
+The adapter builds =geo-point= and =wireless-network= or =network-device=
+documents with =schemaVersion= =0.10.1=, using fields from the generated Star
+Language =specs/starintel/0.10.1/generated/schema.json= contract (branch
+=work/starintel-0.10.1-finalize=). It validates the complete batch and invokes
+the existing StarIntel =publish-document= ingestion boundary. No add-on code
+writes directly to CouchDB.
+
+The server's current lock still resolves release 0.9.1 from the legacy
+auto-dig chain. Until the main server validation and consumers are migrated to
+the Star Language generated 0.10.1 contract, the route returns HTTP 503 before
+reading or publishing a batch. This gate is intentional: acceptance of 0.10.1
+cannot be claimed by checking a version string alone. After migration, verify
+the HTTP validator, Rabbit consumer and document persistence with an end to end
+test. The response indicates queue acceptance, not durable persistence. The
+client should not mark a historical import complete until a durable receipt
+endpoint is available.
+
+Existing =GET /targets/star:v1:collector:wireless= serves canonical target
+documents to the optional WarStar mission console. Normal WiGLE services and
+offline scanning are independent of this add-on.
