@@ -51,7 +51,7 @@
 (defun decimal-string (number)
   (format nil "~,8f" (coerce number 'double-float)))
 
-(defun base-document (id dtype millis)
+(defun base-document (id dtype millis source-kind)
   (jsown:new-js
    ("id" id)
    ("dataset" *dataset*)
@@ -59,7 +59,7 @@
    ("schemaVersion" "0.10.1")
    ("observedAt" (floor millis 1000))
    ("collector" "star:v1:collector:wireless")
-   ("sourceKinds" #("sensor"))))
+   ("sourceKinds" (vector source-kind))))
 
 (defun security-type (description)
   (let ((value (string-upcase (if (stringp description) description ""))))
@@ -77,9 +77,12 @@
          (geo-id (format nil "~a:geo" base))
          (radio (string-upcase (or (field sample "radio") "")))
          (wifi (member radio '("W" "WIFI") :test #'string=))
-         (geo (base-document geo-id "geo-point" (field sample "time")))
+         (source-kind (if (member (field sample "source")
+                                  '("wigle-csv" "wigle-import") :test #'equal)
+                          "import" "sensor"))
+         (geo (base-document geo-id "geo-point" (field sample "time") source-kind))
          (network (base-document base (if wifi "wireless-network" "network-device")
-                                 (field sample "time"))))
+                                 (field sample "time") source-kind)))
     (jsown:extend-js geo
       ("geometryType" "point")
       ("latitude" (decimal-string (field sample "latitude")))
