@@ -4,11 +4,11 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     star-cl = {
-      url = "git+https://github.com/lost-rob0t/star-cl";
+      url = "git+https://github.com/lost-rob0t/star-cl?rev=2ecbf77f99730e1e7423c87c40ea53f0b7afb4dd";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     org-doc = {
-      url = "git+https://github.com/lost-rob0t/org-doc";
+      url = "git+https://github.com/lost-rob0t/org-doc?rev=5bdb907a6dfbfdac594d661e0f475b5e65581ed2";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
