@@ -253,9 +253,9 @@ internal bookkeeping; it must not leak tenancy on egress."
       (loop for entry in (if (listp outbox)
                              outbox
                              (coerce outbox 'list))
-            when (and (jsown:keyp entry "payload")
-                      (jsown:keyp (jsown:val entry "payload") "tenant_id"))
-              do (jsown:remkey (jsown:val entry "payload") "tenant_id"))))
+            when (jsown:keyp entry "payload")
+              do (setf (jsown:val entry "payload")
+                       (strip-server-tenant-fields (jsown:val entry "payload"))))))
   extensions)
 
 (defun strip-server-tenant-from-rows (response)
@@ -273,11 +273,11 @@ Covers the FTS stored-fields projection (=fields=), the embedded document
                    collect
                    (progn
                      (when (jsown:keyp row "fields")
-                       (strip-server-tenant-fields
-                        (jsown:val row "fields")))
+                       (setf (jsown:val row "fields")
+                             (strip-server-tenant-fields (jsown:val row "fields"))))
                      (when (jsown:keyp row "doc")
-                       (let ((doc (jsown:val row "doc")))
-                         (strip-server-tenant-fields doc)
+                       (let ((doc (strip-server-tenant-fields (jsown:val row "doc"))))
+                         (setf (jsown:val row "doc") doc)
                          (when (jsown:keyp doc "extensions")
                            (strip-outbox-payload-tenants
                             (jsown:val doc "extensions")))))

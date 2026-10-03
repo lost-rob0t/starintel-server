@@ -88,3 +88,32 @@
                     (lambda (document) (declare (ignore document)) (error "must not persist"))
                     "canonical:person" patch)))
       (is (eq :validation-failed (star.databases.couchdb:document-update-outcome-status outcome))))))
+
+(test canonical-search-rows-project-storage-fields-and-outbox-payloads
+  (dolist (vector-p '(nil t))
+    (let* ((stored (star.documents:ensure-document (v0101-person)))
+           (payload (star.documents:clone-document-object stored)))
+      (setf (jsown:val stored "_rev") "2-search"
+            (jsown:val stored "tenant_id") "private-tenant"
+            (jsown:val payload "tenant_id") "private-tenant"
+            (jsown:val stored "extensions")
+            (jsown:new-js ("_server_outbox"
+                           (vector (jsown:new-js ("payload" payload))))))
+      (let* ((row (jsown:new-js ("doc" stored)
+                               ("fields" (star.documents:clone-document-object stored))))
+             (response (jsown:new-js ("rows" (if vector-p (vector row) (list row))))))
+        (star.frontends.http-api:strip-server-tenant-from-rows response)
+        (let ((result (elt (jsown:val response "rows") 0)))
+          (dolist (key '("doc" "fields"))
+            (let ((wire (jsown:val result key)))
+              (is-false (jsown:keyp wire "_id"))
+              (is-false (jsown:keyp wire "_rev"))
+              (is-false (jsown:keyp wire "tenant_id"))
+              (is (string= "2-search" (jsown:val wire "rev")))
+              (is (eq wire (star.documents:validate-document wire)))))
+          (let* ((extensions (jsown:val (jsown:val result "doc") "extensions"))
+                 (outbox (elt (jsown:val extensions "_server_outbox") 0))
+                 (wire (jsown:val outbox "payload")))
+            (is-false (jsown:keyp wire "tenant_id"))
+            (is-false (jsown:keyp wire "_id"))
+            (is (eq wire (star.documents:validate-document wire)))))))))
