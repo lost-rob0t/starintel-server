@@ -9,12 +9,14 @@
   :entry-point "star::main"
   :in-order-to ((test-op (test-op "starintel-gserver-tests")))
   :components
-  ((:file "document-access-package")
+  ((:file "ids")
+   (:file "document-access-package")
    (:file "document-access")
    (:file "consumers/package")
    (:file "consumers/consumers")
    (:file "consumers/owner-fixes")
    (:file "consumers/retry-policy")
+   (:file "consumers/startup-retry")
    (:file "producers/package")
    (:file "producers/producers")
    (:file "http-contract-package" :pathname "../cli/http-contract-package")
@@ -22,6 +24,7 @@
    (:file "http-contract-final" :pathname "../cli/http-contract-final")
    (:file "http-contract-targets" :pathname "../cli/http-contract-targets")
    (:file "http-contract-actors" :pathname "../cli/http-contract-actors")
+   (:file "http-contract-documents" :pathname "../cli/http-contract-documents")
    (:file "package")
    (:file "leases/package")
    (:file "leases/protocol")
@@ -53,7 +56,10 @@
    (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "addons")
-   (:file "init-loader")
+(:file "observability-gserver")
+    (:file "observability-consumers")
+    (:file "lease-store-runtime")
+    (:file "init-loader")
    (:file "actors")
    (:file "actors/couchdb-service")
    (:file "target-repository")
@@ -90,7 +96,7 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
+  (#:starintel-observability #:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
    #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre

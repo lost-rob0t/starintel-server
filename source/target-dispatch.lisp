@@ -264,8 +264,8 @@
      schedule-id
      (target-execution-id record schedule-id)
      attempt
-     (or trace-id (cms-ulid:ulid))
-     (or lease-id (cms-ulid:ulid))
+     (or trace-id (star.ids:ulid))
+     (or lease-id (star.ids:ulid))
      fencing-token
      (target-record-deadline record))))
 
@@ -425,7 +425,7 @@
    (target-dispatch-envelope-record envelope)
    (target-dispatch-envelope-destination envelope)
    (target-dispatch-envelope-schedule-id envelope)
-   (format nil "target-execution:~a" (cms-ulid:ulid))
+   (format nil "target-execution:~a" (star.ids:ulid))
    0
    (target-dispatch-envelope-trace-id envelope)
    (target-dispatch-envelope-lease-id envelope)

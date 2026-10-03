@@ -33,7 +33,7 @@
 
 
 (defun new-correlation-id ()
-  (cms-ulid:ulid))
+  (star.ids:ulid))
 
 (defun current-correlation-id ()
   (or *http-correlation-id*
@@ -200,6 +200,104 @@
        (jsown:new-js ("field" field)
                      ("index" (or index :null)))))
     value))
+
+;;;; Server-side tenant injection and egress redaction
+;;
+;; Tenancy is a server concern. Clients neither send nor receive tenant
+;; fields; the client-visible contract stays exactly v0.9.0. On ingest
+;; the resolved tenant is injected as tenant_id before any MQ publish or
+;; database write, and every document returned to a client has the
+;; server-injected tenant_id removed again.
+
+(defun resolved-server-tenant (document)
+  "Tenant adopted by a document that carries no tenancy of its own."
+  (or (star:tenant-adaptation-for
+       (star.documents:document-value document "dataset" nil))
+      "default"))
+
+(defun stamp-server-tenant! (document)
+  "Inject the resolved tenant_id ahead of MQ publish or persistence.
+
+A document that already declares tenant_id or tenant keeps it untouched."
+  (unless (or (jsown:keyp document "tenant_id")
+              (jsown:keyp document "tenant"))
+    (setf (jsown:val document "tenant_id")
+          (resolved-server-tenant document)))
+  document)
+
+(defun strip-server-tenant-fields (document)
+  "Remove the server-injected tenant_id from an outgoing document.
+
+Accepts either a parsed jsown object or a raw JSON string; strings are
+parsed, stripped, and re-serialized so the surrounding handler keeps
+operating on the type it started with."
+  (etypecase document
+    (string
+     (jsown:to-json
+      (strip-server-tenant-fields (jsown:parse document))))
+    (list
+     (when (jsown:keyp document "tenant_id")
+       (jsown:remkey document "tenant_id"))
+     document)))
+
+(defun strip-outbox-payload-tenants (extensions)
+  "Strip tenant_id from outbox payloads embedded in server extensions.
+
+The outbox records the originally published (tenant-stamped) payload for
+internal bookkeeping; it must not leak tenancy on egress."
+  (when (and extensions
+             (jsown:keyp extensions "_server_outbox"))
+    (let ((outbox (jsown:val extensions "_server_outbox")))
+      (loop for entry in (if (listp outbox)
+                             outbox
+                             (coerce outbox 'list))
+            when (and (jsown:keyp entry "payload")
+                      (jsown:keyp (jsown:val entry "payload") "tenant_id"))
+              do (jsown:remkey (jsown:val entry "payload") "tenant_id"))))
+  extensions)
+
+(defun strip-server-tenant-from-rows (response)
+  "Strip tenant_id from every embedded document of a row response.
+
+Covers the FTS stored-fields projection (=fields=), the embedded document
+(=doc=), and outbox payloads recorded inside =doc.extensions=."
+  (when (and response (jsown:keyp response "rows"))
+    (let* ((rows (jsown:val response "rows"))
+           (rows-list (if (listp rows)
+                          rows
+                          (coerce rows 'list)))
+           (stripped
+             (loop for row in rows-list
+                   collect
+                   (progn
+                     (when (jsown:keyp row "fields")
+                       (strip-server-tenant-fields
+                        (jsown:val row "fields")))
+                     (when (jsown:keyp row "doc")
+                       (let ((doc (jsown:val row "doc")))
+                         (strip-server-tenant-fields doc)
+                         (when (jsown:keyp doc "extensions")
+                           (strip-outbox-payload-tenants
+                            (jsown:val doc "extensions")))))
+                     row))))
+      (setf (jsown:val response "rows")
+            (if (listp rows)
+                stripped
+                (coerce stripped 'vector)))))
+  response)
+
+(defun strip-server-tenant-from-search-body (body)
+  "Strip tenant_id from docs embedded in a CouchDB FTS response body.
+
+Accepts either a parsed jsown object or a raw JSON string; strings are
+parsed, stripped, and re-serialized so the surrounding handler keeps
+operating on the type it started with."
+  (etypecase body
+    (string
+     (jsown:to-json
+      (strip-server-tenant-from-rows (jsown:parse body))))
+    (list
+     (strip-server-tenant-from-rows body))))
 
 (defun validate-schema-version (document &key index)
   (let ((schema-version (jsown:val-safe document "schema_version"))
@@ -377,5 +475,10 @@ object."
             json-array-p
             parse-json-octets
             validate-document-input
-            bounded-query-integer)
+            bounded-query-integer
+            resolved-server-tenant
+            stamp-server-tenant!
+            strip-server-tenant-fields
+            strip-server-tenant-from-rows
+            strip-server-tenant-from-search-body)
           :star.frontends.http-api))

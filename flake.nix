@@ -122,6 +122,22 @@ EOF
         cl-gserver = sentoPkg;
       });
 
+      starintel-observability = sbcl'.buildASDFSystem {
+        pname = "starintel-observability";
+        version = "0.1.0";
+        src = ./.;
+        lispLibs = with sbcl'.pkgs; [
+          dexador
+          jsown
+          bordeaux-threads
+          ironclad
+          cl-ppcre
+          lack
+        ];
+        systems = [ "starintel-observability" ];
+        asdFilesToKeep = [ "starintel-observability.asd" ];
+      };
+
       starintel-gserver = sbcl'.buildASDFSystem rec {
         pname = "starintel-gserver";
         version = "0.1.0";
@@ -130,6 +146,7 @@ EOF
         nativeLibs = runtimeLibs;
 
         lispLibs = with sbcl'.pkgs; [
+          starintel-observability
           starintel
           cl-couch
           serapeum

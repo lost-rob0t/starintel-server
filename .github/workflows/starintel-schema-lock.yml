@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  research-node-schema:
+  required-dtypes-schema:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,5 +26,5 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - name: Verify canonical research-node schema
+      - name: Verify canonical required dtypes
         run: python scripts/check-starintel-schema-lock.py

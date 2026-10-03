@@ -28,6 +28,21 @@
        ((path-suffix-p "/revoke" path) "credentials:revoke")
        ((path-suffix-p "/disable" path) "credentials:disable")
        (t nil)))
+    ((and (eq method :post)
+          (string= path "/api/v1/documents"))
+     "documents:write")
+    ((and (eq method :post)
+          (string= path "/api/v1/documents/bulk"))
+     "documents:bulk")
+    ((and (eq method :get)
+          (string= path "/api/v1/documents/search"))
+     "search:read")
+    ((path-prefix-p "/api/v1/documents/" path)
+     (case method
+       (:get "documents:read")
+       (:put "documents:write")
+       (:delete "documents:delete")
+       (otherwise nil)))
     ((path-prefix-p "/document/" path)
      (case method
        (:get "documents:read")
@@ -212,3 +227,8 @@
        (cors-middleware
         (authentication-middleware
          (authorization-middleware *app*)))))
+
+;; The observability layer is the OUTERMOST boundary so it sees the original
+;; traceparent, the final status, and every security rejection below it.
+(setf *server*
+      (observability-wrapped-server *server*))

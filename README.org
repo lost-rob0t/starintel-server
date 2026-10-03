@@ -252,8 +252,6 @@ Important current limits:
 - =/new/event/:id= is a stub.
 - =*http-api-base-path*= and the HTTP certificate/key variables are not applied
   by =start-http-api=.
-- The second =/dataset-size= route definition replaces or shadows the first,
-  depending on Ningle route behavior.
 
 These are documented facts, not supported guarantees.
 

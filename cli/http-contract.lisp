@@ -3,7 +3,8 @@
 (defstruct (http-operation
             (:constructor make-http-operation
                 (&key id client-name method path summary tags authority scopes
-                      path-parameters request-schema responses idempotency)))
+                      path-parameters query-parameters request-schema responses
+                      idempotency)))
   "One documented HTTP operation of the client contract."
   id
   client-name
@@ -14,6 +15,7 @@
   authority
   scopes
   path-parameters
+  query-parameters
   request-schema
   responses
   idempotency)
@@ -33,6 +35,9 @@
 "Path template of the operation.")
 (setf (documentation 'HTTP-OPERATION-PATH-PARAMETERS 'function)
 "Path parameters and their constraints.")
+(setf (documentation 'HTTP-OPERATION-QUERY-PARAMETERS 'function)
+"Query parameters of the operation as =(:name ... :required ... :schema ...)=
+property lists.")
 (setf (documentation 'HTTP-OPERATION-REQUEST-SCHEMA 'function)
 "JSON schema of the request body, or nil.")
 (setf (documentation 'HTTP-OPERATION-RESPONSES 'function)
@@ -479,6 +484,13 @@
                    (json-object (cons "schema" schema))))))
     object))
 
+(defun query-parameter-openapi-object (parameter)
+  (json-object
+   (cons "name" (getf parameter :name))
+   (cons "in" "query")
+   (cons "required" (and (getf parameter :required) t))
+   (cons "schema" (or (getf parameter :schema) (string-schema)))))
+
 (defun operation-openapi-object (operation)
   (let ((object
           (json-object
@@ -501,6 +513,12 @@
                    (cons "in" "path")
                    (cons "required" t)
                    (cons "schema" (string-schema :min-length 1))))))
+    (when (http-operation-query-parameters operation)
+      (setf (jsown:val object "parameters")
+            (append
+             (jsown:val-safe object "parameters")
+             (mapcar #'query-parameter-openapi-object
+                     (http-operation-query-parameters operation)))))
     (when (eq :bootstrap (http-operation-authority operation))
       (push (json-object
              (cons "name" "X-Star-Bootstrap-Secret")
@@ -580,6 +598,12 @@
    (cons "scopes" (or (http-operation-scopes operation) nil))
    (cons "path_parameters"
          (or (http-operation-path-parameters operation) nil))
+   (cons "query_parameters"
+         (mapcar (lambda (parameter)
+                   (json-object
+                    (cons "name" (getf parameter :name))
+                    (cons "required" (and (getf parameter :required) t))))
+                 (http-operation-query-parameters operation)))
    (cons "request_schema"
          (or (http-operation-request-schema operation) :null))
    (cons "responses"

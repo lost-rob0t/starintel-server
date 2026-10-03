@@ -32,6 +32,13 @@
                        (consumer-read consumer))
                     (consumer-read-timeout () nil)
                     (end-of-file ()
+                      (return))
+                    (error (condition)
+                      ;; A failed settlement leaves the delivery unsettled.
+                      ;; Closing the Rabbit stream returns it for redelivery
+                      ;; without letting the worker kill the HTTP listener.
+                      (log:error "Consumer ~a stopped after unsettled delivery: ~a"
+                                 (consumer-name consumer) condition)
                       (return)))))
     (when (consumer-running-p consumer)
       (handler-case
@@ -419,6 +426,8 @@
       (condition (condition)
         (log:warn "lparallel shutdown failed: ~a" condition))))
   (setf (star-runtime-kernel runtime) nil)
+  (ignore-errors
+    (star:shutdown-lease-store))
   (bt:with-lock-held ((star-runtime-lock runtime))
     (setf (star-runtime-state runtime) :stopped))
   (when (eq runtime *runtime*)
@@ -448,6 +457,7 @@
           (star.databases.couchdb:init-db)
           (star.auth:initialize-auth-store)
           (star.auth:ensure-initial-user)
+          (star:initialize-lease-store)
           (setf (star-runtime-actor-system runtime)
                 (star.actors:start-actors
                  :rabbit-host star:*rabbit-address*

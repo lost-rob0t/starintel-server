@@ -112,3 +112,41 @@
         (is (eq :backend-unavailable
                 (star.leases:lease-outcome-code listed)))
         (is (= 0 (length (star.leases:lease-outcome-leases listed))))))))
+
+(test pool-wait-rechecks-idle-connections-after-timed-out-wait
+  "A waiter whose condition-wait expires without a delivered notify must
+  recheck idle-connections at the loop head instead of failing with
+  valkey-pool-timeout while a connection sits idle in the pool."
+  (with-real-valkey-store (store :label "pool-recheck"
+                                 :pool-size 1 :pool-wait-timeout-ms 500)
+    (let ((seed (star.leases::open-valkey-connection store (real-deadline)))
+          (started nil)
+          (latch-lock (bt:make-lock "pool-recheck-latch"))
+          (latch-cv (bt:make-condition-variable))
+          (got-connection nil))
+      ;; Occupy the pool's only slot before the waiter starts so it must
+      ;; condition-wait: the seed connection is open and counted, not idle.
+      (bt:with-lock-held ((star.leases::valkey-store-pool-lock store))
+        (push seed (star.leases::valkey-store-all-connections store))
+        (setf (star.leases::valkey-store-open-count store) 1))
+      (let ((waiter
+              (bt:make-thread
+               (lambda ()
+                 (bt:with-lock-held (latch-lock)
+                   (setf started t)
+                   (bt:condition-notify latch-cv))
+                 (star.leases::call-with-valkey-connection
+                  store (real-deadline 5000)
+                  (lambda (connection)
+                    (setf got-connection
+                          (star.leases::valkey-connection-open-p connection))))))))
+        (bt:with-lock-held (latch-lock)
+          (loop until started do (bt:condition-wait latch-cv latch-lock)))
+        ;; Land the idle connection while the waiter is inside its first
+        ;; wait. Deliberately NO condition-notify: only the fixed loop's
+        ;; post-timeout predicate recheck can observe the idle connection.
+        (sleep 0.2)
+        (bt:with-lock-held ((star.leases::valkey-store-pool-lock store))
+          (push seed (star.leases::valkey-store-idle-connections store)))
+        (bt:join-thread waiter)
+        (is-true got-connection)))))

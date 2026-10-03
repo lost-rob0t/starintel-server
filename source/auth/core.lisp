@@ -446,7 +446,7 @@ Extracts the token with =bearer-token= and delegates to
 
 (defun make-api-key-material (owner principal-type scopes
                               &key expires-at rotation-parent-id)
-  (let* ((credential-id (cms-ulid:ulid))
+  (let* ((credential-id (star.ids:ulid))
          (secret-hex (random-hex star:*auth-key-secret-bytes*))
          (secret-octets (decode-hex secret-hex))
          (salt-hex (random-hex star:*auth-salt-bytes*))

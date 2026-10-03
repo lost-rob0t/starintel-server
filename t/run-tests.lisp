@@ -12,6 +12,7 @@
     dataset-export-tests
     couchdb-view-request-tests
     lease-store-contract-tests
+    lease-store-runtime-tests
     http-boundary-tests
     http-target-v1-tests
     v09-runtime-tests
@@ -20,8 +21,12 @@
     oauth-authorization-code-tests
     addon-system-tests
     authorization-policy-tests
+    http-target-tenant-tests
+    http-tenant-injection-tests
     gserver-client-tests
-    runtime-lifecycle-tests))
+    http-contract-documents-tests
+    runtime-lifecycle-tests
+    observability-tests))
 
 (defun run-all-gserver-tests ()
   "Run every hermetic unit suite and fail on empty, skipped, or failed tests."

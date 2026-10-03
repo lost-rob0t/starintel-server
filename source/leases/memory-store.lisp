@@ -35,7 +35,7 @@
 
 (defun make-memory-lease-store
     (&key (clock #'unix-time-milliseconds)
-       (id-generator #'cms-ulid:ulid) audit-hook metrics-hook)
+       (id-generator #'star.ids:ulid) audit-hook metrics-hook)
   "Create the deterministic test backend; production code must use an owned adapter."
   (make-instance
    'memory-lease-store

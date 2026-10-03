@@ -1,0 +1,86 @@
+# OpenTelemetry Collector sidecar for the starintel-server compose stack.
+#
+# Contract (docs/observability.org):
+#   - receives OTLP from the application over the compose network;
+#   - scrapes RabbitMQ (15692, requires the rabbitmq_prometheus plugin) and
+#     CouchDB (17986, requires the prometheus_stats endpoint) where enabled;
+#   - forwards to the observe gateway over OTLP/HTTP with NO credentials: the
+#     gateway collector owns the OpenObserve ingest token.
+#   - bounded queues + retries; failure to reach the gateway must never
+#     propagate into star-server (drops are counted and visible in the
+#     OpenTelemetry Collector dashboard).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: rabbitmq
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["rabbitmq:15692"]
+        - job_name: couchdb
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["couchdb:17986"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # The observe gateway terminates OTLP; its own collector config holds the
+  # ${env:OO_INGEST_AUTH} credential. Sending without credentials is safe
+  # inside the management VLAN (nftables-scoped).
+  otlphttp/gateway:
+    endpoint: ${env:STAR_OBSERVABILITY_GATEWAY:-http://observe.star.intel:4318}
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 2000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 0
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: basic
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/gateway]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/gateway]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/gateway]

@@ -1,0 +1,92 @@
+#+title: Private document-to-Prolog shard actor
+
+* Deployment ownership
+
+The =prolog-shard-actor= belongs to this repository's existing =actors=
+Compose profile on the ingest stack. Its source and Nix image belong to
+=starintel-pro-actors= (=prolog-shard-image=). This adds no second deployment
+controller, host, public listener, subscription gateway, or database credential.
+The existing deployment automation owns activation after the changes reach the
+authoritative default branches and forge synchronization completes.
+
+* Runtime contract
+
+| Item | Value |
+|------+-------|
+| Image | =starintel/prolog-shard-actor:0.1.0= |
+| Executable | =starintel-prolog-shards= |
+| Runtime | =serve= |
+| Health probe | =healthcheck= |
+| Persistent volume | =prolog-shard-data= |
+| Mount | =/var/lib/starintel-prolog= |
+| Shard root | =/var/lib/starintel-prolog/shards= |
+| Spool root | =/var/lib/starintel-prolog/spool= |
+| Network | disabled |
+
+=STARINTEL_TENANT= and =STARINTEL_DATASET= must be explicitly supplied by the
+operator's existing deployment environment. They are trusted service scope,
+not values accepted from documents. No production scope is guessed here.
+Compose substitutes an empty value when scope is absent so unrelated profiles
+continue to render. The actor must reject either empty value at startup before
+processing any document; only activating this actor requires explicit scope.
+
+The image must have no conflicting executable ENTRYPOINT: this service supplies
+the complete command, =starintel-prolog-shards serve=. The health command must
+validate recent daemon activity and configured storage, not merely return zero
+because the package is installed. The shared state volume retains original
+inputs, processing receipts and rebuildable Prolog/RDF projections. Removing
+that volume is destructive and is never part of an image rollout or rollback.
+
+* Build and verification
+
+The =prolog-shard-image= Make target builds the image from =ACTOR_FLAKE= and
+loads that exact local result into Docker, following the existing actor image
+packaging pattern. Automation must pin =ACTOR_FLAKE= to the intended pro-actors
+revision; a mutable sibling checkout is only the developer default. This target
+does not start or deploy containers.
+
+Before rollout, validate Compose with the real authorized scope populated and
+build/test the matching image. After automated rollout, verify the container's
+image identity, health probe and a scoped test document's original archive,
+receipt and queryable shard. A passing Compose render alone is not proof that
+a live actor processed documents. No deployment was executed while preparing
+this configuration.
+
+* Isolation and repeatable checks
+
+The worker runs as UID/GID =10001:10001= with a read-only image filesystem,
+all Linux capabilities dropped and no privilege escalation. =/tmp= is temporary
+writable storage; the persistent named volume is the only durable writable
+mount. The image must precreate its state directories owned by UID/GID 10001 so
+Docker initializes a new named volume with usable permissions. Existing volumes
+must already have compatible ownership; do not solve failures by running root.
+
+Run the focused declarative regression (PyYAML required):
+
+#+begin_src sh
+python -m unittest discover -s tests -p test_prolog_shard_deployment.py -v
+#+end_src
+
+These checks validate deployment structure, not live container execution.
+A daemon restart reprocesses durable pending spool items using the actor's
+idempotent receipt/archive behavior; exact replay guarantees belong to the
+pro-actors tests and must be verified against the packaged image.
+
+* Reproducible image source
+=PROLOG_ACTOR_FLAKE= pins pro-actors commit
+=9ef1caf119fc465f7da7f979775b6bf29a21a148=. The existing deployment automation
+can build/load this image with the Makefile target; no manual deployment is
+performed by this change. Authorized private-source access is required.
+
+* Verification and ownership
+Deployment owner: issue #185. Baseline =60191023ac73bcc719fd550d6788322a95c92bc0=.
+Five-vote gate: reality NARROW, ownership IMPLEMENT, research IMPLEMENT,
+verification IMPLEMENT, YAGNI NARROW. Scope excludes any new deployment control plane.
+
+=python3 -m unittest discover -s tests -p test_prolog_shard_deployment.py -v=
+failed against the unchanged baseline (missing actor/target) and passes four tests
+against this change. Real Docker Compose configuration passes with scope unset,
+including =--profile actors=; scope is required when the worker actually starts.
+The unmodified schema-lock checker passes canonical release 0.9.1/base 0.9.0.
+The pro-actors image and executable include persistence/replay/health tests.
+No manual deployment was performed. Production health is not claimed here.

@@ -34,7 +34,7 @@
   ((_id
     :initarg :id
     :accessor event-id
-    :initform (cms-ulid:ulid)
+    :initform (star.ids:ulid)
     :type string)
    (timestamp
     :initarg :timestamp
@@ -110,7 +110,7 @@
   "Construct a validated actor event record."
   (make-instance
    'actor-event
-   :id (or id (cms-ulid:ulid))
+   :id (or id (star.ids:ulid))
    :timestamp (or timestamp (spec:unix-now))
    :dtype (or dtype "actorevent")
    :actor-name (or actor-name component "")

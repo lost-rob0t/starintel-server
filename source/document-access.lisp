@@ -175,7 +175,7 @@ compatibility adapters can opt out without weakening canonical ingest."
       (error "Route dtype ~a does not match document dtype ~a" route dtype))
     (unless (let ((id (object-value object "_id" nil)))
               (and (stringp id) (plusp (length id))))
-      (setf (jsown:val object "_id") (cms-ulid:ulid)))
+      (setf (jsown:val object "_id") (star.ids:ulid)))
     object))
 
 (defun document-json (document &key route-dtype)

@@ -442,3 +442,85 @@
         (setf updated candidate))
       :principal writer))
     (is-true updated)))
+
+;;; Server-side tenant adapter for tenant-less documents (#180)
+
+(defun tenantless-policy-document (&key (dataset "dataset-a"))
+  (jsown:new-js
+    ("_id" "doc-tenantless-1")
+    ("dataset" dataset)
+    ("dtype" "note")
+    ("version" starintel:+starintel-doc-version+)))
+
+(test tenantless-document-keeps-default-tenant-when-unconfigured
+  (let ((star:*tenant-fallback* nil)
+        (star:*tenant-dataset-map* nil))
+    (let* ((resource
+             (star.authorization:resource-from-document
+              (tenantless-policy-document))))
+      (is (string= "default"
+                   (star.authorization:authorization-resource-tenant-id
+                    resource)))
+      (is-true
+       (star.authorization:authorize!
+        "documents:write"
+        :principal (make-policy-principal
+                    "default-writer"
+                    '("documents:write" "tenant:default" "dataset:dataset-a"))
+        :resource resource))
+      (signals star.authorization:authorization-error
+        (star.authorization:authorize!
+         "documents:write"
+         :principal (make-policy-principal
+                     "ci-writer"
+                     '("documents:write" "tenant:ci" "dataset:dataset-a"))
+         :resource resource)))))
+
+(test tenantless-document-uses-configured-fallback-tenant
+  (let ((star:*tenant-fallback* "ci")
+        (star:*tenant-dataset-map* nil))
+    (let* ((resource
+             (star.authorization:resource-from-document
+              (tenantless-policy-document))))
+      (is (string= "ci"
+                   (star.authorization:authorization-resource-tenant-id
+                    resource)))
+      (is-true
+       (star.authorization:authorize!
+        "documents:write"
+        :principal (make-policy-principal
+                    "ci-writer"
+                    '("documents:write" "tenant:ci" "dataset:dataset-a"))
+        :resource resource))
+      (signals star.authorization:authorization-error
+        (star.authorization:authorize!
+         "documents:write"
+         :principal (make-policy-principal
+                     "default-writer"
+                     '("documents:write" "tenant:default" "dataset:dataset-a"))
+         :resource resource)))))
+
+(test tenantless-document-dataset-map-takes-precedence-over-fallback
+  (let ((star:*tenant-fallback* "ci")
+        (star:*tenant-dataset-map* '(("dataset-a" . "llm"))))
+    (let* ((resource
+             (star.authorization:resource-from-document
+              (tenantless-policy-document :dataset "dataset-a")))
+           (unmapped
+             (star.authorization:resource-from-document
+              (tenantless-policy-document :dataset "dataset-b"))))
+      (is (string= "llm"
+                   (star.authorization:authorization-resource-tenant-id
+                    resource)))
+      (is (string= "ci"
+                   (star.authorization:authorization-resource-tenant-id
+                    unmapped))))))
+
+(test tenant-bearing-document-is-never-rewritten-by-adapter
+  (let ((star:*tenant-fallback* "ci")
+        (star:*tenant-dataset-map* '(("dataset-a" . "llm"))))
+    (let ((document (tenantless-policy-document)))
+      (setf (jsown:val document "tenant_id") "default")
+      (is (string= "default"
+                   (star.authorization:authorization-resource-tenant-id
+                    (star.authorization:resource-from-document document)))))))

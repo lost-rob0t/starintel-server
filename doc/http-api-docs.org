@@ -34,7 +34,25 @@ The initial contracted operations cover:
 - password login and authenticated-context inspection;
 - human-user create/list/password lifecycle;
 - API credential create/list/rotate/revoke/disable lifecycle;
+- versioned StarIntel document operations under =/api/v1/documents=:
+  ingest (single and bounded bulk), read, deep-merge update, delete, and
+  full-text search;
 - OpenAPI and client-manifest discovery.
+
+The versioned document operations reuse the same hardened boundary and
+authorization pipelines as the legacy document routes: strict StarIntel v0.9
+validation for ingest, deep-merge plus schema validation for the versioned
+update route, dataset/tenant scoped full-text search, and per-document
+resource authorization on every operation.
+
+| Method | Route | Contracted operation |
+|--------+-------+----------------------|
+| POST | =/api/v1/documents= | =documents.create= |
+| POST | =/api/v1/documents/bulk= | =documents.bulk.create= |
+| GET | =/api/v1/documents/:id= | =documents.get= |
+| PUT | =/api/v1/documents/:id= | =documents.update= |
+| DELETE | =/api/v1/documents/:id= | =documents.delete= |
+| GET | =/api/v1/documents/search= | =documents.search= |
 
 Legacy document, target, search, and CouchDB-view routes remain available and
 will migrate into the same registry incrementally. Clients should prefer named

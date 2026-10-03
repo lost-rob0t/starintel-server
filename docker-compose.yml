@@ -130,8 +130,18 @@ services:
       STAR_AUTH_PEPPER_FILE: /run/secrets/auth_pepper
       STAR_AUTH_BOOTSTRAP_SECRET_FILE: /run/secrets/auth_bootstrap_secret
       STAR_AUTH_ALLOWED_ORIGINS: ${STAR_AUTH_ALLOWED_ORIGINS:-}
+      STAR_TENANT_FALLBACK: ${STAR_TENANT_FALLBACK:-}
+      STAR_TENANT_DATASET_MAP: ${STAR_TENANT_DATASET_MAP:-}
       STAR_AUTH_PASSWORD_ITERATIONS: ${STAR_AUTH_PASSWORD_ITERATIONS:-600000}
       STAR_SERVER_INIT_FILE: ${STAR_SERVER_INIT_FILE:-/etc/starintel/init.lisp}
+      # Explicit opt-in: software and Compose both remain telemetry-off by
+      # default. When enabled, the app sends only to the credential-free local
+      # sidecar; the observe gateway owns the OpenObserve ingestion credential.
+      STAR_OBSERVABILITY_ENABLED: ${STAR_OBSERVABILITY_ENABLED:-false}
+      STAR_OBSERVABILITY_ENDPOINT: ${STAR_OBSERVABILITY_ENDPOINT:-http://otelcol:4318}
+      STAR_OBSERVABILITY_SIGNALS: ${STAR_OBSERVABILITY_SIGNALS:-logs,metrics,traces}
+      STAR_SERVICE_NAME: ${STAR_SERVICE_NAME:-starintel-server}
+      STARINTEL_COMPONENT: ${STARINTEL_COMPONENT:-ingest}
     secrets:
       - couchdb_password
       - rabbitmq_password
@@ -154,12 +164,83 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+      otelcol:
+        condition: service_started
     healthcheck:
       test: [CMD, curl, --fail, --silent, http://localhost:5000/health]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # OpenTelemetry Collector sidecar: the ONLY egress path for application
+  # telemetry. Holds NO OpenObserve credentials; it forwards OTLP to the
+  # observe gateway collector, which owns the ingest credential. Scrapes
+  # RabbitMQ/CouchDB Prometheus endpoints for broker health. The application
+  # stays telemetry-free unless STAR_OBSERVABILITY_ENABLED is explicitly true;
+  # when enabled the hosted actor-start hook starts the normal addon lifecycle.
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:${OTELCOL_VERSION:-0.155.0}
+    hostname: otelcol
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - type: bind
+        source: ${OTELCOL_CONFIG_HOST_FILE:-./docker/otelcol-sidecar.yaml}
+        target: /etc/otelcol/config.yaml
+        read_only: true
+    ports:
+      - "${STAR_OTLP_BIND_ADDRESS:-127.0.0.1}:4317:4317"
+      - "${STAR_OTLP_BIND_ADDRESS:-127.0.0.1}:4318:4318"
+    networks:
+      - backend
+
+  # Private document-to-Prolog projection; originals remain archived in the
+  # durable spool. No public listener and no broker/database credentials.
+  prolog-shard-actor:
+    image: starintel/prolog-shard-actor:0.1.0
+    hostname: prolog-shard-actor
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    profiles: ["actors"]
+    restart: unless-stopped
+    command: ["starintel-prolog-shards", "serve"]
+    environment:
+      STARINTEL_SHARD_ROOT: /var/lib/starintel-prolog/shards
+      STARINTEL_SPOOL_ROOT: /var/lib/starintel-prolog/spool
+      STARINTEL_TENANT: ${STARINTEL_TENANT:-}
+      STARINTEL_DATASET: ${STARINTEL_DATASET:-}
+    volumes:
+      - prolog-shard-data:/var/lib/starintel-prolog
+    network_mode: none
+    healthcheck:
+      test: ["CMD", "starintel-prolog-shards", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  youtube-actor:
+    image: starintel/youtube-actor:0.1.0
+    hostname: youtube-actor
+    profiles: ["actors"]
+    restart: "no"
+    environment:
+      STARINTEL_SERVER_URL: http://star-server:5000
+      STARINTEL_API_KEY_FILE: /run/secrets/youtube_actor_api_key
+    secrets:
+      - youtube_actor_api_key
+    volumes:
+      - youtube-actor-data:/var/lib/youtube-actor
+    networks:
+      - backend
+    depends_on:
+      star-server:
+        condition: service_healthy
 
 secrets:
   couchdb_password:
@@ -172,6 +253,8 @@ secrets:
     file: ${CREDENTIALS_DIR:-./secrets}/rabbitmq_password
   valkey_password:
     file: ${CREDENTIALS_DIR:-./secrets}/valkey_password
+  youtube_actor_api_key:
+    file: ${CREDENTIALS_DIR:-./secrets}/youtube_actor_api_key
   auth_pepper:
     file: ${CREDENTIALS_DIR:-./secrets}/auth_pepper
   auth_bootstrap_secret:
@@ -182,6 +265,9 @@ volumes:
   couchdb_data:
   rabbitmq_data:
   valkey_data:
+  youtube-actor-data:
+  prolog-shard-data:
 
 networks:
   backend:
+

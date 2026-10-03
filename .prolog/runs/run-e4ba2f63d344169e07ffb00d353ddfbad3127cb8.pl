@@ -1,0 +1,1 @@
+observation('8b8edef5b4eed7b3', command(['docker', 'compose', 'config', '--quiet']), exit(0), '6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d', 'e4ba2f63d344169e07ffb00d353ddfbad3127cb8', 'f89c7ccd09fb153eca821e3d328774f1ee70028985a77345f7f2b7424f72cbbe').

@@ -19,3 +19,68 @@
   (is (equal '("dataset-1" "tenant-1")
              (star.authorization::decode-view-key
               #("dataset-1" "tenant-1")))))
+
+(defun capture-query-audit (thunk)
+  (let ((captured "")
+        (star.observability::*observability-enabled* "true")
+        (star.observability::*observability-signals* "logs,metrics,traces")
+        (star.observability::*export-batch-fn*
+          (lambda (signal records)
+            (when (eq signal :logs)
+              (setf captured
+                    (jsown:to-json
+                     (star.observability::otlp-payload signal records))))
+            :ok)))
+    (star.observability:reset-exporter-state)
+    (unwind-protect
+         (let ((star.observability::*exporter-running* t))
+           (funcall thunk)
+           (let ((star.observability::*exporter-stop* t))
+             (star.observability:flush-once))
+           captured)
+      (star.observability:reset-exporter-state))))
+
+(test search-query-audit-records-query-and-context
+  (let* ((principal
+           (make-policy-principal
+            "query-auditor"
+            '("search:read" "tenant:default" "dataset:dataset-a")))
+         (payload
+           (capture-query-audit
+            (lambda ()
+              (star.authorization:authorized-search-query
+               "content:needle"
+               :principal principal
+               :requested-dataset "dataset-a"
+               :metadata
+               (star.authorization:request-metadata
+                :route "/search"
+                :method :get
+                :correlation-id "operation-1"))))))
+    (is (search "search.query" payload))
+    (is (search "content:needle" payload))
+    (is (search "query-auditor" payload))
+    (is (search "dataset-a" payload))
+    (is (search "operation-1" payload))))
+
+(test denied-search-query-is-still-audited
+  (let* ((principal
+           (make-policy-principal
+            "denied-query-user"
+            '("tenant:default" "dataset:dataset-a")))
+         (payload
+           (capture-query-audit
+            (lambda ()
+              (signals star.authorization:authorization-error
+                (star.authorization:authorized-search-query
+                 "content:denied-needle"
+                 :principal principal
+                 :requested-dataset "dataset-a"
+                 :metadata
+                 (star.authorization:request-metadata
+                  :route "/search"
+                  :method :get
+                  :correlation-id "operation-denied")))))))
+    (is (search "search.query" payload))
+    (is (search "content:denied-needle" payload))
+    (is (search "denied-query-user" payload))))

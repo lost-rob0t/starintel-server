@@ -1,0 +1,22 @@
+observation('1525ddebcf10c67a', command(['python3', 'scripts/check-starintel-schema-lock.py']), exit(0), '063646fba004fd42710d4de512183cb2a6d8bf2f29f071e435d327e1e61672a3', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855').
+observation('3c0f2491d63811a2', command(['python3', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py']), exit(0), 'c21a33f1ce5b1b49818b8d9c041f3d58381e16f8782ce641a30b1e3827fac070', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855').
+observation('29f2096bac090cd2', command(['nix', 'run', '.#star-unit-tests']), exit(0), '76e2deee3d4e8908902855938ae551bc9d95c8e8557db52b276393e25d2ee077', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855').
+observation('92f67b55664c5cf8', command(['nix', 'run', '.#star-integration-tests']), exit(0), '604ab15df7dd7f389acbe976775fcb6b483e1721a63ccfe907a9dd898ffadb0a', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855').
+
+% --- ontology-research agent run (research-only, no repo file changes) ---
+todo(read_gate_doc, done, 'doc/operation-object.org read fully; Ontology authority section + lossless-migration requirement noted').
+todo(read_schema_lock, done, 'schema/starintel-schema.lock.json: release 0.9.1, commit 6479c0a9, PR 2416, required_dtypes research-node+operation').
+todo(fetch_canonical_operation_expansion, active, 'fetch schema/expansion/manifest at 6479c0a9 via checker URLs').
+todo(find_six_questions, pending, 'gate doc has no literal 6 questions; locate them (issue #219 or other server docs)').
+todo(view_auto_research_issues, pending, 'clone lost-rob0t/starintel-auto-research; gh issue view 219 and 72').
+todo(clone_gpt_auto_dig, pending, 'shallow clone at 6479c0a9; find operation schema, jsonld/context files, schema_org mappings').
+todo(write_research_report, pending, 'report (a)-(f) per mission').
+observation('ont-001', fetched('canonical schema/expansion/manifest at 6479c0a9'), exit(0), files('/tmp/opencode/ontology-research/{schema,expansion,manifest}.json'), '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'na').
+todo(fetch_canonical_operation_expansion, done, 'operation dtype fields: mission objectives status in_scope out_of_scope target_policy targets phases datasets capability_gaps assignments post_actions; required=mission,status,phases').
+observation('ont-002', found('schema_org.@type=Action pinned in server test t/v09-runtime-test.lisp:77, NOT enum-constrained in canonical schema'), ok, 'schema allows anyOf string/array for @type', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'na').
+todo(view_auto_research_issues, done, '#219 (12 required ontology decisions, acceptance test = 9 prolog predicates, lossless migration from Auto-Dig #2416) and #72 (ontology foundation, 10 research tracks, external-mapping boundary) fully captured; saved to /tmp/opencode/ontology-research/issue-{219,72}.json').
+todo(clone_gpt_auto_dig, done, 'shallow fetch at 6479c0a9 ok; found starintel_doc/operation_spec.py (7 enum vocabularies + semantic validators), docs/operation-object.md (5 numbered re-examination questions lines 63-69), docs/schema-org-v0.9.md, DTYPE_SCHEMA_ORG_TYPES operation->Action, conformance/implementations.json (4 language bindings), no *.jsonld/context files anywhere').
+todo(find_six_questions, done, 'DISCREPANCY: gate doc (server) has no enumerated questions; the re-examination question list (5 items, not 6) lives in gpt-auto-dig docs/operation-object.md; #219 has 12 required ontology decisions; 6th requirement = lossless migration (gate doc + #219)').
+todo(write_research_report, done, 'full report delivered in conversation; artifacts saved under /tmp/opencode/ontology-research/').
+observation('ont-003', found('STAR-RESEARCH-007 ontology foundations node + ARDR-ISSUE-072 transaction in auto-research roam/; no ARDR transaction for #219 yet'), ok, 'roam/research/star-server/STAR-RESEARCH-007-starintel-ontology-foundations.org (677 lines, DRAFT/PENDING approval)', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'na').
+observation('ont-004', found('python semantic validator validate_operation_semantics in operation_spec.py:282-376 implements DAG/ref/scope/evidence/terminal-phase invariants outside JSON Schema'), ok, 'candidate constraint-split material for ontology pass', '3e1f78523f377a94f43fda7a3cc1fc6622d7269d', 'na').

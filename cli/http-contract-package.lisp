@@ -11,6 +11,7 @@
    #:http-operation-authority
    #:http-operation-scopes
    #:http-operation-path-parameters
+   #:http-operation-query-parameters
    #:http-operation-request-schema
    #:http-operation-responses
    #:http-operation-idempotency

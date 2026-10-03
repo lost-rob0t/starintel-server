@@ -82,14 +82,28 @@
 
 Canonical document mutation queues validate before transport normalization.
 The remaining non-strict decode is transport-metadata inspection
-(=transient-p=); target deliveries validate like every other dtype."
+(=transient-p=); target deliveries validate like every other dtype.
+
+The server-injected tenant_id is exempted from strict envelope validation:
+it is removed before validation and restored on the ensured document so
+persistence keeps tenancy while the client contract stays v0.9.0."
   (handler-case
-      (progn
-        (when strict-schema-p
-          (star.documents:validate-v09-document (car message)))
-        (star.documents:ensure-document
-         (car message)
-         :route-dtype route-dtype))
+      (let* ((document (star.documents:parse-document-object (car message)))
+             (injected-tenant
+               (and (jsown:keyp document "tenant_id")
+                    (jsown:val document "tenant_id"))))
+        (when injected-tenant
+          (jsown:remkey document "tenant_id"))
+        (let ((ensured
+                (progn
+                  (when strict-schema-p
+                    (star.documents:validate-v09-document document))
+                  (star.documents:ensure-document
+                   document
+                   :route-dtype route-dtype))))
+          (when injected-tenant
+            (setf (jsown:val ensured "tenant_id") injected-tenant))
+          ensured))
     (star.consumers:delivery-processing-error (condition)
       (error condition))
     (error (condition)
