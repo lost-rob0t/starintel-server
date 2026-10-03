@@ -22,8 +22,7 @@
          :schema
          (integer-schema
           :minimum 1
-          :maximum 100
-          :description "Maximum number of matching documents."))))
+          :description "Maximum number of matching documents; runtime maximum is 100."))))
 
 (upsert-http-operation
  (make-http-operation
