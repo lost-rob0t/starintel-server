@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     star-cl = {
-      url = "github:lost-rob0t/star-cl";
+      url = "github:lost-rob0t/star-cl/a18a6cddcbcf4d989495a5de8abcedc4d0294d1c";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     org-doc = {
