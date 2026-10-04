@@ -304,6 +304,63 @@ CouchDB reference view, so proximity or similarity can never create an anchor."
                    (push (cons dependent (1+ depth)) queue))))
     refreshed))
 
+(defun rebuild-geo-projections
+    (query-fn refresh-fn &key (batch-size 500) (max-documents 10000))
+  "Rebuild explicit geo projections from a bounded candidate stream.
+
+QUERY-FN is called with :LIMIT and :SKIP and returns a CouchDB-style row
+response. REFRESH-FN receives each candidate document and returns a projection
+or NIL. Returns processed and projected counts."
+  (unless (and (integerp batch-size) (<= 1 batch-size 1000))
+    (error "Geo projection batch size must be from 1 through 1000"))
+  (unless (and (integerp max-documents) (<= 1 max-documents 1000000))
+    (error "Geo projection maximum must be from 1 through 1000000"))
+  (let ((processed 0)
+        (projected 0)
+        (offset 0))
+    (loop while (< processed max-documents)
+          for request-limit = (min batch-size (- max-documents processed))
+          for response = (funcall query-fn
+                                  :limit request-limit
+                                  :skip offset)
+          for rows = (or (jsown:val-safe response "rows") nil)
+          for row-list =
+            (cond ((null rows) nil)
+                  ((listp rows) rows)
+                  ((vectorp rows) (coerce rows 'list))
+                  (t nil))
+          for count = (length row-list)
+          do
+             (when (zerop count)
+               (return))
+             (dolist (row row-list)
+               (let ((document (jsown:val-safe row "doc")))
+                 (when document
+                   (incf processed)
+                   (when (funcall refresh-fn document)
+                     (incf projected)))))
+             (incf offset count)
+             (when (< count request-limit)
+               (return)))
+    (values processed projected)))
+
+(defun couchdb-rebuild-geo-projections
+    (client database &key (batch-size 500) (max-documents 10000))
+  "Explicitly rebuild existing anchored projection JSON in bounded batches."
+  (rebuild-geo-projections
+   (lambda (&key limit skip)
+     (query-view
+      client database
+      "geo" "projection_candidates"
+      :include-docs t
+      :reduce nil
+      :limit limit
+      :skip skip))
+   (lambda (document)
+     (couchdb-refresh-geo-projection client database document))
+   :batch-size batch-size
+   :max-documents max-documents))
+
 (defun couchdb-resolve-geo-search-projections (client database response)
   "Resolve projection hits in RESPONSE through canonical CouchDB documents."
   (resolve-geo-search-projections

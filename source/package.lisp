@@ -111,6 +111,8 @@
    #:resolve-geo-search-projections
    #:couchdb-refresh-geo-projection
    #:couchdb-refresh-geo-projections-for-change
+   #:rebuild-geo-projections
+   #:couchdb-rebuild-geo-projections
    #:couchdb-resolve-geo-search-projections
    #:sort-docs-by-date
    #:messages-by-user

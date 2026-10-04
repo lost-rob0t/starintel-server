@@ -194,3 +194,49 @@
     (is (search "'geometry'" map-source))
     (is (search "'address'" map-source))
     (is-false (search "nearby" (string-downcase map-source)))))
+
+
+(test projection-rebuild-is-bounded-and-batched
+  (let ((documents
+          (list
+           (jsown:new-js ("_id" "a") ("location" "la"))
+           (jsown:new-js ("_id" "b") ("location" "lb"))
+           (jsown:new-js ("_id" "c") ("location" "lc"))
+           (jsown:new-js ("_id" "d") ("location" "ld"))))
+        (calls nil)
+        (refreshed nil))
+    (multiple-value-bind (processed projected)
+        (star.databases.couchdb:rebuild-geo-projections
+         (lambda (&key limit skip)
+           (push (list limit skip) calls)
+           (jsown:new-js
+             ("rows"
+              (loop for document in (subseq documents
+                                            (min skip (length documents))
+                                            (min (+ skip limit)
+                                                 (length documents)))
+                    collect (jsown:new-js ("doc" document))))))
+         (lambda (document)
+           (push (jsown:val document "_id") refreshed)
+           document)
+         :batch-size 2
+         :max-documents 3)
+      (is (= 3 processed))
+      (is (= 3 projected))
+      (is (equal '((2 0) (1 2)) (nreverse calls)))
+      (is (equal '("a" "b" "c") (nreverse refreshed))))))
+
+(test geo-design-document-has-bounded-rebuild-candidates-view
+  (let* ((pathname
+           (asdf:system-relative-pathname
+            :starintel-gserver
+            "views/geo.json"))
+         (document (jsown:parse (uiop:read-file-string pathname)))
+         (view (jsown:val
+                (jsown:val document "views")
+                "projection_candidates"))
+         (map-source (jsown:val view "map")))
+    (is (search "doc.location" map-source))
+    (is (search "doc.geometry" map-source))
+    (is (search "doc.address" map-source))
+    (is-false (search "rssi" (string-downcase map-source)))))

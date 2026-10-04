@@ -80,3 +80,17 @@ and bounded.
 No proximity, RSSI, name similarity, image similarity, or other correlation is
 accepted by the projection builder. Those signals may become evidence for
 separate claims, but they cannot become geographic anchors through this path.
+
+
+* Corpus rebuild
+
+Existing CouchDB data is rebuilt explicitly, never by a hidden startup scan:
+
+#+begin_src sh
+star-server admin geo rebuild --batch-size 500 --max-documents 10000
+#+end_src
+
+The command reads the =geo/projection_candidates= CouchDB view in bounded
+batches and recreates only explicit anchored projection records. Re-running the
+command is idempotent. Operators can increase =--max-documents= deliberately
+for larger corpora; the implementation rejects unbounded values.
