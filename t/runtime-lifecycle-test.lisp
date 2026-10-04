@@ -16,13 +16,14 @@
           (star.consumers:consumer-running-p consumer) t)
     consumer))
 
-(defun make-ready-test-runtime ()
+(defun make-ready-test-runtime (event-store)
   (let ((consumer (make-running-test-consumer)))
     (star.runtime::%make-star-runtime
      :state :running
      :actor-system t
      :consumers (list consumer)
      :event-consumer consumer
+     :event-store event-store
      :http-server t
      :kernel t
      :started-at (get-universal-time))))
@@ -57,16 +58,22 @@
         (bt:join-thread unrelated-thread)))))
 
 (test runtime-readiness-fails-closed
-  (let ((runtime (make-ready-test-runtime)))
-    (let ((star.runtime::*couchdb-readiness-probe* (constantly t))
-          (star.runtime::*rabbit-readiness-probe* (constantly t)))
-      (is (star.runtime:runtime-ready-p runtime)))
-    (let ((star.runtime::*couchdb-readiness-probe* (constantly nil))
-          (star.runtime::*rabbit-readiness-probe* (constantly t)))
-      (is (not (star.runtime:runtime-ready-p runtime))))
-    (let ((star.runtime::*couchdb-readiness-probe* (constantly t))
-          (star.runtime::*rabbit-readiness-probe* (constantly nil)))
-      (is (not (star.runtime:runtime-ready-p runtime))))))
+  (with-event-store-fixture (event-store path)
+    (declare (ignore path))
+    (let ((runtime (make-ready-test-runtime event-store)))
+      (let ((star.runtime::*couchdb-readiness-probe* (constantly t))
+            (star.runtime::*rabbit-readiness-probe* (constantly t)))
+        (is (star.runtime:runtime-ready-p runtime)))
+      (let ((star.runtime::*couchdb-readiness-probe* (constantly nil))
+            (star.runtime::*rabbit-readiness-probe* (constantly t)))
+        (is (not (star.runtime:runtime-ready-p runtime))))
+      (let ((star.runtime::*couchdb-readiness-probe* (constantly t))
+            (star.runtime::*rabbit-readiness-probe* (constantly nil)))
+        (is (not (star.runtime:runtime-ready-p runtime))))
+      (star.event-store:close-event-store event-store)
+      (let ((star.runtime::*couchdb-readiness-probe* (constantly t))
+            (star.runtime::*rabbit-readiness-probe* (constantly t)))
+        (is (not (star.runtime:runtime-ready-p runtime)))))))
 
 (test runtime-liveness-tracks-lifecycle-state
   (let ((runtime

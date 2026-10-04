@@ -6,7 +6,6 @@
 (defparameter +event-dead-letter-exchange+ "events.dead-letter")
 (defparameter +event-dead-letter-queue+ "events.quarantine")
 (defparameter +event-dead-letter-routing-key+ "events.invalid")
-(defparameter +event-persistence-timeout-seconds+ 10)
 
 (define-condition invalid-actor-event (error)
   ((reason
@@ -22,13 +21,8 @@
              (invalid-actor-event-reason condition))))
   (:documentation "Signalled when an actor event fails validation."))
 
-;; Accessor documentation for invalid-actor-event
 (setf (documentation 'INVALID-ACTOR-EVENT-REASON 'function)
-"The =reason= slot of =invalid-actor-event=.")
-
-
-(setf (documentation 'INVALID-ACTOR-EVENT-REASON 'function)
-"The =invalid-actor-event-reason= slot of =invalid-actor-event=.")
+      "The =reason= slot of =invalid-actor-event=.")
 
 (defclass actor-event ()
   ((_id
@@ -81,29 +75,26 @@
     :accessor event-generation
     :initform 0
     :type integer))
-  (:documentation "Event record emitted by the actor runtime for observability."))
+  (:documentation "Event record emitted by the actor runtime."))
 
-;; Accessor documentation for actor-event
 (setf (documentation 'EVENT-ACTOR-NAME 'function)
-"The =actor-name= slot of =actor-event=.")
+      "The =actor-name= slot of =actor-event=.")
 (setf (documentation 'EVENT-COMPONENT 'function)
-"The =component= slot of =actor-event=.")
+      "The =component= slot of =actor-event=.")
 (setf (documentation 'EVENT-DETAILS 'function)
-"The =details= slot of =actor-event=.")
+      "The =details= slot of =actor-event=.")
 (setf (documentation 'EVENT-GENERATION 'function)
-"The =generation= slot of =actor-event=.")
+      "The =generation= slot of =actor-event=.")
 (setf (documentation 'EVENT-ID 'function)
-"The =event-id= slot of =actor-event=.")
+      "The =event-id= slot of =actor-event=.")
 (setf (documentation 'EVENT-SOURCE-DOCUMENT 'function)
-"The =source-id= slot of =actor-event=.")
+      "The =source-id= slot of =actor-event=.")
 (setf (documentation 'EVENT-TIMESTAMP 'function)
-"The =timestamp= slot of =actor-event=.")
+      "The =timestamp= slot of =actor-event=.")
 (setf (documentation 'EVENT-TRACE-ID 'function)
-"The =trace-id= slot of =actor-event=.")
+      "The =trace-id= slot of =actor-event=.")
 (setf (documentation 'EVENT-TYPE 'function)
-"The =event-type= slot of =actor-event=.")
-
-
+      "The =event-type= slot of =actor-event=.")
 
 (defun make-actor-event (&key actor-name component event-type details source-id
                            trace-id (generation 0) timestamp dtype id)
@@ -125,7 +116,7 @@
   (and (stringp value) (plusp (length value))))
 
 (defun validate-actor-event (event &optional payload)
-  "Validate an actor event; signal invalid-actor-event on failure."
+  "Validate an actor event; signal INVALID-ACTOR-EVENT on failure."
   (flet ((invalid (reason)
            (error 'invalid-actor-event
                   :reason reason
@@ -184,35 +175,46 @@
    (star.databases.couchdb:as-json
     (validate-actor-event event))))
 
-(defun actor-event-insert-request (event)
-  (make-couchdb-insert-request
-   :database star:*couchdb-event-log-database*
-   :document-id (event-id event)
-   :document (encode-actor-event event)))
+(defun actor-event-stream-id (event)
+  "Return the deterministic event-source stream for EVENT."
+  (format nil "actor/~A"
+          (if (non-empty-string-p (event-component event))
+              (event-component event)
+              (event-actor-name event))))
 
-(defun persist-actor-event (event &optional (insert-actor *couchdb-inserts*))
-  (sento.actor:ask-s
-   insert-actor
-   (actor-event-insert-request event)
-   :time-out +event-persistence-timeout-seconds+))
+(defun actor-event-metadata (event)
+  (list :source-id (event-source-document event)
+        :trace-id (event-trace-id event)
+        :generation (event-generation event)))
+
+(defun persist-actor-event (event)
+  "Append EVENT to the canonical Tek9 event source."
+  (validate-actor-event event)
+  (star.event-store:append-event
+   (event-id event)
+   (actor-event-stream-id event)
+   (event-type event)
+   (encode-actor-event event)
+   :metadata (actor-event-metadata event)
+   :recorded-at (event-timestamp event)))
 
 (defun actor-event-settlement (event persistence-result)
   (declare (ignore event))
   (cond
-    ((not (typep persistence-result 'couchdb-result))
+    ((not (typep persistence-result 'star.event-store:event-store-append-result))
      (star.consumers:settlement-retry
       :persistence-protocol-error
       persistence-result))
-    ((member (couchdb-result-status persistence-result)
-             '(:success :exists :conflict))
-     (star.consumers:settlement-ack
-      (if (eq :success (couchdb-result-status persistence-result))
-          :persisted
-          :duplicate)))
+    ((eq :appended
+         (star.event-store:event-store-append-result-status persistence-result))
+     (star.consumers:settlement-ack :persisted))
+    ((eq :replayed
+         (star.event-store:event-store-append-result-status persistence-result))
+     (star.consumers:settlement-ack :duplicate))
     (t
      (star.consumers:settlement-retry
       :persistence-failed
-      (couchdb-result-error-message persistence-result)))))
+      persistence-result))))
 
 (defun process-event-delivery (payload &key (persist-fn #'persist-actor-event))
   "Decode, validate, persist idempotently, and return an owner-thread settlement."
@@ -223,6 +225,10 @@
       (star.consumers:settlement-dead-letter
        :invalid-event
        condition))
+    (star.event-store:event-store-conflict (condition)
+      (star.consumers:settlement-dead-letter
+       :event-id-conflict
+       condition))
     (error (condition)
       (star.consumers:settlement-retry
        :event-handler-error
@@ -230,7 +236,7 @@
 
 (define-actor (*actor-event-receiver* *sys*)
   (lambda (event)
-    (tell *couchdb-inserts* (actor-event-insert-request event))))
+    (persist-actor-event event)))
 
 (defun handle-event-message (consumer message)
   "Process one RabbitMQ event message inside the event consumer."
@@ -301,6 +307,5 @@
             event-generation)
           :star.actors))
 
-;; Variable documentation for the actor-event receiver defined above
 (setf (documentation '*actor-event-receiver* 'variable)
-  "Actor receiving every emitted actor event and persisting it to CouchDB.")
+      "Actor receiving emitted actor events and appending them to Tek9.")

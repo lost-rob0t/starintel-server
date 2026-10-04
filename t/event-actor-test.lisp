@@ -61,10 +61,12 @@
              (lambda (event)
                (incf persist-count)
                (setf persisted-id (star.actors::event-id event))
-               (star.actors::make-couchdb-result
-                :status :success
-                :operation :insert
-                :document-id persisted-id)))))
+               (star.event-store:make-event-store-append-result
+                :status :appended
+                :event-id persisted-id
+                :stream-id "actor/url-fetcher"
+                :sequence 0
+                :payload-digest "digest")))))
       (is (= 1 persist-count))
       (is (string= "event-1" persisted-id))
       (is (eq :ack
@@ -81,10 +83,12 @@
              (lambda (event)
                (declare (ignore event))
                (incf persist-count)
-               (star.actors::make-couchdb-result
-                :status :exists
-                :operation :insert
-                :document-id "duplicate-1")))))
+               (star.event-store:make-event-store-append-result
+                :status :replayed
+                :event-id "duplicate-1"
+                :stream-id "actor/url-fetcher"
+                :sequence 0
+                :payload-digest "digest")))))
       (is (= 1 persist-count))
       (is (eq :ack
               (star.consumers:consumer-settlement-action settlement)))
@@ -116,14 +120,27 @@
            :persist-fn
            (lambda (event)
              (declare (ignore event))
-             (star.actors::make-couchdb-result
-              :status :error
-              :operation :insert
-              :document-id "retry-1"
-              :error-message "CouchDB unavailable")))))
+             (error "Tek9 unavailable")))))
     (is (eq :retry
             (star.consumers:consumer-settlement-action settlement)))
-    (is (eq :persistence-failed
+    (is (eq :event-handler-error
+            (star.consumers:consumer-settlement-reason settlement)))))
+
+(test event-id-content-conflict-is-dead-lettered
+  (let ((settlement
+          (star.actors:process-event-delivery
+           (valid-event-payload :id "conflict-1")
+           :persist-fn
+           (lambda (event)
+             (declare (ignore event))
+             (error 'star.event-store:event-store-conflict
+                    :message "conflict"
+                    :event-id "conflict-1"
+                    :existing '(:payload "one")
+                    :incoming '(:payload "two"))))))
+    (is (eq :dead-letter
+            (star.consumers:consumer-settlement-action settlement)))
+    (is (eq :event-id-conflict
             (star.consumers:consumer-settlement-reason settlement)))))
 
 (test event-consumer-builds-bounded-retry-runtime

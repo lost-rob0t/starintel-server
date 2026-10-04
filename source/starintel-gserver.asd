@@ -26,6 +26,7 @@
    (:file "http-contract-actors" :pathname "../cli/http-contract-actors")
    (:file "http-contract-documents" :pathname "../cli/http-contract-documents")
    (:file "package")
+   (:file "event-store/package")
    (:file "leases/package")
    (:file "leases/protocol")
    (:file "leases/memory-store")
@@ -33,6 +34,8 @@
    (:file "leases/valkey-store")
    (:file "leases/valkey-list-store")
    (:file "gserver-settings")
+   (:file "event-store/tek9")
+   (:file "event-store/documentation")
    (:file "databases/couchdb")
    (:file "databases/view-request")
    (:file "databases/export")
@@ -97,7 +100,7 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel-observability #:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
+  (#:starintel-observability #:starintel #:tek9 #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
    #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre
