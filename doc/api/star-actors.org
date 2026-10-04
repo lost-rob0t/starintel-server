@@ -507,7 +507,7 @@ Process one RabbitMQ event message inside the event consumer.
 #+begin_src lisp
 (install-actor-manifests (STAR.ACTORS::MANIFESTS))
 #+end_src
-Atomically replace the installed registry after pure validation succeeds.
+Atomically replace the registry and discard stale runtime state.
 *** invalid-actor-manifest
 :PROPERTIES:
 :KIND: fn

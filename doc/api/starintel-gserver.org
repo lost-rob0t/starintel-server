@@ -325,8 +325,8 @@ Lifetime of issued OAuth authorization codes.
 :KIND: var
 :PACKAGE: STARINTEL-GSERVER
 :END:
-Non-nil while the observability addon has been started via the init-file
-addon lifecycle. The HTTP boundary stays a pass-through until then.
+Non-nil while the observability addon has been started via the addon
+lifecycle. The HTTP boundary stays a pass-through until then.
 *** *rabbit-address*
 :PROPERTIES:
 :KIND: var
@@ -649,7 +649,7 @@ Subcommands:
 :KIND: fn
 :PACKAGE: STARINTEL-GSERVER
 :END:
-True when the observability addon was loaded via init.lisp and is active.
+True when the observability addon is active and export is explicitly enabled.
 *** observability-lease-metrics-hook
 :PROPERTIES:
 :KIND: fn
@@ -679,7 +679,7 @@ request identifiers never become metric labels.
 (observability-wrapped-server (STARINTEL-GSERVER::APP))
 #+end_src
 Build the observability layer used in the lack builder: a request-time
-gate that only instruments when the addon was loaded via init.lisp.
+gate that only instruments while the addon is active.
 *** parse-tenant-dataset-map
 :PROPERTIES:
 :KIND: fn
@@ -778,9 +778,8 @@ Connect from Emacs with =M-x sly-connect= and the port configured by
 :KIND: fn
 :PACKAGE: STARINTEL-GSERVER
 :END:
-Addon start (init.lisp: =load-addon :starintel-observability=): start the
-exporter thread and wire the instrumented CouchDB view transport. Safe to
-call repeatedly.
+Addon start: start the exporter thread and wire the instrumented CouchDB
+view transport. Safe to call repeatedly.
 *** stop-observability
 :PROPERTIES:
 :KIND: fn
