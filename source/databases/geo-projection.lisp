@@ -334,11 +334,11 @@ or NIL. Returns processed and projected counts."
              (when (zerop count)
                (return))
              (dolist (row row-list)
+               (incf processed)
                (let ((document (jsown:val-safe row "doc")))
-                 (when document
-                   (incf processed)
-                   (when (funcall refresh-fn document)
-                     (incf projected)))))
+                 (when (and document
+                            (funcall refresh-fn document))
+                   (incf projected))))
              (incf offset count)
              (when (< count request-limit)
                (return)))
