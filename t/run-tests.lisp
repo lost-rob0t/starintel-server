@@ -26,6 +26,7 @@
     http-tenant-injection-tests
     gserver-client-tests
     http-contract-documents-tests
+    fbp-capability-tests
     runtime-lifecycle-tests
     observability-tests))
 

@@ -22,6 +22,9 @@
    #:client-manifest-document
    #:client-manifest-json
    #:openapi-path
-   #:operation-request-symbol-name))
+   #:operation-request-symbol-name
+   #:operation-fbp-node-object
+   #:fbp-node-catalog-document
+   #:fbp-node-catalog-json))
 
 (in-package :star.http.contract)

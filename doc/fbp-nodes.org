@@ -1,0 +1,17 @@
+#+title: Flow-based programming node projection
+
+StarIntel Server projects its canonical =star.http.contract= operations into typed
+flow-based programming descriptors. The projection is available as =fbp_nodes= in
+=/client-manifest.json= and through the Common Lisp functions
+=fbp-node-catalog-document= and =fbp-node-catalog-json=.
+
+The projection is deliberately not an executor or a second registry. A client invokes
+the original authenticated HTTP operation named by =operation_id=. This preserves
+the existing authorization, tenancy, quota, observability, idempotency, target lease,
+and fencing boundaries.
+
+Each descriptor contains named input ports for request-body properties, path
+parameters, and query parameters; successful response ports; required scopes;
+authority; idempotency; and a credential-reference config schema. It never contains
+credential values. Actor and domain-server families are emitted only after their
+canonical manifests or HTTP operations exist.
