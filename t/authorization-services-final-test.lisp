@@ -21,7 +21,7 @@
               #("dataset-1" "tenant-1")))))
 
 (defun capture-query-audit (thunk)
-  (let ((captured "")
+  (let* ((captured "")
         (star.observability::*observability-enabled* "true")
         (star.observability::*observability-signals* "logs,metrics,traces")
         (star.observability::*export-batch-fn*
@@ -31,6 +31,7 @@
                     (jsown:to-json
                      (star.observability::otlp-payload signal records))))
             :ok)))
+    (star.observability:stop-exporter)
     (star.observability:reset-exporter-state)
     (unwind-protect
          (let ((star.observability::*exporter-running* t))
@@ -53,7 +54,7 @@
                :principal principal
                :requested-dataset "dataset-a"
                :metadata
-               (star.authorization:request-metadata
+               (star.authorization::request-metadata
                 :route "/search"
                 :method :get
                 :correlation-id "operation-1"))))))
@@ -77,7 +78,7 @@
                  :principal principal
                  :requested-dataset "dataset-a"
                  :metadata
-                 (star.authorization:request-metadata
+                 (star.authorization::request-metadata
                   :route "/search"
                   :method :get
                   :correlation-id "operation-denied")))))))

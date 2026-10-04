@@ -24,6 +24,42 @@
              (or (star:addon-error-cause condition)
                  condition)))))
 
+(defun autoload-observability-or-report-cause ()
+  (handler-case
+      (star::maybe-autoload-observability-addon)
+    (star:addon-error (condition)
+      (error "Observability add-on autoload failed: ~a"
+             (or (star:addon-error-cause condition)
+                 condition)))))
+
+(test available-and-registered-addon-does-not-reenter-asdf
+  (let ((started nil)
+        (system :starintel-gserver-tests)
+        (star::*addon-definitions* (make-hash-table :test #'equal))
+        (star::*addon-states* (make-hash-table :test #'equal)))
+    (star:register-addon
+     :test-loaded
+     :system system
+     :start (lambda () (setf started t)))
+    (let ((state (star:load-addon system)))
+      (is-true started)
+      (is (eq :active (star:addon-state-status state))))))
+
+(test registered-but-unavailable-addon-still-fails-through-asdf
+  (let ((started nil)
+        (system :starintel-test-unavailable-addon)
+        (star::*addon-definitions* (make-hash-table :test #'equal))
+        (star::*addon-states* (make-hash-table :test #'equal)))
+    (star:register-addon
+     :test-unavailable
+     :system system
+     :start (lambda () (setf started t)))
+    (signals star:addon-error
+      (star:load-addon system))
+    (is-false started)
+    (is (eq :failed
+            (star:addon-state-status (star:addon-status system))))))
+
 (test bixby-is-an-optional-asdf-addon-over-core-oauth
   (let ((before (star:addon-status :starintel-bixby)))
     (when (and before
@@ -97,11 +133,13 @@
   (let ((star.observability::*observability-enabled* "true"))
     (unwind-protect
          (progn
-           (star::maybe-autoload-observability-addon)
+           (autoload-observability-or-report-cause)
            (let ((state (star:addon-status :starintel-observability)))
-             (is state)
+             (is (not (null state)))
              (is (eq :active (star:addon-state-status state))))
            (is-true (star:observability-active-p)))
       (let ((state (star:addon-status :starintel-observability)))
         (when (and state (eq :active (star:addon-state-status state)))
-          (star:unload-addon :starintel-observability))))))
+          (star:unload-addon :starintel-observability)))
+      (is (null star.observability::*exporter-thread*))
+      (is-false star.observability::*exporter-running*))))
