@@ -10,6 +10,7 @@ on:
       - "source/frontends/http-authorization-routes.lisp"
       - "source/frontends/http-authorization.lisp"
       - "cli/http-contract-geo.lisp"
+      - "cli/starintel-gserver-client.asd"
       - "t/geo-search-test.lisp"
       - "t/http-contract-geo-test.lisp"
       - "flake.nix"
