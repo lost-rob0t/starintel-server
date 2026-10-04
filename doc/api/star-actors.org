@@ -157,6 +157,13 @@ A scheduled target: what to run, where, and when.
 - Slots: =id=, =actor=, =target=, =delay=, =recurring-p=, =options=, =document=, =revision=, =lease-owner=, =lease-expires-at=
 
 * Conditions
+*** actor-registry-conflict
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.ACTORS
+:END:
+Two emitted manifests claim the same canonical STAR resource URI.
+- Slots: =resource-uri=, =reason=
 *** invalid-actor-event
 :PROPERTIES:
 :KIND: condition
@@ -215,6 +222,40 @@ Record an acceptance decision for a target delivery.
  STAR.ACTORS::SCHEDULE-RECURRING-FN))
 #+end_src
 Synchronously durably accept a target and return a structured outcome.
+*** actor-registry-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+Return the safe actor/service catalog envelope consumed by =GET /v1/actors=.
+*** actor-registry-public-entries
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(actor-registry-public-entries (&OPTIONAL (STAR.ACTORS::REGISTRY STAR.ACTORS::*ACTOR-REGISTRY*)
+ (STAR.ACTORS::OBSERVATIONS STAR.ACTORS::*ACTOR-RUNTIME-OBSERVATIONS*)))
+#+end_src
+Return the deterministic, scrubbed operator-visible catalog projection.
+*** bind-local-actor-runtime
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(bind-local-actor-runtime (STAR.ACTORS::RESOURCE-URI SENTO.ACTOR:ACTOR))
+#+end_src
+Bind a registered semantic resource to a private Sento runtime reference.
+*** build-actor-registry
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(build-actor-registry (STAR.ACTORS::MANIFESTS))
+#+end_src
+Build a validated registry without starting actors or invoking callbacks.
 *** canonical-target-routing-key
 :PROPERTIES:
 :KIND: fn
@@ -458,6 +499,24 @@ Resolve a destination actor symbol by its registered name.
 (handle-event-message (STAR.ACTORS::CONSUMER STAR.ACTORS::MESSAGE))
 #+end_src
 Process one RabbitMQ event message inside the event consumer.
+*** install-actor-manifests
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(install-actor-manifests (STAR.ACTORS::MANIFESTS))
+#+end_src
+Atomically replace the installed registry after pure validation succeeds.
+*** invalid-actor-manifest
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(invalid-actor-manifest (STAR.ACTORS::CONTROL &REST STAR.ACTORS::ARGUMENTS))
+#+end_src
+Signal an =invalid-actor-manifest= with a formatted bounded reason.
 *** load-persisted-target-records
 :PROPERTIES:
 :KIND: fn
@@ -634,6 +693,17 @@ and normalize it to JSON. The current trace context rides in AMQP headers
  (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
 #+end_src
 Query DATABASE through targets/by_actor and accept either JSOWN array form.
+*** record-actor-runtime-status
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(record-actor-runtime-status (STAR.ACTORS::RESOURCE-URI STAR.ACTORS::STATUS &KEY STAR.ACTORS::READY-P
+ STAR.ACTORS::OBSERVED-AT
+ (STAR.ACTORS::OBSERVATIONS STAR.ACTORS::*ACTOR-RUNTIME-OBSERVATIONS*)))
+#+end_src
+Record a bounded server-owned runtime observation without creating a manifest entry.
 *** recover-persisted-targets
 :PROPERTIES:
 :KIND: fn
@@ -666,6 +736,15 @@ Register ACTOR-SYMBOL under ACTOR-NAME in the actor index.
 Actors must be registered here before they receive any target
 messages; the target router resolves destinations through
 =get-dest-actor=.
+*** register-actor-manifest
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(register-actor-manifest (STAR.ACTORS::MANIFEST))
+#+end_src
+Register one emitted manifest at the trusted server/add-on boundary.
 *** register-target-schedule
 :PROPERTIES:
 :KIND: fn
@@ -1106,6 +1185,24 @@ Validate an actor event; signal invalid-actor-event on failure.
 Validate identity, schedule, recurrence, transient policy, and deadline.
 
 * Generic Functions
+*** actor-registry-conflict-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(actor-registry-conflict-reason (CONDITION))
+#+end_src
+The stable reason why registry construction rejected a duplicate claim.
+*** actor-registry-conflict-resource-uri
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(actor-registry-conflict-resource-uri (CONDITION))
+#+end_src
+The canonical STAR URI claimed by conflicting manifests.
 *** event-actor-name
 :PROPERTIES:
 :KIND: fn
@@ -1196,6 +1293,15 @@ The =event-type= slot of =actor-event=.
 (invalid-actor-event-reason (CONDITION))
 #+end_src
 The =invalid-actor-event-reason= slot of =invalid-actor-event=.
+*** invalid-actor-manifest-reason
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.ACTORS
+:END:
+#+begin_src lisp
+(invalid-actor-manifest-reason (CONDITION))
+#+end_src
+The stable validation reason for an invalid emitted manifest.
 *** invalid-target-dispatch-reason
 :PROPERTIES:
 :KIND: fn

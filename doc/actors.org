@@ -88,7 +88,7 @@ For a built-in actor, add the file to the serial component order in
 
 ** Register and resolve actor names
 
-Registration maps an operator-facing string name to a Sento actor reference:
+Legacy target registration maps a routing string to a Sento actor reference:
 
 #+begin_src lisp
 (star.actors:register-actor "domain-enricher"
@@ -97,7 +97,56 @@ Registration maps an operator-facing string name to a Sento actor reference:
 (star.actors:get-dest-actor "domain-enricher")
 #+end_src
 
-Actor names in target documents must match the registered string exactly.
+Actor names in target documents must match the registered string exactly. This
+index is a target-routing compatibility mechanism; it is not the
+operator-facing actor catalog and is never enumerated into Actor Studio.
+
+** Register an operator-visible actor manifest
+
+Actor packages emit semantic manifests. Trusted server/add-on startup code
+validates those manifests into the server-owned registry:
+
+#+begin_src lisp
+(star.actors:register-actor-manifest
+ (jsown:new-js
+   ("resourceUri" "star://local/actor/domain-enricher")
+   ("resourceKind" "actor")
+   ("semantic"
+    (jsown:new-js
+      ("name" "domain-enricher")
+      ("version" "1.0.0")
+      ("digest" "sha256:<immutable-semantic-digest>")))
+   ("accepts"
+    (jsown:new-js
+      ("targets" (list "domain"))
+      ("documents" nil)
+      ("messages" nil)))
+   ("produces"
+    (jsown:new-js
+      ("targets" nil)
+      ("documents" (list "domain" "relation" "evidence"))
+      ("messages" nil)))
+   ("capabilities" (list "run"))
+   ("operatorVisible" :true)
+   ("provenance"
+    (jsown:new-js
+      ("sourcePackage" "example-actor-package")))))
+
+(star.actors:bind-local-actor-runtime
+ "star://local/actor/domain-enricher"
+ star.actors::*domain-enricher*)
+#+end_src
+
+The manifest is static semantic/catalog authority. The private local binding is
+queried only for liveness and is never serialized. Remote runtime adapters
+instead call =record-actor-runtime-status= with one of =online=,
+=declared-offline=, =degraded=, or =unavailable=. A runtime observation without
+a registered visible manifest cannot create a catalog entry.
+
+Authenticated clients with =actors:read= list the scrubbed catalog at
+=GET /v1/actors=. Quasar can use the stable resource URI and accepted/produced
+contracts to list and select compatible actors without broker-management or
+runtime-topology access.
 
 ** Target document
 

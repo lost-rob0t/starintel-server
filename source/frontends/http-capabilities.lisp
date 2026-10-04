@@ -79,7 +79,7 @@
        "stats" "GET" "/api/v1/stats"
        :authority (public-read-authority))
       (capability-endpoint
-       "actors" "GET" "/api/v1/actors"
+       "actors" "GET" "/v1/actors"
        :scopes '("actors:read"))
       (capability-endpoint
        "document_create" "POST" "/new/document/:dtype"

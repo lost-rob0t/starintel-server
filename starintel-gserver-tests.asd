@@ -39,7 +39,7 @@
      (:file "json-literal-preservation-test")
      (:file "v09-runtime-test")
      (:file "http-capabilities-test")
-     (:file "http-actor-discovery-test")
+     (:file "actor-registry-test")
      (:file "http-auth-test")
      (:file "auth-users-test")
      (:file "oauth-authorization-code-test")
