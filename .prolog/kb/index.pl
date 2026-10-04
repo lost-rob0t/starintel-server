@@ -7,3 +7,4 @@
 :- ensure_loaded('ulid-quarantine.pl').
 :- ensure_loaded('bulk-jobs.pl').
 :- ensure_loaded('actor-registry.pl').
+:- ensure_loaded('observability.pl').
