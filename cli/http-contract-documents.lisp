@@ -5,34 +5,52 @@
 ;; their schemas can rely on every helper of the base contract and the final
 ;; normalization layer.
 
+(defun generated-document-request-schema ()
+  "Project concrete document alternatives from the pinned generated library.
+
+The local schema ID gives embedded references their own JSON Schema scope in
+OpenAPI, bulk items, and the client manifest. No field registry is authored here."
+  (let ((schema (jsown:with-injective-reader
+                  (jsown:parse (uiop:read-file-string (starintel.canonical:schema-path)))))
+        (version (starintel.canonical:schema-version)))
+    (setf (jsown:val schema "$id") (format nil "urn:starintel:server:document:~a" version)
+          (jsown:val schema "description")
+          (format nil "StarLang-generated ~a flat lowerCamelCase document. Manifest decimal constraints are additionally enforced by the server." version)
+          (jsown:val schema "oneOf")
+          (loop for dtype in (starintel.canonical:document-types)
+                collect
+                (json-object
+                 (cons "allOf"
+                       (list
+                        (json-object
+                         (cons "$ref" (format nil "#/$defs/~a"
+                                               (starintel.canonical::definition-name dtype))))
+                        (json-object
+                         (cons "properties"
+                               (json-object
+                                (cons "dtype" (json-object (cons "const" dtype)))
+                                (cons "schemaVersion" (json-object (cons "const" version)))))))))))
+    schema))
+
 (defparameter +document-request-schema+
-  (object-schema
-   (list
-    (cons "_id" (string-schema :min-length 1
-                               :description "Stable StarIntel document identifier."))
-    (cons "dataset" (string-schema :min-length 1))
-    (cons "dtype" (string-schema :min-length 1))
-    (cons "schema_version" (string-schema :min-length 1))
-    (cons "version" (integer-schema :minimum 0))
-    (cons "date_added" (string-schema))
-    (cons "date_updated" (string-schema))
-    (cons "sources" (array-schema (generic-object-schema)))
-    (cons "evidence" (array-schema (generic-object-schema)))
-    (cons "data" (generic-object-schema))
-    (cons "extensions" (generic-object-schema)))
-   :required '("_id" "dataset" "dtype" "schema_version")
-   :additional-properties t
-   :description "StarIntel v0.9 document accepted by the canonical boundary."))
+  (json-object
+   (cons "description" "A generated canonical document, or an explicitly versioned historical 0.9 document.")
+   (cons "oneOf"
+         (list (generated-document-request-schema)
+               (jsown:with-injective-reader
+                 (jsown:parse
+                  (uiop:read-file-string
+                   (asdf:system-relative-pathname :starintel-v090 "schemas/starintel-doc-v0.9.0.schema.json"))))))))
 
 (defparameter +document-bulk-request-schema+
   (array-schema
    +document-request-schema+
-   :description "Bounded batch of StarIntel v0.9 documents."))
+   :description "Bounded batch of generated canonical or explicit historical documents."))
 
 (defparameter +document-update-request-schema+
   (generic-object-schema
    "Deep-merge patch onto the current document. The HTTP boundary deep-merges
-the patch, validates the merged candidate against the StarIntel v0.9 schema,
+the patch, validates the merged candidate against its pinned document version,
 and persists it only when valid."))
 
 (defparameter +document-update-outcome-schema+

@@ -3,17 +3,43 @@
 
 * Document specification
 
-StarIntel Server currently sits between two document generations:
+StarLang is the source of truth. =schema/starintel-schema.lock.json= pins an
+immutable =lost-rob0t/star-lang= commit and the complete generated 0.10.1 release.
+=star-cl= consumes those exact generated Common Lisp bindings, portable manifest,
+and JSON Schema. HTTP, bulk, Rabbit mutation, and document-update boundaries
+validate through =starintel.canonical= before persistence.
 
-1. *StarIntel 0.9.0*: the strict, schema-driven format implemented by the
-   validators in =lost-rob0t/star-cl= and =lost-rob0t/starintel-doc=.
-2. *Legacy flat 0.8.0*: Common Lisp classes and constructors still used by parts
-   of this server and its actor examples.
+Canonical documents are flat and use lowerCamelCase:
 
-The server reports the =star-cl= document version from =GET /=. Canonical HTTP
-document, bulk, and update boundaries and RabbitMQ ingest/update consumers call
-the strict 0.9 validator before mutation. The historical target adapter is the
-only document ingress exception and is explicitly non-strict.
+#+begin_src json
+{"id":"person:ada","dataset":"example","dtype":"person","schemaVersion":"0.10.1","fname":"Ada"}
+#+end_src
+
+CouchDB =_id=, =_rev= and server =tenant_id= are storage metadata. The server
+adds =_id= from =id= after validating ingress, protects =id= and =schemaVersion=
+during updates, and removes storage fields from canonical document responses.
+CouchDB revisions project to canonical =rev= on reads.
+
+=GET /= reports the active generated release. Existing v0.9 constructors and
+requests retain their explicit historical compatibility path, governed by
+=schema/starintel-legacy-schema.lock.json=. They are not a 0.10.1 migration API;
+legacy records are not silently flattened or relabeled. Source-defined migration
+fixtures live in the vendored release and remain the authority for future
+migration work.
+
+Repin only through:
+
+#+begin_src sh
+python3 scripts/sync-starintel-schema.py --commit <full-StarLang-commit>
+python3 scripts/check-starintel-schema-lock.py
+python3 scripts/check-starintel-dependency-lock.py
+#+end_src
+
+Every downstream repository must pin and consume this StarLang-generated release,
+using the same =tools/sync-starintel-consumer.py= gate. Never maintain a separate
+canonical type registry, hand-edit generated outputs, or infer support by changing
+a version constant. Server Nix and Qlot dependency pins must identify the same
+=star-cl= commit, whose canonical schema lock must match the server lock.
 
 ** StarIntel 0.9 envelope
 
@@ -53,16 +79,16 @@ Conceptual envelope:
 }
 #+end_src
 
-Use the canonical schema distributed by the StarIntel conformance/spec
-repository. The adapters locate it through:
+The historical adapters use the archived 0.9 schema shipped in =star-cl=.
+The standalone =star-cl= adapter additionally supports these legacy overrides:
 
 | Variable | Meaning |
 |----------+---------|
 | =STARINTEL_SCHEMA= | Explicit path to =starintel-doc-v0.9.0.schema.json= |
 | =STARINTEL_CONFORMANCE_ROOT= | Root containing =schemas/starintel-doc-v0.9.0.schema.json= |
 
-The current server does not consume either variable directly; =star-cl='s
-validator does.
+The server deliberately loads its shipped legacy schema, independently of these
+standalone adapter overrides.
 
 ** Rejected 0.9 aliases
 

@@ -1,0 +1,61 @@
+#+title: WarStar cross-repository acceptance
+
+* Exact inputs
+- Android PR #2: =lost-rob0t/wigle-wifi-wardriving-starintel-=
+  =e552a5699f31a5ba3e477b5c71587f7f2934d8e4=.
+  Android CI =37148548115= is terminal success, independently rechecked.
+- Starting server PR #311: =568b18a492c3e188e0e3bcc5ec4624022fa915ed=.
+- Server prerequisite PR #313: =117057d6f5bbf2e2b40d5cfd89eb7adcca5e28fd=.
+  Runs =37171468962=, =37171468977=, =37171469016=, =37171468942=,
+  =37171468970= are terminal success, independently rechecked.
+- StarLang authority: =765f1673851192bcaf1cdd2f35c47608f979b079=,
+  =specs/starintel/0.10.1/=; star-cl =a18a6cddcbcf4d989495a5de8abcedc4d0294d1c=.
+
+* Proof contract
+=t/fixtures/warstar-observations.json= contains synthetic Wi-Fi and BLE
+samples in the actual Android client's =WarStarClient.sendBatch= envelope:
+=device_id= and =observations=. Sample keys match =uploadNextBatch= and
+=importWigleCsv= at the Android revision above. This is a server integration
+fixture, not a claimed device capture or Android emulator test.
+
+The test POSTs to =/warstar/observations= through API-key authentication and
+production authorization, using a real Sento-pinned Rabbit publisher. Real
+Rabbit consumers validate the generated =geo-point=, =wireless-network= and
+=network-device= documents through the pinned star-cl canonical validator,
+then persist them through the normal CouchDB mutation/outbox path. It reads
+all four stored documents and authenticated canonical HTTP responses.
+
+Expected response: HTTP 202, =observations= 2, =documents= 4. Expected stored
+types: two =geo-point=, one =wireless-network=, one =network-device=. Verify
+canonical version, owner, server tenancy, coordinates, Wi-Fi location
+reference, WPA2 security, BLE radio and import provenance. Wait for consumer
+ACKs on the identical replay and require unchanged CouchDB revisions. A
+second principal with identical installation/row IDs must get separate IDs.
+Missing credential returns 401; missing bulk/write/dataset scope returns 403;
+a malformed second sample and batches outside 1–100 return 422 with no
+fixture-document persistence.
+
+* RED and GREEN
+The untouched add-on readiness expression ran against the pinned real
+canonical release and legacy declaration: =legacy=0.9.0 canonical=0.10.1
+readiness=NIL=. The assertion requiring canonical readiness failed. After
+using the canonical release/manifest/schema API, the identical assertion
+passes: =legacy=0.9.0 canonical=0.10.1 readiness=T=.
+
+* Scope and review
+Issue #310 owns this add-on. Issue #312/PR #313 owns canonical promotion.
+Five independent repository-required votes: reality NARROW, ownership
+NARROW, research NARROW, verification IMPLEMENT, YAGNI NARROW. Intersection:
+reuse the validated server boundary, repair the add-on, prove normal ingestion,
+refresh status. No new persistence path or receipt/control-plane system.
+No existing local Auto-Research checkout was available; none of the linked
+research records is claimed consulted. Current issue, repository agent
+contract, schema lock and =doc/document-spec.org= were consulted.
+
+* Remaining acceptance
+Both companion PRs and #313 remain draft/unmerged. The server PR is stacked
+on =codex/starintel-0101-ingest= to preserve that dependency and keep the diff
+focused. PR workflow filters explicitly include this base so its own exact
+head is tested, rather than borrowing #313's results. On-device scanning,
+UI/alerts/tagging, complete target synchronization, GeoJSON indexing and
+production deployment remain unverified. HTTP 202 is not a durable receipt.

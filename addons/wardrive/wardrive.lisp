@@ -40,7 +40,14 @@
   sample)
 
 (defun schema-ready-p ()
-  (string= "0.10.1" starintel:+starintel-doc-version+))
+  ;; The legacy constant intentionally stays at 0.9.0. Canonical readiness
+  ;; comes from the actual pinned release, manifest and generated schema.
+  (and (string= "0.10.1" (starintel.canonical:release-version))
+       (string= "0.10.1" (starintel.canonical:schema-version))
+       (starintel.canonical:load-schema)
+       (every (lambda (dtype)
+                (member dtype (starintel.canonical:document-types) :test #'string=))
+              '("geo-point" "wireless-network" "network-device"))))
 
 (defun schema-required ()
   (unless (schema-ready-p)
@@ -51,7 +58,7 @@
 (defun decimal-string (number)
   (format nil "~,8f" (coerce number 'double-float)))
 
-(defun base-document (id dtype millis source-kind)
+(defun base-document (id dtype millis source-kind owner)
   (jsown:new-js
    ("id" id)
    ("dataset" *dataset*)
@@ -59,6 +66,7 @@
    ("schemaVersion" "0.10.1")
    ("observedAt" (floor millis 1000))
    ("collector" "star:v1:collector:wireless")
+   ("owner" owner)
    ("sourceKinds" (vector source-kind))))
 
 (defun security-type (description)
@@ -71,18 +79,23 @@
       ((search "ESS" value) "open")
       (t "unknown"))))
 
-(defun sample-documents (device-id sample)
+(defun sample-documents (device-id sample &optional (owner (star.auth:current-principal-id)))
   (sample-fields sample)
-  (let* ((base (format nil "star:wardrive:~a:~d" device-id (field sample "id")))
+  (unless (and (stringp owner) (plusp (length owner)))
+    (star.frontends.http-api::signal-http-input-error 403 "access_denied" "Authenticated owner required"))
+  (let* ((owner-key (ironclad:byte-array-to-hex-string
+                     (ironclad:digest-sequence :sha256
+                                              (babel:string-to-octets owner :encoding :utf-8))))
+         (base (format nil "star:wardrive:~a:~a:~d" owner-key (string-downcase device-id) (field sample "id")))
          (geo-id (format nil "~a:geo" base))
          (radio (string-upcase (or (field sample "radio") "")))
          (wifi (member radio '("W" "WIFI") :test #'string=))
          (source-kind (if (member (field sample "source")
                                   '("wigle-csv" "wigle-import") :test #'equal)
                           "import" "sensor"))
-         (geo (base-document geo-id "geo-point" (field sample "time") source-kind))
+         (geo (base-document geo-id "geo-point" (field sample "time") source-kind owner))
          (network (base-document base (if wifi "wireless-network" "network-device")
-                                 (field sample "time") source-kind)))
+                                 (field sample "time") source-kind owner)))
     (jsown:extend-js geo
       ("geometryType" "point")
       ("latitude" (decimal-string (field sample "latitude")))
@@ -138,6 +151,9 @@
         ;; The normal StarIntel ingest pipeline owns persistence and routing.
         (dolist (document documents)
           (star.frontends.http-api:validate-document-input document))
+        (star.authorization:authorize-bulk-documents!
+         documents :principal (star.auth:current-request-principal)
+         :metadata (star.frontends.http-api::route-policy-metadata "/warstar/observations" "POST"))
         (dolist (document documents)
           (star.frontends.http-api::publish-document document))
         (setf (lack.response:response-status *response*) 202)
@@ -151,11 +167,14 @@
       #'handle-wardrive-observations)
 
 (defun start-wardrive-addon ()
+  "Report readiness of the optional canonical wireless ingestion route."
   (log:info "Wardrive ingest route registered; canonical 0.10.1 readiness: ~a"
             (schema-ready-p))
   t)
 
-(defun stop-wardrive-addon () t)
+(defun stop-wardrive-addon ()
+  "Stop the stateless add-on lifecycle."
+  t)
 
 (star:register-addon :starintel-wardrive
                      :system :starintel-wardrive

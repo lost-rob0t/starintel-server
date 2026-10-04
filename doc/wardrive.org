@@ -1,30 +1,57 @@
 #+title: Wardrive add-on
 
-Load with =(star:load-addon :starintel-wardrive)= after installing
-=starintel-wardrive.asd=. The add-on registers
-=POST /warstar/observations=, authorized as =documents:bulk=. It accepts
-up to 100 Wi-Fi/Bluetooth observations per request using a stable installation
-UUID and local observation ID. WiGLE CSV/CSV.GZ is parsed in the Android client
-and sent through the same bounded request contract. The Android client can
-also send every row of its local observation database.
+Load with =(star:load-addon :starintel-wardrive)=. The Nix server package
+includes this optional ASDF system. It registers =POST /warstar/observations=,
+authorized as =documents:bulk=; each generated document also requires
+=documents:write= and the normal tenant/dataset grants. Batches contain
+1–100 Wi-Fi/Bluetooth observations using an installation UUID and local row ID.
+WiGLE CSV/CSV.GZ is parsed in the Android client and uses this same contract.
 
-The adapter builds =geo-point= and =wireless-network= or =network-device=
-documents with =schemaVersion= =0.10.1=, using fields from the generated Star
-Language =specs/starintel/0.10.1/generated/schema.json= contract (branch
-=work/starintel-0.10.1-finalize=). It validates the complete batch and invokes
-the existing StarIntel =publish-document= ingestion boundary. No add-on code
-writes directly to CouchDB.
+The adapter builds canonical =geo-point= and =wireless-network= or
+=network-device= documents with =schemaVersion= =0.10.1=. Authority is the
+immutable StarLang release at =765f1673851192bcaf1cdd2f35c47608f979b079=,
+consumed by star-cl =a18a6cddcbcf4d989495a5de8abcedc4d0294d1c= and the
+server schema lock inherited from server PR #313 at
+=117057d6f5bbf2e2b40d5cfd89eb7adcca5e28fd=. Generated artifacts and hashes
+are verified by the existing schema/dependency preflight; this adapter does
+not redefine or regenerate the contract.
 
-The server's current lock still resolves release 0.9.1 from the legacy
-auto-dig chain. Until the main server validation and consumers are migrated to
-the Star Language generated 0.10.1 contract, the route returns HTTP 503 before
-reading or publishing a batch. This gate is intentional: acceptance of 0.10.1
-cannot be claimed by checking a version string alone. After migration, verify
-the HTTP validator, Rabbit consumer and document persistence with an end to end
-test. The response indicates queue acceptance, not durable persistence. The
-client should not mark a historical import complete until a durable receipt
-endpoint is available.
+Readiness uses the actual canonical release, schema and manifest. The legacy
+=starintel:+starintel-doc-version+= intentionally remains =0.9.0= and is not
+canonical readiness. A mismatched canonical release returns 503. Each request
+validates and authorizes the complete generated batch before publishing any
+document. The normal =publish-document= boundary, Rabbit consumer, CouchDB
+mutation and durable outbox own persistence; the adapter never writes to
+CouchDB directly.
 
-Existing =GET /targets/star:v1:collector:wireless= serves canonical target
-documents to the optional WarStar mission console. Normal WiGLE services and
-offline scanning are independent of this add-on.
+Document IDs include a SHA-256 namespace of the authenticated principal,
+normalized installation UUID and row ID. The canonical =owner= is supplied
+by authentication, never by the request. Identical retries retain IDs and
+content and reuse normal outbox deduplication. Different principals cannot
+collide by supplying identical installation/row IDs. Dataset grants remain
+the existing read/write access authority.
+
+HTTP 202 means queue acceptance. It is not a durable receipt and does not
+promise rollback after a later broker/storage failure. A changed observation
+under an existing identity is not an identical retry. A durable import-receipt
+endpoint, GeoJSON indexing and complete target-sync/device verification remain
+outside this acceptance slice and tracked by issue #310.
+
+Tests: =t/wardrive-test.lisp= validates the actual generated documents at HTTP
+and Rabbit boundaries. =t/wardrive-integration-test.lisp= starts real Rabbit
+publishers/consumers and API-key middleware, sends the Android request shape,
+and reads the resulting documents from CouchDB and the authenticated document
+API. It checks provenance, reference/coordinate fields, owner namespaces,
+retry settlements without extra revisions, scope denial and malformed/bounded
+batches. No fixture document is inserted directly into CouchDB.
+
+Run =nix run .#star-unit-tests= and, with the service dependencies running,
+=nix run .#star-integration-tests=. The service-backed Smoke Tests job executes
+this suite and uploads its full log; =warstar-acceptance= log lines identify
+the response and durable documents. Evidence and remaining gaps are recorded
+in =doc/warstar-acceptance.org=.
+
+Existing =GET /targets/star:v1:collector:wireless= serves targets to the
+optional WarStar mission console. WiGLE services and offline scanning remain
+independent of this add-on. The companion PR is kept draft and stacked on
+#313; neither prerequisite is merged by this reconciliation.

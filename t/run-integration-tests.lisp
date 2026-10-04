@@ -7,4 +7,5 @@
    :setup #'setup-couchdb-view-integration-tests
    :teardown #'teardown-couchdb-view-integration-tests)
   (run-http-api-tests)
+  (run-wardrive-integration-tests)
   t)

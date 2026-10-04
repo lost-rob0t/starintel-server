@@ -97,7 +97,7 @@ persistence keeps tenancy while the client contract stays v0.9.0."
         (let ((ensured
                 (progn
                   (when strict-schema-p
-                    (star.documents:validate-v09-document document))
+                    (star.documents:validate-document document))
                   (star.documents:ensure-document
                    document
                    :route-dtype route-dtype))))

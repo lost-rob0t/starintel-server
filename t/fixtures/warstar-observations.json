@@ -1,0 +1,33 @@
+{
+  "device_id": "11111111-2222-4333-8444-555555555555",
+  "observations": [
+    {
+      "id": 1,
+      "address": "02:00:00:00:00:01",
+      "radio": "W",
+      "name": "WarStar acceptance fixture",
+      "security": "[WPA2-PSK-CCMP][ESS]",
+      "frequency": 2412,
+      "level": -42,
+      "latitude": 39.9612,
+      "longitude": -82.9988,
+      "altitude": 230,
+      "accuracy": 4,
+      "time": 1791090000000,
+      "manufacturer_id": 0,
+      "source": "local-scan"
+    },
+    {
+      "id": 2,
+      "address": "02:00:00:00:00:02",
+      "radio": "E",
+      "name": "WarStar BLE acceptance fixture",
+      "level": -65,
+      "latitude": 39.9613,
+      "longitude": -82.9989,
+      "accuracy": 6,
+      "time": 1791090001000,
+      "source": "wigle-csv"
+    }
+  ]
+}

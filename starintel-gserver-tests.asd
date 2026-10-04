@@ -6,6 +6,7 @@
   :serial t
   :depends-on
   (#:starintel-gserver
+   #:starintel-wardrive
    #:starintel-gserver-client
    #:star-cli
    #:star-ui
@@ -38,6 +39,7 @@
      (:file "http-target-v1-test")
      (:file "json-literal-preservation-test")
      (:file "v09-runtime-test")
+     (:file "v0101-runtime-test")
      (:file "http-capabilities-test")
      (:file "http-auth-test")
      (:file "auth-users-test")
@@ -48,6 +50,7 @@
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")
+     (:file "wardrive-test")
      (:file "http-target-tenant-test")
      (:file "http-tenant-injection-test")
      (:file "authorization-services-final-test")

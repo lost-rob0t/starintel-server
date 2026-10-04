@@ -14,24 +14,28 @@ class V09RuntimeContractTests(unittest.TestCase):
         return (ROOT / relative).read_text(encoding="utf-8")
 
     def test_schema_and_dependency_locks_converge_exactly(self) -> None:
-        schema_lock = json.loads(self.text("schema/starintel-schema.lock.json"))
+        schema_lock = json.loads(self.text("schema/starintel-legacy-schema.lock.json"))
         flake_lock = json.loads(self.text("flake.lock"))
         qlot_lock = self.text("qlfile.lock")
 
         self.assertEqual(schema_lock["schema_version"], "0.9.0")
         self.assertEqual(schema_lock["release_version"], "0.9.1")
         self.assertIn("operation", schema_lock["required_dtypes"])
-        self.assertEqual(
-            flake_lock["nodes"]["star-cl"]["locked"]["rev"], STAR_CL_V09
-        )
+        active_lock = json.loads(self.text("schema/starintel-schema.lock.json"))
+        self.assertEqual(active_lock["schema_version"], "0.10.1")
+        self.assertEqual(active_lock["canonical_repository"], "lost-rob0t/star-lang")
+        pinned = flake_lock["nodes"]["star-cl"]["locked"]["rev"]
+        self.assertRegex(pinned, r"^[0-9a-f]{40}$")
+        self.assertNotEqual(pinned, STAR_CL_V09)
         match = re.search(r'\("star-cl".*?github-([0-9a-f]{40})', qlot_lock, re.S)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1), STAR_CL_V09)
+        self.assertEqual(match.group(1), pinned)
+        self.assertIn(pinned, self.text("qlfile"))
 
     def test_http_boundary_uses_schema_version_and_canonical_validator(self) -> None:
         boundary = self.text("source/frontends/http-boundary-core.lisp")
-        self.assertIn('(jsown:val-safe document "schema_version")', boundary)
-        self.assertIn("star.documents:validate-v09-document", boundary)
+        self.assertIn('"schema_version"', boundary)
+        self.assertIn("star.documents:validate-document", boundary)
         self.assertIn('"invalid_document_schema"', boundary)
         self.assertNotIn('(jsown:val-safe document "version")', boundary)
 
@@ -40,7 +44,7 @@ class V09RuntimeContractTests(unittest.TestCase):
         auth = self.text("source/frontends/http-authorization.lisp")
         routes = self.text("source/frontends/http-authorization-routes.lisp")
         system = self.text("source/starintel-gserver.asd")
-        self.assertIn("star.documents:validate-v09-document candidate", update)
+        self.assertIn("star.documents:validate-stored-document candidate", update)
         self.assertIn("document-update-validation-code", update)
         self.assertIn('(:put "documents:write")', auth)
         self.assertIn("authorized-update-document", routes)
@@ -62,7 +66,7 @@ class V09RuntimeContractTests(unittest.TestCase):
     def test_rabbit_mutations_are_strict_and_targets_validate_the_same_way(self) -> None:
         rabbit = self.text("source/rabbit.lisp")
         self.assertIn("(strict-schema-p t)", rabbit)
-        self.assertIn("star.documents:validate-v09-document", rabbit)
+        self.assertIn("star.documents:validate-document", rabbit)
         # The remaining non-strict decode is transport-metadata inspection
         # (transient-p); target deliveries no longer opt out.
         self.assertIn("(decode-rabbit-document message :strict-schema-p nil)", rabbit)
