@@ -16,3 +16,20 @@ write so add-on startup wraps the actual database transport.").
 invariant(observability_addon_unload_stops_exporter,
     "Unloading the active observability add-on must leave both the exporter
 thread and exporter-running flag NIL.").
+
+root_cause(query_audit_capture_empty, parallel_let_closure_scope,
+    "CAPTURE-QUERY-AUDIT created its export transport lambda in the same LET
+that introduced CAPTURED. Common Lisp evaluates LET initializers outside the
+new lexical bindings, so the lambda did not close over the returned string.
+Use LET* when a later initializer must capture an earlier lexical binding.").
+
+root_cause(observability_export_tests_noop, missing_explicit_opt_in,
+    "The exporter API correctly became disabled by default, but two positive
+export tests only bound *EXPORTER-RUNNING*. Positive signal tests must also
+bind *OBSERVABILITY-ENABLED* to true; otherwise queueing is intentionally a
+no-op and drop/export assertions test nothing.").
+
+invariant(hermetic_observability_fixture_stops_exporter,
+    "A fixture that replaces the global OTLP queues must stop and join any
+background exporter before resetting them, then use an explicit local
+exporter-running binding for synchronous flush assertions.").
