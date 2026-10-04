@@ -20,7 +20,7 @@
 
 (defun wardrive-credential (owner scopes)
   (let ((star:*auth-pepper* "wardrive-acceptance-test-only"))
-    (nth-value 0 (star.auth:create-api-key *wardrive-store* owner scopes))))
+    (nth-value 1 (star.auth:create-api-key owner "api_client" scopes :store *wardrive-store*))))
 
 (defun wardrive-poll (thunk &optional (seconds 15))
   (loop with deadline = (+ (get-internal-real-time)
@@ -52,7 +52,15 @@
                             :rabbit-port star:*rabbit-port* :rabbit-vhost "/")
   (setf *wardrive-consumers* (star.rabbit:start-consumers))
   (wardrive-poll (lambda () (every #'star.consumers::consumer-ready-p *wardrive-consumers*)))
-  (setf *wardrive-server* (clack:clackup #'wardrive-http-app :port 5556 :silent t)))
+  (setf *wardrive-server* (clack:clackup #'wardrive-http-app :port 5556 :silent t :debug nil))
+  ;; Clack starts its listener asynchronously. Wait for HTTP, not just Rabbit.
+  (wardrive-poll
+   (lambda ()
+     (handler-case
+         (= 401 (nth-value 0 (perform-request
+                             (lambda () (dex:get (concatenate 'string *wardrive-url* "/document/ready")
+                                                :read-timeout 1 :connect-timeout 1)))))
+       (error () nil)))))
 
 (defun teardown-wardrive-integration ()
   (when *wardrive-server* (clack:stop *wardrive-server*) (setf *wardrive-server* nil))
@@ -172,10 +180,13 @@
           (is-false (wardrive-stored (jsown:val document "id")))))))
   (let ((fixture (wardrive-rejected-fixture "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff")))
     ;; A generated schema violation in the second observation cannot leak the
-    ;; first observation into Rabbit. signalDbm must be an integer.
+    ;; first observation into Rabbit. Wireless signalDbm must be an integer;
+    ;; BLE extensions intentionally permit arbitrary JSON values.
+    (setf (jsown:val (second (jsown:val fixture "observations")) "radio") "W")
     (setf (jsown:val (second (jsown:val fixture "observations")) "level") -65.5)
     (is (= 422 (nth-value 0 (wardrive-post fixture))))
     (setf (jsown:val (second (jsown:val fixture "observations")) "level") -65)
+    (setf (jsown:val (second (jsown:val fixture "observations")) "radio") "E")
     (sleep 0.5)
     (dolist (document (wardrive-expected fixture "warstar-writer"))
       (is-false (wardrive-stored (jsown:val document "id")))))
@@ -188,6 +199,7 @@
     (is (= 422 (nth-value 0 (wardrive-post fixture))))))
 
 (defun run-wardrive-integration-tests ()
-  (run-required-suite 'wardrive-integration-tests
-                      :setup #'setup-wardrive-integration
-                      :teardown #'teardown-wardrive-integration))
+  (let ((star:*ingest-workers* 1))
+    (run-required-suite 'wardrive-integration-tests
+                        :setup #'setup-wardrive-integration
+                        :teardown #'teardown-wardrive-integration)))

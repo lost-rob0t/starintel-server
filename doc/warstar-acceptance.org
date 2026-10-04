@@ -42,6 +42,49 @@ readiness=NIL=. The assertion requiring canonical readiness failed. After
 using the canonical release/manifest/schema API, the identical assertion
 passes: =legacy=0.9.0 canonical=0.10.1 readiness=T=.
 
+* Executed validation — 2026-10-04 UTC
+The focused suite completed successfully using the built Nix integration
+package (SBCL 2.6.0), real local CouchDB 3.5.0 and RabbitMQ 4.2.3. No source
+override or mocked publisher was used in this final run. These local service
+versions differ from the hosted Smoke Tests stack (CouchDB 3.5.2, RabbitMQ
+4.3.4); this evidence does not claim that hosted run passed.
+
+Observed response and suite result at 06:10 UTC:
+#+begin_example
+[warstar-acceptance] POST status=202 body={"status":"accepted","observations":2,"documents":4}
+SUITE WARDRIVE-INTEGRATION-TESTS discovered=2 executed=2 passed=2 failed=0 skipped=0
+[warstar-acceptance] focused suite completed successfully
+#+end_example
+
+All four authenticated =GET /document/:id= requests returned 200 and their
+responses passed the actual canonical validator. Stored documents passed
+=validate-stored-document= with =schemaVersion= 0.10.1, owner
+=warstar-writer= and server-stamped tenant =default=. Initial log revisions
+precede the outbox-published wait; retry checks compare the settled revisions.
+The identical replay reached four further consumer ACKs without changing any
+settled revision. The second principal persisted four separate documents.
+Negative cases returned 401, three 403 responses and three 422 responses;
+all rejected-batch IDs remained absent. The malformed second sample uses a
+fractional wireless =signalDbm=; BLE extension fields permit arbitrary JSON.
+
+Other completed gates: 285 unit tests across 28 required suites (including
+four add-on tests), 22 Python repository checks, immutable schema/dependency
+lock checks, =nix flake check=, the default server/integration-package builds,
+API reference regeneration with no drift, and =git diff --check=.
+
+Normal reproduction with the full configured service stack:
+#+begin_example
+nix run .#star-unit-tests
+nix run .#star-integration-tests
+#+end_example
+The focused local invocation loaded =:starintel-gserver-integration-tests=
+from the built Nix SBCL package and called
+=(star-server-tests::run-wardrive-integration-tests)=. Its fixture documents
+entered only through HTTP; database reads above were read-only. The broader
+Valkey/search/legacy HTTP integration suites were not run in this focused
+local invocation. Hosted exact-head CI status belongs in the PR body so a
+documentation-only evidence commit does not invalidate a claimed run SHA.
+
 * Scope and review
 Issue #310 owns this add-on. Issue #312/PR #313 owns canonical promotion.
 Five independent repository-required votes: reality NARROW, ownership
