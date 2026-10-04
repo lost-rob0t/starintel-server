@@ -15,6 +15,7 @@
     lease-store-runtime-tests
     http-boundary-tests
     http-target-v1-tests
+    actor-registry-tests
     v09-runtime-tests
     http-auth-tests
     auth-users-tests

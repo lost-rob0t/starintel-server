@@ -221,6 +221,22 @@ EOF
         dontStrip = true;
       };
 
+      starintel-actor-registry-tests = sbcl'.buildASDFSystem {
+        pname = "starintel-actor-registry-tests";
+        version = "0.1.0";
+        src = ./.;
+
+        lispLibs = with sbcl'.pkgs; [
+          starintel-gserver
+          fiveam
+          jsown
+        ];
+
+        systems = [ "starintel-actor-registry-tests" ];
+        asdFilesToKeep = [ "starintel-actor-registry-tests.asd" ];
+        dontStrip = true;
+      };
+
       starintel-gserver-integration-tests = sbcl'.buildASDFSystem {
         pname = "starintel-gserver-integration-tests";
         version = "0.1.0";
@@ -310,6 +326,8 @@ EOF
       sbcl-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-gserver starintel-bixby ]);
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver-tests ]);
+      sbcl-actor-registry-test-wrapped = sbcl'.withPackages
+        (ps: with ps; [ starintel-actor-registry-tests ]);
       sbcl-integration-test-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-gserver-integration-tests ]);
       sbcl-cli-wrapped = sbcl'.withPackages (ps: with ps; [ star-cli-lib ]);
@@ -404,6 +422,13 @@ EOF
         "star-unit-tests"
         sbcl-test-wrapped
         "starintel-gserver-tests"
+        []
+        "";
+
+      actor-registry-test-runner = make-test-runner
+        "star-actor-registry-tests"
+        sbcl-actor-registry-test-wrapped
+        "starintel-actor-registry-tests"
         []
         "";
 
@@ -595,6 +620,7 @@ PY
         doc-coverage-test = doc-coverage-test;
         sbcl-docs-wrapped = sbcl-docs-wrapped;
         star-unit-tests = unit-test-runner;
+        star-actor-registry-tests = actor-registry-test-runner;
         star-smoke = unit-test-runner;
         star-integration-tests = integration-test-runner;
         star-server-image = containerImages.serverImage;
@@ -635,6 +661,7 @@ PY
         starintel-gserver = starintel-gserver;
         starintel-bixby = starintel-bixby;
         starintel-gserver-tests = starintel-gserver-tests;
+        starintel-actor-registry-tests = starintel-actor-registry-tests;
         starintel-gserver-integration-tests =
           starintel-gserver-integration-tests;
         starintel-gserver-client = starintel-gserver-client;

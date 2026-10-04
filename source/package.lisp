@@ -324,6 +324,18 @@
   (:export
    #:register-actor
    #:get-dest-actor
+   #:build-actor-registry
+   #:install-actor-manifests
+   #:register-actor-manifest
+   #:record-actor-runtime-status
+   #:bind-local-actor-runtime
+   #:actor-registry-public-entries
+   #:actor-registry-document
+   #:invalid-actor-manifest
+   #:invalid-actor-manifest-reason
+   #:actor-registry-conflict
+   #:actor-registry-conflict-resource-uri
+   #:actor-registry-conflict-reason
    #:*actor-index-agent*
    #:*targets*
    #:*target-timer*
