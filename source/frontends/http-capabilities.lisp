@@ -47,6 +47,7 @@
        ("documents" :true)
        ("bulk_ingest" :true)
        ("search" :true)
+       ("geo_bbox" :true)
        ("stats" :true)
        ("targets" :true)
        ("views"
@@ -112,6 +113,9 @@
        :scopes '("documents:delete"))
       (capability-endpoint
        "document_search_v1" "GET" "/api/v1/documents/search"
+       :scopes '("search:read"))
+      (capability-endpoint
+       "geo_bbox_v1" "GET" "/api/v1/geo/bbox"
        :scopes '("search:read"))))
     ("compatibility"
      (jsown:new-js

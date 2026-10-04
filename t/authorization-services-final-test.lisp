@@ -53,7 +53,7 @@
                :principal principal
                :requested-dataset "dataset-a"
                :metadata
-               (star.authorization:request-metadata
+               (star.authorization::request-metadata
                 :route "/search"
                 :method :get
                 :correlation-id "operation-1"))))))
@@ -77,7 +77,7 @@
                  :principal principal
                  :requested-dataset "dataset-a"
                  :metadata
-                 (star.authorization:request-metadata
+                 (star.authorization::request-metadata
                   :route "/search"
                   :method :get
                   :correlation-id "operation-denied")))))))

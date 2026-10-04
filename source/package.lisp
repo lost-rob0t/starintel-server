@@ -99,6 +99,21 @@
    #:map-view-results
    #:get-neighbors
    #:search-fts
+   #:+geo-search-design-document+
+   #:+geo-search-index+
+   #:invalid-geo-bbox
+   #:invalid-geo-bbox-reason
+   #:geo-bbox-lucene-query
+   #:geo-bbox-search
+   #:+geo-projection-kind+
+   #:geo-projection-document-p
+   #:build-geo-projection
+   #:resolve-geo-search-projections
+   #:couchdb-refresh-geo-projection
+   #:couchdb-refresh-geo-projections-for-change
+   #:rebuild-geo-projections
+   #:couchdb-rebuild-geo-projections
+   #:couchdb-resolve-geo-search-projections
    #:sort-docs-by-date
    #:messages-by-user
    #:messages-by-platform

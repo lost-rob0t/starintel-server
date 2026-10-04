@@ -11,6 +11,7 @@
     event-actor-tests
     dataset-export-tests
     couchdb-view-request-tests
+    geo-search-tests
     lease-store-contract-tests
     lease-store-runtime-tests
     http-boundary-tests
@@ -26,6 +27,7 @@
     http-tenant-injection-tests
     gserver-client-tests
     http-contract-documents-tests
+    http-contract-geo-tests
     runtime-lifecycle-tests
     observability-tests))
 

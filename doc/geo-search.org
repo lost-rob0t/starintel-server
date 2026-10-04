@@ -1,0 +1,96 @@
+* CouchDB JSON geospatial search
+
+StarIntel geospatial lookup is implemented over CouchDB JSON documents.
+
+The production stack already runs CouchDB 3.5.2 with the official Clouseau
+search service. CouchDB search supports numeric latitude/longitude fields and
+range queries, which provides bounding-box retrieval.
+
+This implementation does not compile or index StarLang. StarLang defines the
+document contract only. At runtime the =_design/geo= index reads stored JSON
+fields =longitude= and =latitude= directly.
+
+** Endpoint
+
+#+begin_src text
+GET /api/v1/geo/bbox?bbox=west,south,east,north&dataset=<dataset>&limit=50
+#+end_src
+
+The endpoint requires =search:read=. Existing tenant/dataset search scoping is
+applied before the query reaches CouchDB.
+
+Antimeridian-crossing boxes are supported by specifying =west > east=.
+
+** Storage boundary
+
+The index is rebuildable. Canonical JSON documents remain durable truth. No
+coordinate is written back or transformed by the index. Documents without
+valid top-level longitude/latitude are not included.
+
+Anchored/derived GeoProjection rows are a follow-up to #263; those rows are
+ordinary server-owned CouchDB JSON and can feed the same numeric index.
+
+
+* Migration notes
+
+This slice is additive and requires no rewrite of existing CouchDB documents.
+
+- Existing non-geographic JSON documents remain unchanged and are not indexed by
+  =_design/geo=.
+- Canonical =geo-point= JSON with supported top-level =longitude= and =latitude=
+  can participate in direct bounding-box search after the design document is
+  installed or rebuilt.
+- The search index is disposable projection state. Rebuilding it must not write
+  coordinates back into canonical documents.
+- Address geocoding, media EXIF, wireless observations, routes and mission data
+  remain evidence/canonical documents first. Only supported direct geometry is
+  indexed as direct geography.
+- Explicit relation-based anchors and rule-derived geography are intentionally
+  deferred to the GeoProjection rebuild path tracked by #263; those coordinates
+  must not be copied onto the related document.
+- StarLang remains schema/spec authority. CouchDB JSON is the runtime storage and
+  indexing input for this slice.
+
+
+* Explicit anchored projections
+
+Documents without direct coordinates can participate in bbox search through a
+server-internal JSON projection. The projection is created only from explicit
+canonical reference paths such as:
+
+#+begin_example
+picture.location -> location.geometry -> geo-point
+address.geometry -> geo-point
+document.geometry -> geo-point
+#+end_example
+
+The projection record carries the subject id, exact reference path, dataset,
+tenant, anchor id and point coordinates. It is marked
+=starintel.geo-projection.v1= and =projectionOnly=true=.
+
+The bbox API never returns this internal record. Search hits are dereferenced
+back to the canonical subject document. Missing or scope-mismatched subjects are
+dropped.
+
+Projection refresh runs after a canonical Rabbit mutation is durably persisted.
+A bounded CouchDB =geo/references= view walks explicit dependents so changing a
+point or location refreshes subjects that reference it. The walk is cycle-safe
+and bounded.
+
+No proximity, RSSI, name similarity, image similarity, or other correlation is
+accepted by the projection builder. Those signals may become evidence for
+separate claims, but they cannot become geographic anchors through this path.
+
+
+* Corpus rebuild
+
+Existing CouchDB data is rebuilt explicitly, never by a hidden startup scan:
+
+#+begin_src sh
+star-server admin geo rebuild --batch-size 500 --max-documents 10000
+#+end_src
+
+The command reads the =geo/projection_candidates= CouchDB view in bounded
+batches and recreates only explicit anchored projection records. Re-running the
+command is idempotent. Operators can increase =--max-documents= deliberately
+for larger corpora; the implementation rejects unbounded values.

@@ -122,6 +122,11 @@ authz_target_a="authz-target-a"
 authz_target_b="authz-target-b"
 authz_target_agent_zero="authz-target-agent-zero"
 authz_term="authzscopedfixture"
+geo_inside="geo-bbox-inside"
+geo_outside="geo-bbox-outside"
+geo_other_dataset="geo-bbox-other-dataset"
+geo_anchored_subject="geo-anchored-subject"
+geo_anchored_projection="geo-projection-stack-fixture"
 couchdb_url="http://127.0.0.1:${COUCHDB_PORT}"
 server_url="http://127.0.0.1:${STAR_SERVER_PORT}"
 
@@ -207,6 +212,16 @@ couch_put "$authz_target_b" \
   '{"dtype":"target","dataset":"dataset-b","tenant_id":"default","actor":"actor-a","target_namespace":"people","program_id":"program-a"}'
 couch_put "$authz_target_agent_zero" \
   '{"dtype":"target","tenant_id":"agent-zero","actor":"actor-a"}'
+couch_put "$geo_inside" \
+  '{"id":"geo-bbox-inside","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-a","tenant_id":"default","geometryType":"point","longitude":"-83.0000","latitude":"40.0000"}'
+couch_put "$geo_outside" \
+  '{"id":"geo-bbox-outside","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-a","tenant_id":"default","geometryType":"point","longitude":"-84.0000","latitude":"40.0000"}'
+couch_put "$geo_other_dataset" \
+  '{"id":"geo-bbox-other-dataset","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-b","tenant_id":"default","geometryType":"point","longitude":"-83.0100","latitude":"40.0100"}'
+couch_put "$geo_anchored_subject" \
+  '{"id":"geo-anchored-subject","dtype":"picture","dataset":"dataset-a","tenant_id":"default","name":"anchored subject"}'
+couch_put "$geo_anchored_projection" \
+  '{"kind":"starintel.geo-projection.v1","projectionOnly":true,"participationKind":"anchored","geometrySource":"explicit_reference","subjectId":"geo-anchored-subject","subjectDtype":"picture","dataset":"dataset-a","tenant_id":"default","geometryId":"geo-bbox-inside","longitude":"-83.0000","latitude":"40.0000","relationPath":["geo-anchored-subject","geo-bbox-inside"]}'
 
 wait_for_search_id() {
   local header="$1"
@@ -227,6 +242,31 @@ wait_for_search_id() {
     sleep 2
   done
   printf 'fixture %s did not appear in scoped full-text search\n' "$id" >&2
+  return 1
+}
+
+wait_for_geo_bbox_id() {
+  local header="$1"
+  local bbox="$2"
+  local dataset="$3"
+  local id="$4"
+  local response
+  for _ in $(seq 1 60); do
+    response="$(
+      curl --fail --silent --show-error \
+        --header "$header" \
+        --get \
+        --data-urlencode "bbox=${bbox}" \
+        --data-urlencode "dataset=${dataset}" \
+        "${server_url}/api/v1/geo/bbox" || true
+    )"
+    if jq --exit-status --arg id "$id" \
+      '.. | objects | select(._id? == $id)' <<<"$response" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 2
+  done
+  printf 'fixture %s did not appear in bbox search %s\n' "$id" "$bbox" >&2
   return 1
 }
 
@@ -283,6 +323,38 @@ jq --exit-status --arg a "$authz_doc_a" --arg b "$authz_doc_b" \
   '([.. | objects | ._id? // empty] | index($a)) != null and ([.. | objects | ._id? // empty] | index($b)) == null' \
   <<<"$reader_search" >/dev/null
 [[ "$(http_status --header "$reader_header" --get --data-urlencode "q=content:${authz_term}" --data-urlencode "dataset=dataset-b" "${server_url}/search")" == "403" ]]
+
+set_stage "verify-couchdb-json-bbox-search"
+wait_for_geo_bbox_id "$reader_header" "-83.2,39.8,-82.8,40.2" "dataset-a" "$geo_inside"
+wait_for_geo_bbox_id "$reader_header" "-83.2,39.8,-82.8,40.2" "dataset-a" "$geo_anchored_subject"
+geo_response="$(
+  curl --fail --silent --show-error \
+    --header "$reader_header" \
+    --get \
+    --data-urlencode "bbox=-83.2,39.8,-82.8,40.2" \
+    --data-urlencode "dataset=dataset-a" \
+    "${server_url}/api/v1/geo/bbox"
+)"
+jq --exit-status \
+  --arg inside "$geo_inside" \
+  --arg outside "$geo_outside" \
+  --arg other "$geo_other_dataset" \
+  --arg anchored "$geo_anchored_subject" \
+  --arg projection "$geo_anchored_projection" \
+  '([.. | objects | ._id? // empty] | index($inside)) != null
+   and ([.. | objects | ._id? // empty] | index($anchored)) != null
+   and ([.. | objects | ._id? // empty] | index($projection)) == null
+   and ([.. | objects | ._id? // empty] | index($outside)) == null
+   and ([.. | objects | ._id? // empty] | index($other)) == null' \
+  <<<"$geo_response" >/dev/null
+[[ "$(http_status --header "$reader_header" --get \
+      --data-urlencode "bbox=-83.2,39.8,-82.8,40.2" \
+      --data-urlencode "dataset=dataset-b" \
+      "${server_url}/api/v1/geo/bbox")" == "403" ]]
+[[ "$(http_status --header "$reader_header" --get \
+      --data-urlencode "bbox=0,0,1,1 OR *:*" \
+      --data-urlencode "dataset=dataset-a" \
+      "${server_url}/api/v1/geo/bbox")" == "400" ]]
 
 set_stage "verify-scoped-view"
 scoped_view="$(
@@ -356,5 +428,6 @@ curl --fail --silent --show-error \
 set_stage "verify-search-after-restart"
 wait_for_search_id "$auth_header" "$fixture_term" "$fixture_id"
 wait_for_search_id "$reader_header" "$authz_term" "$authz_doc_a"
+wait_for_geo_bbox_id "$reader_header" "-83.2,39.8,-82.8,40.2" "dataset-a" "$geo_inside"
 
 printf 'Authenticated and authorized Nix-built stack passed scoped denial, FTS, and restart persistence checks.\n'

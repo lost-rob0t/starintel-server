@@ -166,12 +166,21 @@ server-private CouchDB =_id= only after canonical validation."
 (defun persist-rabbit-document-mutation (document operation)
   (anypool:with-connection
       (client star.databases.couchdb:*couchdb-pool*)
-    (star.databases.couchdb:couchdb-process-outbox-mutation
-     client
-     star:*couchdb-default-database*
-     #'publish-outbox-event
-     document
-     operation)))
+    (let ((saved
+            (star.databases.couchdb:couchdb-process-outbox-mutation
+             client
+             star:*couchdb-default-database*
+             #'publish-outbox-event
+             document
+             operation)))
+      ;; GeoProjection is disposable server-owned JSON. Refresh it only after
+      ;; the canonical mutation is durable; failures keep the Rabbit delivery
+      ;; retryable and replay-safe through the existing outbox path.
+      (star.databases.couchdb:couchdb-refresh-geo-projections-for-change
+       client
+       star:*couchdb-default-database*
+       saved)
+      saved)))
 
 (defun process-rabbit-document-mutation
     (message operation &key (persist-fn #'persist-rabbit-document-mutation))

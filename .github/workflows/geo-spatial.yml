@@ -1,0 +1,36 @@
+name: Geo spatial gate
+
+on:
+  push:
+    branches:
+      - "agent/263-couchdb-geo-bbox"
+    paths:
+      - "source/databases/geo-*.lisp"
+      - "source/views/geo.json"
+      - "source/frontends/http-authorization-routes.lisp"
+      - "source/frontends/http-authorization.lisp"
+      - "cli/http-contract-geo.lisp"
+      - "cli/starintel-gserver-client.asd"
+      - "t/geo-search-test.lisp"
+      - "t/http-contract-geo-test.lisp"
+      - "flake.nix"
+      - ".github/workflows/geo-spatial.yml"
+  pull_request:
+    branches:
+      - "work/starintel-0.10.1-star-lang"
+
+permissions:
+  contents: read
+
+jobs:
+  geo-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Run focused GeoProjection and bbox tests
+        run: nix run .#star-geo-tests
