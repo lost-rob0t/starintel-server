@@ -174,11 +174,14 @@ validated numeric coordinates; raw caller text is never passed to Lucene."
               (route-policy-metadata "/api/v1/geo/bbox" "GET"))))
       (couchdb-handler (client *couchdb-pool*)
         (strip-server-tenant-from-search-body
-         (star.databases.couchdb:geo-bbox-search
+         (star.databases.couchdb:couchdb-resolve-geo-search-projections
           client
           star:*couchdb-default-database*
-          scoped-query
-          :limit limit))))))
+          (star.databases.couchdb:geo-bbox-search
+           client
+           star:*couchdb-default-database*
+           scoped-query
+           :limit limit)))))))
 
 (defun handle-authorized-document-get-route
     (params &optional (route "/document/:id"))

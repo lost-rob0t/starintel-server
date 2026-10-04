@@ -35,6 +35,7 @@
    (:file "gserver-settings")
    (:file "databases/couchdb")
    (:file "databases/geo-search")
+   (:file "databases/geo-projection")
    (:file "databases/view-request")
    (:file "databases/export")
    (:file "databases/outbox")

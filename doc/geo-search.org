@@ -50,3 +50,33 @@ This slice is additive and requires no rewrite of existing CouchDB documents.
   must not be copied onto the related document.
 - StarLang remains schema/spec authority. CouchDB JSON is the runtime storage and
   indexing input for this slice.
+
+
+* Explicit anchored projections
+
+Documents without direct coordinates can participate in bbox search through a
+server-internal JSON projection. The projection is created only from explicit
+canonical reference paths such as:
+
+#+begin_example
+picture.location -> location.geometry -> geo-point
+address.geometry -> geo-point
+document.geometry -> geo-point
+#+end_example
+
+The projection record carries the subject id, exact reference path, dataset,
+tenant, anchor id and point coordinates. It is marked
+=starintel.geo-projection.v1= and =projectionOnly=true=.
+
+The bbox API never returns this internal record. Search hits are dereferenced
+back to the canonical subject document. Missing or scope-mismatched subjects are
+dropped.
+
+Projection refresh runs after a canonical Rabbit mutation is durably persisted.
+A bounded CouchDB =geo/references= view walks explicit dependents so changing a
+point or location refreshes subjects that reference it. The walk is cycle-safe
+and bounded.
+
+No proximity, RSSI, name similarity, image similarity, or other correlation is
+accepted by the projection builder. Those signals may become evidence for
+separate claims, but they cannot become geographic anchors through this path.

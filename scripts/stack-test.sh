@@ -125,6 +125,8 @@ authz_term="authzscopedfixture"
 geo_inside="geo-bbox-inside"
 geo_outside="geo-bbox-outside"
 geo_other_dataset="geo-bbox-other-dataset"
+geo_anchored_subject="geo-anchored-subject"
+geo_anchored_projection="geo-projection-stack-fixture"
 couchdb_url="http://127.0.0.1:${COUCHDB_PORT}"
 server_url="http://127.0.0.1:${STAR_SERVER_PORT}"
 
@@ -216,6 +218,10 @@ couch_put "$geo_outside" \
   '{"id":"geo-bbox-outside","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-a","tenant_id":"default","geometryType":"point","longitude":"-84.0000","latitude":"40.0000"}'
 couch_put "$geo_other_dataset" \
   '{"id":"geo-bbox-other-dataset","schemaVersion":"0.10.1","dtype":"geo-point","dataset":"dataset-b","tenant_id":"default","geometryType":"point","longitude":"-83.0100","latitude":"40.0100"}'
+couch_put "$geo_anchored_subject" \
+  '{"id":"geo-anchored-subject","dtype":"picture","dataset":"dataset-a","tenant_id":"default","name":"anchored subject"}'
+couch_put "$geo_anchored_projection" \
+  '{"kind":"starintel.geo-projection.v1","projectionOnly":true,"participationKind":"anchored","geometrySource":"explicit_reference","subjectId":"geo-anchored-subject","subjectDtype":"picture","dataset":"dataset-a","tenant_id":"default","geometryId":"geo-bbox-inside","longitude":"-83.0000","latitude":"40.0000","relationPath":["geo-anchored-subject","geo-bbox-inside"]}'
 
 wait_for_search_id() {
   local header="$1"
@@ -320,6 +326,7 @@ jq --exit-status --arg a "$authz_doc_a" --arg b "$authz_doc_b" \
 
 set_stage "verify-couchdb-json-bbox-search"
 wait_for_geo_bbox_id "$reader_header" "-83.2,39.8,-82.8,40.2" "dataset-a" "$geo_inside"
+wait_for_geo_bbox_id "$reader_header" "-83.2,39.8,-82.8,40.2" "dataset-a" "$geo_anchored_subject"
 geo_response="$(
   curl --fail --silent --show-error \
     --header "$reader_header" \
@@ -332,7 +339,11 @@ jq --exit-status \
   --arg inside "$geo_inside" \
   --arg outside "$geo_outside" \
   --arg other "$geo_other_dataset" \
+  --arg anchored "$geo_anchored_subject" \
+  --arg projection "$geo_anchored_projection" \
   '([.. | objects | ._id? // empty] | index($inside)) != null
+   and ([.. | objects | ._id? // empty] | index($anchored)) != null
+   and ([.. | objects | ._id? // empty] | index($projection)) == null
    and ([.. | objects | ._id? // empty] | index($outside)) == null
    and ([.. | objects | ._id? // empty] | index($other)) == null' \
   <<<"$geo_response" >/dev/null
