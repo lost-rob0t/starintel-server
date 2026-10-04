@@ -2,7 +2,7 @@ name: Smoke Tests
 
 on:
   push:
-    branches: [ "master", "agent/263-couchdb-geo-bbox" ]
+    branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
 
