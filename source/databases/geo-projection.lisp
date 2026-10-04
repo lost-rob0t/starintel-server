@@ -107,6 +107,7 @@ name, wireless, or media correlation participates in this function."
     (format nil "geo-projection:~a" digest)))
 
 (defun geo-projection-document-p (document)
+  "True when DOCUMENT is a server-internal rebuildable geo projection."
   (and document
        (string=
         +geo-projection-kind+
