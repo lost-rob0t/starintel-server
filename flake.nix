@@ -407,6 +407,28 @@ EOF
         []
         "";
 
+      geo-test-runner = pkgs.writeShellApplication {
+        name = "star-geo-tests";
+        runtimeInputs = runtimeLibs;
+        text = ''
+          test_home="$(mktemp -d)"
+          export HOME="$test_home"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export TMPDIR="/tmp"
+          export TMP="/tmp"
+          export TEMP="/tmp"
+          export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
+          export STARINTEL_SOURCE_ROOT="${./.}"
+
+          ${sbcl-test-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval "(require :asdf)" \
+            --eval "(asdf:load-system :starintel-gserver-tests)" \
+            --eval "(star-server-tests::run-required-suite 'star-server-tests::geo-search-tests)" \
+            --eval "(star-server-tests::run-required-suite 'star-server-tests::http-contract-geo-tests)" \
+            --eval "(uiop:quit 0)"
+        '';
+      };
+
       integration-test-runner = make-test-runner
         "star-integration-tests"
         sbcl-integration-test-wrapped
@@ -595,6 +617,7 @@ PY
         doc-coverage-test = doc-coverage-test;
         sbcl-docs-wrapped = sbcl-docs-wrapped;
         star-unit-tests = unit-test-runner;
+        star-geo-tests = geo-test-runner;
         star-smoke = unit-test-runner;
         star-integration-tests = integration-test-runner;
         star-server-image = containerImages.serverImage;
