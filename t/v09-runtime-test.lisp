@@ -1,13 +1,13 @@
 (in-package :star-server-tests)
 
 (def-suite v09-runtime-tests
-  :description "Canonical StarIntel v0.9 validator and Rabbit mutation boundary")
+  :description "Legacy StarIntel v0.9 validator and Rabbit mutation boundary")
 
 (in-suite v09-runtime-tests)
 
 (defun v09-test-host-document ()
-  (starintel:encode
-   (starintel:new-host
+  (starintel.legacy:encode
+   (starintel.legacy:new-host
     "v09-runtime-tests"
     :ip "192.0.2.20"
     :os "linux")))
@@ -36,8 +36,8 @@
           (jsown:val data "out_of_scope") (list "private contact information")
           (jsown:val data "targets") targets
           (jsown:val data "phases") (list discovery analysis))
-    (starintel:encode
-     (make-instance 'starintel:operation
+    (starintel.legacy:encode
+     (make-instance 'starintel.legacy:operation
                     :dataset "v09-runtime-tests"
                     :title "Operation runtime boundary"
                     :data data))))
@@ -196,3 +196,18 @@
 
 (defun run-v09-runtime-tests ()
   (run! 'v09-runtime-tests))
+
+(test historical-url-extractor-accepts-only-legacy-envelope
+  (let ((document (jsown:new-js ("_id" "legacy:message")
+                                ("dataset" "legacy-tests")
+                                ("dtype" "message")
+                                ("content" "https://example.org/"))))
+    (is (eq document (star.actors.matcher::ensure-legacy-url-extractor-input document))))
+  (let* ((url (starintel.legacy:new-url "legacy-tests" :url "https://example.org/" :content ""))
+         (relation (starintel.legacy:new-relation
+                    "legacy-tests" "legacy:message" (starintel.legacy:doc-id url) :note "extracted")))
+    (dolist (document (list url relation))
+      (let ((wire (starintel.legacy:encode document)))
+        (is (string= "0.9.0" (jsown:val wire "schema_version")))
+        (is-false (jsown:keyp wire "schemaVersion"))
+        (is (eq wire (star.documents:validate-document wire)))))))

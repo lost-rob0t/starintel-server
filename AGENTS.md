@@ -39,8 +39,9 @@ Rules:
   `schema_version`.
 - Report/use `release_version` as the active StarIntel release. Do **not** infer the
   release from `starintel-doc-v0.9.0.schema.json` or another schema filename.
-- The v0.9 base schema may remain `schema_version = 0.9.0` while the release/profile
-  advances through `0.9.1`, `0.9.2`, and later additive releases.
+- The active canonical source is `lost-rob0t/star-lang`: authored StarLang
+  compiles the flat lowerCamelCase 0.10.1 wire contract. The archived
+  `schema/starintel-legacy-schema.lock.json` governs v0.9 compatibility only.
 - Issue prose, research notes, README text, and remembered version numbers never
   override the lock and pinned canonical manifest.
 - Never hand-edit a release/profile bump in this repository. Canonical release
@@ -49,9 +50,8 @@ Rules:
 - A lock/manifest/commit mismatch is a hard blocker. Do not implement against an
   unverified or guessed contract.
 
-At the time this rule was added, this lock resolves release `0.9.1` over immutable
-base schema `0.9.0`; future agents must read the live lock instead of trusting this
-historical value.
+Repin with `python3 scripts/sync-starintel-schema.py --commit <full-StarLang-SHA>`;
+then run the preflight. Never edit generated artifacts or lock hashes by hand.
 
 ## Local research lookup
 
@@ -143,8 +143,9 @@ Rules:
   `schema_version`.
 - Report/use `release_version` as the active StarIntel release. Do **not** infer the
   release from `starintel-doc-v0.9.0.schema.json` or another schema filename.
-- The v0.9 base schema may remain `schema_version = 0.9.0` while the release/profile
-  advances through `0.9.1`, `0.9.2`, and later additive releases.
+- The active canonical source is `lost-rob0t/star-lang`: authored StarLang
+  compiles the flat lowerCamelCase 0.10.1 wire contract. The archived
+  `schema/starintel-legacy-schema.lock.json` governs v0.9 compatibility only.
 - Issue prose, research notes, README text, and remembered version numbers never
   override the lock and pinned canonical manifest.
 - Never hand-edit a release/profile bump in this repository. Canonical release
@@ -153,9 +154,8 @@ Rules:
 - A lock/manifest/commit mismatch is a hard blocker. Do not implement against an
   unverified or guessed contract.
 
-At the time this rule was added, this lock resolves release `0.9.1` over immutable
-base schema `0.9.0`; future agents must read the live lock instead of trusting this
-historical value.
+Repin with `python3 scripts/sync-starintel-schema.py --commit <full-StarLang-SHA>`;
+then run the preflight. Never edit generated artifacts or lock hashes by hand.
 
 ## Local research lookup
 

@@ -10,6 +10,7 @@
   :components   ((:file "star-cli")
                  (:file "star-cli-management"))
   :depends-on   (#:starintel-gserver-client
+                 #:starintel-legacy
                  #:clingon
                  #:jsown
                  #:quri))

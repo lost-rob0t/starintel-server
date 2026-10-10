@@ -96,6 +96,7 @@ no-op: nothing queues, nothing exports, nothing errors."
 and never wedge the caller."
   (star.observability:reset-exporter-state)
   (let ((star.observability::*observability-enabled* "true")
+        (star.observability::*observability-signals* "logs,metrics,traces")
         (star.observability::*export-batch-fn*
           (lambda (signal records)
             (declare (ignore signal records))
@@ -117,6 +118,7 @@ hermetically: the export transport is captured, no network involved."
   (let* ((captured (list))
          (secret "TEST_API_SECRET_DO_NOT_LEAK_123")
          (star.observability::*observability-enabled* "true")
+         (star.observability::*observability-signals* "logs,metrics,traces")
          (star.observability::*export-batch-fn*
            (lambda (signal records)
              (push (jsown:to-json (star.observability::otlp-payload signal records))

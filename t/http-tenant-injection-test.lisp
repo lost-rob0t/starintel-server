@@ -117,8 +117,8 @@
   (let* ((star:*tenant-fallback* "ci")
          (stamped
            (star.frontends.http-api:stamp-server-tenant!
-            (starintel:encode
-             (starintel:new-host "testing-debug" :ip "192.0.2.30" :os "linux"))))
+            (starintel.legacy:encode
+             (starintel.legacy:new-host "testing-debug" :ip "192.0.2.30" :os "linux"))))
          (message (cons (jsown:to-json stamped) 1))
          (decoded (star.rabbit:decode-rabbit-document message)))
     (is (string= "ci" (jsown:val decoded "tenant_id")))

@@ -44,17 +44,25 @@
                (star.http.contract:find-http-operation id)))
         "operation ~a must not declare path parameters" id)))
 
-(test registry-document-request-shapes-are-strict-v09
+(test registry-document-request-shapes-advertise-generated-canonical-and-legacy
   (flet ((document-request-schema (operation-id)
            (star.http.contract:http-operation-request-schema
             (star.http.contract:find-http-operation operation-id))))
     (is-true (document-request-schema "documents.create"))
     (is-true (document-request-schema "documents.bulk.create"))
     (is-true (document-request-schema "documents.update"))
-    (is (equal '("_id" "dataset" "dtype" "schema_version")
-               (jsown:val-safe (document-request-schema "documents.create")
-                               "required"))
-        "document create request schema must require the v0.9 envelope")
+    (let* ((branches (jsown:val-safe (document-request-schema "documents.create") "oneOf"))
+           (canonical (first branches))
+           (legacy (second branches)))
+      (is (= 2 (length branches)))
+      (is (equal '("_id" "dataset" "dtype" "schema_version" "version"
+                   "date_added" "date_updated" "sources" "evidence" "data")
+                 (jsown:val-safe legacy "required"))
+          "legacy compatibility must retain its explicit 0.9 envelope")
+      (is-true (jsown:val-safe canonical "$defs"))
+      (is (= (length (starintel.canonical:document-types))
+             (length (jsown:val-safe canonical "oneOf"))))
+      (is (search "0.10.1" (or (jsown:val-safe canonical "description") ""))))
     (is-true (jsown:val-safe (document-request-schema "documents.bulk.create")
                              "items")
              "bulk request schema must be an array of documents")

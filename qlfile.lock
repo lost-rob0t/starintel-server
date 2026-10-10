@@ -61,11 +61,11 @@
 ("cl+ssl" .
  (:class qlot/source/ql:source-ql
   :initargs (:%version :latest)
-  :version "ql-2024-10-12"))
+  :version "ql-2023-10-21"))
 ("star-cl" .
  (:class qlot/source/github:source-github
-  :initargs (:repos "lost-rob0t/star-cl" :ref nil :branch nil :tag nil)
-  :version "github-9ce8f88f57fb7ac143851f7fd2c75dccd6a40cc3"))
+  :initargs (:repos "lost-rob0t/star-cl" :ref "33935f1e6739b0015926a2a163ba55cf203fbc9d" :branch nil :tag nil)
+  :version "github-33935f1e6739b0015926a2a163ba55cf203fbc9d"))
 ("cl-couch" .
  (:class qlot/source/github:source-github
   :initargs (:repos "lost-rob0t/cl-couch" :ref nil :branch nil :tag nil)

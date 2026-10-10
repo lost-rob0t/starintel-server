@@ -51,7 +51,7 @@
     (is (not (string= (jsown:val first "_id")
                       (jsown:val other-user "_id"))))
     (is (string= "target" (jsown:val first "dtype")))
-    (is (string= starintel:+starintel-doc-version+
+    (is (string= starintel.legacy:+starintel-doc-version+
                  (jsown:val first "schema_version")))
     (is (stringp (jsown:val extensions "idempotency_key")))
     (is (null (search "bixby-draft-123"

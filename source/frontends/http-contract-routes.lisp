@@ -46,7 +46,9 @@ that mix public and private datasets must explicitly configure this list.")
   (with-http-boundary ()
     (jsown:to-json
      (jsown:new-js
-       ("doc_spec_version" starintel:+starintel-doc-version+)
+       ("doc_spec_version" (starintel.canonical:release-version))
+       ("document_schema_version" (starintel.canonical:schema-version))
+       ("spec_authority" "lost-rob0t/star-lang")
        ("default-dataset" star:*couchdb-default-database*)
        ("event_log" star:*couchdb-event-log-database*)
        ("server" "starintel-gserver")

@@ -34,7 +34,7 @@
             ("dataset" dataset)
             ("tenant_id" tenant)
             ("dtype" dtype)
-            ("version" starintel:+starintel-doc-version+))))
+            ("version" starintel.legacy:+starintel-doc-version+))))
     (when actor
       (setf (jsown:val document "actor") actor))
     (when namespace
@@ -450,7 +450,7 @@
     ("_id" "doc-tenantless-1")
     ("dataset" dataset)
     ("dtype" "note")
-    ("version" starintel:+starintel-doc-version+)))
+    ("version" starintel.legacy:+starintel-doc-version+)))
 
 (test tenantless-document-keeps-default-tenant-when-unconfigured
   (let ((star:*tenant-fallback* nil)

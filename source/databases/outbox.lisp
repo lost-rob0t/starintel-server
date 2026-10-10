@@ -189,7 +189,7 @@
          finally (return (or maximum 0)))))
 
 (defun event-payload (document mutation-id operation sequence)
-  (let* ((payload (public-document-copy document))
+  (let* ((payload (star.documents:canonical-wire-document (public-document-copy document)))
          (extensions (document-extensions payload)))
     (setf (jsown:val extensions "event_id")
           (outbox-event-id mutation-id)

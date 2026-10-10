@@ -18,6 +18,10 @@
    #:document-date-added
    #:document-date-updated
    #:document-transient-p
+   #:canonical-document-p
+   #:canonical-wire-document
+   #:validate-document
+   #:validate-stored-document
    #:validate-v09-document
    #:ensure-document
    #:document-json

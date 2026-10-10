@@ -147,3 +147,13 @@
     (is (= 4
            (star.consumers:retry-policy-max-retries
             (star.consumers:retry-stream-policy stream))))))
+
+(test actor-event-default-clock-does-not-require-historical-spec-package
+  (let* ((before (- (get-universal-time) 2208988800))
+         (event (star.actors:make-actor-event :actor-name "clock" :event-type "clock.test"))
+         (direct (make-instance 'star.actors:actor-event))
+         (after (- (get-universal-time) 2208988800)))
+    (dolist (value (list (star.actors:event-timestamp event)
+                        (star.actors:event-timestamp direct)))
+      (is (integerp value))
+      (is (<= before value after)))))

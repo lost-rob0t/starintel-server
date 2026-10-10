@@ -16,7 +16,7 @@ ql usocket :latest
 ql cl+ssl :latest
 
 # GitHub repositories
-github lost-rob0t/star-cl
+github lost-rob0t/star-cl :ref 33935f1e6739b0015926a2a163ba55cf203fbc9d
 github lost-rob0t/cl-couch
 github mdbergmann/cl-gserver
 github lokedhs/cl-rabbit

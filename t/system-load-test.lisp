@@ -41,3 +41,11 @@
   (dolist (package *project-packages*)
     (is (find-package package)
         "Package ~s exists after loading its ASDF system" package)))
+
+(test canonical-root-and-explicit-legacy-packages-stay-distinct
+  (is-false (find-package :spec))
+  (is (find-package :starintel.legacy))
+  (is (string= "0.10.1" (starintel:schema-version)))
+  (is (string= "0.9.0" starintel.legacy:+starintel-doc-version+))
+  (is-false (find-class 'starintel:host nil))
+  (is (find-class 'starintel.legacy:host nil)))
