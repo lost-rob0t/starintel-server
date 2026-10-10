@@ -64,8 +64,7 @@
   (and (consp value) (eq (first value) :obj)))
 
 (defun clone-document-update-json (value)
-  (jsown:with-injective-reader
-    (jsown:parse (jsown:to-json value))))
+  (star.documents:clone-json-value value))
 
 (defun document-update-value (object key &optional default)
   (if (and object (outbox-object-has-key-p object key))

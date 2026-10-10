@@ -192,8 +192,15 @@ validated and built by =build-couchdb-view-request=, then executed via
                   client database design-document view-name arguments))
          (response (funcall *couchdb-view-transport* client request)))
     ;; View documents are recovery inputs: false, null and [] must stay distinct.
-    (jsown:with-injective-reader
-      (jsown:parse response))))
+    (let ((decoded (star.documents:parse-json-value response)))
+      ;; Only complete include-docs records carry verifiable storage evidence.
+      (dolist (row (jsown:val decoded "rows"))
+        (when (jsown:keyp row "doc")
+          (let ((document (jsown:val row "doc")))
+            (when (and (consp document) (eq (car document) :obj))
+              (setf (jsown:val row "doc")
+                    (restore-exact-storage-document document))))))
+      decoded)))
 
 (defun map-view-results
     (function client database design-document view-name

@@ -52,14 +52,12 @@
   "Parse a document payload into the internal JSOWN form."
   (etypecase document
     (string
-     (jsown:with-injective-reader
-       (jsown:parse document)))
+     (parse-json-value document))
     (list document)))
 
 (defun clone-document-object (document)
   "Deep copy a parsed document object."
-  (jsown:with-injective-reader
-    (jsown:parse (jsown:to-json (parse-document-object document)))))
+  (clone-json-value (parse-document-object document)))
 
 (defun canonical-dtype (dtype)
   "Canonical string form of a document dtype."
@@ -169,11 +167,11 @@ Only call this for server-owned storage data, never to relax client validation."
 (defun validate-document (document)
   "Validate DOCUMENT with star-cl's pinned canonical or legacy validator.
 
-The server owns only schema discovery, JSOWN-to-Jzon conversion, and a stable
+The server owns only schema discovery, lossless representation conversion, and a stable
 condition. The schema rules and validator remain owned by star-cl."
   (let* ((object (parse-document-object document))
          (jzon-object
-           (com.inuoe.jzon:parse (jsown:to-json object))))
+           (document-to-native-json object)))
     (handler-case
         (progn
           (if (canonical-document-p object)

@@ -84,7 +84,11 @@ messages; the target router resolves destinations through
     ;; IMPORTANT: Never print/force-output here.
     ;; This function runs on the actor dispatcher; writing to stdout can block
     ;; (e.g. when stdout is a pipe), which can deadlock the whole system.
-    (cl-couch:create-document client database document)))
+    (cl-couch:create-document
+     client database
+     (jsown:to-json
+      (star.databases.couchdb::prepare-exact-storage-document
+       (star.documents:parse-document-object document))))))
 
 ;;;; Preform a update operation on couchdb. You must provide the revision tag.
 ;;;; Couchdb uses the _rev tag. you can learn more about docment revisions here
@@ -92,8 +96,9 @@ messages; the target router resolves destinations through
 (defun couchdb-agent-update (agent database document revision)
   (anypool:with-connection (client (couchdb-agent-client agent))
     (cl-couch:create-document client database (jsown:to-json
-                                               (jsown:extend-js (jsown:parse document)
-                                                                ("_rev" revision))))))
+                                               (star.databases.couchdb::prepare-exact-storage-document
+                                                (jsown:extend-js (star.documents:parse-document-object document)
+                                                                ("_rev" revision)))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
   (anypool:with-connection (client (couchdb-agent-client agent))

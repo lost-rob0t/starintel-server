@@ -146,15 +146,7 @@
      (jsown:new-js ("maximum_bytes" max-bytes))))
   (handler-case
       (let ((text (babel:octets-to-string octets :encoding :utf-8)))
-        ;; Validate with the packaged standards-oriented parser, then retain
-        ;; JSOWN as the service's existing internal document representation.
-        ;; The injective reader binds jsown's parsed-value slots so JSON
-        ;; false/null survive the internal representation and every later
-        ;; jsown:to-json re-serialization (wire, validation, CouchDB) emits
-        ;; the original literals instead of conflating them with [] / null.
-        (yason:parse text)
-        (jsown:with-injective-reader
-          (jsown:parse text)))
+        (star.documents:parse-json-value text))
     (error ()
       (signal-http-input-error
        400
@@ -235,19 +227,20 @@ operating on the type it started with."
     (string
      (jsown:to-json
       (strip-server-tenant-fields
-       (jsown:with-injective-reader (jsown:parse document)))))
+       (star.documents:parse-json-value document))))
     (list
      (if (star.documents:canonical-document-p document)
          ;; Project a copy: retained storage/outbox evidence must not be changed.
          ;; Wire projection first preserves CouchDB _rev as canonical rev.
-         (let ((wire (star.documents:canonical-wire-document document)))
+         (let ((wire (star.documents:canonical-wire-document
+                      (star.databases.couchdb::restore-exact-storage-document document))))
            (if (jsown:keyp wire "extensions")
-               (star.databases.couchdb::public-document-copy wire)
+               (star.databases.couchdb::public-document-copy wire :restore-extensions-presence t)
                wire))
-         (progn
-           (when (jsown:keyp document "tenant_id")
-             (jsown:remkey document "tenant_id"))
-           document)))))
+         (let ((public (star.databases.couchdb::restore-exact-storage-document document)))
+           (when (jsown:keyp public "tenant_id")
+             (jsown:remkey public "tenant_id"))
+           public)))))
 
 (defun strip-outbox-payload-tenants (extensions)
   "Strip tenant_id from outbox payloads embedded in server extensions.
@@ -305,7 +298,7 @@ operating on the type it started with."
     (string
      (jsown:to-json
       (strip-server-tenant-from-rows
-       (jsown:with-injective-reader (jsown:parse body)))))
+       (star.documents:parse-json-value body))))
     (list
      (strip-server-tenant-from-rows body))))
 

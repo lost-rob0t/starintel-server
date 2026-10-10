@@ -7,6 +7,10 @@
    #:object-has-key-p
    #:object-value
    #:object-keys
+   #:native-json-to-document
+   #:document-to-native-json
+   #:parse-json-value
+   #:clone-json-value
    #:parse-document-object
    #:clone-document-object
    #:canonical-dtype
