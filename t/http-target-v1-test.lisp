@@ -208,3 +208,36 @@
                  (jsown:val accepted-json "request_id")))
     (is-false (jsown:keyp accepted-json "target_document"))
     (is-false (jsown:keyp accepted-json "principal_id"))))
+(test canonical-target-options-map-creates-flat-wire-document
+  (let* ((options (jsown:new-js ("opaque_key" (jsown:new-js ("false" :false) ("null" :null)))))
+         (document
+           (star.frontends.http-api::target-v1-document-from-request
+            (make-v1-target-request :options options) "human:canonical")))
+    (is (string= "0.10.1" (jsown:val document "schemaVersion")))
+    (is (stringp (jsown:val document "id")))
+    (is (equal options (jsown:val document "options")))
+    (dolist (key '("_id" "schema_version" "data"))
+      (is-false (jsown:keyp document key)))
+    (is (eq document (star.documents:validate-document document)))))
+
+(test canonical-target-options-reject-nonobjects
+  (dolist (options (list #() "not-an-object" :null nil))
+    (let ((condition
+            (capture-http-input-error
+             (lambda ()
+               (star.frontends.http-api::target-v1-document-from-request
+                (make-v1-target-request :options options) "human:canonical")))))
+      (is (typep condition 'star.frontends.http-api:http-input-error))
+      (when condition
+        (is (string= "invalid_target_options"
+                     (star.frontends.http-api:http-input-error-code condition)))))))
+
+(test canonical-wire-target-recovers-without-couch-id
+  (let* ((document (jsown:new-js ("id" "target:canonical-red")
+                                 ("dataset" "canonical-tests") ("dtype" "target")
+                                 ("schemaVersion" "0.10.1") ("actor" "subfinder")
+                                 ("target" "example.org") ("delay" 1)
+                                 ("options" (jsown:empty-object))))
+         (record (star.actors:parse-target-record document)))
+    (is (string= "target:canonical-red" (star.actors:target-record-id record)))
+    (is (equal (jsown:val document "options") (star.actors:target-record-options record)))))
