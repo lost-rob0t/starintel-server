@@ -68,7 +68,7 @@ jobs:
           library="33935f1e6739b0015926a2a163ba55cf203fbc9d"
           authority="96d26c338078676ec1dc6928755901636c9f7ef0"
           def git(*args): return subprocess.check_output(["git",*args],text=True).strip()
-          assert git("rev-parse","HEAD^")=="3dc91ba68676741eaab4da61664f3c6d488b3007"
+          assert git("rev-parse","HEAD^")=="c95ced8f6382d6d288923e55a728809a1be0da24"
           assert git("diff","--name-only",baseline,"HEAD")==".github/workflows/canonical-closure.yml"
           with urllib.request.urlopen("https://raw.githubusercontent.com/lost-rob0t/star-cl/"+library+"/schema/starintel-schema.lock.json") as r:
               maintained=json.load(r)
@@ -143,83 +143,7 @@ jobs:
               if k!="star-cl": assert new[k]==v,"unrelated Qlot entry drift:"+k
           assert re.search(r':ref\s+"'+library+r'"',new["star-cl"])
           assert re.search(r':version\s+"github-'+library+r'"',new["star-cl"])
-          assert re.search(r'^github lost-rob0t/star-cl :ref '+library+r'
-          assert 'url = "github:lost-rob0t/star-cl/'+library+'";' in (root/"flake.nix").read_text()
-          maintained=json.loads((out/"maintained-lock.json").read_text())
-          consumer=json.loads((root/"schema/starintel-schema.lock.json").read_text())
-          assert consumer==maintained,"maintained closure equality GREEN failed"
-          assert len(consumer["vendored_files"])==18
-          actual={str(p.relative_to(root)) for p in (root/"schemas/starintel-0.10.1").rglob("*") if p.is_file()}
-          assert actual==set(consumer["vendored_files"]),"stale/extra/missing vendor files"
-          for path,entry in consumer["vendored_files"].items():
-              assert hashlib.sha256((root/path).read_bytes()).hexdigest()==entry["sha256"],path
-          print("MAINTAINED_CLOSURE_GREEN 18 files; unrelated Nix/Qlot entries preserved")
-          allow={"flake.nix","qlfile","flake.lock","qlfile.lock","schema/starintel-schema.lock.json"}
-          tracked=git("diff","--name-only","HEAD").decode().splitlines()
-          assert all(p in allow or p.startswith("schemas/starintel-0.10.1/") for p in tracked),tracked
-          env=os.environ.copy();env["GIT_INDEX_FILE"]=str(pathlib.Path(os.environ["RUNNER_TEMP"])/"closure.index")
-          git("read-tree","HEAD",env=env)
-          git("add","--",*sorted(allow),"schemas/starintel-0.10.1",env=env)
-          git("update-index","--force-remove",".github/workflows/canonical-closure.yml",env=env)
-          tree=git("write-tree",env=env).decode().strip()
-          head=git("rev-parse","HEAD").decode().strip()
-          git("diff","--check",head,tree)
-          diff=git("--no-pager","diff","--no-ext-diff","--no-textconv",head,tree)
-          assert len(diff)<10000000,"diff too large, refusing truncation"
-          (out/"candidate.diff").write_bytes(diff)
-          items={}
-          for line in git("ls-tree","-rz",tree).split(b"\0"):
-              if line:
-                  meta,path=line.split(b"\t",1);mode,kind,sha=meta.decode().split()
-                  items[path.decode()]=dict(mode=mode,type=kind,sha=sha)
-          changes=[]
-          for path in git("diff","--name-only",head,tree).decode().splitlines():
-              if path not in items:
-                  changes.append(dict(path=path,sha=None));continue
-              x=items[path]
-              assert x["type"]=="blob" and x["mode"] in ("100644","100755"),path
-              b=git("cat-file","blob",x["sha"])
-              assert b"\0" not in b and len(b)<2000000,path
-              changes.append(dict(path=path,**x,content=b.decode()))
-          payload=dict(head=head,candidate_tree=tree,library=library,authority=authority,changes=changes)
-          encoded=json.dumps(payload)
-          assert len(encoded)<10000000
-          (out/"publication.json").write_text(encoded+"\n")
-          (out/"inventory.json").write_text(json.dumps(items,sort_keys=True,indent=2)+"\n")
-          print("CLOSURE_MANIFEST "+encoded)
-          candidate=pathlib.Path(os.environ["RUNNER_TEMP"])/"canonical-closure-candidate";candidate.mkdir()
-          git("checkout-index","--all","--prefix="+str(candidate)+"/",env=env)
-          with open(os.environ["GITHUB_OUTPUT"],"a") as f:f.write("candidate="+str(candidate)+"\n")
-          print("Candidate tree",tree)
-          
-          PY
-      - name: Run candidate Python contract tests
-        working-directory: ${{ steps.candidate.outputs.candidate }}
-        run: python3 -m unittest discover -s tests -v
-      - name: Run full candidate Nix checks
-        working-directory: ${{ steps.candidate.outputs.candidate }}
-        run: nix flake check --show-trace -L
-      - name: Run normal candidate unit suite
-        working-directory: ${{ steps.candidate.outputs.candidate }}
-        run: nix run .#star-unit-tests
-      - name: Hash only generated review evidence
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence="$RUNNER_TEMP/canonical-closure-evidence"
-          test -d "$evidence"
-          sha256sum "$evidence"/* > "$RUNNER_TEMP/closure-files.sha256"
-          mv "$RUNNER_TEMP/closure-files.sha256" "$evidence/"
-      - name: Retain exact generated candidate evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: canonical-closure-${{ github.sha }}
-          path: ${{ runner.temp }}/canonical-closure-evidence/
-          if-no-files-found: error
-          retention-days: 7
-,(root/"qlfile").read_text(),re.M)
+          assert ('github lost-rob0t/star-cl :ref '+library) in (root/"qlfile").read_text().splitlines()
           assert 'url = "github:lost-rob0t/star-cl/'+library+'";' in (root/"flake.nix").read_text()
           maintained=json.loads((out/"maintained-lock.json").read_text())
           consumer=json.loads((root/"schema/starintel-schema.lock.json").read_text())
