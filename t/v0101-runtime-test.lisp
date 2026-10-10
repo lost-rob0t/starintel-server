@@ -619,3 +619,37 @@
       (setf (jsown:val incoming "fname") "changed")
       (signals star.databases.couchdb:mutation-conflict
         (star.databases.couchdb:prepare-outbox-mutation state incoming :new)))))
+
+(test canonical-outbox-historical-pending-replay-retains-payload-and-fails-ambiguous-retry
+  (let* ((incoming (extension-presence-document :absent "canonical:old-pending"))
+         (old-public (star.documents:clone-document-object incoming)))
+    (setf (jsown:val old-public "extensions") (jsown:empty-object))
+    (let* ((hash (star.databases.couchdb::outbox-digest-string
+                  (format nil "new|~a" (jsown:to-json old-public))))
+           (entry (star.databases.couchdb::make-outbox-entry old-public hash hash :new 1)))
+      (jsown:remkey entry "public_extensions_present")
+      (let* ((state (star.databases.couchdb::merge-server-state old-public nil entry hash hash))
+             (payload (jsown:to-json (jsown:val entry "payload")))
+             (event-id (jsown:val entry "event_id"))
+             (publications 0))
+        (setf (jsown:val state "_rev") "1-old")
+        (star.databases.couchdb:recover-outbox-documents
+         (lambda (id) (declare (ignore id)) state)
+         (lambda (updated) (setf state updated))
+         (lambda (key sent id)
+           (declare (ignore key))
+           (incf publications)
+           (is (string= event-id id))
+           (is (string= payload (jsown:to-json sent))))
+         (list state))
+        (is (= 1 publications))
+        (is (string= payload (jsown:to-json
+                             (jsown:val (star.databases.couchdb:find-outbox-entry state hash)
+                                        "payload"))))
+        (multiple-value-bind (newer newer-entry disposition)
+            (star.databases.couchdb:prepare-outbox-mutation
+             state (extension-presence-document :nonempty "canonical:old-pending") :updated)
+          (declare (ignore newer-entry))
+          (is (eq :created disposition))
+          (signals star.databases.couchdb:mutation-conflict
+            (star.databases.couchdb:prepare-outbox-mutation newer incoming :new)))))))
