@@ -17,6 +17,7 @@
 (defun document-to-native-json (value)
   "Adapt JSON document values without a lossy serialization intermediate."
   (labels ((convert (item ancestors)
+             (when (> (length ancestors) 128) (error "Document JSON depth exceeded"))
              (when (member item ancestors :test #'eq)
                (error "Cyclic document JSON"))
              (cond
@@ -25,6 +26,7 @@
                ((member item '(:false :f)) nil)
                ((member item '(:null :n)) 'null)
                ((and (consp item) (eq (car item) :obj))
+                (unless (integerp (list-length item)) (error "Circular document JSON object"))
                 (let ((object (make-hash-table :test #'equal)))
                   (dolist (pair (cdr item))
                     (unless (and (consp pair) (stringp (car pair)))

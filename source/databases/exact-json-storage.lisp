@@ -2,6 +2,7 @@
 
 (defparameter +exact-number-extension-key+ "_server_exact_numbers")
 (defparameter +exact-number-max-tokens+ 4096)
+(defparameter +exact-number-max-token-length+ 1048576)
 
 (defun exact-storage-number-p (value)
   (or (starintel:json-number-p value) (floatp value)
@@ -33,7 +34,7 @@
 (defun exact-storage-shape-hash (document paths)
   (let ((shape (star.documents:clone-json-value document)))
     (when (outbox-object-has-key-p shape "_rev") (jsown:remkey shape "_rev"))
-    (dolist (path paths) (exact-storage-path-value shape path :null t))
+    (dolist (path paths) (exact-storage-path-value shape path :null))
     (outbox-digest-string (star.actors::canonical-target-json shape))))
 
 (defun exact-storage-number-matches-p (actual token)
@@ -41,17 +42,15 @@
     (unless (and (starintel::json-numeric-p actual)
                  (starintel::json-numeric-p expected))
       (return-from exact-storage-number-matches-p nil))
-    (or (and (not (starintel::json-numeric-less-p actual expected))
-             (not (starintel::json-numeric-less-p expected actual)))
-        ;; CouchDB's numeric materialization is binary64. This check is only
-        ;; fidelity verification, never a replacement for the exact wire token.
-        (handler-case
-            (let* ((left (coerce (com.inuoe.jzon:parse (jsown:to-json actual)) 'double-float))
-                   (right (coerce (com.inuoe.jzon:parse token) 'double-float)))
-              (and (starintel::json-finite-float-p left)
-                   (starintel::json-finite-float-p right)
-                   (= left right)))
-          (error () nil)))))
+    ;; Reject unsupported projections before exact arithmetic on hostile tokens.
+    ;; Binary64 equivalence verifies fidelity, not out-of-band tamper resistance.
+    (handler-case
+        (let* ((left (coerce (com.inuoe.jzon:parse (jsown:to-json actual)) 'double-float))
+               (right (coerce (com.inuoe.jzon:parse token) 'double-float)))
+          (and (starintel::json-finite-float-p left)
+               (starintel::json-finite-float-p right)
+               (= left right)))
+      (error () nil))))
 
 (defun prepare-exact-storage-document (document)
   "Attach bounded exact-token evidence atomically, without changing numeric fields."
@@ -69,6 +68,8 @@
                   (when (>= (length records) +exact-number-max-tokens+)
                     (error "Exact-number storage token limit exceeded"))
                   (let ((token (jsown:to-json value)))
+                    (when (> (length token) +exact-number-max-token-length+)
+                      (error "Exact-number token limit exceeded"))
                     (unless (starintel::json-numeric-p (starintel:parse-json token))
                       (error "Invalid exact-number token"))
                     (unless (handler-case
@@ -100,7 +101,8 @@
   "Verify and restore exact tokens from complete stored documents, never ingress."
   (let* ((extensions (document-extensions document))
          (evidence (outbox-object-value extensions +exact-number-extension-key+)))
-    (unless evidence (return-from restore-exact-storage-document document))
+    (unless (outbox-object-has-key-p extensions +exact-number-extension-key+)
+      (return-from restore-exact-storage-document document))
     (unless (and (json-object-p evidence)
                  (eql 1 (outbox-object-value evidence "version"))
                  (member (outbox-object-value evidence "extensions_present") '(:true :false))
@@ -122,7 +124,7 @@
         (let* ((path (sequence-list (outbox-object-value record "path")))
                (token (jsown:val record "token"))
                (actual (exact-storage-path-value copy path)))
-          (when (or (member path paths :test #'equal) (> (length token) 1048576))
+          (when (or (member path paths :test #'equal) (> (length token) +exact-number-max-token-length+))
             (error "Duplicate or oversized exact-number record"))
           (unless (exact-storage-number-matches-p actual token)
             (error "Stale exact-number evidence"))
@@ -134,5 +136,5 @@
         (exact-storage-path-value
          copy (sequence-list (jsown:val record "path"))
          (star.documents:native-json-to-document
-          (starintel:parse-json (jsown:val record "token"))) t))
+          (starintel:parse-json (jsown:val record "token")))))
       copy)))

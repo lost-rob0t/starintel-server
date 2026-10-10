@@ -273,31 +273,36 @@
 
 (defun legacy-numeric-content-hash (operation document)
   "Read-only collision probe for historical JSOWN-normalized mutation identities."
-  (handler-case
-      (let ((public (public-document-copy document)))
-        (unless (outbox-object-has-key-p public "extensions")
-          (setf (jsown:val public "extensions") (jsown:empty-object)))
-        (outbox-digest-string
-         (format nil "~(~a~)|~a" operation
-                 (jsown:to-json
-                  (jsown:with-injective-reader
-                    (jsown:parse (jsown:to-json public)))))))
-    ;; An unrepresentable old value could not have established this old hash.
-    (error () nil)))
+  (let ((public (public-document-copy document)))
+    (unless (outbox-object-has-key-p public "extensions")
+      (setf (jsown:val public "extensions") (jsown:empty-object)))
+    (outbox-digest-string
+     (format nil "~(~a~)|~a" operation
+             (jsown:to-json
+              (jsown:with-injective-reader
+                (jsown:parse (jsown:to-json public))))))))
 
 (defun reject-ambiguous-legacy-numeric-retry (existing document operation content-hash mutation-id)
   (when (and (eq operation :updated)
              (star.documents:canonical-document-p document)
-             (not (explicit-mutation-id document)))
+             (not (explicit-mutation-id document))
+             (some (lambda (entry)
+                     (not (outbox-object-has-key-p entry "content_encoding")))
+                   (document-outbox-entries existing)))
     (let ((legacy-hash (legacy-numeric-content-hash operation document)))
       (when (and legacy-hash (not (string= legacy-hash content-hash)))
         (dolist (candidate
-                 (list legacy-hash
-                       (outbox-digest-string
-                        (format nil "canonical-extensions-absent|~a" legacy-hash))))
+                 (if (outbox-object-has-key-p document "extensions")
+                     (list legacy-hash)
+                     (list legacy-hash
+                           (outbox-digest-string
+                            (format nil "canonical-extensions-absent|~a" legacy-hash)))))
           (let ((entry (find-outbox-entry existing candidate)))
             (when (and entry
                        (not (outbox-object-has-key-p entry "content_encoding"))
+                       (or (not (outbox-object-has-key-p entry "public_extensions_present"))
+                           (eq (eq :true (jsown:val entry "public_extensions_present"))
+                               (not (null (outbox-object-has-key-p document "extensions")))))
                        (equal legacy-hash
                               (outbox-object-value (document-mutation-ledger existing) candidate)))
               (error 'mutation-conflict
