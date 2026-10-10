@@ -11,6 +11,7 @@
   :components
   ((:file "ids")
    (:file "document-access-package")
+   (:file "document-json")
    (:file "document-access")
    (:file "consumers/package")
    (:file "consumers/consumers")
@@ -37,6 +38,7 @@
    (:file "databases/view-request")
    (:file "databases/export")
    (:file "databases/outbox")
+   (:file "databases/exact-json-storage")
    (:file "databases/view-registry-package")
    (:file "databases/view-registry")
    (:file "databases/document-update-package")

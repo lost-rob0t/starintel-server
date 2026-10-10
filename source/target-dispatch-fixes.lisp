@@ -48,7 +48,7 @@ Object order is insignificant; key spelling, array order, JSON literals and
 empty collections are retained. Unsupported values fail closed."
   (labels ((ordered (item ancestors)
              (cond
-               ((or (stringp item) (integerp item) (floatp item)
+               ((or (stringp item) (integerp item) (floatp item) (starintel:json-number-p item)
                     (member item '(t :true :false :null) :test #'eq))
                 item)
                ((or (listp item) (vectorp item))
@@ -79,7 +79,7 @@ empty collections are retained. Unsupported values fail closed."
     (handler-case
         (let ((json (jsown:to-json (ordered value nil))))
           ;; Reject non-finite or otherwise non-JSON number encodings, too.
-          (com.inuoe.jzon:parse json)
+          (starintel:parse-json json)
           json)
       (invalid-target-dispatch (condition) (error condition))
       (error ()

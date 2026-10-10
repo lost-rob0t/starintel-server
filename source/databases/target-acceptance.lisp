@@ -6,9 +6,9 @@
 (defun couchdb-load-target-acceptance (client database acceptance-id)
   "Load the acceptance state for a target."
   (handler-case
-      (jsown:with-injective-reader
-        (jsown:parse
-         (cl-couch:get-document client database acceptance-id)))
+      (restore-exact-storage-document
+       (star.documents:parse-json-value
+        (cl-couch:get-document client database acceptance-id)))
     (dexador:http-request-not-found () nil)))
 
 (defun couchdb-save-target-acceptance (client database document)
@@ -17,7 +17,7 @@
       (let* ((response
                (jsown:parse
                 (cl-couch:create-document
-                 client database (jsown:to-json document))))
+                 client database (jsown:to-json (prepare-exact-storage-document document)))))
              (saved (clone-outbox-json document)))
         (when (outbox-object-has-key-p response "rev")
           (setf (jsown:val saved "_rev") (jsown:val response "rev")))

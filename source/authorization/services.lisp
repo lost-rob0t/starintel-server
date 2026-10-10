@@ -32,7 +32,7 @@
 
 (defun parse-document-value (value)
   (if (stringp value)
-      (jsown:parse value)
+      (star.documents:parse-json-value value)
       value))
 
 (defun authorized-fetch-document (document-id fetch-fn

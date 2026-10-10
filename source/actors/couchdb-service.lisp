@@ -123,7 +123,8 @@
 
 (defun parse-couchdb-document (document)
   (etypecase document
-    (string (jsown:parse document))
+    (string (star.databases.couchdb::restore-exact-storage-document
+             (star.documents:parse-json-value document)))
     (list document)))
 
 (defun delete-couchdb-document (client database document-id

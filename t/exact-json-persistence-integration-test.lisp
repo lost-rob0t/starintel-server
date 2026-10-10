@@ -25,7 +25,9 @@
             client database
             (jsown:to-json (gethash "outbox"
                                    (star.databases.couchdb::checked-in-design-document-map))))
-           (let* ((id "canonical:exact-persisted")
+           (dolist (token '("0.12345678901234567890123456789" "-0" "1.00e+0"
+                            "900719925474099312345678901234567890"))
+           (let* ((id (format nil "canonical:exact-persisted:~a" token))
                   (incoming (star.rabbit:decode-rabbit-document
                              (cons (exact-number-wire token id) 1)))
                   (published nil))
@@ -51,5 +53,22 @@
                   (assert-exact-number-document payload token)
                   (push payload published)))
                (is (= 1 (length published)))
-               (assert-readback))))
+               (assert-readback)
+               ;; A second recovery cannot republish a confirmed entry.
+               (star.databases.couchdb:recover-couchdb-outbox
+                client database
+                (lambda (&rest args) (declare (ignore args))
+                  (error "published entry replayed")))
+               (let* ((current (star.databases.couchdb::couchdb-load-outbox-document client database id))
+                      (updated (star.documents:clone-json-value current)))
+                 (setf (jsown:val (jsown:val updated "extensions") "exact")
+                       (star.documents:parse-json-value "2.500e0"))
+                 (star.databases.couchdb::couchdb-save-outbox-document client database updated)
+                 (let ((readback (star.databases.couchdb::couchdb-load-outbox-document client database id)))
+                   (assert-exact-number-document readback "2.500e0")
+                   (jsown:remkey (jsown:val readback "extensions") "exact")
+                   (star.databases.couchdb::couchdb-save-outbox-document client database readback)
+                   (is (not (jsown:keyp
+                             (jsown:val (star.databases.couchdb::couchdb-load-outbox-document client database id)
+                                        "extensions") "exact")))))))))
       (cl-couch:delete-database client database))))

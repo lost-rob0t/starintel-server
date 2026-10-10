@@ -18,8 +18,7 @@
 (defun view-http-json-value (params name)
   (let ((value (view-http-param params name)))
     (when value
-      (jsown:with-injective-reader
-        (jsown:parse value)))))
+      (star.documents:parse-json-value value))))
 
 (defun view-http-common-arguments (params)
   (let ((arguments

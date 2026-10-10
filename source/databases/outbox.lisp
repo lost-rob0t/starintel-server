@@ -70,8 +70,7 @@
        (eq (first value) :obj)))
 
 (defun clone-outbox-json (object)
-  (jsown:with-injective-reader
-    (jsown:parse (jsown:to-json object))))
+  (star.documents:clone-json-value object))
 
 (defun copy-json-object-excluding (object excluded-keys)
   (let ((copy (jsown:empty-object)))
@@ -95,7 +94,7 @@
          (extensions
            (copy-json-object-excluding
             (document-extensions source)
-            (list +outbox-extension-key+ +mutation-ledger-extension-key+)))
+            (list +outbox-extension-key+ +mutation-ledger-extension-key+ "_server_exact_numbers")))
          ;; Entries are appended in mutation order. Never infer old absence:
          ;; unmarked historical entries retain their original public projection.
          (latest (when restore-extensions-presence
@@ -247,7 +246,8 @@
           (event-payload document mutation-id operation sequence))
     (when (star.documents:canonical-document-p document)
       (setf (jsown:val entry "public_extensions_present")
-            (if (outbox-object-has-key-p document "extensions") :true :false)))
+            (if (outbox-object-has-key-p document "extensions") :true :false)
+            (jsown:val entry "content_encoding") "exact-json-v1"))
     entry))
 
 (defun merge-server-state (target existing entry mutation-id content-hash)
@@ -269,6 +269,40 @@
           (jsown:val target "extensions")
           target-extensions)
     target))
+
+
+(defun legacy-numeric-content-hash (operation document)
+  "Read-only collision probe for historical JSOWN-normalized mutation identities."
+  (handler-case
+      (let ((public (public-document-copy document)))
+        (unless (outbox-object-has-key-p public "extensions")
+          (setf (jsown:val public "extensions") (jsown:empty-object)))
+        (outbox-digest-string
+         (format nil "~(~a~)|~a" operation
+                 (jsown:to-json
+                  (jsown:with-injective-reader
+                    (jsown:parse (jsown:to-json public)))))))
+    ;; An unrepresentable old value could not have established this old hash.
+    (error () nil)))
+
+(defun reject-ambiguous-legacy-numeric-retry (existing document operation content-hash mutation-id)
+  (when (and (eq operation :updated)
+             (star.documents:canonical-document-p document)
+             (not (explicit-mutation-id document)))
+    (let ((legacy-hash (legacy-numeric-content-hash operation document)))
+      (when (and legacy-hash (not (string= legacy-hash content-hash)))
+        (dolist (candidate
+                 (list legacy-hash
+                       (outbox-digest-string
+                        (format nil "canonical-extensions-absent|~a" legacy-hash))))
+          (let ((entry (find-outbox-entry existing candidate)))
+            (when (and entry
+                       (not (outbox-object-has-key-p entry "content_encoding"))
+                       (equal legacy-hash
+                              (outbox-object-value (document-mutation-ledger existing) candidate)))
+              (error 'mutation-conflict
+                     :mutation-id mutation-id :document-id (jsown:val document "_id")
+                     :reason "historical rounded mutation is ambiguous; use a fresh explicit mutation key"))))))))
 
 (defun prepare-outbox-mutation (existing incoming operation)
   "Prepare one atomic document revision containing document and pending event state.
@@ -321,6 +355,8 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
                      :reason "idempotency key was reused with different extensions presence"))
             (return-from prepare-outbox-mutation
               (values existing entry :duplicate)))))
+      (reject-ambiguous-legacy-numeric-retry
+       existing document operation content-hash mutation-id)
       (when (eq operation :new)
         (error 'mutation-conflict
                :mutation-id mutation-id
@@ -477,9 +513,9 @@ If publication fails, the durable pending entry remains recoverable."
 
 (defun couchdb-load-outbox-document (client database document-id)
   (handler-case
-      (jsown:with-injective-reader
-        (jsown:parse
-         (cl-couch:get-document client database document-id)))
+      (restore-exact-storage-document
+       (star.documents:parse-json-value
+        (cl-couch:get-document client database document-id)))
     (dexador:http-request-not-found ()
       nil)))
 
@@ -490,7 +526,7 @@ If publication fails, the durable pending entry remains recoverable."
                 (cl-couch:create-document
                  client
                  database
-                 (jsown:to-json document))))
+                 (jsown:to-json (prepare-exact-storage-document document)))))
              (saved (clone-outbox-json document)))
         (when (outbox-object-has-key-p response "rev")
           (setf (jsown:val saved "_rev")
