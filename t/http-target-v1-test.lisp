@@ -462,3 +462,86 @@
       (is (not (string= historical-id (jsown:val stored "_id"))))
       (is (string= "0.10.1"
                    (jsown:val (jsown:val stored "target_document") "schemaVersion"))))))
+
+(test v1-target-resource-policy-precedes-all-acceptance-effects
+  (let* ((star:*auth-mode* "api-key")
+         (star:*auth-dev-bypass* nil)
+         (star:*auth-pepper* "target-resource-test-pepper")
+         (star:*tenant-fallback* nil)
+         (star:*tenant-dataset-map* '(("private-dataset" . "private-tenant")))
+         (store (star.auth:make-memory-credential-store))
+         (star.auth:*credential-store* store)
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+         (lookup-symbol 'star.frontends.http-api::target-v1-load-historical-acceptance)
+         (accept-symbol 'star.actors:accept-target-record)
+         (original-lookup (symbol-function lookup-symbol))
+         (original-accept (symbol-function accept-symbol))
+         (original-publish (symbol-function 'star.actors:publish))
+         (publications 0)
+         (lookups 0) (accepts 0) (creates 0) (updates 0) (schedules 0)
+         (stored nil))
+    (multiple-value-bind (credential raw-key)
+        (star.auth:create-api-key
+         "target-resource-client" "api_client"
+         '("targets:dispatch" "tenant:default" "dataset:star-intel"
+           "dataset:private-dataset" "actor:subfinder" "target:*")
+         :store store)
+      (declare (ignore credential))
+      (labels ((submit (request)
+                 (lack.component:call
+                  star.frontends.http-api::*server*
+                  (boundary-env
+                   :post "/api/v1/targets" :body (jsown:to-json request)
+                   :headers (list (cons "Content-Type" "application/json")
+                                  (cons "Authorization" (format nil "Bearer ~a" raw-key)))))))
+        (unwind-protect
+             (progn
+               (setf (symbol-function 'star.actors:publish)
+                     (lambda (&rest args)
+                       (declare (ignore args)) (incf publications)
+                       (error "Unexpected publication during route test")))
+               (setf (symbol-function lookup-symbol)
+                     (lambda (id) (declare (ignore id)) (incf lookups) nil)
+                     (symbol-function accept-symbol)
+                     (lambda (record)
+                       (incf accepts)
+                       (funcall original-accept
+                        record :destination
+                        (star.actors::make-target-destination-handle
+                         :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")
+                        :persist-fn
+                        (lambda (desired equivalent-p)
+                          (cond ((null stored)
+                                 (incf creates) (setf stored desired) (values stored :created))
+                                ((funcall equivalent-p stored desired) (values stored :duplicate))
+                                (t (values stored :conflict))))
+                        :update-fn
+                        (lambda (id updater)
+                          (is (string= id (jsown:val stored "_id")))
+                          (incf updates) (setf stored (funcall updater stored)))
+                        :schedule-once-fn
+                        (lambda (&rest args) (declare (ignore args)) (incf schedules)))))
+               ;; Each caller has targets:dispatch, but lacks one resource dimension.
+               (dolist (request
+                        (list (make-v1-target-request :actor "forbidden-actor")
+                              (make-v1-target-request :dataset "forbidden-dataset")
+                              (make-v1-target-request :dataset "private-dataset")))
+                 (let ((response (submit request)))
+                   (is (= 403 (boundary-status response)))
+                   (is (string= "access_denied" (boundary-response-code response)))
+                   (is (= 0 lookups accepts creates updates schedules publications))
+                   (is (null stored))))
+               ;; The identical real policy allows an in-scope request and its retry.
+               (let* ((request (make-v1-target-request :idempotency-key "resource-allowed"))
+                      (created (submit request))
+                      (duplicate (submit request)))
+                 (is (= 201 (boundary-status created)))
+                 (is (= 200 (boundary-status duplicate)))
+                 (is (string= "accepted" (jsown:val (jsown:parse (boundary-body created)) "status")))
+                 (is (string= "duplicate" (jsown:val (jsown:parse (boundary-body duplicate)) "status")))
+                 (is (= 2 lookups accepts))
+                 (is (= 1 creates updates schedules))
+                 (is (= 0 publications))))
+          (setf (symbol-function lookup-symbol) original-lookup
+                (symbol-function accept-symbol) original-accept
+                (symbol-function 'star.actors:publish) original-publish))))))
