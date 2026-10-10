@@ -31,6 +31,7 @@
                     (jsown:to-json
                      (star.observability::otlp-payload signal records))))
             :ok)))
+    (star.observability:stop-exporter)
     (star.observability:reset-exporter-state)
     (unwind-protect
          (let ((star.observability::*exporter-running* t))

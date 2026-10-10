@@ -154,7 +154,10 @@ add-on and therefore remains safe to repeat during ASDF reload."
   (let ((canonical-system (canonical-addon-system system)))
     (handler-case
         (progn
-          (asdf:load-system canonical-system)
+          (let ((component (asdf:find-system canonical-system nil)))
+            (unless (and (addon-definition-for-system canonical-system)
+                         component)
+              (asdf:load-system canonical-system)))
           (let ((definition (ensure-addon-definition canonical-system))
                 (state (addon-status canonical-system)))
             (if (and state (eq :active (addon-state-status state)))

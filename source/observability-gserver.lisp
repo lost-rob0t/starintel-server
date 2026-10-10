@@ -116,7 +116,8 @@ wrapper once. Document bodies are never recorded; only operation, database,
 status and duration. Tests that swap the transport keep full control."
   (unless (get 'star-observability-transport 'installed)
     (setf star.databases.couchdb:*couchdb-view-transport*
-          (observability-couchdb-transport star.databases.couchdb:*couchdb-view-transport*)
+          (observability-couchdb-transport
+           star.databases.couchdb:*couchdb-view-transport*)
           (get 'star-observability-transport 'installed) t)))
 
 (defun observability-couchdb-transport (transport)

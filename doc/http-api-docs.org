@@ -37,6 +37,7 @@ The initial contracted operations cover:
 - versioned StarIntel document operations under =/api/v1/documents=:
   ingest (single and bounded bulk), read, deep-merge update, delete, and
   full-text search;
+- authenticated actor/service discovery through =GET /v1/actors=;
 - OpenAPI and client-manifest discovery.
 
 The versioned document operations reuse the same hardened boundary and
@@ -53,6 +54,16 @@ resource authorization on every operation.
 | PUT | =/api/v1/documents/:id= | =documents.update= |
 | DELETE | =/api/v1/documents/:id= | =documents.delete= |
 | GET | =/api/v1/documents/search= | =documents.search= |
+| GET | =/v1/actors= | =actors.list= |
+
+The actor registry route requires the =actors:read= scope. It returns only
+emitted manifests explicitly marked operator-visible. Each entry includes its
+canonical =star://= resource URI, semantic version and digest, accepted and
+produced contracts, capabilities, source package, and a separate runtime
+=status=/=ready= projection. A manifest without a runtime observation is
+=unavailable=; catalog presence never fabricates liveness. Internal actor
+references, Sento paths, Rabbit queue/routing names, endpoints, and secrets are
+not part of this response.
 
 Legacy document, target, search, and CouchDB-view routes remain available and
 will migrate into the same registry incrementally. Clients should prefer named

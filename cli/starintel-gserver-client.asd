@@ -8,6 +8,7 @@
                  (:file "http-contract")
                  (:file "http-contract-final")
                  (:file "http-contract-targets")
+                 (:file "http-contract-actors")
                  (:file "http-contract-documents")
                  (:file "client-package")
                  (:file "client-runtime")
