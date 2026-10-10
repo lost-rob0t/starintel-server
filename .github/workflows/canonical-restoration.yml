@@ -13,73 +13,156 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reconcile-evidence:
+  reconstruct-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      BASE_SHA: ce14c77ccd2f51f543410fdeef3d78fb9978b769
-      ORIGINAL_BASELINE: ad55d9708491870f93f0444aee7791d21afe4d77
-      EXPECTED_HEAD: ${{ github.sha }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Compute reconciliation without merging or committing
-        id: reconcile
+      - name: Reconstruct only the reviewed conflicts
+        id: reconstruct
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess, sys
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          out = pathlib.Path(os.environ["RUNNER_TEMP"]) / "canonical-restoration-evidence"
+          out.mkdir(exist_ok=True)
+          baseline = "ad55d9708491870f93f0444aee7791d21afe4d77"
+          master = "ce14c77ccd2f51f543410fdeef3d78fb9978b769"
+          parent = "f00848374f0082c2ccb0ff6222721c9e698b997f"
+          head = os.environ["GITHUB_SHA"]
+          def git(*args, env=None):
+              return subprocess.check_output(["git", *args], cwd=root, env=env)
+          assert git("rev-parse", "HEAD").decode().strip() == head
+          assert git("rev-parse", "HEAD^").decode().strip() == parent
+          assert git("diff", "--name-only", parent, head).decode().strip() == ".github/workflows/canonical-restoration.yml"
+          actual = git("ls-remote", "https://github.com/lost-rob0t/starintel-server.git", "refs/heads/master").decode().split()[0]
+          assert actual == master, "master moved; re-review required"
+          git("fetch", "--no-tags", "https://github.com/lost-rob0t/starintel-server.git", master)
+          control = git("merge-tree", "--write-tree", baseline, baseline).decode().strip()
+          assert control == git("rev-parse", baseline + "^{tree}").decode().strip()
+          r = subprocess.run(["git", "merge-tree", "--write-tree", "--messages", "--name-only", baseline, master], cwd=root, capture_output=True, text=True)
+          (out / "automatic-merge.txt").write_text(r.stdout)
+          (out / "automatic-merge-stderr.txt").write_text(r.stderr)
+          assert r.returncode == 1, f"expected real baseline conflicts, got {r.returncode}"
+          lines = r.stdout.splitlines()
+          automatic = lines[0]
+          assert re.fullmatch(r"[0-9a-f]{40}", automatic)
+          assert git("cat-file", "-t", automatic).decode().strip() == "tree"
+          paths = lines[1:lines.index("", 1)]
+          expected = ["source/observability-gserver.lisp", "t/addon-system-test.lisp", "t/observability-test.lisp"]
+          assert paths == expected, paths
+          pattern = re.compile(r"^<<<<<<< [^\n]+\n(.*?)^=======\n(.*?)^>>>>>>> [^\n]+\n", re.M | re.S)
+          env = os.environ.copy()
+          env["GIT_INDEX_FILE"] = str(pathlib.Path(os.environ["RUNNER_TEMP"]) / "restoration.index")
+          git("read-tree", automatic, env=env)
+          def stripped(block):
+              return " ".join(block.split())
+          for path in expected:
+              original = git("show", automatic + ":" + path).decode()
+              blocks = list(pattern.finditer(original))
+              assert len(blocks) == (2 if path == expected[2] else 1), path
+              def resolve(match):
+                  ours, theirs = match.group(1), match.group(2)
+                  if path == expected[0]:
+                      assert stripped(ours) == stripped(theirs) == "(observability-couchdb-transport star.databases.couchdb:*couchdb-view-transport*)"
+                      return theirs
+                  if path == expected[1]:
+                      assert stripped(ours) == "(is-true state)"
+                      assert stripped(theirs) == "(is (not (null state)))"
+                      return theirs
+                  assert stripped(ours) == '(star.observability::*observability-signals* "logs,metrics,traces")'
+                  assert not theirs.strip()
+                  return ours
+              resolved = pattern.sub(resolve, original)
+              assert not re.search(r"^(<<<<<<<|=======|>>>>>>>)", resolved, re.M), path
+              blob = subprocess.check_output(["git", "hash-object", "-w", "--stdin"], cwd=root, input=resolved.encode()).decode().strip()
+              git("update-index", "--cacheinfo", "100644", blob, path, env=env)
+          candidate = git("write-tree", env=env).decode().strip()
+          changed = git("diff", "--name-only", automatic, candidate).decode().splitlines()
+          assert changed == expected, changed
+          def inventory(tree):
+              result = {}
+              for entry in git("ls-tree", "-rz", tree).split(b"\0"):
+                  if entry:
+                      meta, path = entry.split(b"\t", 1)
+                      mode, kind, sha = meta.decode().split()
+                      result[path.decode()] = dict(mode=mode, type=kind, sha=sha)
+              return result
+          auto_files, files, head_files = inventory(automatic), inventory(candidate), inventory(head)
+          assert set(auto_files) == set(files)
+          for path in files:
+              if path not in expected:
+                  assert files[path] == auto_files[path], path
+          for path, item in inventory(baseline).items():
+              if path in ("flake.lock", "qlfile", "qlfile.lock", "schema/starintel-schema.lock.json") or path.startswith("schemas/"):
+                  assert files[path] == item, "unapproved lock/generated drift: " + path
+          assert "actor-registry-tests" in git("show", candidate + ":t/run-tests.lisp").decode()
+          assert "v0101-runtime-tests" in git("show", candidate + ":t/run-tests.lisp").decode()
+          assert '(:file "actor-registry-test")' in git("show", candidate + ":starintel-gserver-tests.asd").decode()
+          assert '(:file "v0101-runtime-test")' in git("show", candidate + ":starintel-gserver-tests.asd").decode()
+          git("diff", "--check", head, candidate)
+          diff = git("--no-pager", "diff", "--no-ext-diff", "--no-textconv", head, candidate)
+          assert len(diff) <= 1000000, "publication diff too large; no truncation allowed"
+          (out / "candidate.diff").write_bytes(diff)
+          (out / "inventory.json").write_text(json.dumps(files, sort_keys=True, indent=2) + "\n")
+          changes = []
+          for path in sorted(set(head_files) | set(files)):
+              if head_files.get(path) == files.get(path):
+                  continue
+              if path not in files:
+                  changes.append(dict(path=path, sha=None))
+                  continue
+              item = files[path]
+              assert item["type"] == "blob" and item["mode"] in ("100644", "100755"), path
+              content = git("cat-file", "blob", item["sha"])
+              assert len(content) <= 250000 and b"\0" not in content, "oversized/binary publication blob: " + path
+              changes.append(dict(path=path, **item, content=content.decode("utf-8")))
+          payload = dict(head=head, expected_parent=parent, baseline=baseline, master=master, automatic_tree=automatic, candidate_tree=candidate, changes=changes)
+          encoded = json.dumps(payload)
+          assert len(encoded) <= 1000000, "publication manifest too large"
+          (out / "publication.json").write_text(encoded + "\n")
+          print("RESTORATION_MANIFEST " + encoded)
+          candidate_dir = pathlib.Path(os.environ["RUNNER_TEMP"]) / "canonical-restoration-candidate"
+          candidate_dir.mkdir()
+          git("checkout-index", "--all", "--prefix=" + str(candidate_dir) + "/", env=env)
+          (out / "provenance.json").write_text(json.dumps({k:v for k,v in payload.items() if k != "changes"}, indent=2) + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("candidate=" + str(candidate_dir) + "\n")
+          print("Clean reconstructed tree", candidate)
+          
+          PY
+      - name: Verify candidate schema and dependency closure
+        working-directory: ${{ steps.reconstruct.outputs.candidate }}
+        run: |
+          python3 scripts/check-starintel-schema-lock.py
+          python3 scripts/check-starintel-dependency-lock.py
+      - name: Install Nix for existing repository gates
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Run full candidate Nix checks
+        working-directory: ${{ steps.reconstruct.outputs.candidate }}
+        run: nix flake check --show-trace -L
+      - name: Run candidate normal nonempty unit suite
+        working-directory: ${{ steps.reconstruct.outputs.candidate }}
+        run: nix run .#star-unit-tests
+      - name: Hash review evidence
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/canonical-restoration-evidence"
-          mkdir -p "$evidence"
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = "$ORIGINAL_BASELINE"
-          test "$(git diff --name-only "$ORIGINAL_BASELINE" HEAD)" = ".github/workflows/canonical-restoration.yml"
-          public_remote="https://github.com/lost-rob0t/starintel-server.git"
-          current_base="$(git ls-remote "$public_remote" refs/heads/master | cut -f1)"
-          test "$current_base" = "$BASE_SHA"
-          git fetch --no-tags "$public_remote" "$BASE_SHA"
-          test "$(git rev-parse FETCH_HEAD)" = "$BASE_SHA"
-          {
-            git --version
-            printf 'candidate=%s\nbase=%s\noriginal-baseline=%s\n' "$EXPECTED_HEAD" "$BASE_SHA" "$ORIGINAL_BASELINE"
-            git merge-base HEAD "$BASE_SHA"
-          } | tee "$evidence/provenance.txt"
-          git merge-tree --write-tree HEAD HEAD > "$evidence/control-tree.txt"
-          test "$(head -n 1 "$evidence/control-tree.txt")" = "$(git rev-parse HEAD^{tree})"
-          printf 'clean same-commit control passed\n' | tee "$evidence/control.txt"
-          set +e
-          git merge-tree --write-tree --messages --name-only HEAD "$BASE_SHA" > "$evidence/merge-tree.txt" 2> "$evidence/merge-tree-stderr.txt"
-          status=$?
-          set -e
-          printf '%s\n' "$status" > "$evidence/status.txt"
-          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
-          case "$status" in
-            0) category=conflict-free ;;
-            1) category=conflicts ;;
-            *) category=execution-error ;;
-          esac
-          printf 'category=%s\n' "$category" | tee "$evidence/category.txt"
-          cat "$evidence/merge-tree.txt" "$evidence/merge-tree-stderr.txt"
-          tree="$(head -n 1 "$evidence/merge-tree.txt")"
-          if [[ "$tree" =~ ^[0-9a-f]{40}$ ]] && test "$(git cat-file -t "$tree")" = tree; then
-            git --no-pager diff --no-ext-diff --no-textconv HEAD "$tree" > "$evidence/diagnostic-reconciliation.diff"
-            git --no-pager diff --no-ext-diff --no-textconv --stat HEAD "$tree" | tee "$evidence/stat.txt"
-            git --no-pager diff --no-ext-diff --no-textconv HEAD "$tree" -- flake.nix source/observability-gserver.lisp starintel-gserver-tests.asd t/run-tests.lisp t/addon-system-test.lisp t/authorization-services-final-test.lisp t/observability-test.lisp > "$evidence/overlap.diff"
-          fi
-          for file in "$evidence"/*; do
-            bytes="$(wc -c < "$file")"
-            if test "$bytes" -gt 500000; then
-              head -c 500000 "$file" > "$file.bounded"
-              mv "$file.bounded" "$file"
-              printf '%s truncated from %s to 500000 bytes\n' "$(basename "$file")" "$bytes" >> "$evidence/truncation.txt"
-            fi
-          done
-          test ! -f "$evidence/overlap.diff" || cat "$evidence/overlap.diff"
-          sha256sum "$evidence"/* > "$evidence-files.sha256"
-          mv "$evidence-files.sha256" "$evidence/"
-      - name: Retain only repository reconciliation evidence
+          test -d "$evidence"
+          sha256sum "$evidence"/* > "$RUNNER_TEMP/evidence-files.sha256"
+          mv "$RUNNER_TEMP/evidence-files.sha256" "$evidence/"
+      - name: Retain exact candidate evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -87,8 +170,3 @@ jobs:
           path: ${{ runner.temp }}/canonical-restoration-evidence/
           if-no-files-found: error
           retention-days: 7
-      - name: Require a conflict-free synthesized tree
-        if: always()
-        env:
-          MERGE_TREE_STATUS: ${{ steps.reconcile.outputs.status }}
-        run: test "$MERGE_TREE_STATUS" = 0
