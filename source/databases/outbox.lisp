@@ -111,7 +111,8 @@
    (format nil
            "~(~a~)|~a"
            operation
-           (jsown:to-json (public-document-copy document)))))
+           (jsown:to-json (copy-json-object-excluding
+                          (public-document-copy document) '("_attachments"))))))
 
 (defun explicit-mutation-id (document)
   (let* ((extensions (document-extensions document))
@@ -288,8 +289,19 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
                :document-id document-id
                :reason "new-document mutation conflicts with an existing document")))
     (when existing
+      (when (outbox-object-has-key-p existing "_attachments")
+        (dolist (key '("dtype" "bytesHash" "bytesHashAlgorithm" "storageId" "sizeBytes"))
+          (unless (equal (outbox-object-value existing key)
+                         (outbox-object-value document key))
+            (error 'mutation-conflict
+                   :mutation-id mutation-id :document-id document-id
+                   :reason (format nil "attached file metadata ~a is immutable" key)))))
       (setf (jsown:val document "_rev")
-            (jsown:val existing "_rev")))
+            (jsown:val existing "_rev"))
+      (when (outbox-object-has-key-p existing "_attachments")
+        ;; Generic metadata updates cannot detach persisted file content.
+        (setf (jsown:val document "_attachments")
+              (jsown:val existing "_attachments"))))
     (let* ((sequence (next-outbox-sequence (or existing document)))
            (entry
              (make-outbox-entry

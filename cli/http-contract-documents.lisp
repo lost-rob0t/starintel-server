@@ -217,6 +217,31 @@ and persists it only when valid."))
                          (generic-object-schema)))
               (standard-errors))))
 
+(upsert-http-operation
+ (make-http-operation
+  :id "files.create" :client-name "file-create" :method :post
+  :path "/api/v1/files" :tags '("files") :authority :authenticated
+  :summary "Atomically ingest bounded file bytes with a core File, Image or Picture"
+  :scopes '("documents:write")
+  :request-schema (object-schema
+                   (list (cons "document" +document-request-schema+)
+                         (cons "contentBase64" (string-schema)))
+                   :required '("document" "contentBase64") :additional-properties nil)
+  :responses (append (list (response 200 "File committed; canonical metadata receipt."
+                                    +document-request-schema+))
+                     (standard-errors))))
+
+(upsert-http-operation
+ (make-http-operation
+  :id "files.content.get" :client-name "file-content-get" :method :get
+  :path "/api/v1/files/:id/content" :tags '("files") :authority :authenticated
+  :summary "Read authorized bounded file bytes with SHA-256 integrity verification"
+  :scopes '("documents:read") :path-parameters '("id")
+  :responses (append (list (response 200 "Verified binary content."
+                                    (json-object (cons "type" "string") (cons "format" "binary"))
+                                    "application/octet-stream"))
+                     (standard-errors))))
+
 ;; Re-run the schema literal normalization over the whole contract so the
 ;; operations registered by this file (and by files loaded before the final
 ;; normalization pass) emit JSON boolean literals instead of bare lists.

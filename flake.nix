@@ -154,6 +154,7 @@ EOF
           cl-rabbit
           sento
           babel
+          cl-base64
           uuid
           anypool
           clack
