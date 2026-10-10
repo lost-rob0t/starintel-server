@@ -39,6 +39,8 @@ jobs:
           test -x "$qlot/bin/qlot"
           echo "path=$qlot" >> "$GITHUB_OUTPUT"
           echo "Native Qlot derivation: $qlot"
+          timeout 600 "$qlot/bin/qlot" install --no-deps
+          git diff --exit-code -- qlfile.lock
       - name: Establish maintained mismatch RED and author only declarations
         shell: bash
         run: |
@@ -51,7 +53,7 @@ jobs:
           library="33935f1e6739b0015926a2a163ba55cf203fbc9d"
           authority="96d26c338078676ec1dc6928755901636c9f7ef0"
           def git(*args): return subprocess.check_output(["git",*args],text=True).strip()
-          assert git("rev-parse","HEAD^")==baseline
+          assert git("rev-parse","HEAD^")=="ec190075137cafa7c9dcec3a6c521c0ab1a0a769"
           assert git("diff","--name-only",baseline,"HEAD")==".github/workflows/canonical-closure.yml"
           with urllib.request.urlopen("https://raw.githubusercontent.com/lost-rob0t/star-cl/"+library+"/schema/starintel-schema.lock.json") as r:
               maintained=json.load(r)
