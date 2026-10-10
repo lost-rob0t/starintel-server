@@ -40,6 +40,7 @@
      (:file "json-literal-preservation-test")
      (:file "v09-runtime-test")
      (:file "v0101-runtime-test")
+     (:file "exact-json-persistence-test")
      (:file "http-capabilities-test")
      (:file "actor-registry-test")
      (:file "http-auth-test")
