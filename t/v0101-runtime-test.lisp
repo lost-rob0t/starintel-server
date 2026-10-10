@@ -445,3 +445,62 @@
     (issue319-assert-acceptance-conflict
      (issue319-old-acceptance (issue319-fingerprint-envelope target))
      (issue319-fingerprint-envelope investigation))))
+
+
+(test canonical-raw-readback-preserves-json-values-and-hides-private-outbox
+  (let* ((document (star.documents:ensure-document (v0101-person "canonical:readback")))
+         (user-extensions
+           (jsown:new-js ("probe" (jsown:new-js ("falseValue" :false) ("nullValue" :null)
+                                               ("emptyObject" (jsown:empty-object))
+                                               ("emptyArray" #()))))))
+    (setf (jsown:val document "_rev") "4-readback"
+          (jsown:val document "tenant_id") "private-tenant"
+          (jsown:val document "extensions") (star.documents:clone-document-object user-extensions)
+          (jsown:val (jsown:val document "extensions") "_server_outbox")
+          (vector (jsown:new-js ("private_state" "outbox-evidence")))
+          (jsown:val (jsown:val document "extensions") "_server_mutations")
+          (jsown:new-js ("private_state" "mutation-evidence")))
+    (let* ((before (jsown:to-json document))
+           (raw (star.frontends.http-api:strip-server-tenant-fields before))
+           (wire (star.documents:parse-document-object raw)))
+      (is (string= before (jsown:to-json document)))
+      (star.frontends.http-api:strip-server-tenant-fields document)
+      (is (string= before (jsown:to-json document)))
+      (is (string= (star.actors::canonical-target-json user-extensions)
+                   (star.actors::canonical-target-json (jsown:val wire "extensions"))))
+      (is (string= "4-readback" (jsown:val wire "rev")))
+      (dolist (key '("_id" "_rev" "tenant_id"))
+        (is-false (jsown:keyp wire key)))
+      (is (eq wire (star.documents:validate-document wire))))))
+
+(test canonical-raw-search-readback-preserves-json-values
+  (let* ((document (star.documents:ensure-document (v0101-person "canonical:search-values")))
+         (extensions (jsown:new-js ("falseValue" :false) ("nullValue" :null)
+                                    ("emptyObject" (jsown:empty-object)) ("emptyArray" #()))))
+    (setf (jsown:val document "extensions") extensions)
+    (let* ((body (jsown:to-json (jsown:new-js ("rows" (vector (jsown:new-js ("doc" document) ("fields" document)))))))
+           (raw (star.frontends.http-api:strip-server-tenant-from-search-body body))
+           (wire (jsown:val (elt (jsown:val (star.documents:parse-document-object raw) "rows") 0) "doc")))
+      (is (string= (star.actors::canonical-target-json extensions)
+                   (star.actors::canonical-target-json (jsown:val wire "extensions"))))
+      (let ((fields (jsown:val (elt (jsown:val (star.documents:parse-document-object raw) "rows") 0) "fields")))
+        (is (string= (star.actors::canonical-target-json extensions)
+                     (star.actors::canonical-target-json (jsown:val fields "extensions"))))))))
+
+(test canonical-readback-does-not-add-absent-extensions
+  (let* ((document (star.documents:ensure-document (v0101-person "canonical:no-extensions")))
+         (wire (star.frontends.http-api:strip-server-tenant-fields document)))
+    (is-false (jsown:keyp wire "extensions"))
+    (is (eq wire (star.documents:validate-document wire)))))
+
+(test historical-raw-readback-preserves-json-literals
+  (let* ((raw "{\"_id\":\"legacy:values\",\"tenant_id\":\"private\",\"values\":{\"f\":false,\"n\":null,\"a\":[],\"o\":{}}}")
+         (wire (star.documents:parse-document-object
+                (star.frontends.http-api:strip-server-tenant-fields raw)))
+         (values (jsown:val wire "values")))
+    (is (eq :false (jsown:val values "f")))
+    (is (eq :null (jsown:val values "n")))
+    (is (string= "[]" (star.actors::canonical-target-json (jsown:val values "a"))))
+    (is (string= "{}" (star.actors::canonical-target-json (jsown:val values "o"))))
+    (is-false (jsown:keyp wire "tenant_id"))
+    (is (string= "legacy:values" (jsown:val wire "_id")))))
