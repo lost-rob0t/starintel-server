@@ -304,7 +304,7 @@ operating on the type it started with."
 (defun validate-schema-version (document &key index)
   (let* ((canonical (star.documents:canonical-document-p document))
          (schema-version (jsown:val-safe document (if canonical "schemaVersion" "schema_version")))
-         (expected (if canonical (starintel.canonical:schema-version) starintel:+starintel-doc-version+)))
+         (expected (if canonical (starintel.canonical:schema-version) starintel.legacy:+starintel-doc-version+)))
     (unless schema-version
       (signal-http-input-error
        422
@@ -393,7 +393,7 @@ object."
       (fold-legacy-target-field document data key))
     (unless (jsown:keyp document "schema_version")
       (setf (jsown:val document "schema_version")
-            starintel:+starintel-doc-version+))
+            starintel.legacy:+starintel-doc-version+))
     (unless (jsown:keyp document "version")
       (setf (jsown:val document "version") 1))
     (unless (jsown:keyp document "date_added")

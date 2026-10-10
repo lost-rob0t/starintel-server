@@ -117,3 +117,37 @@
             (is-false (jsown:keyp wire "tenant_id"))
             (is-false (jsown:keyp wire "_id"))
             (is (eq wire (star.documents:validate-document wire)))))))))
+
+(test canonical-message-cannot-enter-historical-url-extractor
+  (let* ((calls 0)
+         (symbols '(starintel.legacy:new-url starintel.legacy:new-relation
+                    star.databases.couchdb:as-json star.actors:publish))
+         (originals (mapcar #'symbol-function symbols)))
+    (unwind-protect
+         (progn
+           (dolist (symbol symbols)
+             (setf (symbol-function symbol)
+                   (lambda (&rest args)
+                     (declare (ignore args))
+                     (incf calls)
+                     (error "Historical side effect must not run."))))
+           (dolist (document
+                    (list
+                     (jsown:new-js ("id" "canonical:message") ("dataset" "canonical-tests")
+                                   ("dtype" "message") ("schemaVersion" "0.10.1")
+                                   ("message" "https://example.org/") ("platform" "test"))
+                     (jsown:new-js ("id" "canonical:message") ("_id" "canonical:message")
+                                   ("schemaVersion" "0.10.1") ("content" "https://example.org/"))
+                     (jsown:new-js ("schemaVersion" nil) ("content" "https://example.org/"))
+                     (jsown:new-js ("id" nil) ("content" "https://example.org/"))
+                     (jsown:new-js ("id" "") ("content" "https://example.org/"))))
+             (let ((condition
+                     (handler-case
+                         (progn (star.actors.matcher::process-legacy-url-extractor-message document) nil)
+                       (error (value) value))))
+               (is (typep condition 'simple-error))
+               (is (search "Canonical URL extraction is unsupported" (princ-to-string condition)))
+               (is (= 0 calls))
+               (is-false (jsown:keyp document "schema_version")))))
+      (loop for symbol in symbols for original in originals
+            do (setf (symbol-function symbol) original)))))

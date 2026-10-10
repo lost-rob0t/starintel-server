@@ -241,9 +241,9 @@ instead of being mistaken for an expected broker failure."
 
 (defun make-test-target (&key (id "target-123") (actor "nmap"))
   "Create a test target structure."
-  (let ((doc (spec:new-target "testing" id  actor)))
-    (spec:ulid-id doc)
-    (spec:encode doc)))
+  (let ((doc (starintel.legacy:new-target "testing" id  actor)))
+    (starintel.legacy:ulid-id doc)
+    (starintel.legacy:encode doc)))
 
 ;; The view endpoints still read the legacy flat document shape until the
 ;; versioned CouchDB view migration is implemented. Keep that compatibility
@@ -270,74 +270,74 @@ instead of being mistaken for an expected broker failure."
 
 (defun make-test-host (&key (id nil) (ip "192.168.1.100"))
   "Create a test host document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (spec:new-host "testing" :ip ip :os "linux")))
+  (let ((doc (starintel.legacy:new-host "testing" :ip ip :os "linux")))
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
     ;; Add ports array for by_port and by_service views
-    (setf (spec:host-ports doc) (list (make-instance 'spec:service :number 22 :services "ssh" :version "")))
-    (spec:encode doc)))
+    (setf (starintel.legacy:host-ports doc) (list (make-instance 'starintel.legacy:service :number 22 :services "ssh" :version "")))
+    (starintel.legacy:encode doc)))
 
 
 (defun make-test-email (&key (id nil) (user "testuser") (domain "example.com"))
   "Create a test email document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (spec:new-email "testing" :user user :domain domain)))
+  (let ((doc (starintel.legacy:new-email "testing" :user user :domain domain)))
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
     ;; Password is a legacy flat-view field, not part of the v0.9 email schema.
-    (let ((encoded (spec:encode doc)))
+    (let ((encoded (starintel.legacy:encode doc)))
       (jsown:remkey (jsown:val encoded "data") "password")
       encoded)))
 
 
 (defun make-test-domain (&key (id nil) (record "example.com") (resolved '("1.2.3.4" "5.6.7.8")))
   "Create a test domain document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (spec:new-domain "testing" :record record :record-type "A" :resolved resolved)))
+  (let ((doc (starintel.legacy:new-domain "testing" :record record :record-type "A" :resolved resolved)))
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
-    (spec:encode doc)))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
+    (starintel.legacy:encode doc)))
 
 (defun make-test-user (&key (id nil) (name "testuser") (platform "github"))
   "Create a test user document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (spec:new-user "testing"
+  (let ((doc (starintel.legacy:new-user "testing"
                             :name name
                             :platform platform
                             :url (format nil "https://~a.com/~a" platform name)
                             :bio "Test user bio")))
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
-    (spec:encode doc)))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
+    (starintel.legacy:encode doc)))
 
 (defun make-test-network (&key (id nil) (asn 12345))
   "Create a test network document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (spec:new-network "testing" :asn asn :org "Test Organization" :subnet "10.0.0.0/8")))
+  (let ((doc (starintel.legacy:new-network "testing" :asn asn :org "Test Organization" :subnet "10.0.0.0/8")))
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
-    (spec:encode doc)))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
+    (starintel.legacy:encode doc)))
 
 (defun make-test-url-doc (&key (id nil) (url "https://example.com/test"))
   "Create a test url document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (spec:new-url "testing" :url url :path "/test" :content "Test page content")))
+  (let ((doc (starintel.legacy:new-url "testing" :url url :path "/test" :content "Test page content")))
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
-    (spec:encode doc)))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
+    (starintel.legacy:encode doc)))
 
 (defun make-test-breach (&key (id nil) (total 10000))
   "Create a test breach document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (make-instance 'spec:breach
+  (let ((doc (make-instance 'starintel.legacy:breach
                             :url "https://example.com/breach"
                             :description "Test breach description"
                             :total total)))
-    (spec:set-meta doc "testing")
+    (starintel.legacy:set-meta doc "testing")
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
-    (spec:encode doc)))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
+    (starintel.legacy:encode doc)))
 
 (defun make-test-legacy-host (&rest args)
   (make-legacy-view-document (apply #'make-test-host args)))
@@ -368,16 +368,16 @@ instead of being mistaken for an expected broker failure."
 
 (defun make-test-email-message (&key (id nil) (from "sender@example.com") (to "recipient@example.com"))
   "Create a test email-message document. If id is provided, use it; otherwise generate ULID."
-  (let ((doc (make-instance 'spec:email-message
+  (let ((doc (make-instance 'starintel.legacy:email-message
                             :from from
                             :to to
                             :subject "Test Email Subject"
                             :body "This is a test email message body")))
-    (spec:set-meta doc "testing")
+    (starintel.legacy:set-meta doc "testing")
     (if id
-        (setf (spec:doc-id doc) id)
-        (spec:ulid-id doc))
-    (spec:encode doc)))
+        (setf (starintel.legacy:doc-id doc) id)
+        (starintel.legacy:ulid-id doc))
+    (starintel.legacy:encode doc)))
 
 (defun insert-test-document (doc)
   "Insert a test document directly into CouchDB."

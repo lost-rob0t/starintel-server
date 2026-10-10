@@ -97,7 +97,7 @@
    (:file "main")
    (:file "authorization/services-final"))
   :depends-on
-  (#:starintel-observability #:starintel #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
+  (#:starintel-observability #:starintel #:starintel-legacy #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
    #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre

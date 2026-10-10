@@ -6,12 +6,12 @@
 (in-suite http-boundary-tests)
 
 (defun make-boundary-document (&key (dtype "host")
-                                    (schema-version starintel:+starintel-doc-version+)
+                                    (schema-version starintel.legacy:+starintel-doc-version+)
                                     (version 1)
                                     (id "boundary-doc-1"))
   (let ((document
-          (starintel:encode
-           (starintel:new-host
+          (starintel.legacy:encode
+           (starintel.legacy:new-host
             "boundary-tests"
             :ip "192.0.2.10"
             :os "linux"))))

@@ -18,7 +18,7 @@
             ("_id" id)
             ("tenant_id" tenant)
             ("dtype" "target")
-            ("version" starintel:+starintel-doc-version+)
+            ("version" starintel.legacy:+starintel-doc-version+)
             ("data"
              (jsown:new-js
                ("actor" actor)

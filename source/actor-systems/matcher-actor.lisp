@@ -96,35 +96,44 @@
 (defparameter *url-extractor* nil "")
 
 
+(defun ensure-legacy-url-extractor-input (document)
+  "Reject canonical input before the historical URL extractor has side effects."
+  (when (or (star.documents:canonical-document-p document)
+            (jsown:keyp document "id"))
+    (log:warn "URL extractor rejects canonical input; canonical support awaits issue #44.")
+    (error "Canonical URL extraction is unsupported (issue #44)."))
+  document)
+
+(defun process-legacy-url-extractor-message (msg)
+  "Run the unchanged historical URL extraction after checking its input boundary."
+  (ensure-legacy-url-extractor-input msg)
+  (let* ((dataset (jsown:val msg "dataset"))
+         (docs
+           (alexandria:flatten
+            (loop for field in *url-extractor-fields*
+                  for content = (or (jsown:val-safe msg field) "")
+                  collect (loop for url in (ppcre:all-matches-as-strings *url-regex* content)
+                                for doc = (starintel.legacy:new-url dataset :url url :content "")
+                                for rel = (starintel.legacy:new-relation
+                                           dataset (jsown:val msg "_id")
+                                           (starintel.legacy:doc-id doc) :note "extracted")
+                                collect (list rel doc))))))
+    (when docs
+      (loop for doc in docs
+            for data = (as-json doc)
+            do (log:error "documents.new.~a" (starintel.legacy:doc-type doc))
+            do (publish *producer-agent* :body data
+                        :properties (list (cons :type (starintel.legacy:doc-type doc)))
+                        :routing-key (format nil "documents.new.~a" (starintel.legacy:doc-type doc)))))))
+
 (defun start-url-extractor ()
   "Start the URL extractor actor over every registered pattern."
   (setf *url-extractor* (actor-of *sys*
-                                  :name "url-extractor"
-                                  :receive
-                                  (lambda (msg)
-                                    (let* ((dataset (jsown:val msg "dataset"))
-                                           (docs
-                                             ;; TODO use from-json instead of this rawdogging json?
-                                             (alexandria:flatten (loop for field in *url-extractor-fields*
-                                                                       for content = (or (jsown:val-safe msg field) "")
-                                                                       collect (loop for url in (ppcre:all-matches-as-strings *url-regex* content)
-                                                                                     for doc = (spec:new-url dataset :url url :content "")
-                                                                                     for rel = (spec:new-relation dataset (jsown:val msg "_id") (spec:doc-id doc) "extracted")
-                                                                                     collect (list rel doc))))))
-
-                                      (when docs
-                                        (loop for doc in docs
-                                              for data = (as-json doc)
-                                              do (log:error "documents.new.~a" (spec:doc-type doc))
-                                              do (publish *producer-agent* :body data :properties (list (cons :type (spec:doc-type doc))) :routing-key (format nil "documents.new.~a" (spec:doc-type doc)))))))))
-
+                                :name "url-extractor"
+                                :receive #'process-legacy-url-extractor-message))
   (add-pattern (define-pattern ("url-extractor" (list *url-extractor*))
                  (lambda (msg)
                    (string= (jsown:val msg "dtype") "message")))))
-
-
-
-
 
 (nhooks:add-hook star:*actors-start-hook* #'start-url-extractor)
 

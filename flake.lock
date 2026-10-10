@@ -69,17 +69,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1791058345,
-        "narHash": "sha256-9LXGwo4wOWfcxk+67i4ZyZ4KsPMzuEx5DKpN+0F+HiQ=",
+        "lastModified": 1791139728,
+        "narHash": "sha256-99LBfQHwsV/REDN/lCsNhc3M5bZkW7lgATM+v8ouaB0=",
         "owner": "lost-rob0t",
         "repo": "star-cl",
-        "rev": "a18a6cddcbcf4d989495a5de8abcedc4d0294d1c",
+        "rev": "33935f1e6739b0015926a2a163ba55cf203fbc9d",
         "type": "github"
       },
       "original": {
         "owner": "lost-rob0t",
         "repo": "star-cl",
-        "rev": "a18a6cddcbcf4d989495a5de8abcedc4d0294d1c",
+        "rev": "33935f1e6739b0015926a2a163ba55cf203fbc9d",
         "type": "github"
       }
     },
