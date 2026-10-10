@@ -409,3 +409,26 @@
           "changed-only-in-the-record")
     (signals star.actors:invalid-target-dispatch
       (star.actors::target-dispatch-fingerprint envelope))))
+
+(test canonical-investigation-target-retains-its-array-options-boundary
+  (let* ((document (issue319-fingerprint-document))
+         (options (vector "historical-option" (jsown:new-js ("opaque_key" :false)))))
+    (setf (jsown:val document "dtype") "investigation-target"
+          (jsown:val document "options") options)
+    (let* ((record (star.actors:parse-target-record document))
+           (first (issue319-fingerprint-envelope document))
+           (stored (issue319-old-acceptance first))
+           (wire (star.documents:canonical-wire-document document))
+           (retry (issue319-fingerprint-envelope wire)))
+      (is (equalp options (star.actors:target-record-options record)))
+      (is (string= (star.actors::target-dispatch-fingerprint first)
+                   (star.actors::target-dispatch-fingerprint retry)))
+      (is (star.actors::target-acceptance-equivalent-p
+           stored (star.actors::target-acceptance-document retry)))
+      (let ((sent (star.actors::target-dispatch-document first)))
+        (is (equalp options (jsown:val sent "options")))
+        (is (equal "investigation-target" (jsown:val sent "dtype")))
+        (is (eq sent (star.documents:validate-document sent)))))
+    (setf (jsown:val document "options") (jsown:empty-object))
+    (signals star.documents:document-schema-validation-error
+      (star.actors:parse-target-record document))))
