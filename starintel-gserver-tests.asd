@@ -58,6 +58,7 @@
      (:file "gserver-client-final-test")
      (:file "http-contract-documents-test")
      (:file "runtime-lifecycle-test")
+     (:file "starfs-test")
      (:file "observability-test")
      (:file "run-tests"))))
   :perform
