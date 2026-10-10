@@ -512,7 +512,7 @@
 
 
 (defun extension-presence-document (kind &optional (id "canonical:extensions"))
-  (let ((document (v0101-person id)))
+  (let ((document (star.documents:ensure-document (v0101-person id))))
     (unless (eq kind :absent)
       (setf (jsown:val document "extensions")
             (if (eq kind :empty) (jsown:empty-object)
@@ -583,7 +583,8 @@
          (old-public (star.documents:clone-document-object incoming)))
     ;; Reconstruct the exact pre-fix normalization and persisted metadata.
     (setf (jsown:val old-public "extensions") (jsown:empty-object))
-    (let* ((hash (star.databases.couchdb::mutation-content-hash :new old-public))
+    (let* ((hash (star.databases.couchdb::outbox-digest-string
+                  (format nil "new|~a" (jsown:to-json old-public))))
            (entry (star.databases.couchdb::make-outbox-entry old-public hash hash :new 1)))
       (when (jsown:keyp entry "public_extensions_present")
         (jsown:remkey entry "public_extensions_present"))
@@ -599,3 +600,22 @@
             (is (string= before (jsown:to-json old)))
             ;; Historical absence was already lost; do not fabricate it.
             (assert-extension-presence-projection state :empty)))))))
+
+(test canonical-outbox-explicit-key-and-historical-hash-remain-compatible
+  (let* ((incoming (extension-presence-document :empty))
+         (extensions (jsown:val incoming "extensions")))
+    (setf (jsown:val extensions "mutation_id") "presence-explicit-key")
+    (let ((expected (star.databases.couchdb::outbox-digest-string
+                     (format nil "new|~a" (jsown:to-json incoming)))))
+      (is (string= expected (star.databases.couchdb::mutation-content-hash :new incoming))))
+    (multiple-value-bind (state entry)
+        (star.databases.couchdb:prepare-outbox-mutation nil incoming :new)
+      (is (string= "presence-explicit-key" (jsown:val entry "mutation_id")))
+      (multiple-value-bind (same replay disposition)
+          (star.databases.couchdb:prepare-outbox-mutation state incoming :new)
+        (is (eq same state))
+        (is (eq :duplicate disposition))
+        (is (string= (jsown:to-json entry) (jsown:to-json replay))))
+      (setf (jsown:val incoming "fname") "changed")
+      (signals star.databases.couchdb:mutation-conflict
+        (star.databases.couchdb:prepare-outbox-mutation state incoming :new)))))
