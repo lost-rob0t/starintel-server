@@ -232,7 +232,7 @@
      client database
      (uiop:read-file-string
       (asdf:system-relative-pathname
-       :starintel-gserver "source/views/outbox.json")))
+       :starintel-gserver "views/outbox.json")))
     (dolist (id ids)
       (cl-couch:create-document
        client database
