@@ -242,7 +242,7 @@ operating on the type it started with."
          ;; Wire projection first preserves CouchDB _rev as canonical rev.
          (let ((wire (star.documents:canonical-wire-document document)))
            (if (jsown:keyp wire "extensions")
-               (star.databases.couchdb::public-document-copy wire)
+               (star.databases.couchdb::public-document-copy wire :restore-extensions-presence t)
                wire))
          (progn
            (when (jsown:keyp document "tenant_id")
