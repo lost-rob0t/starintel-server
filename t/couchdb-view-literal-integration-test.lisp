@@ -26,9 +26,9 @@
     (dolist (view '("targets" "outbox"))
       (cl-couch:create-document
        client database
-       (uiop:read-file-string
-        (asdf:system-relative-pathname
-         :starintel-gserver (format nil "source/views/~a.json" view)))))
+       (jsown:to-json
+        (or (gethash view (star.databases.couchdb::checked-in-design-document-map))
+            (error "Missing production design document ~a" view)))))
     ;; Persist through the actual durable-outbox path; interrupt before publish.
     (signals error
       (star.databases.couchdb:couchdb-process-outbox-mutation
