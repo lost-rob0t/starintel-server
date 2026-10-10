@@ -147,7 +147,8 @@ than generic connection failures."
           (list :method (client-request-method request)
                 :headers (client-request-headers request)
                 :content (client-request-body request)
-                :force-string t
+                :force-string (not (equal "files.content.get" (client-request-operation-id request)))
+                :force-binary (equal "files.content.get" (client-request-operation-id request))
                 :keep-alive t)))
     (when (client-request-timeout-ms request)
       (let ((seconds (timeout-seconds (client-request-timeout-ms request))))

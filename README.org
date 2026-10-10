@@ -6,6 +6,9 @@
 StarIntel Server is the Common Lisp runtime for storing, routing, querying, and
 recursively enriching StarIntel documents.
 
+The [[file:docs/file-api.org][core file API]] provides bounded byte upload and verified retrieval over
+the existing CouchDB document/outbox path, with matching Rabbit file ingress.
+
 It combines:
 
 - CouchDB for durable documents, views, and full-text search.

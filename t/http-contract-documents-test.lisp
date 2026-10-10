@@ -5,6 +5,26 @@
 
 (in-suite http-contract-documents-tests)
 
+(test bounded-files-api-is-mounted-authorized-and-advertises-binary
+  (dolist (case '(("files.create" :post "/api/v1/files" "documents:write")
+                  ("files.content.get" :get "/api/v1/files/:id/content" "documents:read")))
+    (destructuring-bind (id method path scope) case
+      (let ((operation (star.http.contract:find-http-operation id)))
+        (is (equal path (star.http.contract:http-operation-path operation)))
+        (is (equal (list scope) (star.http.contract:http-operation-scopes operation)))
+        (is (functionp (ningle:route star.frontends.http-api:*app* path :method method)))
+        (is (string= scope (star.frontends.http-api::route-action method path))))))
+  (let* ((openapi (jsown:parse (star.http.contract:openapi-json)))
+         (read-operation (jsown:val (jsown:val (jsown:val openapi "paths")
+                                               "/api/v1/files/{id}/content") "get"))
+         (success (jsown:val (jsown:val read-operation "responses") "200")))
+    (is (jsown:keyp (jsown:val success "content") "application/octet-stream")))
+  (let ((star:*auth-mode* "api-key"))
+    (dolist (case '((:post "/api/v1/files") (:get "/api/v1/files/private/content")))
+      (is (= 401 (first (lack.component:call
+                        star.frontends.http-api::*server*
+                        (boundary-env (first case) (second case)))))))))
+
 (defun document-operation-case-values (operation)
   (list
    (star.http.contract:http-operation-method operation)

@@ -111,8 +111,8 @@ property lists.")
       (setf (jsown:val schema "description") description))
     schema))
 
-(defun response (status description &optional schema)
-  (list :status status :description description :schema schema))
+(defun response (status description &optional schema (content-type "application/json"))
+  (list :status status :description description :schema schema :content-type content-type))
 
 (defparameter +error-schema+
   (object-schema
@@ -480,7 +480,7 @@ property lists.")
     (when schema
       (setf (jsown:val object "content")
             (json-object
-             (cons "application/json"
+             (cons (or (getf response :content-type) "application/json")
                    (json-object (cons "schema" schema))))))
     object))
 
@@ -582,6 +582,7 @@ property lists.")
 (defun response-manifest-object (response)
   (json-object
    (cons "status" (getf response :status))
+   (cons "content_type" (or (getf response :content-type) "application/json"))
    (cons "description" (getf response :description))
    (cons "schema" (or (getf response :schema) :null))))
 

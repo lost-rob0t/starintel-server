@@ -53,7 +53,7 @@
   (:documentation "Signalled when a document update loses a revision race."))
 
 (defparameter +document-update-persistence-keys+
-  '("_id" "_rev" "rev")
+  '("_id" "_rev" "rev" "_attachments")
   "Envelope fields controlled only by CouchDB persistence.")
 
 (defparameter +document-update-invariant-keys+
@@ -103,7 +103,13 @@
                        key patch-id document-id)))))
   (when existing
     (dolist (key +document-update-invariant-keys+)
-      (assert-compatible-update-field existing patch key)))
+      (assert-compatible-update-field existing patch key))
+    (when (outbox-object-has-key-p existing "_attachments")
+      (dolist (key '("bytesHash" "bytesHashAlgorithm" "storageId" "sizeBytes"))
+        (assert-compatible-update-field existing patch key))))
+  (when (outbox-object-has-key-p patch "_attachments")
+    (error 'document-update-validation-error
+           :reason "attachments are controlled by file persistence"))
   t)
 
 (defun merge-document-update-value (current incoming path)

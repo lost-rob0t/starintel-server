@@ -1,0 +1,68 @@
+#+title: Core file byte API (StarIntel 0.10.1)
+
+Core File and its Image/Picture, Video/VideoFrame and Audio descendants carry
+metadata and a content digest. Bytes are server-owned CouchDB attachments,
+committed in the same document revision as metadata and pending outbox events.
+
+| Transport | Metadata | Bytes |
+|-----------+----------+-------|
+| HTTP | Authenticated =/api/v1/documents= CRUD/bulk | =POST /api/v1/files= and =GET /api/v1/files/:id/content= |
+| RabbitMQ | Raw core JSON on =documents.ingest.<dtype>= / =documents.update.<dtype>= | Envelope on =files.ingest.<dtype>=, durable =documents= topic exchange |
+| ZMQ | Not defined | Not defined; source contains only a TODO, future work belongs to #193 |
+
+* Upload
+
+Send application/json with ={document: <core JSON>, contentBase64: <base64>}=
+to HTTP or Rabbit. The =document= remains strict core 0.10.1 JSON; bytes belong
+to the transport envelope. It must declare =bytesHash= and
+=bytesHashAlgorithm: "sha256"=. Optional =sizeBytes= must equal decoded length.
+The bounded adapter accepts at most 8 MiB of decoded content by default;
+trusted init may set =star.databases.couchdb::*file-max-bytes*=.
+
+HTTP uses existing =documents:write= and tenant/dataset authorization. The
+success receipt is raw persisted core JSON including =rev=, measured
+=sizeBytes= and =storageId: "couchdb:<document-id>:content"=. Missing quarantine
+metadata defaults to true. Names, MIME and extensions remain untrusted data.
+Identical content uploads preserve current stored metadata, including later
+reviews, and recover pending publication without emitting a new event. A
+metadata-only existing document requires its current =rev= to attach bytes;
+the atomic update preserves stored metadata and emits =documents.updated.<dtype>=.
+Missing/stale revisions or differing content identity return HTTP 409. A publish failure may occur after
+commit: retry the identical envelope and reconcile by document ID.
+
+Rabbit uses the SAME atomic service. Broker access is a trusted service
+boundary, like existing document ingress; configure vhost/topic permissions.
+Existing internal =tenant_id= may be carried inside the trusted broker
+document. There is no broker request/reply read API: actors retrieve bytes
+through the authorized HTTP endpoint.
+
+* Read and events
+
+=GET /api/v1/files/:id/content= authorizes the stored document with
+=documents:read= before accessing bytes. It requests the attachment at that
+exact CouchDB revision, bounds the read, verifies SHA-256/length and returns raw
+application/octet-stream with attachment disposition, nosniff, no-store and
+digest ETag. Encode the ID as one URL path segment. Corrupt bytes are rejected.
+
+Generic GET/search and events exclude =_attachments=. Metadata updates preserve
+attachment stubs; attached dtype/hash/size/storage identity cannot be changed
+through ordinary HTTP or Rabbit metadata updates.
+
+The existing outbox publishes raw core JSON AFTER atomic commit on
+=documents.new.<dtype>= or =documents.updated.<dtype>=. Face workers bind their
+own durable queue to =documents.new.picture=, fetch bytes before processing,
+and skip their own crop output events. Other actors' Person/Relation review
+events may trigger later matching. Never treat =documents.ingest.picture=
+requests as proof of persistence.
+
+AMQP =message-id= and =extensions.event_id= are stable logical event IDs;
+=mutation_id/event_operation/event_sequence= identify mutation and per-document
+sequence. Delivery is at least once, with no global ordering. Consumers must
+deduplicate and preserve reviewed state on replay.
+
+* Scope
+
+Issue #332 is a bounded CouchDB transport child of #255/#256. Full StarFS #241
+encryption, replication, resume/range, backend ports and lifecycle remain
+separate. Generic metadata still permits all core hash algorithms; this byte
+adapter explicitly supports SHA-256 only. No custom document schema is used.

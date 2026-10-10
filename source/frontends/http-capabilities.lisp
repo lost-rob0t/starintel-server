@@ -45,6 +45,7 @@
     ("features"
      (jsown:new-js
        ("documents" :true)
+       ("file_bytes" :true)
        ("bulk_ingest" :true)
        ("search" :true)
        ("stats" :true)
@@ -62,6 +63,7 @@
     ("limits"
      (jsown:new-js
        ("bulk_documents" star:*bulk-max-documents*)
+       ("file_bytes" star.databases.couchdb::*file-max-bytes*)
        ("public_search_results" 50)
        ("default_request_timeout_ms"
         star:*auth-default-request-timeout-ms*)
@@ -99,6 +101,12 @@
       (capability-endpoint
        "targets_by_actor" "GET" "/targets/:actor"
        :legacy t :scopes '("targets:read"))
+      (capability-endpoint
+       "file_create_v1" "POST" "/api/v1/files"
+       :scopes '("documents:write"))
+      (capability-endpoint
+       "file_content_v1" "GET" "/api/v1/files/:id/content"
+       :scopes '("documents:read"))
       (capability-endpoint
        "document_create_v1" "POST" "/api/v1/documents"
        :scopes '("documents:write"))
