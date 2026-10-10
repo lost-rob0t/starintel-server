@@ -235,11 +235,18 @@
            :reason "transient targets cannot create durable schedules"))
   (let ((deadline (target-record-deadline record)))
     (when deadline
-      (unless (target-nonempty-string-p deadline)
-        (error 'invalid-target-dispatch
-               :reason "deadline must be an ISO timestamp string"))
-      (unless (string> deadline now)
-        (error 'invalid-target-dispatch :reason "target deadline has expired"))))
+      (if (star.documents:canonical-document-p (target-record-document record))
+          (progn
+            (unless (and (integerp deadline) (not (minusp deadline)))
+              (error 'invalid-target-dispatch :reason "canonical deadline must be UnixTime"))
+            (unless (> deadline (local-time:timestamp-to-unix
+                                 (local-time:parse-timestring now)))
+              (error 'invalid-target-dispatch :reason "target deadline has expired")))
+          (progn
+            (unless (target-nonempty-string-p deadline)
+              (error 'invalid-target-dispatch :reason "deadline must be an ISO timestamp string"))
+            (unless (string> deadline now)
+              (error 'invalid-target-dispatch :reason "target deadline has expired"))))))
   record)
 
 (defun target-execution-id (record schedule-id)
@@ -375,7 +382,10 @@
           (jsown:val extensions "target_fencing_token")
           (target-dispatch-envelope-fencing-token envelope)
           (jsown:val document "extensions") extensions)
-    document))
+    (if (star.documents:canonical-document-p document)
+        (let ((wire (star.documents:canonical-wire-document document)))
+          (star.documents:validate-document wire))
+        document)))
 
 (defun classify-target-dispatch-condition (condition)
   (let ((name

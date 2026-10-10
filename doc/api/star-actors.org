@@ -642,7 +642,7 @@ Build a validated dispatch envelope for a target.
 #+begin_src lisp
 (parse-target-record (STAR.ACTORS::DOCUMENT))
 #+end_src
-Validate one v0.9 target document and return a typed recovery record.
+Validate canonical targets while retaining explicit historical recovery reads.
 *** process-event-delivery
 :PROPERTIES:
 :KIND: fn
@@ -848,7 +848,7 @@ The persisted acceptance document for a target.
 #+begin_src lisp
 (target-acceptance-equivalent-p (STAR.ACTORS::LEFT STAR.ACTORS::RIGHT))
 #+end_src
-True when two acceptance documents describe the same target.
+Compare canonical semantics, retaining historical legacy equality verbatim.
 *** target-acceptance-id
 :PROPERTIES:
 :KIND: fn

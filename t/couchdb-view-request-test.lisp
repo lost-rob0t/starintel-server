@@ -150,3 +150,89 @@
     (is (= 1 (length
               (star.databases.couchdb:view-document-result-documents
                document-result))))))
+
+(test view-transport-preserves-json-literals-and-list-contract
+  (let* ((raw "{\"rows\":[{\"id\":\"literal-doc\",\"key\":[\"a\",2],\"value\":null,\"doc\":{\"false\":false,\"true\":true,\"null\":null,\"array\":[],\"object\":{},\"nested\":[false,null,[],{}]}}]}")
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request)
+             (declare (ignore client request))
+             raw))
+         (response (star.databases.couchdb:query-view
+                    (test-view-client) "records" "fixture" "by_key" :include-docs t))
+         (rows (jsown:val response "rows"))
+         (row (first rows))
+         (doc (jsown:val row "doc")))
+    (is (listp rows))
+    (is (equal '("a" 2) (jsown:val row "key")))
+    (is (eq :null (jsown:val row "value")))
+    (is (eq :false (jsown:val doc "false")))
+    (is (eq :true (jsown:val doc "true")))
+    (is (eq :null (jsown:val doc "null")))
+    (is (string= raw (jsown:to-json response)))
+    (is (equal '("literal-doc")
+               (star.databases.couchdb:map-view-results
+                (lambda (key value document)
+                  (is (equal '("a" 2) key))
+                  (is (eq :null value))
+                  (is (eq :false (jsown:val document "false")))
+                  "literal-doc")
+                (test-view-client) "records" "fixture" "by_key" :include-docs t)))))
+
+(test canonical-nonrecurring-target-recovers-through-view-transport
+  (let* ((document
+           (jsown:new-js
+             ("id" "target:view-literals") ("_id" "target:view-literals")
+             ("_rev" "1-view") ("dataset" "view-tests") ("dtype" "target")
+             ("schemaVersion" "0.10.1") ("actor" "subfinder")
+             ("target" "example.org") ("delay" 1) ("recurring" :false)
+             ("options" (jsown:new-js ("false" :false) ("null" :null)
+                                      ("array" #()) ("object" (jsown:empty-object))))))
+         (raw (jsown:to-json
+               (jsown:new-js ("rows" (list (jsown:new-js ("doc" document)))))))
+         (quarantines 0)
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request) (declare (ignore client request)) raw)))
+    (multiple-value-bind (records invalid)
+        (star.actors:load-persisted-target-records
+         (test-view-client) "view-tests"
+         :quarantine-fn (lambda (&rest args) (declare (ignore args)) (incf quarantines)))
+      (is (= 0 invalid quarantines))
+      (is (= 1 (length records)))
+      (when records
+        (is-false (star.actors:target-record-recurring-p (first records)))
+        (is (string= (jsown:to-json (jsown:val document "options"))
+                     (jsown:to-json (star.actors:target-record-options (first records)))))))))
+
+(test pending-outbox-replay-preserves-view-payload-literals
+  (let* ((payload (jsown:new-js ("false" :false) ("null" :null)
+                                ("array" #()) ("object" (jsown:empty-object))))
+         (entry (jsown:new-js ("event_id" "event:view") ("mutation_id" "mutation:view")
+                              ("sequence" 1) ("status" "pending")
+                              ("routing_key" "documents.new.note") ("payload" payload)))
+         (stored (jsown:new-js ("_id" "outbox:view") ("_rev" "1-view")
+                               ("extensions" (jsown:new-js ("_server_outbox" (vector entry))))))
+         (raw (jsown:to-json
+               (jsown:new-js ("rows" (list (jsown:new-js ("doc" stored)))))))
+         (published nil)
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request) (declare (ignore client request)) raw)))
+    (star.databases.couchdb:recover-outbox-documents
+     (lambda (id) (is (string= "outbox:view" id)) stored)
+     (lambda (updated) (setf stored updated))
+     (lambda (routing-key replay event-id)
+       (is (string= "documents.new.note" routing-key))
+       (is (string= "event:view" event-id))
+       (setf published (jsown:to-json replay)))
+     (star.databases.couchdb::couchdb-pending-outbox-documents
+      (test-view-client) "view-tests"))
+    (is (string= (jsown:to-json payload) published))
+    (is-true (star.databases.couchdb:outbox-entry-published-p
+              (first (star.databases.couchdb:document-outbox-entries stored))))))
+
+(test empty-view-rows-remain-an-empty-list
+  (let ((star.databases.couchdb:*couchdb-view-transport*
+          (lambda (client request)
+            (declare (ignore client request)) "{\"rows\":[]}")))
+    (is (null (jsown:val (star.databases.couchdb:query-view
+                         (test-view-client) "records" "fixture" "by_key")
+                        "rows")))))

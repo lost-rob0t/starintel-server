@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - master
+      - codex/starintel-0101-ingest
   push:
     branches:
       - master
@@ -29,6 +30,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record exact source revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          printf 'TESTED_HEAD=%s\nBASE_SHA=%s\n' "$EXPECTED_SHA" "$BASE_SHA"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"

@@ -107,18 +107,41 @@
          (string> expires now))))
 
 (defun parse-target-record (document)
-  "Validate one v0.9 target document and return a typed recovery record."
+  "Validate canonical targets while retaining explicit historical recovery reads."
   (let* ((object (star.documents:parse-document-object document))
+         (canonical-p (or (star.documents:canonical-document-p object)
+                          (star.documents:object-has-key-p object "id")))
          (dtype (star.documents:document-dtype object))
-         (id (star.documents:object-value object "_id"))
+         (id (if canonical-p
+                 (star.documents:object-value object "id")
+                 (star.documents:object-value object "_id")))
          (actor (target-value object "actor"))
          (target (target-value object "target"))
-         (delay (target-value object "delay" 0))
+         (delay (target-value object "delay" (if canonical-p 1 0)))
          (recurring (target-boolean-p (target-value object "recurring" nil)))
-         (options (target-value object "options" #()))
-         (revision (star.documents:object-value object "_rev" nil))
+         (options (target-value object "options"
+                                (if (and canonical-p
+                                         (equal (star.documents:object-value object "dtype") "target"))
+                                    (jsown:empty-object) #())))
+         (revision (or (star.documents:object-value object "_rev" nil)
+                       (and canonical-p (star.documents:object-value object "rev" nil))))
          (lease-owner (target-value object "lease_owner" nil))
          (lease-expires-at (target-value object "lease_expires_at" nil)))
+    (when canonical-p
+      (when (and (star.documents:object-has-key-p object "_id")
+                 (not (equal id (star.documents:object-value object "_id"))))
+        (error 'invalid-persisted-target :document-id id
+               :reason "canonical id disagrees with CouchDB _id"))
+      (unless (star.documents:canonical-document-p object)
+        (error 'invalid-persisted-target :document-id id
+               :reason "canonical id requires schemaVersion"))
+      (when (and (star.documents:object-has-key-p object "_rev")
+                 (star.documents:object-has-key-p object "rev")
+                 (not (equal (star.documents:object-value object "_rev")
+                             (star.documents:object-value object "rev"))))
+        (error 'invalid-persisted-target :document-id id
+               :reason "canonical rev disagrees with CouchDB _rev"))
+      (star.documents:validate-stored-document object))
     (unless (member dtype '("target" "investigation-target") :test #'string=)
       (error 'invalid-persisted-target
              :document-id id
@@ -126,7 +149,7 @@
     (unless (target-nonempty-string-p id)
       (error 'invalid-persisted-target
              :document-id (or id "<missing>")
-             :reason "_id must be a non-empty string"))
+             :reason "target identity must be a non-empty string"))
     (unless (target-nonempty-string-p actor)
       (error 'invalid-persisted-target
              :document-id id
@@ -155,7 +178,7 @@
 
 (defun invalid-target-quarantine-record (database document condition)
   (let* ((document-id
-           (or (ignore-errors (star.documents:object-value document "_id"))
+           (or (ignore-errors (star.documents:document-id document))
                "unknown"))
          (revision
            (or (ignore-errors (star.documents:object-value document "_rev"))
