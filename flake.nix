@@ -195,6 +195,16 @@ EOF
         dontStrip = true;
       };
 
+      starintel-wardrive = sbcl'.buildASDFSystem {
+        pname = "starintel-wardrive";
+        version = "0.1.0";
+        src = ./.;
+        lispLibs = [ starintel-gserver ];
+        systems = [ "starintel-wardrive" ];
+        asdFilesToKeep = [ "starintel-wardrive.asd" ];
+        dontStrip = true;
+      };
+
       starintel-gserver-tests = sbcl'.buildASDFSystem {
         pname = "starintel-gserver-tests";
         version = "0.1.0";
@@ -203,6 +213,7 @@ EOF
         lispLibs = with sbcl'.pkgs; [
           starintel-gserver
           starintel-bixby
+          starintel-wardrive
           starintel-gserver-client
           star-cli-lib
           star-ui-lib
@@ -308,7 +319,7 @@ EOF
       };
 
       sbcl-wrapped = sbcl'.withPackages
-        (ps: with ps; [ starintel-gserver starintel-bixby ]);
+        (ps: with ps; [ starintel-gserver starintel-bixby starintel-wardrive ]);
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver-tests ]);
       sbcl-integration-test-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-gserver-integration-tests ]);

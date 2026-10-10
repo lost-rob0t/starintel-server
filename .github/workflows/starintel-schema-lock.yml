@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - master
+      - codex/starintel-0101-ingest
   push:
     branches:
       - master
