@@ -509,3 +509,93 @@
     (is (string= "{}" (star.actors::canonical-target-json (jsown:val values "o"))))
     (is-false (jsown:keyp wire "tenant_id"))
     (is (string= "legacy:values" (jsown:val wire "_id")))))
+
+
+(defun extension-presence-document (kind &optional (id "canonical:extensions"))
+  (let ((document (v0101-person id)))
+    (unless (eq kind :absent)
+      (setf (jsown:val document "extensions")
+            (if (eq kind :empty) (jsown:empty-object)
+                (jsown:new-js ("nested" (jsown:new-js ("false" :false) ("null" :null)
+                                                     ("array" #()) ("object" (jsown:empty-object))))))))
+    (star.documents:ensure-document document)))
+
+(defun assert-extension-presence-projection (stored kind)
+  (let ((before (jsown:to-json stored)))
+    (dolist (input (list stored before))
+      (let ((wire (star.documents:parse-document-object
+                   (star.frontends.http-api:strip-server-tenant-fields input))))
+        (is (eq (not (eq kind :absent)) (not (null (jsown:keyp wire "extensions")))))
+        (unless (eq kind :absent)
+          (is (string= (star.actors::canonical-target-json
+                        (jsown:val (extension-presence-document kind) "extensions"))
+                       (star.actors::canonical-target-json (jsown:val wire "extensions")))))
+        (is (eq wire (star.documents:validate-document wire)))
+        (is (string= "7-presence" (jsown:val wire "rev")))))
+    (is (string= before (jsown:to-json stored)))))
+
+(test canonical-outbox-preserves-all-extension-presence-states
+  (dolist (kind '(:absent :empty :nonempty))
+    (let* ((incoming (extension-presence-document kind))
+           (before (jsown:to-json incoming)))
+      (multiple-value-bind (state entry disposition)
+          (star.databases.couchdb:prepare-outbox-mutation nil incoming :new)
+        (is (eq :created disposition))
+        (setf (jsown:val state "_rev") "7-presence")
+        (assert-extension-presence-projection state kind)
+        (is (string= before (jsown:to-json incoming)))
+        (multiple-value-bind (retry same status)
+            (star.databases.couchdb:prepare-outbox-mutation state incoming :new)
+          (is (eq :duplicate status))
+          (is (eq retry state))
+          (is (string= (jsown:val entry "event_id") (jsown:val same "event_id"))))))))
+
+(test canonical-outbox-presence-transitions-are-distinct-mutations
+  (dolist (pair '((:absent :empty) (:empty :absent) (:absent :nonempty) (:nonempty :absent)))
+    ;; Use :updated for both records to expose the old same-hash collision.
+    (let ((seed (extension-presence-document :nonempty)))
+      (setf (jsown:val seed "_rev") "1-seed")
+      (multiple-value-bind (first first-entry)
+          (star.databases.couchdb:prepare-outbox-mutation
+           seed (extension-presence-document (first pair)) :updated)
+        (setf (jsown:val first "_rev") "2-first")
+        (multiple-value-bind (second second-entry disposition)
+            (star.databases.couchdb:prepare-outbox-mutation
+             first (extension-presence-document (second pair)) :updated)
+          (is (eq :created disposition))
+          (is (not (string= (jsown:val first-entry "mutation_id")
+                            (jsown:val second-entry "mutation_id"))))
+          (setf (jsown:val second "_rev") "7-presence")
+          (assert-extension-presence-projection second (second pair)))))))
+
+(test canonical-outbox-forged-private-presence-cannot-erase-explicit-empty
+  (let ((incoming (extension-presence-document :empty)))
+    (setf (jsown:val (jsown:val incoming "extensions") "_server_outbox")
+          (vector (jsown:new-js ("sequence" 999) ("public_extensions_present" :false))))
+    (multiple-value-bind (state entry)
+        (star.databases.couchdb:prepare-outbox-mutation nil incoming :new)
+      (declare (ignore entry))
+      (setf (jsown:val state "_rev") "7-presence")
+      (assert-extension-presence-projection state :empty))))
+
+(test canonical-outbox-old-unmarked-retry-keeps-identities-and-evidence
+  (let* ((incoming (extension-presence-document :absent))
+         (old-public (star.documents:clone-document-object incoming)))
+    ;; Reconstruct the exact pre-fix normalization and persisted metadata.
+    (setf (jsown:val old-public "extensions") (jsown:empty-object))
+    (let* ((hash (star.databases.couchdb::mutation-content-hash :new old-public))
+           (entry (star.databases.couchdb::make-outbox-entry old-public hash hash :new 1)))
+      (when (jsown:keyp entry "public_extensions_present")
+        (jsown:remkey entry "public_extensions_present"))
+      (let ((old (star.databases.couchdb::merge-server-state old-public nil entry hash hash)))
+        (setf (jsown:val old "_rev") "7-presence")
+        (let ((before (jsown:to-json old)))
+          (multiple-value-bind (state replay disposition)
+              (star.databases.couchdb:prepare-outbox-mutation old incoming :new)
+            (is (eq :duplicate disposition))
+            (is (eq state old))
+            (is (string= hash (jsown:val replay "mutation_id")))
+            (is (string= (jsown:to-json entry) (jsown:to-json replay)))
+            (is (string= before (jsown:to-json old)))
+            ;; Historical absence was already lost; do not fabricate it.
+            (assert-extension-presence-projection state :empty)))))))
