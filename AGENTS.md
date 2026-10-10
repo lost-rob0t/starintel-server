@@ -283,4 +283,16 @@ This repository participates in the StarIntel hourly worker fleet.
 - **Scheduled fleet tasks stay enabled.** Repository work must not disable a scheduled worker unless the operator explicitly asks for that task to be disabled.
 
 Repository-specific rules still apply; stricter local rules win unless they conflict with canonical StarIntel 0.10.1 authority or an explicit current operator instruction.
+
+### Connected GitHub write resilience
+
+- Read the current AGENTS.md, target PR/issue, exact head/base, affected blob SHAs, diffs, and check state through the connected GitHub connector before mutating repository state.
+- Prepare a coherent implementation plus its regression tests before the first write; do not leave helper-only or half-applied commits.
+- Prefer one atomic multi-file commit/tree update when the connector exposes one. Otherwise serialize file writes and use freshly fetched blob/head SHAs as compare-and-swap preconditions.
+- Immediately re-fetch the branch after every mutation and verify the resulting HEAD and changed-file set.
+- A single failed connector write is **not** grounds to stop. For timeout, rate-limit (429), or GitHub 5xx responses, first re-fetch HEAD to determine whether the prior request actually succeeded; if not, refresh preconditions and retry at most twice.
+- If pull-request creation fails transiently, search for an already-created PR for the same head before retrying, then retry through the GitHub connector.
+- On an explicit 403/authorization or safety-policy denial, do not bypass with alternate tools or direct API tricks. Record the precise blocker and complete patch/handoff, then advance another independent executable issue.
+- Never claim a write, push, PR, test, or CI result succeeded until the exact resulting GitHub state has been re-read and verified.
+
 <!-- END STARINTEL FLEET CONTRACT -->
