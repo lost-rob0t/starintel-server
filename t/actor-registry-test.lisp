@@ -134,6 +134,39 @@
       (is-false (jsown:keyp alpha "queue"))
       (is-false (jsown:keyp alpha "routingKey")))))
 
+(test unavailable-actor-observations-never-report-ready
+  (let* ((uri "star://local/actor/health-probe")
+         (registry (star.actors::build-actor-registry
+                    (list (actor-registry-test-manifest uri))))
+         (observations (make-hash-table :test #'equal)))
+    (dolist (status '("declared-offline" "unavailable"))
+      (star.actors::record-actor-runtime-status
+       uri status :ready-p t :observations observations)
+      (let ((entry (first
+                    (star.actors::actor-registry-public-entries
+                     registry observations))))
+        (is (string= status (jsown:val entry "status")))
+        (is (eq :false (jsown:val entry "ready")))))))
+
+(test dead-local-actor-cannot-be-resurrected-by-stale-status
+  (let* ((uri "star://local/actor/health-probe")
+         (star.actors::*actor-registry*
+           (star.actors::build-actor-registry
+            (list (actor-registry-test-manifest uri))))
+         (star.actors::*actor-runtime-observations*
+           (make-hash-table :test #'equal))
+         (star.actors::*actor-runtime-bindings*
+           (make-hash-table :test #'equal)))
+    (star.actors::record-actor-runtime-status
+     uri "online" :ready-p t)
+    ;; A dead/stale Sento reference must fail closed even if an older
+    ;; external status observation still advertises "online".
+    (setf (gethash uri star.actors::*actor-runtime-bindings*)
+          :stale-actor-reference)
+    (let ((entry (first (star.actors:actor-registry-public-entries))))
+      (is (string= "unavailable" (jsown:val entry "status")))
+      (is (eq :false (jsown:val entry "ready"))))))
+
 (test local-runtime-binding-reports-a-live-sento-actor
   (let* ((manifest
            (actor-registry-test-manifest
