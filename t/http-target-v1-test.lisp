@@ -297,3 +297,168 @@
     (setf (jsown:val document "options") #())
     (signals star.documents:document-schema-validation-error
       (star.actors:parse-target-record document))))
+
+
+(defun issue319-historical-http-acceptance (principal key &optional (status "scheduled"))
+  (let* ((identity (star.frontends.http-api::target-v1-digest
+                    (format nil "~a|~a" principal key)))
+         (schedule-id (format nil "target-request:~a" identity))
+         (document
+           (jsown:new-js
+             ("_id" (format nil "target:~a" identity))
+             ("dataset" "star-intel") ("dtype" "target")
+             ("schema_version" starintel.legacy:+starintel-doc-version+)
+             ("version" 1) ("date_added" "2026-10-01T00:00:00Z")
+             ("date_updated" "2026-10-01T00:00:00Z")
+             ("sources" #()) ("evidence" #())
+             ("data" (jsown:new-js ("actor" "subfinder") ("target" "example.org")
+                                    ("delay" 1) ("recurring" :false) ("options" #())))
+             ("extensions"
+              (jsown:new-js ("idempotency_key" identity)
+                            ("submitted_by" (star.frontends.http-api::target-v1-digest principal))
+                            ("schedule_id" schedule-id)))))
+         (envelope
+           (star.actors:make-target-dispatch-envelope
+            (star.actors:parse-target-record document)
+            :destination
+            (star.actors::make-target-destination-handle
+             :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")))
+         (acceptance (star.actors:target-acceptance-document envelope)))
+    (setf (jsown:val acceptance "status") status)
+    acceptance))
+
+(defun issue319-assert-historical-http-conflict (request principal existing)
+  (let* ((accept-calls 0) (lookup-calls 0)
+         (before (jsown:to-json existing))
+         (record (star.actors:parse-target-record
+                  (star.frontends.http-api::target-v1-document-from-request request principal)))
+         (condition
+           (capture-http-input-error
+            (lambda ()
+              (star.frontends.http-api::target-v1-accept-record
+               request principal record
+               :lookup-fn
+               (lambda (id)
+                 (incf lookup-calls)
+                 (is (string=
+                      (star.actors:target-acceptance-id
+                       (format nil "target-request:~a"
+                               (star.frontends.http-api::target-v1-digest
+                                (format nil "~a|~a" principal
+                                        (jsown:val request "idempotency_key")))))
+                      id))
+                 existing)
+               :accept-fn
+               (lambda (ignored-record)
+                 (declare (ignore ignored-record))
+                 (incf accept-calls)
+                 (error "Historical reuse reached canonical acceptance")))))))
+    (is (typep condition 'star.frontends.http-api:http-input-error))
+    (when condition
+      (is (= 409 (star.frontends.http-api:http-input-error-status condition)))
+      (is (string= "target_idempotency_version_conflict"
+                   (star.frontends.http-api:http-input-error-code condition))))
+    (is (= 1 lookup-calls))
+    (is (= 0 accept-calls))
+    (is (string= before (jsown:to-json existing)))
+    condition))
+
+(test canonical-http-blocks-historical-idempotency-before-acceptance
+  (dolist (status '("pending" "scheduled" "accepted" "dispatched"))
+    (let* ((principal "human:alice") (key "historical-key")
+           (existing (issue319-historical-http-acceptance principal key status))
+           (identity (star.frontends.http-api::target-v1-digest
+                      (format nil "~a|~a" principal key))))
+      (is (star.frontends.http-api::target-v1-historical-identity-matches-p
+           existing principal identity))
+      (issue319-assert-historical-http-conflict
+       (make-v1-target-request :idempotency-key key) principal existing)
+      (issue319-assert-historical-http-conflict
+       (make-v1-target-request :idempotency-key key :target "example.net")
+       principal existing))))
+
+(test canonical-http-historical-delimiter-collision-does-not-return-other-owner-receipt
+  (let* ((existing (issue319-historical-http-acceptance "alice|b" "c"))
+         (principal "alice") (key "b|c")
+         (identity (star.frontends.http-api::target-v1-digest "alice|b|c")))
+    (is-false (star.frontends.http-api::target-v1-historical-identity-matches-p
+               existing principal identity))
+    (let* ((condition (issue319-assert-historical-http-conflict
+                       (make-v1-target-request :idempotency-key key) principal existing))
+           (message (princ-to-string condition)))
+      (is-false (search "alice|b" message))
+      (is-false (search (jsown:val existing "target_id") message))
+      (is-false (search (jsown:val existing "_id") message)))))
+
+(test canonical-http-historical-malformed-identity-evidence-fails-closed
+  (let* ((principal "human:alice") (key "historical-corrupt")
+         (original (issue319-historical-http-acceptance principal key)))
+    (dolist (mutate
+              (list
+               (lambda (doc) (jsown:remkey doc "target_document"))
+               (lambda (doc) (setf (jsown:val doc "_id") "wrong-acceptance"))
+               (lambda (doc) (setf (jsown:val doc "target_id") "wrong-target"))
+               (lambda (doc) (setf (jsown:val doc "schedule_id") "wrong-schedule"))
+               (lambda (doc) (setf (jsown:val doc "target_revision") "wrong-revision"))
+               (lambda (doc) (setf (jsown:val (jsown:val doc "target_document") "_id")
+                                   "wrong-target"))
+               (lambda (doc) (jsown:remkey (jsown:val (jsown:val doc "target_document") "extensions")
+                                          "submitted_by"))
+               (lambda (doc) (setf (jsown:val (jsown:val (jsown:val doc "target_document") "extensions")
+                                             "idempotency_key") "wrong-hash"))))
+      (let ((broken (star.documents:clone-document-object original)))
+        (funcall mutate broken)
+        (issue319-assert-historical-http-conflict
+         (make-v1-target-request :idempotency-key key) principal broken)))
+    (issue319-assert-historical-http-conflict
+     (make-v1-target-request :idempotency-key key) principal (jsown:empty-object))))
+
+(test canonical-http-historical-lookup-failure-cannot-create-new-acceptance
+  (let* ((request (make-v1-target-request)) (principal "human:alice")
+         (record (star.actors:parse-target-record
+                  (star.frontends.http-api::target-v1-document-from-request request principal)))
+         (accept-calls 0))
+    (signals error
+      (star.frontends.http-api::target-v1-accept-record
+       request principal record
+       :lookup-fn (lambda (id) (declare (ignore id)) (error "lookup unavailable"))
+       :accept-fn (lambda (record) (declare (ignore record)) (incf accept-calls))))
+    (is (= 0 accept-calls))))
+
+(test canonical-http-new-key-keeps-normal-acceptance-and-duplicate-path
+  (let ((star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+        (request (make-v1-target-request :idempotency-key "new-canonical-key"))
+        (principal "human:alice")
+        (stored nil) (creates 0) (updates 0) (schedules 0) (lookups 0)
+        (historical-id nil))
+    (labels ((accept (record)
+               (star.actors:accept-target-record
+                record :destination
+                (star.actors::make-target-destination-handle
+                 :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")
+                :persist-fn
+                (lambda (desired equivalent-p)
+                  (cond ((null stored)
+                         (incf creates) (setf stored desired) (values stored :created))
+                        ((funcall equivalent-p stored desired) (values stored :duplicate))
+                        (t (values stored :conflict))))
+                :update-fn
+                (lambda (id updater)
+                  (is (string= id (jsown:val stored "_id")))
+                  (incf updates) (setf stored (funcall updater stored)))
+                :schedule-once-fn
+                (lambda (&rest args) (declare (ignore args)) (incf schedules))))
+             (submit ()
+               (star.frontends.http-api::target-v1-accept-record
+                request principal
+                (star.actors:parse-target-record
+                 (star.frontends.http-api::target-v1-document-from-request request principal))
+                :lookup-fn (lambda (id) (incf lookups) (setf historical-id id) nil)
+                :accept-fn #'accept)))
+      (is (eq :accepted (star.actors:target-dispatch-outcome-status (submit))))
+      (is (eq :duplicate (star.actors:target-dispatch-outcome-status (submit))))
+      (is (= 1 creates updates schedules))
+      (is (= 2 lookups))
+      (is (not (string= historical-id (jsown:val stored "_id"))))
+      (is (string= "0.10.1"
+                   (jsown:val (jsown:val stored "target_document") "schemaVersion"))))))

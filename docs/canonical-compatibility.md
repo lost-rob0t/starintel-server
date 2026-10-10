@@ -11,7 +11,19 @@ with object-valued options. Recovery distinguishes canonical identity from
 explicit historical reads. Canonical dispatch removes CouchDB metadata and
 validates the outgoing document. Durable retries compare typed canonical
 content, including dataset and recursively ordered options, rather than relying
-on historical digests. Existing legacy fingerprint behavior is retained.
+on historical digests. Existing legacy fingerprint behavior is retained. InvestigationTarget retains
+its separately generated array-options contract.
+
+HTTP request identities use structured principal/key framing. Before creating
+a canonical acceptance, the route checks the exact historical acceptance key.
+For a valid canonical request, any existing historical record yields HTTP 409
+`target_idempotency_version_conflict`, without creating, rewriting, resuming or
+scheduling work. Invalid old-format payloads can fail validation with 422 before this lookup.
+Cross-version automatic replay is unsupported; malformed or
+ambiguous historical ownership also fails closed without exposing its receipt.
+Stop old-version HTTP writers before cutover: the read-only compatibility guard
+cannot atomically exclude a concurrent old writer creating its historical key.
+Use a deliberately new idempotency key only when new work is intended.
 
 Issue #319 completion additionally requires the isolated real actor probe to
 prove authenticated persisted canonical output readback; unit acceptance and

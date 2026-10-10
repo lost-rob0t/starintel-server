@@ -99,7 +99,8 @@ empty collections are retained. Unsupported values fail closed."
   "Read strict canonical Target semantics without mutating stored state."
   (require-canonical-target-fingerprint
    (and (target-fingerprint-canonical-document-p document)
-        (equal "target" (star.documents:object-value document "dtype")))
+        (member (star.documents:object-value document "dtype")
+                '("target" "investigation-target") :test #'equal))
    "acceptance requires a canonical Target document")
   (canonical-target-json document)
   (let ((id (star.documents:object-value document "id")))
@@ -167,6 +168,7 @@ Do not check wall-clock expiry here: equality must not depend on retry time."
      "canonical target tenant scope is invalid")
     (jsown:new-js
       ("schemaVersion" (star.documents:object-value document "schemaVersion"))
+      ("dtype" (star.documents:object-value document "dtype"))
       ("id" (target-record-id parsed))
       ("revision" (or (target-record-revision parsed) :null))
       ("scheduleId" schedule-id)

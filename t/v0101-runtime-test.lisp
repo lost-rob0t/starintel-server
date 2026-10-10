@@ -432,3 +432,12 @@
     (setf (jsown:val document "options") (jsown:empty-object))
     (signals star.documents:document-schema-validation-error
       (star.actors:parse-target-record document))))
+
+(test canonical-target-and-investigation-target-never-share-acceptance
+  (let* ((target (issue319-fingerprint-document))
+         (investigation (issue319-fingerprint-document)))
+    (setf (jsown:val investigation "dtype") "investigation-target"
+          (jsown:val investigation "options") #())
+    (issue319-assert-acceptance-conflict
+     (issue319-old-acceptance (issue319-fingerprint-envelope target))
+     (issue319-fingerprint-envelope investigation))))
