@@ -4,6 +4,10 @@
 (defparameter +mutation-ledger-extension-key+ "_server_mutations")
 (defparameter +mutation-id-extension-key+ "mutation_id")
 (defparameter +idempotency-key-extension-key+ "idempotency_key")
+(defparameter +outbox-recovery-max-passes+ 1024
+  "Maximum bounded CouchDB pending-view batches drained during startup recovery.")
+(defparameter *outbox-recovery-view-limit* 10000
+  "Bounded CouchDB pending-view page size; may be rebound by integration tests.")
 
 (define-condition mutation-conflict (error)
   ((mutation-id
@@ -478,7 +482,7 @@ If publication fails, the durable pending entry remains recoverable."
             "pending"
             :include-docs t
             :reduce nil
-            :limit 10000))
+            :limit *outbox-recovery-view-limit*))
          (rows (jsown:val result "rows"))
          (seen (make-hash-table :test #'equal)))
     (loop for row in rows
@@ -490,12 +494,37 @@ If publication fails, the durable pending entry remains recoverable."
               (setf (gethash document-id seen) t)
               document))))
 
+(defun recover-outbox-until-empty
+    (pending-documents-fn recover-documents-fn
+     &key (max-passes +outbox-recovery-max-passes+))
+  "Drain bounded pending-document batches until none remain.
+
+MAX-PASSES bounds recovery when new work arrives continuously or a backend keeps
+returning the same pending rows.  A final empty check avoids reporting failure
+when the last permitted pass drained the backlog exactly."
+  (unless (and (integerp max-passes) (plusp max-passes))
+    (error "Outbox recovery max-passes must be a positive integer"))
+  (loop repeat max-passes
+        for documents = (funcall pending-documents-fn)
+        do
+           (when (null documents)
+             (return-from recover-outbox-until-empty t))
+           (funcall recover-documents-fn documents))
+  (when (null (funcall pending-documents-fn))
+    (return-from recover-outbox-until-empty t))
+  (error "Outbox recovery did not drain after ~d bounded passes"
+         max-passes))
+
 (defun recover-couchdb-outbox (client database publish-fn)
   "Replay every pending outbox mutation after a crash."
-  (recover-outbox-documents
-   (lambda (document-id)
-     (couchdb-load-outbox-document client database document-id))
-   (lambda (state)
-     (couchdb-save-outbox-document client database state))
-   publish-fn
-   (couchdb-pending-outbox-documents client database)))
+  (recover-outbox-until-empty
+   (lambda ()
+     (couchdb-pending-outbox-documents client database))
+   (lambda (documents)
+     (recover-outbox-documents
+      (lambda (document-id)
+        (couchdb-load-outbox-document client database document-id))
+      (lambda (state)
+        (couchdb-save-outbox-document client database state))
+      publish-fn
+      documents))))
