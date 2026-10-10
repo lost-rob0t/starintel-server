@@ -191,7 +191,9 @@ validated and built by =build-couchdb-view-request=, then executed via
            (apply #'build-couchdb-view-request
                   client database design-document view-name arguments))
          (response (funcall *couchdb-view-transport* client request)))
-    (jsown:parse response)))
+    ;; View documents are recovery inputs: false, null and [] must stay distinct.
+    (jsown:with-injective-reader
+      (jsown:parse response))))
 
 (defun map-view-results
     (function client database design-document view-name
