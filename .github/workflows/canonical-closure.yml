@@ -55,6 +55,58 @@ jobs:
           set -e
           tail -n 100 "$evidence/qlot-bootstrap.log"
           test "$status" = 0
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,urllib.request,urllib.parse
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"canonical-closure-evidence"
+          class SafeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  safe(newurl)
+                  return super().redirect_request(req,fp,code,msg,headers,newurl)
+          def safe(url):
+              u=urllib.parse.urlsplit(url)
+              assert u.scheme=="https" and u.hostname=="beta.quicklisp.org" and not u.username and not u.password,url
+              return url
+          opener=urllib.request.build_opener(SafeRedirect)
+          def get(url,limit):
+              safe(url)
+              with opener.open(url,timeout=60) as r:
+                  safe(r.url);data=r.read(limit+1)
+                  assert len(data)<=limit,"response too large"
+                  return data
+          def rows(data):
+              lines=data.decode().splitlines()
+              return [line.split() for line in lines if line and not line.startswith("#")]
+          records=[]
+          for version in ("2024-10-12","2023-10-21"):
+              url="https://beta.quicklisp.org/dist/quicklisp/"+version+"/distinfo.txt"
+              raw=get(url,100000)
+              (out/("clssl-"+version+"-distinfo.txt")).write_bytes(raw)
+              info=dict(line.split(": ",1) for line in raw.decode().splitlines() if ": " in line)
+              assert info["name"]=="quicklisp" and info["version"]==version
+              def https(url):
+                  u=urllib.parse.urlsplit(url)
+                  assert u.scheme in ("http","https") and u.hostname=="beta.quicklisp.org"
+                  return safe(urllib.parse.urlunsplit(u._replace(scheme="https")))
+              release_url=https(info["release-index-url"]);system_url=https(info["system-index-url"])
+              release_raw=get(release_url,10000000);system_raw=get(system_url,20000000)
+              release_header=release_raw.decode().splitlines()[0]
+              system_header=system_raw.decode().splitlines()[0]
+              assert release_header.startswith("# project url size file-md5 content-sha1 prefix"),release_header
+              assert system_header.startswith("# project system-file system-name"),system_header
+              release=[r for r in rows(release_raw) if r[0]=="cl+ssl"]
+              systems=[r for r in rows(system_raw) if r[0]=="cl+ssl"]
+              assert len(release)==1 and systems,(len(release),len(systems))
+              row=release[0];assert len(row)>=7
+              archive_url=https(row[1]);data=get(archive_url,20000000)
+              assert len(data)==int(row[2]) and hashlib.md5(data).hexdigest()==row[3]
+              record=dict(version=version,distinfo_url=url,release_index_url=release_url,system_index_url=system_url,release_header=release_header,system_header=system_header,release=row,systems=systems,archive_url=archive_url,archive_size=len(data),archive_sha256=hashlib.sha256(data).hexdigest())
+              records.append(record)
+              (out/("clssl-"+version+"-metadata.json")).write_text(json.dumps(record,indent=2)+"\n")
+          assert records[0]["release"]==records[1]["release"],"release metadata differs"
+          assert records[0]["systems"]==records[1]["systems"],"systems/dependencies differ"
+          assert records[0]["archive_sha256"]==records[1]["archive_sha256"],"archive bytes differ"
+          print("CLSSL_NATIVE_NORMALIZATION_EQUIVALENCE "+json.dumps(records))
+          PY
           git diff --exit-code -- qlfile.lock
       - name: Establish maintained mismatch RED and author only declarations
         shell: bash
@@ -68,7 +120,7 @@ jobs:
           library="33935f1e6739b0015926a2a163ba55cf203fbc9d"
           authority="96d26c338078676ec1dc6928755901636c9f7ef0"
           def git(*args): return subprocess.check_output(["git",*args],text=True).strip()
-          assert git("rev-parse","HEAD^")=="c95ced8f6382d6d288923e55a728809a1be0da24"
+          assert git("rev-parse","HEAD^")=="d6a187399ddffa4a0eb81260e6beb32a6bed75d0"
           assert git("diff","--name-only",baseline,"HEAD")==".github/workflows/canonical-closure.yml"
           with urllib.request.urlopen("https://raw.githubusercontent.com/lost-rob0t/star-cl/"+library+"/schema/starintel-schema.lock.json") as r:
               maintained=json.load(r)
