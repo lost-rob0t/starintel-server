@@ -413,6 +413,9 @@
 (test canonical-investigation-target-retains-its-array-options-boundary
   (let* ((document (issue319-fingerprint-document))
          (options (vector "historical-option" (jsown:new-js ("opaque_key" :false)))))
+    ;; This shape-only wire/storage check has no private tenant context.
+    ;; Tenant removal remains a conflict in the independent semantic test.
+    (jsown:remkey document "tenant_id")
     (setf (jsown:val document "dtype") "investigation-target"
           (jsown:val document "options") options)
     (let* ((record (star.actors:parse-target-record document))
@@ -426,7 +429,8 @@
       (is (star.actors::target-acceptance-equivalent-p
            stored (star.actors::target-acceptance-document retry)))
       (let ((sent (star.actors::target-dispatch-document first)))
-        (is (equalp options (jsown:val sent "options")))
+        (is (string= (star.actors::canonical-target-json options)
+                     (star.actors::canonical-target-json (jsown:val sent "options"))))
         (is (equal "investigation-target" (jsown:val sent "dtype")))
         (is (eq sent (star.documents:validate-document sent)))))
     (setf (jsown:val document "options") (jsown:empty-object))
