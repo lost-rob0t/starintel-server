@@ -88,16 +88,25 @@
       (error "Document extensions must be a JSON object"))
     extensions))
 
-(defun public-document-copy (document)
-  "Return DOCUMENT without CouchDB revision or server-private outbox state."
+(defun public-document-copy (document &key restore-extensions-presence)
+  "Copy public content, optionally restoring recorded stored extension presence."
   (let* ((source (clone-outbox-json document))
          (public (copy-json-object-excluding source '("_rev")))
          (extensions
            (copy-json-object-excluding
             (document-extensions source)
-            (list +outbox-extension-key+
-                  +mutation-ledger-extension-key+))))
-    (setf (jsown:val public "extensions") extensions)
+            (list +outbox-extension-key+ +mutation-ledger-extension-key+)))
+         ;; Entries are appended in mutation order. Never infer old absence:
+         ;; unmarked historical entries retain their original public projection.
+         (latest (when restore-extensions-presence
+                   (car (last (document-outbox-entries source)))))
+         (recorded-absent
+           (and latest
+                (eq :false (outbox-object-value latest "public_extensions_present")))))
+    (when (outbox-object-has-key-p source "extensions")
+      (if (and recorded-absent (null (cdr extensions)))
+          (jsown:remkey public "extensions")
+          (setf (jsown:val public "extensions") extensions)))
     public))
 
 (defun outbox-digest-string (text)
@@ -107,11 +116,12 @@
     (babel:string-to-octets text :encoding :utf-8))))
 
 (defun mutation-content-hash (operation document)
-  (outbox-digest-string
-   (format nil
-           "~(~a~)|~a"
-           operation
-           (jsown:to-json (public-document-copy document)))))
+  ;; Retain historical hash normalization for existing ledgers and explicit IDs.
+  (let ((public (public-document-copy document)))
+    (unless (outbox-object-has-key-p public "extensions")
+      (setf (jsown:val public "extensions") (jsown:empty-object)))
+    (outbox-digest-string
+     (format nil "~(~a~)|~a" operation (jsown:to-json public)))))
 
 (defun explicit-mutation-id (document)
   (let* ((extensions (document-extensions document))
@@ -124,7 +134,11 @@
 
 (defun document-mutation-id (operation document)
   (or (explicit-mutation-id document)
-      (mutation-content-hash operation document)))
+      (let ((hash (mutation-content-hash operation document)))
+        (if (and (star.documents:canonical-document-p document)
+                 (not (outbox-object-has-key-p document "extensions")))
+            (outbox-digest-string (format nil "canonical-extensions-absent|~a" hash))
+            hash))))
 
 (defun outbox-event-id (mutation-id)
   (outbox-digest-string (format nil "event|~a" mutation-id)))
@@ -231,6 +245,9 @@
           :null
           (jsown:val entry "payload")
           (event-payload document mutation-id operation sequence))
+    (when (star.documents:canonical-document-p document)
+      (setf (jsown:val entry "public_extensions_present")
+            (if (outbox-object-has-key-p document "extensions") :true :false)))
     entry))
 
 (defun merge-server-state (target existing entry mutation-id content-hash)
@@ -266,6 +283,21 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
       (error 'missing-document-for-update
              :document-id document-id))
     (when existing
+      ;; Recognize pre-presence canonical retries without rewriting old evidence.
+      ;; A marked entry must never swallow a new absent/empty transition.
+      (when (and (star.documents:canonical-document-p document)
+                 (not (outbox-object-has-key-p document "extensions")))
+        (let ((old-entry (find-outbox-entry existing content-hash)))
+          (when (and old-entry
+                     (not (outbox-object-has-key-p old-entry "public_extensions_present"))
+                     (outbox-object-value (document-mutation-ledger existing) content-hash))
+            (when (some (lambda (entry)
+                          (outbox-object-has-key-p entry "public_extensions_present"))
+                        (document-outbox-entries existing))
+              (error 'mutation-conflict
+                     :mutation-id mutation-id :document-id document-id
+                     :reason "historical extensions presence is ambiguous after newer mutations"))
+            (setf mutation-id content-hash))))
       (let ((known-hash
               (outbox-object-value
                (document-mutation-ledger existing)
@@ -280,6 +312,13 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
             (unless entry
               (error "Mutation ledger contains ~a without an outbox entry"
                      mutation-id))
+            (when (and (star.documents:canonical-document-p document)
+                       (outbox-object-has-key-p entry "public_extensions_present")
+                       (not (eq (eq :true (jsown:val entry "public_extensions_present"))
+                                (not (null (outbox-object-has-key-p document "extensions"))))))
+              (error 'mutation-conflict
+                     :mutation-id mutation-id :document-id document-id
+                     :reason "idempotency key was reused with different extensions presence"))
             (return-from prepare-outbox-mutation
               (values existing entry :duplicate)))))
       (when (eq operation :new)

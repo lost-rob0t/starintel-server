@@ -58,3 +58,50 @@
       )
       (cl-couch:delete-database client database))))
 
+
+
+(test real-couchdb-outbox-retains-optional-extension-presence
+  (let ((client *view-integration-client*)
+        (database "starintel-extension-presence-test"))
+    (when (cl-couch:database-exists-p client database)
+      (cl-couch:delete-database client database))
+    (cl-couch:create-database client database)
+    (unwind-protect
+         (progn
+           (cl-couch:create-document
+            client database
+            (jsown:to-json
+             (gethash "outbox" (star.databases.couchdb::checked-in-design-document-map))))
+           (dolist (kind '(:absent :empty :nonempty))
+             (let* ((id (format nil "canonical:presence-~(~a~)" kind))
+                    (incoming (extension-presence-document kind id))
+                    (expected (star.documents:canonical-wire-document incoming))
+                    (published nil))
+               (signals error
+                 (star.databases.couchdb:couchdb-process-outbox-mutation
+                  client database
+                  (lambda (&rest args) (declare (ignore args)) (error "pre-publish crash"))
+                  incoming :new))
+               (flet ((assert-stored ()
+                        (let* ((raw (cl-couch:get-document client database id))
+                               (wire (star.documents:parse-document-object
+                                      (star.frontends.http-api:strip-server-tenant-fields raw))))
+                          (is (stringp (jsown:val wire "rev")))
+                          (jsown:remkey wire "rev")
+                          (is (string= (star.actors::canonical-target-json expected)
+                                       (star.actors::canonical-target-json wire)))
+                          (is (string= raw (cl-couch:get-document client database id))))))
+                 (assert-stored)
+                 (star.databases.couchdb:recover-couchdb-outbox
+                  client database
+                  (lambda (key payload event-id)
+                    (declare (ignore key payload))
+                    (push event-id published)))
+                 (is (= 1 (length published)))
+                 (assert-stored)
+                 (star.databases.couchdb:couchdb-process-outbox-mutation
+                  client database
+                  (lambda (&rest args) (declare (ignore args)) (error "duplicate published"))
+                  incoming :new)
+                 (assert-stored)))))
+      (cl-couch:delete-database client database))))
