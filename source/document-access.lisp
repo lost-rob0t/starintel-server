@@ -94,7 +94,7 @@ Only call this for server-owned storage data, never to relax client validation."
           (error "Canonical id disagrees with CouchDB _id")))
       (when (object-has-key-p copy "_rev")
         (setf (jsown:val copy "rev") (jsown:val copy "_rev")))
-      (dolist (key '("_id" "_rev" "tenant_id"))
+      (dolist (key '("_id" "_rev" "tenant_id" "_attachments"))
         (when (object-has-key-p copy key) (jsown:remkey copy key))))
     copy))
 

@@ -37,6 +37,7 @@
    (:file "databases/view-request")
    (:file "databases/export")
    (:file "databases/outbox")
+   (:file "databases/file-content")
    (:file "databases/view-registry-package")
    (:file "databases/view-registry")
    (:file "databases/document-update-package")
@@ -90,6 +91,7 @@
    (:file "frontends/http-authorization-routes")
    (:file "frontends/http-authorization-view-routes")
    (:file "frontends/http-contract-routes")
+   (:file "frontends/http-files")
    (:file "frontends/http-actor-discovery")
    (:file "runtime-lifecycle")
    (:file "admin")
@@ -98,7 +100,7 @@
    (:file "authorization/services-final"))
   :depends-on
   (#:starintel-observability #:starintel #:starintel-legacy #:local-time #:com.inuoe.jzon #:cl-couch #:serapeum #:alexandria
-   #:cl-rabbit #:sento #:babel #:yason #:ironclad #:dexador #:quri #:uuid
+   #:cl-rabbit #:sento #:babel #:cl-base64 #:yason #:ironclad #:dexador #:quri #:uuid
    #:anypool #:clack #:lack/middleware/accesslog #:clack-handler-hunchentoot
    #:ningle #:clingon #:slynk #:nhooks #:lparallel #:cl-stream #:cl-ppcre
    #:cms-ulid #:bordeaux-threads #:usocket #:cl+ssl #:jsown #:closer-mop))

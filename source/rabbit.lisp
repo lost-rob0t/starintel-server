@@ -184,6 +184,26 @@ persistence keeps tenancy while the client contract stays v0.9.0."
   (declare (ignore consumer))
   (process-rabbit-document-mutation message :updated))
 
+(defun handle-file-ingest (consumer message)
+  "Trusted-broker file envelope ingress through the same atomic outbox adapter."
+  (declare (ignore consumer))
+  (let ((document
+          (handler-case
+              (progn
+                (when (> (length (car message))
+                         (+ (* 4 (ceiling star.databases.couchdb::*file-max-bytes* 3))
+                            (* 1024 1024)))
+                  (star.databases.couchdb::reject-file-content "file_too_large" 413))
+                (star.databases.couchdb::prepare-file-ingest
+                 (star.documents:parse-document-object (car message)) :trusted-tenant-p t))
+            (error (condition)
+              (error 'star.consumers:schema-invalid-delivery-error
+                     :cause condition :reason (princ-to-string condition))))))
+    (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+      (star.databases.couchdb::persist-file-ingest
+       client star:*couchdb-default-database* document #'publish-outbox-event))
+    (settlement-ack "file bytes, metadata and outbox committed")))
+
 (defun recover-pending-publications ()
   "Replay outbox entries whose publication was interrupted.
 
@@ -280,6 +300,10 @@ is re-published exactly once per entry sequence."
            :queue-name +updates-queue+
            :routing-key +update-key+
            :handler-fn #'handle-update-document))
+        (files
+          (make-document-consumer
+           :name "files-ingest" :queue-name "files.ingest"
+           :routing-key "files.ingest.#" :handler-fn #'handle-file-ingest))
         (targets
           (make-document-consumer
            :name "documents-targets"
@@ -288,6 +312,7 @@ is re-published exactly once per entry sequence."
            :handler-fn #'handle-target)))
     (start-consumer ingest)
     (start-consumer updates)
+    (start-consumer files)
     (start-consumer targets)
     (recover-pending-publications)
-    (list ingest updates targets)))
+    (list ingest updates files targets)))

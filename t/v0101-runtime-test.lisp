@@ -3,6 +3,217 @@
 (def-suite v0101-runtime-tests :description "StarLang-generated 0.10.1 ingress and storage boundary")
 (in-suite v0101-runtime-tests)
 
+(defun v0101-file (dtype)
+  "Core file metadata fixture; bytes remain behind the storage locator."
+  (let ((document
+          (jsown:new-js ("id" (format nil "canonical:~a" dtype))
+                        ("dataset" "canonical-tests") ("dtype" dtype)
+                        ("schemaVersion" "0.10.1")
+                        ("bytesHash" (make-string 64 :initial-element #\a))
+                        ("bytesHashAlgorithm" "sha256")
+                        ("sizeBytes" 12) ("storageId" "fixture:content")
+                        ("mediaType" "image/png")
+                        ("filename" "untrusted.png") ("quarantined" :true))))
+    (unless (string= dtype "file")
+      (setf (jsown:val document "width") 112
+            (jsown:val document "height") 112))
+    document))
+
+(test core-file-types-pass-http-and-rabbit-with-metadata-preserved
+  (dolist (dtype '("file" "image" "picture"))
+    (let* ((wire (v0101-file dtype))
+           (stored nil))
+      (is (eq wire (star.frontends.http-api:validate-document-input wire)))
+      (star.rabbit::process-rabbit-document-mutation
+       (cons (jsown:to-json wire) 1) :new
+       :persist-fn (lambda (document operation)
+                     (is (eq :new operation))
+                     (setf stored document)))
+      (is (string= (jsown:val wire "id") (jsown:val stored "_id")))
+      (let ((readback (star.documents:canonical-wire-document stored)))
+        (is (eq readback (star.documents:validate-document readback)))
+        (dolist (field '("bytesHash" "bytesHashAlgorithm" "storageId"
+                         "mediaType" "filename" "sizeBytes" "quarantined"))
+          (is (equal (jsown:val wire field) (jsown:val readback field)))))
+      (let* ((entry (star.databases.couchdb::make-outbox-entry
+                     stored "fixture-mutation" "fixture-hash" :new 1))
+             (payload (jsown:val entry "payload")))
+        (is (string= (format nil "documents.new.~a" dtype)
+                     (jsown:val entry "routing_key")))
+        (is (eq payload (star.documents:validate-document payload)))
+        (is (string= "fixture:content" (jsown:val payload "storageId")))))))
+
+(test core-file-invalid-metadata-rejected-before-rabbit-persistence
+  (dolist (dtype '("file" "image" "picture"))
+    (dolist (invalid-field '("bytesHash" "bytesHashAlgorithm" "bytes"))
+      (let ((document (v0101-file dtype)) (persisted nil))
+        (if (string= invalid-field "bytes")
+            (setf (jsown:val document "bytes") "not-a-byte-transport")
+            (jsown:remkey document invalid-field))
+        (let ((condition (capture-http-input-error
+                          (lambda ()
+                            (star.frontends.http-api:validate-document-input document)))))
+          (is (= 422 (star.frontends.http-api:http-input-error-status condition))))
+        (signals star.consumers:schema-invalid-delivery-error
+          (star.rabbit::process-rabbit-document-mutation
+           (cons (jsown:to-json document) 1) :new
+           :persist-fn (lambda (&rest args)
+                         (declare (ignore args)) (setf persisted t))))
+        (is-false persisted)))))
+
+(test core-file-update-and-readback-preserve-content-identity
+  (dolist (dtype '("file" "image" "picture"))
+    (let* ((existing (star.documents:ensure-document (v0101-file dtype)))
+           (saved nil)
+           (outcome (star.databases.couchdb::upsert-document-update
+                     (lambda (id) (declare (ignore id)) existing)
+                     (lambda (document) (setf saved document))
+                     (jsown:val existing "id")
+                     (jsown:new-js ("parseStatus" "processed")))))
+      (is (eq :updated (star.databases.couchdb:document-update-outcome-status outcome)))
+      (let ((wire (star.documents:canonical-wire-document saved)))
+        (is (eq wire (star.documents:validate-document wire)))
+        (is (string= "processed" (jsown:val wire "parseStatus")))
+        (is (string= (jsown:val existing "bytesHash") (jsown:val wire "bytesHash")))
+        (is (string= "fixture:content" (jsown:val wire "storageId")))))))
+
+(defun v0101-file-envelope (&optional (bytes #(0 1 2 255)))
+  (let* ((octets (make-array (length bytes) :element-type '(unsigned-byte 8)
+                                            :initial-contents bytes))
+         (document (v0101-file "picture")))
+    (setf (jsown:val document "bytesHash")
+          (star.databases.couchdb::file-content-digest octets)
+          (jsown:val document "sizeBytes") (length octets))
+    (jsown:new-js ("document" document)
+                  ("contentBase64" (cl-base64:usb8-array-to-base64-string octets)))))
+
+(test file-byte-envelope-validates-before-adding-server-attachments
+  (let* ((envelope (v0101-file-envelope))
+         (original (jsown:to-json envelope))
+         (stored (star.databases.couchdb::prepare-file-ingest envelope))
+         (wire (star.documents:canonical-wire-document stored)))
+    (is (string= original (jsown:to-json envelope)))
+    (is (eq wire (star.documents:validate-document wire)))
+    (is-false (jsown:keyp wire "_attachments"))
+    (is (= 4 (jsown:val wire "sizeBytes")))
+    (is (string= "couchdb:canonical:picture:content" (jsown:val wire "storageId")))
+    (is (string= "AAEC/w=="
+                 (jsown:val (jsown:val (jsown:val stored "_attachments") "content") "data")))))
+
+(test file-byte-envelope-rejects-bad-hash-size-base64-and-inline-attachments
+  (dolist (mutation
+           (list
+            (lambda (envelope)
+              (setf (jsown:val (jsown:val envelope "document") "bytesHash") "incorrect"))
+            (lambda (envelope)
+              (setf (jsown:val (jsown:val envelope "document") "sizeBytes") 99))
+            (lambda (envelope) (setf (jsown:val envelope "contentBase64") "AAEC/w==junk"))))
+    (let ((envelope (v0101-file-envelope)))
+      (funcall mutation envelope)
+      (signals star.databases.couchdb::file-content-error
+        (star.databases.couchdb::prepare-file-ingest envelope))))
+  (let ((envelope (v0101-file-envelope)))
+    (setf (jsown:val (jsown:val envelope "document") "_attachments") (jsown:empty-object))
+    (signals star.documents:document-schema-validation-error
+      (star.databases.couchdb::prepare-file-ingest envelope)))
+  (let ((star.databases.couchdb::*file-max-bytes* 3))
+    (signals star.databases.couchdb::file-content-error
+      (star.databases.couchdb::prepare-file-ingest (v0101-file-envelope)))))
+
+(test file-byte-commit-precedes-event-and-replay-is-idempotent
+  (let ((state nil) (saves 0) (events nil)
+        (incoming (star.databases.couchdb::prepare-file-ingest (v0101-file-envelope))))
+    (labels ((load-file (id) (declare (ignore id)) state)
+             (save-file (document)
+               (incf saves)
+               (setf state (star.documents:clone-document-object document))
+               (setf (jsown:val state "_rev") (format nil "~a-fixture" saves))
+               state)
+             (publish-file (routing-key payload event-id)
+               (is-true state)
+               (is-true (jsown:keyp state "_attachments"))
+               (is (string= "documents.new.picture" routing-key))
+               (is-false (jsown:keyp payload "_attachments"))
+               (is (eq payload (star.documents:validate-document payload)))
+               (push event-id events)))
+      (star.databases.couchdb::process-outbox-mutation
+       #'load-file #'save-file #'publish-file incoming :new)
+      (let ((committed-saves saves))
+        (star.databases.couchdb::process-outbox-mutation
+         #'load-file #'save-file #'publish-file incoming :new)
+        (is (= committed-saves saves))
+        (is (= 1 (length events))))
+      (let ((metadata (star.documents:canonical-wire-document state)))
+        (setf (jsown:val metadata "parseStatus") "processed")
+        (star.databases.couchdb::process-outbox-mutation
+         #'load-file #'save-file (lambda (&rest args) (declare (ignore args)))
+         (star.documents:ensure-document metadata) :updated)
+        (is-true (jsown:keyp state "_attachments"))))))
+
+
+(test metadata-first-file-attach-requires-rev-and-preserves-reviews
+  (let* ((incoming (star.databases.couchdb::prepare-file-ingest (v0101-file-envelope)))
+         (state (star.documents:ensure-document
+                 (jsown:val (v0101-file-envelope) "document")))
+         (load-symbol 'star.databases.couchdb::couchdb-load-outbox-document)
+         (save-symbol 'star.databases.couchdb::couchdb-save-outbox-document)
+         (old-load (symbol-function load-symbol))
+         (old-save (symbol-function save-symbol))
+         (saves 0) (events 0))
+    (setf (jsown:val state "_rev") "1-fixture"
+          (jsown:val state "verificationStatus") "confirmed")
+    (unwind-protect
+        (progn
+          (setf (symbol-function load-symbol)
+                (lambda (&rest ignored) (declare (ignore ignored)) state)
+                (symbol-function save-symbol)
+                (lambda (client database candidate)
+                  (declare (ignore client database))
+                  (incf saves)
+                  (setf state (star.documents:clone-document-object candidate)
+                        (jsown:val state "_rev") (format nil "~a-fixture" (1+ saves)))
+                  state))
+          (setf (jsown:val incoming "tenant_id") "other-tenant")
+          (signals star.databases.couchdb:mutation-conflict
+            (star.databases.couchdb::persist-file-ingest nil nil incoming #'identity))
+          (jsown:remkey incoming "tenant_id")
+          (signals star.databases.couchdb::file-content-error
+            (star.databases.couchdb::persist-file-ingest nil nil incoming #'identity))
+          (is (= 0 saves))
+          (setf (jsown:val incoming "rev") "stale")
+          (signals star.databases.couchdb::file-content-error
+            (star.databases.couchdb::persist-file-ingest nil nil incoming #'identity))
+          (is (= 0 saves))
+          (setf (jsown:val incoming "rev") "1-fixture")
+          (star.databases.couchdb::persist-file-ingest
+           nil nil incoming
+           (lambda (routing-key payload event-id)
+             (declare (ignore event-id))
+             (incf events)
+             (is (string= "documents.updated.picture" routing-key))
+             (is-true (jsown:keyp state "_attachments"))
+             (is (string= "confirmed" (jsown:val payload "verificationStatus")))))
+          (is (= 2 saves)) ; atomic attachment commit and existing outbox marker
+          (is (= 1 events))
+          (is (string= "confirmed" (jsown:val state "verificationStatus"))))
+      (setf (symbol-function load-symbol) old-load
+            (symbol-function save-symbol) old-save))))
+
+(test file-content-identities-cannot-be-modified-by-metadata-patch
+  (let ((stored (star.databases.couchdb::prepare-file-ingest (v0101-file-envelope))))
+    (dolist (patch (list (jsown:new-js ("bytesHash" "changed"))
+                        (jsown:new-js ("storageId" "changed"))
+                        (jsown:new-js ("sizeBytes" 99))
+                        (jsown:new-js ("_attachments" (jsown:empty-object)))))
+      (signals star.databases.couchdb::document-update-validation-error
+        (star.databases.couchdb::merge-document-update "canonical:picture" stored patch)))))
+
+(test file-content-tamper-verification-fails
+  (let ((document (jsown:val (v0101-file-envelope) "document")))
+    (signals star.databases.couchdb::file-content-error
+      (star.databases.couchdb::verify-file-content
+       document (make-array 4 :element-type '(unsigned-byte 8) :initial-element 0)))))
+
 (defun v0101-person (&optional (id "canonical:person"))
   (jsown:new-js ("id" id) ("dataset" "canonical-tests") ("dtype" "person")
                 ("schemaVersion" "0.10.1") ("fname" "Ada")))
