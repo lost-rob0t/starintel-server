@@ -1,0 +1,94 @@
+name: Canonical restoration evidence
+
+on:
+  push:
+    branches: ["codex/starintel-0101-ingest"]
+    paths: [".github/workflows/canonical-restoration.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-restoration-evidence
+  cancel-in-progress: false
+
+jobs:
+  reconcile-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_SHA: ce14c77ccd2f51f543410fdeef3d78fb9978b769
+      ORIGINAL_BASELINE: ad55d9708491870f93f0444aee7791d21afe4d77
+      EXPECTED_HEAD: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compute reconciliation without merging or committing
+        id: reconcile
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/canonical-restoration-evidence"
+          mkdir -p "$evidence"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^)" = "$ORIGINAL_BASELINE"
+          test "$(git diff --name-only "$ORIGINAL_BASELINE" HEAD)" = ".github/workflows/canonical-restoration.yml"
+          public_remote="https://github.com/lost-rob0t/starintel-server.git"
+          current_base="$(git ls-remote "$public_remote" refs/heads/master | cut -f1)"
+          test "$current_base" = "$BASE_SHA"
+          git fetch --no-tags "$public_remote" "$BASE_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$BASE_SHA"
+          {
+            git --version
+            printf 'candidate=%s\nbase=%s\noriginal-baseline=%s\n' "$EXPECTED_HEAD" "$BASE_SHA" "$ORIGINAL_BASELINE"
+            git merge-base HEAD "$BASE_SHA"
+          } | tee "$evidence/provenance.txt"
+          git merge-tree --write-tree HEAD HEAD > "$evidence/control-tree.txt"
+          test "$(head -n 1 "$evidence/control-tree.txt")" = "$(git rev-parse HEAD^{tree})"
+          printf 'clean same-commit control passed\n' | tee "$evidence/control.txt"
+          set +e
+          git merge-tree --write-tree --messages --name-only HEAD "$BASE_SHA" > "$evidence/merge-tree.txt" 2> "$evidence/merge-tree-stderr.txt"
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$evidence/status.txt"
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          case "$status" in
+            0) category=conflict-free ;;
+            1) category=conflicts ;;
+            *) category=execution-error ;;
+          esac
+          printf 'category=%s\n' "$category" | tee "$evidence/category.txt"
+          cat "$evidence/merge-tree.txt" "$evidence/merge-tree-stderr.txt"
+          tree="$(head -n 1 "$evidence/merge-tree.txt")"
+          if [[ "$tree" =~ ^[0-9a-f]{40}$ ]] && test "$(git cat-file -t "$tree")" = tree; then
+            git --no-pager diff --no-ext-diff --no-textconv HEAD "$tree" > "$evidence/diagnostic-reconciliation.diff"
+            git --no-pager diff --no-ext-diff --no-textconv --stat HEAD "$tree" | tee "$evidence/stat.txt"
+            git --no-pager diff --no-ext-diff --no-textconv HEAD "$tree" -- flake.nix source/observability-gserver.lisp starintel-gserver-tests.asd t/run-tests.lisp t/addon-system-test.lisp t/authorization-services-final-test.lisp t/observability-test.lisp > "$evidence/overlap.diff"
+          fi
+          for file in "$evidence"/*; do
+            bytes="$(wc -c < "$file")"
+            if test "$bytes" -gt 500000; then
+              head -c 500000 "$file" > "$file.bounded"
+              mv "$file.bounded" "$file"
+              printf '%s truncated from %s to 500000 bytes\n' "$(basename "$file")" "$bytes" >> "$evidence/truncation.txt"
+            fi
+          done
+          test ! -f "$evidence/overlap.diff" || cat "$evidence/overlap.diff"
+          sha256sum "$evidence"/* > "$evidence-files.sha256"
+          mv "$evidence-files.sha256" "$evidence/"
+      - name: Retain only repository reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-restoration-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-restoration-evidence/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require a conflict-free synthesized tree
+        if: always()
+        env:
+          MERGE_TREE_STATUS: ${{ steps.reconcile.outputs.status }}
+        run: test "$MERGE_TREE_STATUS" = 0
