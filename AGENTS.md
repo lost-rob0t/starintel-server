@@ -16,42 +16,24 @@ Current source beats stale factual claims in an issue. The issue still owns inte
 
 ## StarIntel schema/version preflight
 
-Before any work that reads, writes, validates, serializes, ingests, migrates, indexes,
-or reasons about StarIntel documents or schema-dependent API behavior, resolve and
-verify this repository's schema lock:
+Before work that reads, writes, validates, serializes, ingests, migrates, indexes,
+or reasons about StarIntel documents or schema-dependent API behavior, verify:
 
 ```bash
 python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
 ```
 
-If the reusable `starintel-spec-version` skill is installed, also use its read-only
-resolver to make the version dimensions explicit:
-
-```bash
-python3 "$HOME/skills/skills/starintel-spec-version/scripts/starintel_spec_version.py" \
-  current --lock schema/starintel-schema.lock.json
-```
+Canonical authority is **StarIntel 0.10.1 generated from Star Language** at
+`lost-rob0t/star-lang/specs/starintel/0.10.1/core.star`.
 
 Rules:
 
-- `schema/starintel-schema.lock.json` is the consumer authority for the canonical
-  repository, canonical commit, active `release_version`, and immutable
-  `schema_version`.
-- Report/use `release_version` as the active StarIntel release. Do **not** infer the
-  release from `starintel-doc-v0.9.0.schema.json` or another schema filename.
-- The v0.9 base schema may remain `schema_version = 0.9.0` while the release/profile
-  advances through `0.9.1`, `0.9.2`, and later additive releases.
-- Issue prose, research notes, README text, and remembered version numbers never
-  override the lock and pinned canonical manifest.
-- Never hand-edit a release/profile bump in this repository. Canonical release
-  changes occur through the canonical schema repository's bump script; this
-  repository then repins its lock through the existing schema sync/lock workflow.
-- A lock/manifest/commit mismatch is a hard blocker. Do not implement against an
-  unverified or guessed contract.
-
-At the time this rule was added, this lock resolves release `0.9.1` over immutable
-base schema `0.9.0`; future agents must read the live lock instead of trusting this
-historical value.
+- Star Language source plus its generated 0.10.1 artifacts are the canonical document-contract authority.
+- This server consumes/pins generated output; it must not maintain a competing handwritten schema.
+- Do not revive 0.9.x as canonical authority or add new runtime paths whose purpose is to keep 0.9.x authoritative.
+- If the schema lock, generated artifacts, runtime validators, or current source disagree with canonical 0.10.1 output, treat that as a migration blocker and repair/repin the authority chain.
+- Schema/profile changes originate in Star Language; coordinate generated-contract changes with SL02 rather than editing generated schema output by hand.
+- Retain exact generated commit/hash provenance wherever the lock format supports it.
 
 ## Local research lookup
 
@@ -102,68 +84,7 @@ Allowed classes for this workflow are:
 Naming rules:
 
 1. Names are lowercase ASCII and must remain valid under the runtime actor-name
-   contract `^[A-Za-z0-9][A-Za-z0-9._:-]*# StarIntel Server agent contract
-
-This repository is worked **issue-first**. Do not invent a roadmap while an issue already owns the work.
-
-## Authority for an issue run
-
-For `/issue N`, task-specific authority is intentionally bounded to:
-
-1. GitHub issue `lost-rob0t/starintel-server#N`, including its current body and status.
-2. The current local `starintel-server` checkout.
-3. The current local `starintel-auto-research` checkout, but only the research/design records directly relevant to the issue.
-
-Treat remote research links in old issue prose as locators for the local `starintel-auto-research` checkout. Do not recursively browse unrelated repositories or load the whole research corpus. A cross-repository implementation dependency named by the issue may be inspected only when it is necessary to verify a hard boundary; do not turn that into scope expansion.
-
-Current source beats stale factual claims in an issue. The issue still owns intent and acceptance criteria. If current source proves part of the issue is already fixed, narrow the issue instead of reimplementing it.
-
-## StarIntel schema/version preflight
-
-Before any work that reads, writes, validates, serializes, ingests, migrates, indexes,
-or reasons about StarIntel documents or schema-dependent API behavior, resolve and
-verify this repository's schema lock:
-
-```bash
-python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
-```
-
-If the reusable `starintel-spec-version` skill is installed, also use its read-only
-resolver to make the version dimensions explicit:
-
-```bash
-python3 "$HOME/skills/skills/starintel-spec-version/scripts/starintel_spec_version.py" \
-  current --lock schema/starintel-schema.lock.json
-```
-
-Rules:
-
-- `schema/starintel-schema.lock.json` is the consumer authority for the canonical
-  repository, canonical commit, active `release_version`, and immutable
-  `schema_version`.
-- Report/use `release_version` as the active StarIntel release. Do **not** infer the
-  release from `starintel-doc-v0.9.0.schema.json` or another schema filename.
-- The v0.9 base schema may remain `schema_version = 0.9.0` while the release/profile
-  advances through `0.9.1`, `0.9.2`, and later additive releases.
-- Issue prose, research notes, README text, and remembered version numbers never
-  override the lock and pinned canonical manifest.
-- Never hand-edit a release/profile bump in this repository. Canonical release
-  changes occur through the canonical schema repository's bump script; this
-  repository then repins its lock through the existing schema sync/lock workflow.
-- A lock/manifest/commit mismatch is a hard blocker. Do not implement against an
-  unverified or guessed contract.
-
-At the time this rule was added, this lock resolves release `0.9.1` over immutable
-base schema `0.9.0`; future agents must read the live lock instead of trusting this
-historical value.
-
-## Local research lookup
-
-Prefer a sibling checkout named `starintel-auto-research` near this repository. If needed, locate an already-present local checkout. Do not clone/fetch a research repository merely to begin an issue run.
-
-Load only directly linked or strongly matching research/design files. Record the exact local paths used in the final evidence.
-
-.
+   contract `^[A-Za-z0-9][A-Za-z0-9._:-]*$`.
 2. Protocol segments use `:`; words inside a segment use kebab-case.
 3. The exact registered string is the actor identity. Do not silently rename an
    actor after targets or leases exist; add an explicit compatibility alias or
@@ -348,3 +269,18 @@ Report:
 - any follow-up issue created or remaining blocker.
 
 Do not claim a service, integration, CI, hardware, or security test ran unless it actually ran.
+
+<!-- BEGIN STARINTEL FLEET CONTRACT -->
+## StarIntel 15-worker fleet contract
+
+This repository participates in the StarIntel hourly worker fleet.
+
+- **GitHub connector is the repository control surface for fleet automation.** Use the connected GitHub connector to read current `AGENTS.md`, repository files, issues, pull requests, branches, diffs, comments, reviews, and CI/check state, and for permitted writes. Attempt the connector before claiming GitHub repository access or mutation is unavailable.
+- **Canonical StarIntel document authority is 0.10.1 generated from Star Language.** The source of truth is `lost-rob0t/star-lang/specs/starintel/0.10.1/core.star` and its generated artifacts. Consumer repositories must consume/pin generated output; they must not maintain a competing handwritten schema or revive 0.9.x as canonical authority.
+- **Respect worker ownership.** SL01-SL05 own Star Language/compiler/schema domains; PA06-PA09 own Pro Actors/collection runtimes; SS10-SS13 own server/runtime/router/persistence/security; IR14-IR15 own cross-repo integration and release admission.
+- **One writer per branch.** Re-fetch exact head/base immediately before mutation. Reuse an existing retained branch/PR when it owns the task. Never force-push or overwrite concurrent work.
+- **Evidence is exact-head.** Required CI/checks must be observed on the exact candidate SHA; pending, skipped, stale, foreign, mock-only, or unrun evidence is not green.
+- **Scheduled fleet tasks stay enabled.** Repository work must not disable a scheduled worker unless the operator explicitly asks for that task to be disabled.
+
+Repository-specific rules still apply; stricter local rules win unless they conflict with canonical StarIntel 0.10.1 authority or an explicit current operator instruction.
+<!-- END STARINTEL FLEET CONTRACT -->
