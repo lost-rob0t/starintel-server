@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "starintel-audit"
+version = "0.1.0"
+description = "Tenant-bound CouchDB operational audit source and CLI"
+requires-python = ">=3.11"
+
+[project.scripts]
+starintel-audit = "starintel_audit:main"
+
+[tool.setuptools]
+py-modules = ["starintel_audit"]
