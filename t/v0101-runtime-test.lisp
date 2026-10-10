@@ -89,34 +89,39 @@
                     "canonical:person" patch)))
       (is (eq :validation-failed (star.databases.couchdb:document-update-outcome-status outcome))))))
 
-(test canonical-search-rows-project-storage-fields-and-outbox-payloads
+(test canonical-search-rows-project-storage-fields-and-private-outbox
   (dolist (vector-p '(nil t))
     (let* ((stored (star.documents:ensure-document (v0101-person)))
+           (user (jsown:new-js ("opaque_key" :false)
+                               ("_server_outbox" "nested-user-value")
+                               ("empty" (jsown:empty-object))))
            (payload (star.documents:clone-document-object stored)))
       (setf (jsown:val stored "_rev") "2-search"
             (jsown:val stored "tenant_id") "private-tenant"
             (jsown:val payload "tenant_id") "private-tenant"
             (jsown:val stored "extensions")
-            (jsown:new-js ("_server_outbox"
-                           (vector (jsown:new-js ("payload" payload))))))
-      (let* ((row (jsown:new-js ("doc" stored)
+            (jsown:new-js ("user_data" user)
+                          ("_server_outbox" (vector (jsown:new-js ("payload" payload))))
+                          ("_server_mutations" (jsown:new-js ("private" "evidence")))))
+      (let* ((before (jsown:to-json stored))
+             (row (jsown:new-js ("doc" stored)
                                ("fields" (star.documents:clone-document-object stored))))
              (response (jsown:new-js ("rows" (if vector-p (vector row) (list row))))))
         (star.frontends.http-api:strip-server-tenant-from-rows response)
+        (is (string= before (jsown:to-json stored)))
         (let ((result (elt (jsown:val response "rows") 0)))
           (dolist (key '("doc" "fields"))
-            (let ((wire (jsown:val result key)))
+            (let* ((wire (jsown:val result key))
+                   (extensions (jsown:val wire "extensions")))
               (is-false (jsown:keyp wire "_id"))
               (is-false (jsown:keyp wire "_rev"))
               (is-false (jsown:keyp wire "tenant_id"))
               (is (string= "2-search" (jsown:val wire "rev")))
-              (is (eq wire (star.documents:validate-document wire)))))
-          (let* ((extensions (jsown:val (jsown:val result "doc") "extensions"))
-                 (outbox (elt (jsown:val extensions "_server_outbox") 0))
-                 (wire (jsown:val outbox "payload")))
-            (is-false (jsown:keyp wire "tenant_id"))
-            (is-false (jsown:keyp wire "_id"))
-            (is (eq wire (star.documents:validate-document wire)))))))))
+              (is-false (jsown:keyp extensions "_server_outbox"))
+              (is-false (jsown:keyp extensions "_server_mutations"))
+              (is (string= (star.actors::canonical-target-json user)
+                           (star.actors::canonical-target-json (jsown:val extensions "user_data"))))
+              (is (eq wire (star.documents:validate-document wire))))))))))
 
 (test canonical-message-cannot-enter-historical-url-extractor
   (let* ((calls 0)
@@ -151,3 +156,356 @@
                (is-false (jsown:keyp document "schema_version")))))
       (loop for symbol in symbols for original in originals
             do (setf (symbol-function symbol) original)))))
+
+
+(defun issue319-fingerprint-options (&optional reordered)
+  (jsown:with-injective-reader
+    (jsown:parse
+     (if reordered
+         "{\"z\":{\"CamelKey\":false,\"a\":[null,{},[],\"first\",\"second\"]},\"A\":1}"
+         "{\"A\":1,\"z\":{\"a\":[null,{},[],\"first\",\"second\"],\"CamelKey\":false}}"))))
+
+(defun issue319-fingerprint-document (&optional reordered)
+  (jsown:new-js
+    ("id" "canonical:target-fingerprint") ("_id" "canonical:target-fingerprint")
+    ("rev" "1-original") ("_rev" "1-original") ("dtype" "target")
+    ("schemaVersion" "0.10.1") ("dataset" "dataset-a") ("tenant_id" "tenant-a")
+    ("actor" "subfinder") ("target" "example.org") ("delay" 60) ("recurring" :false)
+    ("options" (issue319-fingerprint-options reordered))
+    ("extensions" (jsown:new-js ("schedule_id" "issue319:schedule")))))
+
+(defun issue319-fingerprint-envelope (document &key (kind :rabbit) routing-key)
+  (let* ((record (star.actors::parse-target-record document))
+         (actor (star.actors::target-record-actor record)))
+    (star.actors::make-target-dispatch-envelope
+     record :destination
+     (star.actors::make-target-destination-handle
+      kind actor :component (when (eq kind :local) :test-component)
+      :routing-key (when (eq kind :rabbit)
+                     (or routing-key (star.actors::canonical-target-routing-key actor)))))))
+
+(defun issue319-precanonical-fingerprint (envelope)
+  "Independent pre-#319 fingerprint for valid JSON fixtures."
+  (let ((record (star.actors::target-dispatch-envelope-record envelope))
+        (destination (star.actors::target-dispatch-envelope-destination envelope)))
+    (star.actors::target-dispatch-digest
+     (format nil "~a|~a|~a|~a|~a|~a|~a|~a|~a|~a|~a"
+             (star.actors::target-dispatch-envelope-schedule-id envelope)
+             (star.actors::target-record-id record)
+             (or (star.actors::target-record-revision record) "unrevisioned")
+             (star.actors::target-destination-handle-kind destination)
+             (star.actors::target-destination-handle-name destination)
+             (star.actors::target-record-actor record)
+             (star.actors::target-record-target record)
+             (star.actors::target-record-delay record)
+             (if (star.actors::target-record-recurring-p record) "true" "false")
+             (jsown:to-json (star.actors::target-record-options record))
+             (or (star.actors::target-record-deadline record) "no-deadline")))))
+
+(defun issue319-old-acceptance (envelope &optional (status "scheduled"))
+  (let ((acceptance (star.actors::target-acceptance-document envelope)))
+    (setf (jsown:val acceptance "fingerprint") (issue319-precanonical-fingerprint envelope)
+          (jsown:val acceptance "status") status
+          (jsown:val acceptance "execution_id") "saved-execution"
+          (jsown:val acceptance "trace_id") "saved-trace"
+          (jsown:val acceptance "lease_id") "saved-lease"
+          (jsown:val acceptance "fencing_token") 7)
+    acceptance))
+
+(defun issue319-retry-acceptance (existing envelope)
+  (let ((star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+        (updates 0) (schedules 0) (dispatches 0))
+    (let ((outcome
+            (star.actors::process-target-dispatch-envelope
+             envelope
+             (lambda (desired equivalent-p)
+               (values existing
+                       (cond ((not (funcall equivalent-p existing desired)) :conflict)
+                             ((equal "pending" (jsown:val existing "status")) :resumed)
+                             (t :duplicate))))
+             (lambda (id updater)
+               (is (equal id (jsown:val existing "_id")))
+               (incf updates) (funcall updater existing))
+             :dispatch-fn (lambda (&rest args) (declare (ignore args)) (incf dispatches))
+             :schedule-once-fn (lambda (&rest args) (declare (ignore args)) (incf schedules))
+             :schedule-recurring-fn (lambda (&rest args) (declare (ignore args)) (incf schedules)))))
+      (values outcome updates schedules dispatches))))
+
+(defun issue319-assert-acceptance-conflict (existing envelope)
+  (let ((before (jsown:to-json existing)))
+    (multiple-value-bind (outcome updates schedules dispatches)
+        (issue319-retry-acceptance existing envelope)
+      (is (eq :invalid (star.actors::target-dispatch-outcome-status outcome)))
+      (is (= 0 updates schedules dispatches))
+      (is (string= before (jsown:to-json existing))))))
+
+(test canonical-target-json-is-recursive-injective-and-fail-closed
+  (is (string= "{\"A\":1,\"z\":{\"CamelKey\":false,\"a\":[null,{},[],\"first\",\"second\"]}}"
+               (star.actors::canonical-target-json (issue319-fingerprint-options))))
+  (is (string= (star.actors::canonical-target-json (issue319-fingerprint-options))
+               (star.actors::canonical-target-json (issue319-fingerprint-options t))))
+  (let ((encodings (mapcar #'star.actors::canonical-target-json
+                          (list :false :null #() (jsown:empty-object)))))
+    (is (= 4 (length (remove-duplicates encodings :test #'string=)))))
+  (dolist (value (list :unsupported 1/2 (make-hash-table)
+                      (list :obj (cons "same" 1) (cons "same" 2))))
+    (signals star.actors:invalid-target-dispatch (star.actors::canonical-target-json value)))
+  (let ((cycle (make-array 1)))
+    (setf (aref cycle 0) cycle)
+    (signals star.actors:invalid-target-dispatch (star.actors::canonical-target-json cycle))))
+
+(test canonical-reordered-retries-reuse-old-acceptance-without-rewriting-metadata
+  (dolist (status '("scheduled" "pending"))
+    (let* ((first (issue319-fingerprint-envelope (issue319-fingerprint-document)))
+           (retry (issue319-fingerprint-envelope (issue319-fingerprint-document t)))
+           (existing (issue319-old-acceptance first status))
+           (old-fingerprint (jsown:val existing "fingerprint")))
+      (is (string= (star.actors::target-dispatch-fingerprint first)
+                   (star.actors::target-dispatch-fingerprint retry)))
+      (is (not (string= old-fingerprint (star.actors::target-dispatch-fingerprint retry))))
+      (multiple-value-bind (outcome updates schedules dispatches)
+          (issue319-retry-acceptance existing retry)
+        (is (eq (if (string= status "pending") :accepted :duplicate)
+                (star.actors::target-dispatch-outcome-status outcome)))
+        (is (= (if (string= status "pending") 1 0) updates schedules))
+        (is (= 0 dispatches))
+        (is (string= "saved-execution" (star.actors::target-dispatch-envelope-execution-id retry)))
+        (is (string= "saved-trace" (star.actors::target-dispatch-envelope-trace-id retry)))
+        (is (string= "saved-lease" (star.actors::target-dispatch-envelope-lease-id retry)))
+        (is (= 7 (star.actors::target-dispatch-envelope-fencing-token retry)))
+        (is (string= old-fingerprint (jsown:val existing "fingerprint")))
+        (is (string= "saved-execution" (jsown:val existing "execution_id")))
+        (is (string= "saved-trace" (jsown:val existing "trace_id")))
+        (is (string= "saved-lease" (jsown:val existing "lease_id")))
+        (is (= 7 (jsown:val existing "fencing_token")))))))
+
+(test canonical-dataset-change-conflicts-even-when-old-digests-collide
+  (let* ((first (issue319-fingerprint-envelope (issue319-fingerprint-document)))
+         (changed (issue319-fingerprint-document)))
+    (setf (jsown:val changed "dataset") "dataset-b")
+    (let ((retry (issue319-fingerprint-envelope changed)))
+      (is (string= (issue319-precanonical-fingerprint first)
+                   (issue319-precanonical-fingerprint retry)))
+      (is (not (string= (star.actors::target-dispatch-fingerprint first)
+                        (star.actors::target-dispatch-fingerprint retry))))
+      (issue319-assert-acceptance-conflict (issue319-old-acceptance first) retry))))
+
+(test canonical-target-semantic-type-and-identity-changes-conflict
+  (dolist (mutate
+            (list
+             (lambda (doc) (setf (jsown:val doc "actor") "other-actor"))
+             (lambda (doc) (setf (jsown:val doc "target") "example.net"))
+             (lambda (doc) (setf (jsown:val doc "delay") 61))
+             (lambda (doc) (setf (jsown:val doc "recurring") :true))
+             (lambda (doc) (setf (jsown:val doc "deadline") 4102444800))
+             (lambda (doc) (setf (jsown:val doc "tenant_id") "tenant-b"))
+             (lambda (doc) (jsown:remkey doc "tenant_id"))
+             (lambda (doc) (setf (jsown:val doc "id") "canonical:other"
+                                 (jsown:val doc "_id") "canonical:other"))
+             (lambda (doc) (setf (jsown:val doc "rev") "2-new"
+                                 (jsown:val doc "_rev") "2-new"))
+             (lambda (doc) (setf (jsown:val (jsown:val doc "extensions") "schedule_id")
+                                 "issue319:other-schedule"))))
+    (let* ((original (issue319-fingerprint-envelope (issue319-fingerprint-document)))
+           (changed (issue319-fingerprint-document)))
+      (funcall mutate changed)
+      (issue319-assert-acceptance-conflict
+       (issue319-old-acceptance original) (issue319-fingerprint-envelope changed))))
+  (let* ((original (issue319-fingerprint-envelope (issue319-fingerprint-document)))
+         (existing (issue319-old-acceptance original)))
+    (issue319-assert-acceptance-conflict
+     existing (issue319-fingerprint-envelope (issue319-fingerprint-document) :kind :local))
+    (issue319-assert-acceptance-conflict
+     existing (issue319-fingerprint-envelope (issue319-fingerprint-document)
+                                             :routing-key "other.routing.key"))))
+
+(test canonical-acceptance-missing-mixed-or-inconsistent-metadata-conflicts
+  (let* ((envelope (issue319-fingerprint-envelope (issue319-fingerprint-document)))
+         (existing (issue319-old-acceptance envelope)))
+    (dolist (key '("_id" "type" "status" "fingerprint" "target_document"
+                   "target_id" "target_revision" "actor" "schedule_id"
+                   "execution_id" "attempt" "trace_id" "lease_id" "fencing_token"
+                   "destination_kind" "routing_key" "recurring" "delay" "deadline"))
+      (let ((broken (star.documents:clone-document-object existing)))
+        (jsown:remkey broken key)
+        (issue319-assert-acceptance-conflict broken envelope)))
+    (dolist (change '(("_id" . "target-acceptance:wrong") ("target_id" . "wrong")
+                      ("target_revision" . "2-wrong") ("actor" . "wrong")
+                      ("schedule_id" . "wrong") ("delay" . 61) ("recurring" . :true)
+                      ("deadline" . 4102444800) ("destination_kind" . "unknown")
+                      ("routing_key" . :null) ("fencing_token" . 0)
+                      ("attempt" . -1) ("execution_id" . :null)
+                      ("trace_id" . "") ("lease_id" . :null)))
+      (let ((broken (star.documents:clone-document-object existing)))
+        (setf (jsown:val broken (car change)) (cdr change))
+        (issue319-assert-acceptance-conflict broken envelope)))
+    (dolist (mutate
+              (list
+               (lambda (doc) (jsown:remkey doc "schemaVersion"))
+               (lambda (doc) (jsown:remkey doc "id"))
+               (lambda (doc) (setf (jsown:val doc "schema_version") "0.9.0"))
+               (lambda (doc) (setf (jsown:val doc "_id") "canonical:wrong"))
+               (lambda (doc) (setf (jsown:val doc "_rev") "2-wrong"))
+               (lambda (doc) (setf (jsown:val doc "options") #()))
+               (lambda (doc) (setf (jsown:val (jsown:val doc "extensions") "target_execution_id")
+                                   "inconsistent-execution"))))
+      (let ((broken (star.documents:clone-document-object existing)))
+        (funcall mutate (jsown:val broken "target_document"))
+        (issue319-assert-acceptance-conflict broken envelope)))))
+
+(test legacy-target-fingerprint-and-equality-remain-byte-compatible
+  (let* ((*print-case* :upcase)
+         (document (jsown:new-js
+                     ("_id" "legacy:target") ("_rev" "3-test") ("dtype" "target")
+                     ("actor" "subfinder") ("target" "example.org")
+                     ("delay" 60) ("recurring" :false) ("options" #())
+                     ("schedule_id" "legacy:schedule")))
+         (envelope (issue319-fingerprint-envelope document)))
+    (is (string=
+         (star.actors::target-dispatch-digest
+          "legacy:schedule|legacy:target|3-test|RABBIT|subfinder|subfinder|example.org|60|false|[]|no-deadline")
+         (star.actors::target-dispatch-fingerprint envelope)))
+    (let ((left (jsown:new-js ("schedule_id" "legacy:schedule") ("fingerprint" "old-digest")))
+          (right (jsown:new-js ("schedule_id" "legacy:schedule") ("fingerprint" "old-digest"))))
+      (is (star.actors::target-acceptance-equivalent-p left right))
+      (setf (jsown:val right "fingerprint") "changed-digest")
+      (is-false (star.actors::target-acceptance-equivalent-p left right)))))
+
+(test canonical-target-options-preserve-each-json-distinction
+  (let ((options
+          (list (jsown:new-js ("value" :false))
+                (jsown:new-js ("value" :null))
+                (jsown:new-js ("value" #()))
+                (jsown:new-js ("value" (jsown:empty-object)))
+                (jsown:new-js ("Case" 1))
+                (jsown:new-js ("case" 1))
+                (jsown:new-js ("order" (vector "first" "second")))
+                (jsown:new-js ("order" (vector "second" "first"))))))
+    (loop for tail on options do
+      (dolist (other (cdr tail))
+        (let ((left-doc (issue319-fingerprint-document))
+              (right-doc (issue319-fingerprint-document)))
+          (setf (jsown:val left-doc "options") (car tail)
+                (jsown:val right-doc "options") other)
+          (let ((left (issue319-fingerprint-envelope left-doc))
+                (right (issue319-fingerprint-envelope right-doc)))
+            (is (not (string= (star.actors::target-dispatch-fingerprint left)
+                              (star.actors::target-dispatch-fingerprint right))))
+            (issue319-assert-acceptance-conflict
+             (issue319-old-acceptance left) right)))))))
+
+(test canonical-target-fingerprint-agrees-for-wire-and-storage-identities
+  (let* ((stored (issue319-fingerprint-document))
+         (wire (star.documents:clone-document-object stored)))
+    (jsown:remkey wire "_id")
+    (jsown:remkey wire "_rev")
+    (let ((left (issue319-fingerprint-envelope stored))
+          (right (issue319-fingerprint-envelope wire)))
+      (is (string= (star.actors::target-dispatch-fingerprint left)
+                   (star.actors::target-dispatch-fingerprint right)))
+      (is (star.actors::target-acceptance-equivalent-p
+           (issue319-old-acceptance left)
+           (star.actors::target-acceptance-document right))))))
+
+(test canonical-target-fingerprint-rejects-inconsistent-typed-record
+  (let ((envelope (issue319-fingerprint-envelope (issue319-fingerprint-document))))
+    (setf (star.actors::target-record-target
+           (star.actors::target-dispatch-envelope-record envelope))
+          "changed-only-in-the-record")
+    (signals star.actors:invalid-target-dispatch
+      (star.actors::target-dispatch-fingerprint envelope))))
+
+(test canonical-investigation-target-retains-its-array-options-boundary
+  (let* ((document (issue319-fingerprint-document))
+         (options (vector "historical-option" (jsown:new-js ("opaque_key" :false)))))
+    ;; This shape-only wire/storage check has no private tenant context.
+    ;; Tenant removal remains a conflict in the independent semantic test.
+    (jsown:remkey document "tenant_id")
+    (setf (jsown:val document "dtype") "investigation-target"
+          (jsown:val document "options") options)
+    (let* ((record (star.actors:parse-target-record document))
+           (first (issue319-fingerprint-envelope document))
+           (stored (issue319-old-acceptance first))
+           (wire (star.documents:canonical-wire-document document))
+           (retry (issue319-fingerprint-envelope wire)))
+      (is (equalp options (star.actors:target-record-options record)))
+      (is (string= (star.actors::target-dispatch-fingerprint first)
+                   (star.actors::target-dispatch-fingerprint retry)))
+      (is (star.actors::target-acceptance-equivalent-p
+           stored (star.actors::target-acceptance-document retry)))
+      (let ((sent (star.actors::target-dispatch-document first)))
+        (is (string= (star.actors::canonical-target-json options)
+                     (star.actors::canonical-target-json (jsown:val sent "options"))))
+        (is (equal "investigation-target" (jsown:val sent "dtype")))
+        (is (eq sent (star.documents:validate-document sent)))))
+    (setf (jsown:val document "options") (jsown:empty-object))
+    (signals star.documents:document-schema-validation-error
+      (star.actors:parse-target-record document))))
+
+(test canonical-target-and-investigation-target-never-share-acceptance
+  (let* ((target (issue319-fingerprint-document))
+         (investigation (issue319-fingerprint-document)))
+    (setf (jsown:val investigation "dtype") "investigation-target"
+          (jsown:val investigation "options") #())
+    (issue319-assert-acceptance-conflict
+     (issue319-old-acceptance (issue319-fingerprint-envelope target))
+     (issue319-fingerprint-envelope investigation))))
+
+
+(test canonical-raw-readback-preserves-json-values-and-hides-private-outbox
+  (let* ((document (star.documents:ensure-document (v0101-person "canonical:readback")))
+         (user-extensions
+           (jsown:new-js ("probe" (jsown:new-js ("falseValue" :false) ("nullValue" :null)
+                                               ("emptyObject" (jsown:empty-object))
+                                               ("emptyArray" #()))))))
+    (setf (jsown:val document "_rev") "4-readback"
+          (jsown:val document "tenant_id") "private-tenant"
+          (jsown:val document "extensions") (star.documents:clone-document-object user-extensions)
+          (jsown:val (jsown:val document "extensions") "_server_outbox")
+          (vector (jsown:new-js ("private_state" "outbox-evidence")))
+          (jsown:val (jsown:val document "extensions") "_server_mutations")
+          (jsown:new-js ("private_state" "mutation-evidence")))
+    (let* ((before (jsown:to-json document))
+           (raw (star.frontends.http-api:strip-server-tenant-fields before))
+           (wire (star.documents:parse-document-object raw)))
+      (is (string= before (jsown:to-json document)))
+      (star.frontends.http-api:strip-server-tenant-fields document)
+      (is (string= before (jsown:to-json document)))
+      (is (string= (star.actors::canonical-target-json user-extensions)
+                   (star.actors::canonical-target-json (jsown:val wire "extensions"))))
+      (is (string= "4-readback" (jsown:val wire "rev")))
+      (dolist (key '("_id" "_rev" "tenant_id"))
+        (is-false (jsown:keyp wire key)))
+      (is (eq wire (star.documents:validate-document wire))))))
+
+(test canonical-raw-search-readback-preserves-json-values
+  (let* ((document (star.documents:ensure-document (v0101-person "canonical:search-values")))
+         (extensions (jsown:new-js ("falseValue" :false) ("nullValue" :null)
+                                    ("emptyObject" (jsown:empty-object)) ("emptyArray" #()))))
+    (setf (jsown:val document "extensions") extensions)
+    (let* ((body (jsown:to-json (jsown:new-js ("rows" (vector (jsown:new-js ("doc" document) ("fields" document)))))))
+           (raw (star.frontends.http-api:strip-server-tenant-from-search-body body))
+           (wire (jsown:val (elt (jsown:val (star.documents:parse-document-object raw) "rows") 0) "doc")))
+      (is (string= (star.actors::canonical-target-json extensions)
+                   (star.actors::canonical-target-json (jsown:val wire "extensions"))))
+      (let ((fields (jsown:val (elt (jsown:val (star.documents:parse-document-object raw) "rows") 0) "fields")))
+        (is (string= (star.actors::canonical-target-json extensions)
+                     (star.actors::canonical-target-json (jsown:val fields "extensions"))))))))
+
+(test canonical-readback-does-not-add-absent-extensions
+  (let* ((document (star.documents:ensure-document (v0101-person "canonical:no-extensions")))
+         (wire (star.frontends.http-api:strip-server-tenant-fields document)))
+    (is-false (jsown:keyp wire "extensions"))
+    (is (eq wire (star.documents:validate-document wire)))))
+
+(test historical-raw-readback-preserves-json-literals
+  (let* ((raw "{\"_id\":\"legacy:values\",\"tenant_id\":\"private\",\"values\":{\"f\":false,\"n\":null,\"a\":[],\"o\":{}}}")
+         (wire (star.documents:parse-document-object
+                (star.frontends.http-api:strip-server-tenant-fields raw)))
+         (values (jsown:val wire "values")))
+    (is (eq :false (jsown:val values "f")))
+    (is (eq :null (jsown:val values "n")))
+    (is (string= "[]" (star.actors::canonical-target-json (jsown:val values "a"))))
+    (is (string= "{}" (star.actors::canonical-target-json (jsown:val values "o"))))
+    (is-false (jsown:keyp wire "tenant_id"))
+    (is (string= "legacy:values" (jsown:val wire "_id")))))

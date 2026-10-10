@@ -48,20 +48,20 @@
         422 "invalid_target_recurring" "recurring must be a boolean")))))
 
 (defun target-v1-options (request)
-  (let ((value (jsown:val-safe request "options")))
-    (cond
-      ((null value) #())
-      ((vectorp value) value)
-      ((and (listp value) (not (json-object-p value))) value)
-      (t
-       (signal-http-input-error
-        422 "invalid_target_options" "options must be a JSON array")))))
+  (if (jsown:keyp request "options")
+      (let ((value (jsown:val request "options")))
+        (unless (json-object-p value)
+          (signal-http-input-error
+           422 "invalid_target_options" "options must be a JSON object"))
+        value)
+      (jsown:empty-object)))
 
 (defun target-v1-options-json (value)
-  (jsown:to-json (if (vectorp value) (coerce value 'list) value)))
+  (star.actors::canonical-target-json value))
 
 (defun target-v1-request-identity (principal idempotency-key)
-  (target-v1-digest (format nil "~a|~a" principal idempotency-key)))
+  (target-v1-digest
+   (star.actors::canonical-target-json (vector principal idempotency-key))))
 
 (defun target-v1-document-from-request (request principal)
   (unless (json-object-p request)
@@ -78,33 +78,28 @@
          (delay (target-v1-delay request))
          (recurring-p (target-v1-recurring-p request))
          (options (target-v1-options request))
-         (data (jsown:empty-object))
          (extensions (jsown:empty-object))
          (document (jsown:empty-object))
-         (now (star.documents:utc-now)))
+         (now (- (get-universal-time) 2208988800)))
     (unless (star.actors::valid-target-actor-name-p actor)
       (signal-http-input-error
        422 "invalid_target_actor" "actor contains invalid characters"))
-    (setf (jsown:val data "actor") actor
-          (jsown:val data "target") target
-          (jsown:val data "delay") delay
-          (jsown:val data "recurring") (if recurring-p :true :false)
-          (jsown:val data "options") options
-          (jsown:val extensions "idempotency_key") identity
+    (setf (jsown:val extensions "idempotency_key") identity
           (jsown:val extensions "submitted_by") (target-v1-digest principal)
           (jsown:val extensions "schedule_id") (format nil "target-request:~a" identity)
-          (jsown:val document "_id") (format nil "target:~a" identity)
+          (jsown:val document "id") (format nil "target:~a" identity)
           (jsown:val document "dataset") dataset
           (jsown:val document "dtype") "target"
-          (jsown:val document "schema_version") starintel.legacy:+starintel-doc-version+
-          (jsown:val document "version") 1
-          (jsown:val document "date_added") now
-          (jsown:val document "date_updated") now
-          (jsown:val document "sources") #()
-          (jsown:val document "evidence") #()
-          (jsown:val document "data") data
+          (jsown:val document "schemaVersion") (starintel.canonical:schema-version)
+          (jsown:val document "actor") actor
+          (jsown:val document "target") target
+          (jsown:val document "delay") delay
+          (jsown:val document "recurring") (if recurring-p :true :false)
+          (jsown:val document "options") options
+          (jsown:val document "createdAt") now
+          (jsown:val document "updatedAt") now
           (jsown:val document "extensions") extensions)
-    document))
+    (star.documents:validate-document document)))
 
 (defun target-v1-request-fingerprint (request principal)
   (let ((actor (target-v1-required-string request "actor" "invalid_target_actor"))
@@ -114,10 +109,9 @@
         (recurring-p (target-v1-recurring-p request))
         (options (target-v1-options request)))
     (target-v1-digest
-     (format nil "~a|~a|~a|~a|~a|~a|~a"
-             principal actor target dataset delay
-             (if recurring-p "true" "false")
-             (target-v1-options-json options)))))
+     (star.actors::canonical-target-json
+      (vector principal actor target dataset delay
+              (if recurring-p :true :false) options)))))
 
 (defun target-v1-request-ledger (request document principal)
   (let* ((idempotency-key (target-v1-idempotency-key request))
@@ -125,7 +119,7 @@
          (ledger (jsown:empty-object)))
     (setf (jsown:val ledger "_id") (format nil "target-request:~a" identity)
           (jsown:val ledger "type") "_server_target_request"
-          (jsown:val ledger "target_id") (jsown:val document "_id")
+          (jsown:val ledger "target_id") (star.documents:document-id document)
           (jsown:val ledger "fingerprint")
           (target-v1-request-fingerprint request principal)
           (jsown:val ledger "created_at") (star.documents:utc-now))

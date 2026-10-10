@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master]
+    branches: [master, codex/starintel-0101-ingest]
 
 permissions:
   contents: read
@@ -16,6 +16,16 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record exact source revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          printf 'TESTED_HEAD=%s\nBASE_SHA=%s\n' "$EXPECTED_SHA" "$BASE_SHA"
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
