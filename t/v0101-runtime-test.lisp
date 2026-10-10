@@ -89,34 +89,39 @@
                     "canonical:person" patch)))
       (is (eq :validation-failed (star.databases.couchdb:document-update-outcome-status outcome))))))
 
-(test canonical-search-rows-project-storage-fields-and-outbox-payloads
+(test canonical-search-rows-project-storage-fields-and-private-outbox
   (dolist (vector-p '(nil t))
     (let* ((stored (star.documents:ensure-document (v0101-person)))
+           (user (jsown:new-js ("opaque_key" :false)
+                               ("_server_outbox" "nested-user-value")
+                               ("empty" (jsown:empty-object))))
            (payload (star.documents:clone-document-object stored)))
       (setf (jsown:val stored "_rev") "2-search"
             (jsown:val stored "tenant_id") "private-tenant"
             (jsown:val payload "tenant_id") "private-tenant"
             (jsown:val stored "extensions")
-            (jsown:new-js ("_server_outbox"
-                           (vector (jsown:new-js ("payload" payload))))))
-      (let* ((row (jsown:new-js ("doc" stored)
+            (jsown:new-js ("user_data" user)
+                          ("_server_outbox" (vector (jsown:new-js ("payload" payload))))
+                          ("_server_mutations" (jsown:new-js ("private" "evidence")))))
+      (let* ((before (jsown:to-json stored))
+             (row (jsown:new-js ("doc" stored)
                                ("fields" (star.documents:clone-document-object stored))))
              (response (jsown:new-js ("rows" (if vector-p (vector row) (list row))))))
         (star.frontends.http-api:strip-server-tenant-from-rows response)
+        (is (string= before (jsown:to-json stored)))
         (let ((result (elt (jsown:val response "rows") 0)))
           (dolist (key '("doc" "fields"))
-            (let ((wire (jsown:val result key)))
+            (let* ((wire (jsown:val result key))
+                   (extensions (jsown:val wire "extensions")))
               (is-false (jsown:keyp wire "_id"))
               (is-false (jsown:keyp wire "_rev"))
               (is-false (jsown:keyp wire "tenant_id"))
               (is (string= "2-search" (jsown:val wire "rev")))
-              (is (eq wire (star.documents:validate-document wire)))))
-          (let* ((extensions (jsown:val (jsown:val result "doc") "extensions"))
-                 (outbox (elt (jsown:val extensions "_server_outbox") 0))
-                 (wire (jsown:val outbox "payload")))
-            (is-false (jsown:keyp wire "tenant_id"))
-            (is-false (jsown:keyp wire "_id"))
-            (is (eq wire (star.documents:validate-document wire)))))))))
+              (is-false (jsown:keyp extensions "_server_outbox"))
+              (is-false (jsown:keyp extensions "_server_mutations"))
+              (is (string= (star.actors::canonical-target-json user)
+                           (star.actors::canonical-target-json (jsown:val extensions "user_data"))))
+              (is (eq wire (star.documents:validate-document wire))))))))))
 
 (test canonical-message-cannot-enter-historical-url-extractor
   (let* ((calls 0)

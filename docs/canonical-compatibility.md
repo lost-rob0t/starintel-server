@@ -42,3 +42,9 @@ system/dependency metadata and the same 92,364-byte archive, SHA256
 `554e8cf79771221cf3991085da9b7cb659a78fd7ff71c81ae56d524f2d1eec46`.
 This exact label normalization is checked separately from the maintained
 star-cl update; other dependency entries remain unchanged.
+
+Canonical HTTP document and search readback preserve JSON false/null and empty
+collections through injective parsing. Public projection removes only the
+server-owned top-level extension keys `_server_outbox` and `_server_mutations`,
+retains caller extension content and canonical revision, and does not alter the
+stored evidence or add an absent extensions object.

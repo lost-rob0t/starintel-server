@@ -234,13 +234,20 @@ operating on the type it started with."
   (etypecase document
     (string
      (jsown:to-json
-      (strip-server-tenant-fields (jsown:parse document))))
+      (strip-server-tenant-fields
+       (jsown:with-injective-reader (jsown:parse document)))))
     (list
-     (when (jsown:keyp document "tenant_id")
-       (jsown:remkey document "tenant_id"))
      (if (star.documents:canonical-document-p document)
-         (star.documents:canonical-wire-document document)
-         document))))
+         ;; Project a copy: retained storage/outbox evidence must not be changed.
+         ;; Wire projection first preserves CouchDB _rev as canonical rev.
+         (let ((wire (star.documents:canonical-wire-document document)))
+           (if (jsown:keyp wire "extensions")
+               (star.databases.couchdb::public-document-copy wire)
+               wire))
+         (progn
+           (when (jsown:keyp document "tenant_id")
+             (jsown:remkey document "tenant_id"))
+           document)))))
 
 (defun strip-outbox-payload-tenants (extensions)
   "Strip tenant_id from outbox payloads embedded in server extensions.
@@ -297,7 +304,8 @@ operating on the type it started with."
   (etypecase body
     (string
      (jsown:to-json
-      (strip-server-tenant-from-rows (jsown:parse body))))
+      (strip-server-tenant-from-rows
+       (jsown:with-injective-reader (jsown:parse body)))))
     (list
      (strip-server-tenant-from-rows body))))
 
