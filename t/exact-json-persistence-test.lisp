@@ -327,7 +327,7 @@
 (test exact-binary64-projection-diagnostic
   (let* ((full "0.12345678901234567890123456789")
          (stored "0.12345678901234568"))
-    (format t "~&EXACT_PROJECTION_DIAGNOSTIC jzon-full=~s jzon-stored=~s~%"
+    (format *error-output* "~&EXACT_PROJECTION_DIAGNOSTIC jzon-full=~s jzon-stored=~s~%"
             (com.inuoe.jzon:parse full) (com.inuoe.jzon:parse stored))
     (is (star.databases.couchdb::exact-storage-number-matches-p
          (star.documents:parse-json-value stored) full))))

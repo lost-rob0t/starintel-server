@@ -27,15 +27,21 @@
                                    (star.databases.couchdb::checked-in-design-document-map))))
            (dolist (token '("0.12345678901234567890123456789" "-0" "1.00e+0"
                             "900719925474099312345678901234567890"))
-           (let* ((id (format nil "canonical:exact-persisted:~a" token))
+           (let* ((id (format nil "canonical:exact-persisted:~a"
+                                   (star.databases.couchdb::outbox-digest-string token)))
                   (incoming (star.rabbit:decode-rabbit-document
                              (cons (exact-number-wire token id) 1)))
-                  (published nil))
+                  (published nil)
+                  (publish-attempted nil))
              (signals error
                (star.databases.couchdb:couchdb-process-outbox-mutation
                 client database
-                (lambda (&rest args) (declare (ignore args)) (error "pre-publish crash"))
+                (lambda (&rest args)
+                  (declare (ignore args))
+                  (setf publish-attempted t)
+                  (error "pre-publish crash"))
                 incoming :new))
+             (is (not (null publish-attempted)))
              (flet ((assert-readback ()
                       (let ((wire (star.documents:parse-document-object
                                    (star.frontends.http-api:strip-server-tenant-fields
@@ -71,4 +77,34 @@
                    (is (not (jsown:keyp
                              (jsown:val (star.databases.couchdb::couchdb-load-outbox-document client database id)
                                         "extensions") "exact")))))))))
+      (cl-couch:delete-database client database))))
+
+
+(test real-couchdb-exact-target-options-and-acceptance-readback
+  (let ((client *view-integration-client*)
+        (database "starintel-exact-target-test")
+        (token "0.12345678901234567890123456789"))
+    (when (cl-couch:database-exists-p client database)
+      (cl-couch:delete-database client database))
+    (cl-couch:create-database client database)
+    (unwind-protect
+         (let* ((target (star.documents:ensure-document
+                         (format nil "{\"id\":\"canonical:exact-target\",\"dtype\":\"target\",\"schemaVersion\":\"0.10.1\",\"dataset\":\"canonical-tests\",\"actor\":\"subfinder\",\"target\":\"example.org\",\"delay\":60,\"recurring\":false,\"options\":{\"exact\":~a}}" token)))
+                (receipt (jsown:new-js ("_id" "acceptance:exact-target")
+                                      ("status" "accepted") ("document" target))))
+           (star.documents:validate-stored-document target)
+           (star.databases.couchdb::couchdb-save-outbox-document client database target)
+           (let* ((stored (star.databases.couchdb::couchdb-load-outbox-document
+                           client database "canonical:exact-target"))
+                  (record (star.actors::parse-target-record stored)))
+             (is (string= token (jsown:to-json
+                                 (jsown:val (star.actors::target-record-options record) "exact"))))
+             (is (not (star.actors::target-record-recurring-p record)))
+             (is (not (jsown:keyp stored "extensions"))))
+           (star.databases.couchdb::couchdb-save-target-acceptance client database receipt)
+           (let ((stored (star.databases.couchdb::couchdb-load-target-acceptance
+                          client database "acceptance:exact-target")))
+             (is (string= (star.actors::canonical-target-json target)
+                          (star.actors::canonical-target-json (jsown:val stored "document"))))
+             (is (not (jsown:keyp stored "extensions")))))
       (cl-couch:delete-database client database))))
