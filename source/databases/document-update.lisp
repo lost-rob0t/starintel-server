@@ -53,11 +53,11 @@
   (:documentation "Signalled when a document update loses a revision race."))
 
 (defparameter +document-update-persistence-keys+
-  '("_id" "_rev")
+  '("_id" "_rev" "rev")
   "Envelope fields controlled only by CouchDB persistence.")
 
 (defparameter +document-update-invariant-keys+
-  '("_id" "dtype" "schema_version" "dataset" "date_added")
+  '("_id" "id" "dtype" "schema_version" "schemaVersion" "dataset" "date_added" "createdAt")
   "Envelope fields that a patch cannot change after document creation.")
 
 (defun document-update-json-object-p (value)
@@ -94,12 +94,13 @@
   (unless (document-update-json-object-p patch)
     (error 'document-update-validation-error
            :reason "patch must be a JSON object"))
-  (let ((patch-id (document-update-value patch "_id")))
-    (when (and patch-id (not (document-update-string= patch-id document-id)))
-      (error 'document-update-validation-error
-             :reason
-             (format nil "patch _id ~s does not match route id ~s"
-                     patch-id document-id))))
+  (dolist (key '("id" "_id"))
+    (let ((patch-id (document-update-value patch key)))
+      (when (and patch-id (not (document-update-string= patch-id document-id)))
+        (error 'document-update-validation-error
+               :reason
+               (format nil "patch ~a ~s does not match route id ~s"
+                       key patch-id document-id)))))
   (when existing
     (dolist (key +document-update-invariant-keys+)
       (assert-compatible-update-field existing patch key)))
@@ -146,7 +147,7 @@ fields remain controlled by persistence."
   (let ((candidate
           (copy-json-object-excluding
            (clone-document-update-json patch)
-           '("_rev"))))
+           '("_rev" "rev"))))
     (setf (jsown:val candidate "_id") document-id)
     candidate))
 
@@ -154,7 +155,7 @@ fields remain controlled by persistence."
   (handler-case
       (progn
         ;; Validate the merged candidate before ensure-document can normalize it.
-        (star.documents:validate-v09-document candidate)
+        (star.documents:validate-stored-document candidate)
         (star.documents:ensure-document candidate))
     (star.documents:document-schema-validation-error (condition)
       (error 'document-update-validation-error
@@ -283,5 +284,6 @@ when its CouchDB revision loses a compare-and-swap race."
            (jsown:val object "reason")
            (or (document-update-outcome-reason outcome) :null)
            (jsown:val object "document")
-           (or (document-update-outcome-document outcome) :null))
+           (let ((document (document-update-outcome-document outcome)))
+             (if document (star.documents:canonical-wire-document document) :null)))
     object))

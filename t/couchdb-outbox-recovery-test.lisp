@@ -117,3 +117,20 @@
       (is-true
        (star.databases.couchdb:outbox-entry-published-p
         (first (star.databases.couchdb:document-outbox-entries state)))))))
+(test recovery-can-drain-exactly-at-pass-budget
+  ;; There must be one last empty read after the final permitted mutation pass.
+  (let ((remaining 2)
+        (queries 0)
+        (passes 0))
+    (is-true
+     (star.databases.couchdb::recover-outbox-until-empty
+      (lambda ()
+        (incf queries)
+        (when (plusp remaining) '(:pending)))
+      (lambda (documents)
+        (incf passes)
+        (decf remaining (length documents)))
+      :max-passes 2))
+    (is (zerop remaining))
+    (is (= 2 passes))
+    (is (= 3 queries))))

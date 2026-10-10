@@ -96,7 +96,7 @@
           (jsown:val document "_id") (format nil "target:~a" identity)
           (jsown:val document "dataset") dataset
           (jsown:val document "dtype") "target"
-          (jsown:val document "schema_version") starintel:+starintel-doc-version+
+          (jsown:val document "schema_version") starintel.legacy:+starintel-doc-version+
           (jsown:val document "version") 1
           (jsown:val document "date_added") now
           (jsown:val document "date_updated") now

@@ -6,6 +6,8 @@
 (defparameter +idempotency-key-extension-key+ "idempotency_key")
 (defparameter +outbox-recovery-max-passes+ 1024
   "Maximum bounded CouchDB pending-view batches drained during startup recovery.")
+(defparameter *outbox-recovery-view-limit* 10000
+  "Bounded CouchDB pending-view page size; may be rebound by integration tests.")
 
 (define-condition mutation-conflict (error)
   ((mutation-id
@@ -191,7 +193,7 @@
          finally (return (or maximum 0)))))
 
 (defun event-payload (document mutation-id operation sequence)
-  (let* ((payload (public-document-copy document))
+  (let* ((payload (star.documents:canonical-wire-document (public-document-copy document)))
          (extensions (document-extensions payload)))
     (setf (jsown:val extensions "event_id")
           (outbox-event-id mutation-id)
@@ -480,7 +482,7 @@ If publication fails, the durable pending entry remains recoverable."
             "pending"
             :include-docs t
             :reduce nil
-            :limit 10000))
+            :limit *outbox-recovery-view-limit*))
          (rows (jsown:val result "rows"))
          (seen (make-hash-table :test #'equal)))
     (loop for row in rows

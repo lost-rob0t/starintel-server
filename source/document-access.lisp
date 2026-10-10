@@ -9,10 +9,10 @@
     :reader document-schema-validation-reason))
   (:report
    (lambda (condition stream)
-     (format stream "StarIntel v0.9 validation failed (~a): ~a"
+     (format stream "StarIntel validation failed (~a): ~a"
              (document-schema-validation-category condition)
              (document-schema-validation-reason condition))))
-  (:documentation "Signalled when a document fails v0.9 schema validation."))
+  (:documentation "Signalled when a document fails its pinned schema validation."))
 
 ;; Accessor documentation for document-schema-validation-error
 (setf (documentation 'DOCUMENT-SCHEMA-VALIDATION-CATEGORY 'function)
@@ -74,8 +74,29 @@
       (t token))))
 
 (defun document-id (document)
-  "The =_id= of a document object."
-  (object-value (parse-document-object document) "_id" nil))
+  "Canonical ID, or the historical/CouchDB identity."
+  (let ((object (parse-document-object document)))
+    (or (object-value object "id") (object-value object "_id"))))
+
+(defun canonical-document-p (document)
+  "True when the document declares the canonical version field."
+  (object-has-key-p document "schemaVersion"))
+
+(defun canonical-wire-document (document)
+  "Copy a stored canonical document without server/CouchDB envelope fields.
+
+Only call this for server-owned storage data, never to relax client validation."
+  (let ((copy (clone-document-object document)))
+    (when (canonical-document-p copy)
+      (let ((id (object-value copy "id"))
+            (stored-id (object-value copy "_id")))
+        (when (and stored-id (not (equal id stored-id)))
+          (error "Canonical id disagrees with CouchDB _id")))
+      (when (object-has-key-p copy "_rev")
+        (setf (jsown:val copy "rev") (jsown:val copy "_rev")))
+      (dolist (key '("_id" "_rev" "tenant_id"))
+        (when (object-has-key-p copy key) (jsown:remkey copy key))))
+    copy))
 
 (defun document-data (document)
   "The =data= payload of a document object."
@@ -106,13 +127,16 @@
 (defun document-date-added (document)
   "The =dateAdded= field of a document object."
   (let ((object (parse-document-object document)))
-    (or (object-value object "date_added" nil)
+    (or (object-value object "createdAt" nil)
+        (object-value object "observedAt" nil)
+        (object-value object "date_added" nil)
         (object-value object "dateAdded" nil))))
 
 (defun document-date-updated (document)
   "The =dateUpdated= field of a document object."
   (let ((object (parse-document-object document)))
-    (or (object-value object "date_updated" nil)
+    (or (object-value object "updatedAt" nil)
+        (object-value object "date_updated" nil)
         (object-value object "dateUpdated" nil))))
 
 (defun document-transient-p (document)
@@ -139,7 +163,11 @@
             (setf *v09-schema* (load-v09-schema))))))
 
 (defun validate-v09-document (document)
-  "Validate DOCUMENT with star-cl's canonical StarIntel v0.9 validator.
+  "Compatibility entry point for strict StarIntel document validation."
+  (validate-document document))
+
+(defun validate-document (document)
+  "Validate DOCUMENT with star-cl's pinned canonical or legacy validator.
 
 The server owns only schema discovery, JSOWN-to-Jzon conversion, and a stable
 condition. The schema rules and validator remain owned by star-cl."
@@ -148,12 +176,19 @@ condition. The schema rules and validator remain owned by star-cl."
            (com.inuoe.jzon:parse (jsown:to-json object))))
     (handler-case
         (progn
-          (starintel::validate-v090-document jzon-object (v09-schema))
+          (if (canonical-document-p object)
+              (starintel.canonical:validate-document jzon-object)
+              (starintel::validate-v090-document jzon-object (v09-schema)))
           object)
       (starintel::starintel-validation-error (condition)
         (error 'document-schema-validation-error
                :category (starintel::validation-category condition)
                :reason (starintel::validation-message condition))))))
+
+(defun validate-stored-document (document)
+  "Validate a server-owned storage candidate after removing storage metadata."
+  (validate-document (canonical-wire-document document))
+  document)
 
 (defun ensure-document (document &key route-dtype)
   "Parse DOCUMENT and enforce transport-level identity invariants.
@@ -173,17 +208,29 @@ compatibility adapters can opt out without weakening canonical ingest."
           (error "Document payload is missing dtype")))
     (when (and route (not (string= dtype route)))
       (error "Route dtype ~a does not match document dtype ~a" route dtype))
+    (when (canonical-document-p object)
+      (let ((id (object-value object "id"))
+            (stored-id (object-value object "_id")))
+        (unless (and (stringp id) (plusp (length id)))
+          (error "Canonical document requires id"))
+        (when (and stored-id (not (equal id stored-id)))
+          (error "Canonical id disagrees with CouchDB _id"))
+        (setf (jsown:val object "_id") id)))
     (unless (let ((id (object-value object "_id" nil)))
               (and (stringp id) (plusp (length id))))
       (setf (jsown:val object "_id") (star.ids:ulid)))
     object))
 
 (defun document-json (document &key route-dtype)
-  "Serialize DOCUMENT to canonical JSON, enforcing identity invariants.
+  "Serialize DOCUMENT for internal document transport, enforcing identity.
 
-Applies =ensure-document= (dtype routing, id stamping) then renders
-the JSON string sent over the wire and into CouchDB."
-  (jsown:to-json (ensure-document document :route-dtype route-dtype)))
+Canonical documents omit CouchDB fields. Server tenant metadata remains in the
+internal transport envelope and is removed before strict consumer validation."
+  (let* ((stored (ensure-document document :route-dtype route-dtype))
+         (wire (canonical-wire-document stored)))
+    (when (and (canonical-document-p stored) (object-has-key-p stored "tenant_id"))
+      (setf (jsown:val wire "tenant_id") (object-value stored "tenant_id")))
+    (jsown:to-json wire)))
 
 (defun utc-now ()
   "Current UTC timestamp as an ISO-8601 string."

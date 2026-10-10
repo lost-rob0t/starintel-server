@@ -243,7 +243,7 @@ The documentation distinguishes three states:
 
 Important current limits:
 
-- HTTP ingestion does not enforce the strict StarIntel 0.9 schema.
+- HTTP ingestion validates canonical StarLang 0.10.1 documents and the explicit legacy 0.9 compatibility format.
 - The server still uses legacy flat 0.8 constructors in parts of the actor code.
 - =source/actor-systems/user-finder.lisp= and =user-hunt.lisp= are not loaded by
   the ASDF system.

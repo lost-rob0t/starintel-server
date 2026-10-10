@@ -39,7 +39,7 @@
    (timestamp
     :initarg :timestamp
     :accessor event-timestamp
-    :initform (spec:unix-now)
+    :initform (- (get-universal-time) 2208988800)
     :type integer)
    (dtype
     :initarg :dtype
@@ -111,7 +111,7 @@
   (make-instance
    'actor-event
    :id (or id (star.ids:ulid))
-   :timestamp (or timestamp (spec:unix-now))
+   :timestamp (or timestamp (- (get-universal-time) 2208988800))
    :dtype (or dtype "actorevent")
    :actor-name (or actor-name component "")
    :component (or component actor-name "")

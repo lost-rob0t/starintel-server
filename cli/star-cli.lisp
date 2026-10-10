@@ -2,7 +2,7 @@
 
 (defpackage :star-cli
   (:use :cl :star.api.client)
-  (:import-from :starintel
+  (:import-from :starintel.legacy
                 #:encode
                 #:set-meta
                 #:new-host
@@ -1210,19 +1210,19 @@
 (defun gen/command ()
   (clingon:make-command
    :name "gen"
-   :description "Generate StarIntel documents locally (MOP-derived options)"
+   :description "Generate legacy StarIntel 0.9 documents locally (MOP-derived options)"
    :handler #'gen/handler
    :sub-commands
    (let ((dtypes (sort (copy-list *gen-dtype-order*) #'string<)))
      (mapcar #'gen/make-subcommand-for-dtype dtypes))))
 
-(define-gen-dtype "target" starintel:target)
-(define-gen-dtype "person" starintel:person)
-(define-gen-dtype "url"    starintel:url)
-(define-gen-dtype "host"   starintel:host)
-(define-gen-dtype "domain" starintel:domain)
-(define-gen-dtype "org"    starintel:org)
-(define-gen-dtype "relation"    starintel:relation)
+(define-gen-dtype "target" starintel.legacy:target)
+(define-gen-dtype "person" starintel.legacy:person)
+(define-gen-dtype "url"    starintel.legacy:url)
+(define-gen-dtype "host"   starintel.legacy:host)
+(define-gen-dtype "domain" starintel.legacy:domain)
+(define-gen-dtype "org"    starintel.legacy:org)
+(define-gen-dtype "relation"    starintel.legacy:relation)
 
 ;;; ============================================================================
 ;;; Main Command

@@ -8,10 +8,19 @@ System: =starintel-gserver=
 :KIND: condition
 :PACKAGE: STAR.DOCUMENTS
 :END:
-Signalled when a document fails v0.9 schema validation.
+Signalled when a document fails its pinned schema validation.
 - Slots: =category=, =reason=
 
 * Functions
+*** canonical-document-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(canonical-document-p (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+True when the document declares the canonical version field.
 *** canonical-dtype
 :PROPERTIES:
 :KIND: fn
@@ -21,6 +30,17 @@ Signalled when a document fails v0.9 schema validation.
 (canonical-dtype (STAR.DOCUMENTS::DTYPE))
 #+end_src
 Canonical string form of a document dtype.
+*** canonical-wire-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(canonical-wire-document (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+Copy a stored canonical document without server/CouchDB envelope fields.
+
+Only call this for server-owned storage data, never to relax client validation.
 *** clone-document-object
 :PROPERTIES:
 :KIND: fn
@@ -83,7 +103,7 @@ The =dtype= field of a document object.
 #+begin_src lisp
 (document-id (STAR.DOCUMENTS::DOCUMENT))
 #+end_src
-The =_id= of a document object.
+Canonical ID, or the historical/CouchDB identity.
 *** document-json
 :PROPERTIES:
 :KIND: fn
@@ -92,10 +112,10 @@ The =_id= of a document object.
 #+begin_src lisp
 (document-json (STAR.DOCUMENTS::DOCUMENT &KEY STAR.DOCUMENTS::ROUTE-DTYPE))
 #+end_src
-Serialize DOCUMENT to canonical JSON, enforcing identity invariants.
+Serialize DOCUMENT for internal document transport, enforcing identity.
 
-Applies =ensure-document= (dtype routing, id stamping) then renders
-the JSON string sent over the wire and into CouchDB.
+Canonical documents omit CouchDB fields. Server tenant metadata remains in the
+internal transport envelope and is removed before strict consumer validation.
 *** document-transient-p
 :PROPERTIES:
 :KIND: fn
@@ -168,6 +188,27 @@ Parse a document payload into the internal JSOWN form.
 :PACKAGE: STAR.DOCUMENTS
 :END:
 Current UTC timestamp as an ISO-8601 string.
+*** validate-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(validate-document (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+Validate DOCUMENT with star-cl's pinned canonical or legacy validator.
+
+The server owns only schema discovery, JSOWN-to-Jzon conversion, and a stable
+condition. The schema rules and validator remain owned by star-cl.
+*** validate-stored-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(validate-stored-document (STAR.DOCUMENTS::DOCUMENT))
+#+end_src
+Validate a server-owned storage candidate after removing storage metadata.
 *** validate-v09-document
 :PROPERTIES:
 :KIND: fn
@@ -176,10 +217,7 @@ Current UTC timestamp as an ISO-8601 string.
 #+begin_src lisp
 (validate-v09-document (STAR.DOCUMENTS::DOCUMENT))
 #+end_src
-Validate DOCUMENT with star-cl's canonical StarIntel v0.9 validator.
-
-The server owns only schema discovery, JSOWN-to-Jzon conversion, and a stable
-condition. The schema rules and validator remain owned by star-cl.
+Compatibility entry point for strict StarIntel document validation.
 
 * Generic Functions
 *** document-schema-validation-category

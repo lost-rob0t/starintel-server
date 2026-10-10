@@ -216,3 +216,116 @@
                 (cl-couch:database-exists-p
                  replacement *view-integration-database*)))
           (anypool:putback replacement pool))))))
+
+(test real-couchdb-outbox-recovery-drains-pages-after-crash
+  ;; The actual _design/outbox map emits one row per pending entry.  Bind a
+  ;; small page size to exercise multi-page draining against real CouchDB.
+  (let* ((client *view-integration-client*)
+         (database *view-integration-database*)
+         (ids '("outbox-page-1" "outbox-page-2" "outbox-page-3"
+                "outbox-page-4" "outbox-page-5"))
+         (published '())
+         (fail-once t)
+         (late-id "outbox-page-late")
+         (injected nil))
+    (cl-couch:create-document
+     client database
+     (uiop:read-file-string
+      (asdf:system-relative-pathname
+       :starintel-gserver "source/views/outbox.json")))
+    (dolist (id ids)
+      (cl-couch:create-document
+       client database
+       (jsown:to-json (make-outbox-recovery-test-document id))))
+    (let ((star.databases.couchdb::*outbox-recovery-view-limit* 2))
+      (is (= 2 (length (star.databases.couchdb::couchdb-pending-outbox-documents
+                        client database))))
+      (signals error
+        (star.databases.couchdb:recover-couchdb-outbox
+         client database
+         (lambda (routing-key payload event-id)
+           (declare (ignore routing-key payload))
+           (push event-id published)
+           (when fail-once
+             (setf fail-once nil)
+             (error "simulated process exit after publisher accepted event")))))
+      (is (= 1 (length published)))
+      (is-true
+       (star.databases.couchdb:recover-couchdb-outbox
+        client database
+        (lambda (routing-key payload event-id)
+          (declare (ignore routing-key payload))
+          (push event-id published)
+          ;; A concurrent writer adds work AFTER recovery began and AFTER the
+          ;; bounded view returned its first batch.  Later polls must see it.
+          (unless injected
+            (setf injected t)
+            (cl-couch:create-document
+             client database
+             (jsown:to-json (make-outbox-recovery-test-document late-id)))))))
+      (is-true injected)
+      ;; First pending event is replayed after crash; five other events publish
+      ;; once, including the late arrival inserted mid-recovery.
+      (let ((chronological (reverse published)))
+        (is (= 7 (length chronological)))
+        (is (string= (first chronological) (second chronological))))
+      (is (= 6 (length (remove-duplicates published :test #'string=))))
+      (is (null (star.databases.couchdb::couchdb-pending-outbox-documents
+                 client database)))
+      (dolist (id (append ids (list late-id)))
+        (let* ((document
+                 (star.databases.couchdb::couchdb-load-outbox-document
+                  client database id))
+               (entry
+                 (first (star.databases.couchdb:document-outbox-entries document))))
+          (is-true (star.databases.couchdb:outbox-entry-published-p entry)))))))
+(test real-couchdb-publication-marker-cas-retries-current-revision
+  ;; The *CouchDB server* produces the 409, not a test stub.  The first marker
+  ;; attempt uses a stale _rev after a concurrent write, so recovery must
+  ;; reload that revision and mark without publishing the event again.
+  (let* ((client *view-integration-client*)
+         (database *view-integration-database*)
+         (id "outbox-cas-retry-1")
+         (published '())
+         (save-attempts 0)
+         (injected nil))
+    (cl-couch:create-document
+     client database
+     (jsown:to-json (make-outbox-recovery-test-document id)))
+    (let ((initial
+            (star.databases.couchdb::couchdb-load-outbox-document
+             client database id)))
+      (is-true
+       (star.databases.couchdb:recover-outbox-documents
+        (lambda (document-id)
+          (star.databases.couchdb::couchdb-load-outbox-document
+           client database document-id))
+        (lambda (updated)
+          (incf save-attempts)
+          (unless injected
+            (setf injected t)
+            (let ((concurrent
+                    (star.databases.couchdb::couchdb-load-outbox-document
+                     client database id)))
+              (setf (jsown:val concurrent "test_concurrent_revision")
+                    "must-survive")
+              (star.databases.couchdb::couchdb-save-outbox-document
+               client database concurrent)))
+          (star.databases.couchdb::couchdb-save-outbox-document
+           client database updated))
+        (lambda (routing-key payload event-id)
+          (declare (ignore routing-key payload))
+          (push event-id published))
+        (list initial))))
+    (is-true injected)
+    (is (= 2 save-attempts))
+    (is (= 1 (length published)))
+    (let* ((stored
+             (star.databases.couchdb::couchdb-load-outbox-document
+              client database id))
+           (entry
+             (first (star.databases.couchdb:document-outbox-entries stored))))
+      (is (string= "must-survive"
+                   (jsown:val stored "test_concurrent_revision")))
+      (is-true (star.databases.couchdb:outbox-entry-published-p entry))
+      (is (string= (first published) (jsown:val entry "event_id"))))))

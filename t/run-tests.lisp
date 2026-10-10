@@ -18,6 +18,7 @@
     http-target-v1-tests
     actor-registry-tests
     v09-runtime-tests
+    v0101-runtime-tests
     http-auth-tests
     auth-users-tests
     oauth-authorization-code-tests
