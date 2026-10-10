@@ -167,6 +167,33 @@
       (is (string= "unavailable" (jsown:val entry "status")))
       (is (eq :false (jsown:val entry "ready"))))))
 
+
+(test isolated-registry-snapshot-does-not-inherit-global-dead-binding
+  (let* ((uri "star://local/actor/snapshot")
+         (star.actors::*actor-runtime-bindings*
+           (make-hash-table :test #'equal))
+         (registry (star.actors:build-actor-registry
+                    (list (actor-registry-test-manifest uri))))
+         (observations (make-hash-table :test #'equal)))
+    ;; A separately built catalog must not inherit a stopped local binding
+    ;; for the same resource URI from a different process-global snapshot.
+    (setf (gethash uri star.actors::*actor-runtime-bindings*)
+          :stale-actor-reference)
+    (star.actors:record-actor-runtime-status
+     uri "online" :ready-p t :observations observations)
+    (let ((entry (first
+                  (star.actors::actor-registry-public-entries
+                   registry observations))))
+      (is (string= "online" (jsown:val entry "status")))
+      (is (eq :true (jsown:val entry "ready"))))
+    ;; An explicitly injected local binding must still fail closed.
+    (let ((entry (first
+                  (star.actors::actor-registry-public-entries
+                   registry observations
+                   star.actors::*actor-runtime-bindings*))))
+      (is (string= "unavailable" (jsown:val entry "status")))
+      (is (eq :false (jsown:val entry "ready"))))))
+
 (test local-runtime-binding-reports-a-live-sento-actor
   (let* ((manifest
            (actor-registry-test-manifest

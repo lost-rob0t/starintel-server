@@ -237,8 +237,8 @@
     (error ()
       (%make-actor-runtime-observation :status "unavailable" :ready-p nil))))
 
-(defun effective-runtime-observation (resource-uri observations)
-  (let* ((actor (gethash resource-uri *actor-runtime-bindings*))
+(defun effective-runtime-observation (resource-uri observations bindings)
+  (let* ((actor (and bindings (gethash resource-uri bindings)))
          (local (and actor (local-runtime-observation actor))))
     ;; A bound local actor that has stopped is authoritative: an older
     ;; server-owned "online" observation cannot resurrect its readiness.
@@ -283,8 +283,12 @@
 
 (defun actor-registry-public-entries
     (&optional (registry *actor-registry*)
-               (observations *actor-runtime-observations*))
-  "Return the deterministic, scrubbed operator-visible catalog projection."
+               (observations *actor-runtime-observations*)
+               (bindings (and (eq registry *actor-registry*)
+                              *actor-runtime-bindings*)))
+  "Return the deterministic, scrubbed operator-visible catalog projection.
+Injected registry snapshots ignore process-global runtime bindings unless BINDINGS
+is explicitly supplied."
   (sort
    (loop for entry being the hash-values of registry
          when (actor-registry-entry-operator-visible-p entry)
@@ -292,7 +296,7 @@
            (actor-registry-entry-public-object
             entry
             (effective-runtime-observation
-             (actor-registry-entry-resource-uri entry) observations)))
+             (actor-registry-entry-resource-uri entry) observations bindings)))
    #'string< :key (lambda (object) (jsown:val object "resourceUri"))))
 
 (defun actor-registry-document ()
