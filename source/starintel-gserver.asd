@@ -53,6 +53,8 @@
    (:file "auth/oauth-bearer")
    (:file "authorization/package")
    (:file "authorization/policy")
+   (:file "databases/runtime-package")
+   (:file "databases/runtime")
    (:file "authorization/quota-policy")
    (:file "authorization/services")
    (:file "addons")

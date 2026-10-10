@@ -14,6 +14,11 @@
     "targets:force-release"
     "events:write"
     "events:replay"
+    "database:read"
+    "database:write"
+    "database:transaction"
+    "database:subscribe"
+    "database:admin"
     "credentials:read"
     "credentials:create"
     "credentials:rotate"
@@ -29,7 +34,8 @@
     "actor:"
     "target:"
     "target-namespace:"
-    "program:")
+    "program:"
+    "database:")
   "Closed resource-scope vocabulary. Values follow the prefix and may be `*`.")
 
 (define-condition authorization-error (error)
@@ -56,12 +62,13 @@
 
 (defstruct (authorization-resource
             (:constructor make-authorization-resource
-                (&key tenant-id dataset-id actor-name target-id
+                (&key tenant-id dataset-id database-id actor-name target-id
                       target-namespace program-id resource-id dtype))
             (:copier nil))
   "The resource side of an authorization request."
   (tenant-id nil :read-only t)
   (dataset-id nil :read-only t)
+  (database-id nil :read-only t)
   (actor-name nil :read-only t)
   (target-id nil :read-only t)
   (target-namespace nil :read-only t)
@@ -76,6 +83,8 @@
 "The =dataset-id= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-DTYPE 'function)
 "The =dtype= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-DATABASE-ID 'function)
+"The logical database id guarded by this authorization resource.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-PROGRAM-ID 'function)
 "The =program-id= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-RESOURCE-ID 'function)
@@ -297,6 +306,8 @@
            (dimension-granted-p
             scopes "dataset:" (authorization-resource-dataset-id resource))
            (dimension-granted-p
+            scopes "database:" (authorization-resource-database-id resource))
+           (dimension-granted-p
             scopes "actor:" (authorization-resource-actor-name resource))
            (dimension-granted-p
             scopes "target:" (authorization-resource-target-id resource))
@@ -343,6 +354,8 @@
                       (authorization-resource-tenant-id resource)))
         ("dataset_id" (json-nullable
                        (authorization-resource-dataset-id resource)))
+        ("database_id" (json-nullable
+                        (authorization-resource-database-id resource)))
         ("actor_name" (json-nullable
                        (authorization-resource-actor-name resource)))
         ("target_id" (json-nullable

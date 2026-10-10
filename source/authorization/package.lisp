@@ -10,6 +10,7 @@
    #:make-authorization-resource
    #:authorization-resource-tenant-id
    #:authorization-resource-dataset-id
+   #:authorization-resource-database-id
    #:authorization-resource-actor-name
    #:authorization-resource-target-id
    #:authorization-resource-target-namespace
