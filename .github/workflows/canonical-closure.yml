@@ -43,6 +43,8 @@ jobs:
           mkdir -p "$evidence"
           python3 - <<'PY'
           from pathlib import Path
+          import os
+          (Path(os.environ["RUNNER_TEMP"])/"canonical-closure-evidence"/"baseline-qlfile.lock").write_bytes(Path("qlfile.lock").read_bytes())
           p=Path("qlfile"); s=p.read_text()
           old='github lost-rob0t/star-cl :ref "a18a6cddcbcf4d989495a5de8abcedc4d0294d1c"'
           new='github lost-rob0t/star-cl :ref a18a6cddcbcf4d989495a5de8abcedc4d0294d1c'
@@ -104,10 +106,20 @@ jobs:
               (out/("clssl-"+version+"-metadata.json")).write_text(json.dumps(record,indent=2)+"\n")
           assert records[0]["release"]==records[1]["release"],"release metadata differs"
           assert records[0]["systems"]==records[1]["systems"],"systems/dependencies differ"
-          assert records[0]["archive_sha256"]==records[1]["archive_sha256"],"archive bytes differ"
+          assert records[0]["archive_sha256"]==records[1]["archive_sha256"]=="554e8cf79771221cf3991085da9b7cb659a78fd7ff71c81ae56d524f2d1eec46","archive bytes differ"
+          assert records[0]["archive_size"]==records[1]["archive_size"]==92364
           print("CLSSL_NATIVE_NORMALIZATION_EQUIVALENCE "+json.dumps(records))
           PY
-          git diff --exit-code -- qlfile.lock
+          python3 - <<'PY'
+          import os,pathlib
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"canonical-closure-evidence"
+          original=(out/"baseline-qlfile.lock").read_text()
+          old="(\"cl+ssl\" .\n (:class qlot/source/ql:source-ql\n  :initargs (:%version :latest)\n  :version \"ql-2024-10-12\"))"
+          new=old.replace("ql-2024-10-12","ql-2023-10-21")
+          assert original.count(old)==1
+          assert pathlib.Path("qlfile.lock").read_text()==original.replace(old,new),"unexpected bootstrap lock drift"
+          print("Native bootstrap changes only proven byte-equivalent cl+ssl version metadata")
+          PY
       - name: Establish maintained mismatch RED and author only declarations
         shell: bash
         run: |
@@ -120,7 +132,7 @@ jobs:
           library="33935f1e6739b0015926a2a163ba55cf203fbc9d"
           authority="96d26c338078676ec1dc6928755901636c9f7ef0"
           def git(*args): return subprocess.check_output(["git",*args],text=True).strip()
-          assert git("rev-parse","HEAD^")=="d6a187399ddffa4a0eb81260e6beb32a6bed75d0"
+          assert git("rev-parse","HEAD^")=="3cd2c785d62e612ded0bea38b51f60586d6f9152"
           assert git("diff","--name-only",baseline,"HEAD")==".github/workflows/canonical-closure.yml"
           with urllib.request.urlopen("https://raw.githubusercontent.com/lost-rob0t/star-cl/"+library+"/schema/starintel-schema.lock.json") as r:
               maintained=json.load(r)
@@ -140,7 +152,7 @@ jobs:
           else:
               raise AssertionError("baseline RED not established")
           (out/"maintained-lock.json").write_text(json.dumps(maintained,indent=2)+"\n")
-          for name in ("flake.lock","qlfile.lock"):
+          for name in ("flake.lock",):
               (out/("baseline-"+name)).write_bytes((root/name).read_bytes())
           old="a18a6cddcbcf4d989495a5de8abcedc4d0294d1c"
           for name in ("flake.nix","qlfile"):
@@ -192,7 +204,17 @@ jobs:
           new=qlot_entries((root/"qlfile.lock").read_text())
           assert set(old)==set(new),"Qlot entry set drift"
           for k,v in old.items():
-              if k!="star-cl": assert new[k]==v,"unrelated Qlot entry drift:"+k
+              if k=="cl+ssl":
+                  assert v.count('ql-2024-10-12')==1
+                  assert new[k]==v.replace('ql-2024-10-12','ql-2023-10-21'),"unexpected cl+ssl entry drift"
+              elif k!="star-cl": assert new[k]==v,"unrelated Qlot entry drift:"+k
+          assert list(old)==list(new),"Qlot entry order drift"
+          original=(out/"baseline-qlfile.lock").read_text()
+          old_clssl="(\"cl+ssl\" .\n (:class qlot/source/ql:source-ql\n  :initargs (:%version :latest)\n  :version \"ql-2024-10-12\"))"
+          assert original.count(old_clssl)==1
+          expected=original.replace(old_clssl,old_clssl.replace("ql-2024-10-12","ql-2023-10-21"))
+          assert new["star-cl"]==old["star-cl"].replace("a18a6cddcbcf4d989495a5de8abcedc4d0294d1c",library),"unexpected star-cl entry changes"
+          assert (root/"qlfile.lock").read_text()==expected.replace(old["star-cl"],new["star-cl"]),"unplanned Qlot byte drift"
           assert re.search(r':ref\s+"'+library+r'"',new["star-cl"])
           assert re.search(r':version\s+"github-'+library+r'"',new["star-cl"])
           assert ('github lost-rob0t/star-cl :ref '+library) in (root/"qlfile").read_text().splitlines()
@@ -205,7 +227,7 @@ jobs:
           assert actual==set(consumer["vendored_files"]),"stale/extra/missing vendor files"
           for path,entry in consumer["vendored_files"].items():
               assert hashlib.sha256((root/path).read_bytes()).hexdigest()==entry["sha256"],path
-          print("MAINTAINED_CLOSURE_GREEN 18 files; unrelated Nix/Qlot entries preserved")
+          print("MAINTAINED_CLOSURE_GREEN 18 files; unrelated Nix/Qlot inputs preserved; exact byte-equivalent cl+ssl metadata normalization")
           allow={"flake.nix","qlfile","flake.lock","qlfile.lock","schema/starintel-schema.lock.json"}
           tracked=git("diff","--name-only","HEAD").decode().splitlines()
           assert all(p in allow or p.startswith("schemas/starintel-0.10.1/") for p in tracked),tracked
