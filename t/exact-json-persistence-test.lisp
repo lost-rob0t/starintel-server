@@ -323,3 +323,38 @@
           (declare (ignore updated))
           (is (eq :created status))
           (is (= 2 (jsown:val new-entry "sequence"))))))))
+
+(test exact-binary64-projection-diagnostic
+  (let* ((full "0.12345678901234567890123456789")
+         (stored "0.12345678901234568"))
+    (format t "~&EXACT_PROJECTION_DIAGNOSTIC jzon-full=~s jzon-stored=~s~%"
+            (com.inuoe.jzon:parse full) (com.inuoe.jzon:parse stored))
+    (is (star.databases.couchdb::exact-storage-number-matches-p
+         (star.documents:parse-json-value stored) full))))
+
+(test exact-storage-private-evidence-is-hidden-on-legacy-readback
+  (let* ((document (star.documents:parse-document-object
+                    "{\"_id\":\"legacy:exact\",\"dtype\":\"person\",\"data\":{\"value\":1.00e0}}"))
+         (stored (star.databases.couchdb::prepare-exact-storage-document document))
+         (wire (star.documents:parse-document-object
+                (star.frontends.http-api:strip-server-tenant-fields (jsown:to-json stored)))))
+    (is (string= "1.00e0" (jsown:to-json (jsown:val (jsown:val wire "data") "value"))))
+    (is (not (jsown:keyp wire "extensions")))))
+
+(test exact-binary64-projection-is-bounded-and-never-epsilon-based
+  (let ((full "0.12345678901234567890123456789"))
+    (is (star.databases.couchdb::exact-storage-number-matches-p
+         (star.documents:parse-json-value "0.12345678901234568") full))
+    (is (not (star.databases.couchdb::exact-storage-number-matches-p
+              (star.documents:parse-json-value "0.12345678901234569") full))))
+  (dolist (token '("-0" "1e-200" "5e-324" "1.7976931348623157e308"))
+    (is (floatp (star.databases.couchdb::exact-storage-binary64
+                 (star.documents:parse-json-value token)))))
+  (dolist (token '("1e-400" "1e-324" "1e400" "1.7976931348623159e308"))
+    (signals error (star.databases.couchdb::prepare-exact-storage-document
+                    (star.documents:parse-document-object (exact-number-wire token)))))
+  (let ((token (concatenate 'string "0.1" (make-string 4096 :initial-element #\0) "1")))
+    (assert-exact-number-document
+     (star.databases.couchdb::restore-exact-storage-document
+      (star.databases.couchdb::prepare-exact-storage-document
+       (star.documents:parse-document-object (exact-number-wire token)))) token)))

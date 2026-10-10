@@ -50,6 +50,15 @@ Only call this for server-owned storage data, never to relax client validation.
 (clone-document-object (STAR.DOCUMENTS::DOCUMENT))
 #+end_src
 Deep copy a parsed document object.
+*** clone-json-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(clone-json-value (STAR.DOCUMENTS::VALUE))
+#+end_src
+Copy a JSON value without rounding number tokens or collapsing literals.
 *** document-data
 :PROPERTIES:
 :KIND: fn
@@ -116,6 +125,15 @@ Serialize DOCUMENT for internal document transport, enforcing identity.
 
 Canonical documents omit CouchDB fields. Server tenant metadata remains in the
 internal transport envelope and is removed before strict consumer validation.
+*** document-to-native-json
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(document-to-native-json (STAR.DOCUMENTS::VALUE))
+#+end_src
+Adapt JSON document values without a lossy serialization intermediate.
 *** document-transient-p
 :PROPERTIES:
 :KIND: fn
@@ -146,6 +164,15 @@ Parse DOCUMENT and enforce transport-level identity invariants.
 
 Strict canonical validation is an explicit boundary operation so legacy target
 compatibility adapters can opt out without weakening canonical ingest.
+*** native-json-to-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(native-json-to-document (STAR.DOCUMENTS::VALUE))
+#+end_src
+Adapt the pinned exact JSON representation to existing JSOWN sequence contracts.
 *** object-has-key-p
 :PROPERTIES:
 :KIND: fn
@@ -182,6 +209,15 @@ Fetch the value at KEY of a parsed JSON object.
 (parse-document-object (STAR.DOCUMENTS::DOCUMENT))
 #+end_src
 Parse a document payload into the internal JSOWN form.
+*** parse-json-value
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DOCUMENTS
+:END:
+#+begin_src lisp
+(parse-json-value (STAR.DOCUMENTS::TEXT))
+#+end_src
+Read exact JSON through the pinned StarIntel codec, retaining JSOWN arrays as lists.
 *** utc-now
 :PROPERTIES:
 :KIND: fn
@@ -198,7 +234,7 @@ Current UTC timestamp as an ISO-8601 string.
 #+end_src
 Validate DOCUMENT with star-cl's pinned canonical or legacy validator.
 
-The server owns only schema discovery, JSOWN-to-Jzon conversion, and a stable
+The server owns only schema discovery, lossless representation conversion, and a stable
 condition. The schema rules and validator remain owned by star-cl.
 *** validate-stored-document
 :PROPERTIES:

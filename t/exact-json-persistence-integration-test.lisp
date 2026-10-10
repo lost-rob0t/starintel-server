@@ -20,7 +20,7 @@
                   (actual (starintel:stringify-json (gethash "exact" parsed))))
              (format t "~&RAW_COUCHDB_EXACT_NUMBER expected=~a actual=~a preserved=~s~%"
                      token actual (string= token actual))
-             (is (nth-value 1 (gethash "exact" parsed))))
+             (is (not (null (nth-value 1 (gethash "exact" parsed))))))
            (cl-couch:create-document
             client database
             (jsown:to-json (gethash "outbox"

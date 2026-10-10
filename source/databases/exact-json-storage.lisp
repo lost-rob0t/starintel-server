@@ -37,6 +37,24 @@
     (dolist (path paths) (exact-storage-path-value shape path :null))
     (outbox-digest-string (star.actors::canonical-target-json shape))))
 
+(defun exact-storage-binary64 (value)
+  "Project a pinned-codec number once, using exact decimal parts and native rounding."
+  (unless (starintel::json-numeric-p value) (error "Expected a JSON number"))
+  (when (> (length (starintel:stringify-json value)) +exact-number-max-token-length+)
+    (error "Exact-number token limit exceeded"))
+  (multiple-value-bind (sign digits order) (starintel::json-decimal-parts value)
+    (when (zerop sign) (return-from exact-storage-binary64 0.0d0))
+    ;; Bound exponent expansion before arithmetic; no unsupported zero fallback.
+    (unless (<= -323 order 309) (error "Unsupported CouchDB numeric projection"))
+    (unless (<= (length digits) +exact-number-max-token-length+)
+      (error "Exact-number coefficient limit exceeded"))
+    (let* ((rational (* sign (parse-integer digits)
+                        (expt 10 (- order (length digits)))))
+           (projection (coerce rational 'double-float)))
+      (unless (and (starintel::json-finite-float-p projection) (not (zerop projection)))
+        (error "Unsupported CouchDB numeric projection"))
+      projection)))
+
 (defun exact-storage-number-matches-p (actual token)
   (let ((expected (starintel:parse-json token)))
     (unless (and (starintel::json-numeric-p actual)
@@ -45,8 +63,8 @@
     ;; Reject unsupported projections before exact arithmetic on hostile tokens.
     ;; Binary64 equivalence verifies fidelity, not out-of-band tamper resistance.
     (handler-case
-        (let* ((left (coerce (com.inuoe.jzon:parse (jsown:to-json actual)) 'double-float))
-               (right (coerce (com.inuoe.jzon:parse token) 'double-float)))
+        (let* ((left (exact-storage-binary64 actual))
+               (right (exact-storage-binary64 expected)))
           (and (starintel::json-finite-float-p left)
                (starintel::json-finite-float-p right)
                (= left right)))
@@ -73,8 +91,7 @@
                     (unless (starintel::json-numeric-p (starintel:parse-json token))
                       (error "Invalid exact-number token"))
                     (unless (handler-case
-                                (starintel::json-finite-float-p
-                                 (coerce (com.inuoe.jzon:parse token) 'double-float))
+                                (exact-storage-binary64 (starintel:parse-json token))
                               (error () nil))
                       (error "Exact number has no supported finite CouchDB projection"))
                     (push (jsown:new-js ("path" (coerce path 'vector)) ("token" token)) records)))

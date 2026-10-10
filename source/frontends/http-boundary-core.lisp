@@ -237,10 +237,10 @@ operating on the type it started with."
            (if (jsown:keyp wire "extensions")
                (star.databases.couchdb::public-document-copy wire :restore-extensions-presence t)
                wire))
-         (progn
-           (when (jsown:keyp document "tenant_id")
-             (jsown:remkey document "tenant_id"))
-           document)))))
+         (let ((public (star.databases.couchdb::restore-exact-storage-document document)))
+           (when (jsown:keyp public "tenant_id")
+             (jsown:remkey public "tenant_id"))
+           public)))))
 
 (defun strip-outbox-payload-tenants (extensions)
   "Strip tenant_id from outbox payloads embedded in server extensions.
