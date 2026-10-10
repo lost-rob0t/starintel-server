@@ -210,7 +210,12 @@
            (setf (gethash resource-uri observations)
                  (%make-actor-runtime-observation
                   :status status
-                  :ready-p (not (null ready-p))
+                  ;; A stale or contradictory readiness hint must never make
+                  ;; an explicitly offline resource eligible for dispatch.
+                  :ready-p (and (not (null ready-p))
+                                (not (member status
+                                             '("declared-offline" "unavailable")
+                                             :test #'string=)))
                   :observed-at observed-at))))
     (if (eq observations *actor-runtime-observations*)
         (bt:with-lock-held (*actor-registry-lock*) (record))
@@ -233,10 +238,17 @@
       (%make-actor-runtime-observation :status "unavailable" :ready-p nil))))
 
 (defun effective-runtime-observation (resource-uri observations)
-  (or (gethash resource-uri observations)
-      (let ((actor (gethash resource-uri *actor-runtime-bindings*)))
-        (and actor (local-runtime-observation actor)))
-      (%make-actor-runtime-observation :status "unavailable" :ready-p nil)))
+  (let* ((actor (gethash resource-uri *actor-runtime-bindings*))
+         (local (and actor (local-runtime-observation actor))))
+    ;; A bound local actor that has stopped is authoritative: an older
+    ;; server-owned "online" observation cannot resurrect its readiness.
+    ;; Healthy local actors may still carry explicit degraded/offline reports.
+    (if (and local (not (actor-runtime-observation-ready-p local)))
+        local
+        (or (gethash resource-uri observations)
+            local
+            (%make-actor-runtime-observation
+             :status "unavailable" :ready-p nil)))))
 
 (defun copy-actor-contract (contract)
   (jsown:new-js
