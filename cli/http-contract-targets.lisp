@@ -8,7 +8,7 @@
     (cons "dataset" (string-schema :min-length 1))
     (cons "delay" (integer-schema :minimum 1))
     (cons "recurring" (boolean-schema))
-    (cons "options" (array-schema (generic-object-schema)))
+    (cons "options" (generic-object-schema))
     (cons "idempotency_key" (string-schema :min-length 1)))
    :required '("actor" "target" "dataset" "idempotency_key")
    :additional-properties nil

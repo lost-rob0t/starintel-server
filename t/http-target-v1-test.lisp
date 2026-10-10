@@ -11,7 +11,7 @@
                                  (dataset "star-intel")
                                  (delay 1)
                                  (recurring nil)
-                                 (options #())
+                                 (options (jsown:empty-object))
                                  (idempotency-key "bixby-draft-123"))
   (jsown:new-js
     ("actor" actor)
@@ -46,43 +46,34 @@
            (star.frontends.http-api::target-v1-document-from-request
             request "human:bob"))
          (extensions (jsown:val first "extensions")))
-    (is (string= (jsown:val first "_id")
-                 (jsown:val retry "_id")))
-    (is (not (string= (jsown:val first "_id")
-                      (jsown:val other-user "_id"))))
+    (is (string= (jsown:val first "id")
+                 (jsown:val retry "id")))
+    (is (not (string= (jsown:val first "id")
+                      (jsown:val other-user "id"))))
     (is (string= "target" (jsown:val first "dtype")))
-    (is (string= starintel.legacy:+starintel-doc-version+
-                 (jsown:val first "schema_version")))
+    (is (string= (starintel.canonical:schema-version)
+                 (jsown:val first "schemaVersion")))
     (is (stringp (jsown:val extensions "idempotency_key")))
     (is (null (search "bixby-draft-123"
                       (jsown:val extensions "idempotency_key")
                       :test #'char-equal)))))
 
-(test v1-target-document-is-data-shaped-and-schema-valid
+(test v1-target-document-is-flat-and-schema-valid
   (let* ((document
            (star.frontends.http-api::target-v1-document-from-request
             (make-v1-target-request) "human:alice"))
-         (data (jsown:val document "data"))
          (extensions (jsown:val document "extensions")))
-    ;; The closed v0.9 top level carries envelope fields only.
-    (dolist (key '("actor" "target" "delay" "recurring" "options"
-                   "schedule_id"))
+    (dolist (key '("_id" "schema_version" "data" "date_added" "date_updated"))
       (is-false (jsown:keyp document key)))
-    ;; Target semantics live inside data.
-    (is (string= "subfinder" (jsown:val data "actor")))
-    (is (string= "example.org" (jsown:val data "target")))
-    (is (= 1 (jsown:val data "delay")))
-    (is (eq :false (jsown:val data "recurring")))
-    (is (vectorp (jsown:val data "options")))
-    ;; Schedule and idempotency identity live in the extensions envelope.
+    (is (string= "subfinder" (jsown:val document "actor")))
+    (is (string= "example.org" (jsown:val document "target")))
+    (is (= 1 (jsown:val document "delay")))
+    (is (eq :false (jsown:val document "recurring")))
+    (is (star.frontends.http-api::json-object-p (jsown:val document "options")))
     (is (string= "target-request:"
                  (subseq (jsown:val extensions "schedule_id") 0 15)))
-    ;; The schema-required envelope collections exist.
-    (is (vectorp (jsown:val document "sources")))
-    (is (vectorp (jsown:val document "evidence")))
-    ;; The built document is accepted by the canonical strict validator.
-    (is (eq document
-             (star.documents:validate-v09-document document)))))
+    (is (integerp (jsown:val document "createdAt")))
+    (is (eq document (star.documents:validate-document document)))))
 
 (test v1-schedule-identity-is-read-from-extensions
   (let* ((document
@@ -91,7 +82,7 @@
          (record (star.actors::parse-target-record document)))
     (is (string= (jsown:val (jsown:val document "extensions") "schedule_id")
                  (star.actors::target-record-schedule-id record)))
-    (is (string= (jsown:val document "_id")
+    (is (string= (jsown:val document "id")
                  (star.actors::target-record-id record)))))
 
 (test legacy-persisted-target-keeps-its-schedule-identity
@@ -202,7 +193,7 @@
            (star.frontends.http-api::target-v1-receipt ledger :duplicate)))
     (is (string= "accepted" (jsown:val accepted-json "status")))
     (is (string= "duplicate" (jsown:val duplicate-json "status")))
-    (is (string= (jsown:val document "_id")
+    (is (string= (jsown:val document "id")
                  (jsown:val accepted-json "target_id")))
     (is (string= (jsown:val ledger "_id")
                  (jsown:val accepted-json "request_id")))
@@ -241,3 +232,68 @@
          (record (star.actors:parse-target-record document)))
     (is (string= "target:canonical-red" (star.actors:target-record-id record)))
     (is (equal (jsown:val document "options") (star.actors:target-record-options record)))))
+
+(test canonical-target-options-default-and-recursive-fingerprint
+  (let* ((left (make-v1-target-request
+                :options (jsown:new-js ("opaque_key" (jsown:new-js ("b" :false) ("a" :null)))
+                                       ("items" (vector 1 2)) ("empty" (jsown:empty-object)))))
+         (right (make-v1-target-request
+                 :options (jsown:new-js ("empty" (jsown:empty-object)) ("items" (vector 1 2))
+                                        ("opaque_key" (jsown:new-js ("a" :null) ("b" :false)))))))
+    (is (string= (star.frontends.http-api::target-v1-request-fingerprint left "human:alice")
+                 (star.frontends.http-api::target-v1-request-fingerprint right "human:alice")))
+    (setf (jsown:val (jsown:val right "options") "items") (vector 2 1))
+    (is (not (string= (star.frontends.http-api::target-v1-request-fingerprint left "human:alice")
+                      (star.frontends.http-api::target-v1-request-fingerprint right "human:alice")))))
+  (let ((request (make-v1-target-request)))
+    (jsown:remkey request "options")
+    (is (star.frontends.http-api::json-object-p
+         (jsown:val (star.frontends.http-api::target-v1-document-from-request request "human:alice")
+                    "options"))))
+  (is (not (string= (star.frontends.http-api::target-v1-request-identity "alice|b" "c")
+                    (star.frontends.http-api::target-v1-request-identity "alice" "b|c")))))
+
+(test canonical-target-storage-recovery-and-dispatch-preserve-wire
+  (let* ((wire (star.frontends.http-api::target-v1-document-from-request
+                (make-v1-target-request :options (jsown:new-js ("source_url" "https://example.org/")))
+                "human:alice"))
+         (stored (star.documents:ensure-document (star.documents:clone-document-object wire)))
+         (sent nil))
+    (setf (jsown:val stored "_rev") "2-stored"
+          (jsown:val stored "tenant_id") "private-tenant")
+    (let* ((record (star.actors:parse-target-record stored))
+           (envelope (star.actors:make-target-dispatch-envelope
+                      record :destination
+                      (star.actors::make-target-destination-handle
+                       :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder"))))
+      (is (string= (jsown:val wire "id") (star.actors:target-record-id record)))
+      (is (string= "2-stored" (star.actors:target-record-revision record)))
+      (star.actors:dispatch-target-envelope-now
+       envelope :remote-send-fn
+       (lambda (routing-key document)
+         (is (string= "documents.target.dispatch.subfinder" routing-key))
+         (setf sent document)))
+      (is (string= (jsown:val wire "id") (jsown:val sent "id")))
+      (is (equal (jsown:val wire "options") (jsown:val sent "options")))
+      (is (string= "2-stored" (jsown:val sent "rev")))
+      (dolist (key '("_id" "_rev" "tenant_id" "schema_version" "data"))
+        (is-false (jsown:keyp sent key)))
+      (is (eq sent (star.documents:validate-document sent))))
+    (setf (jsown:val stored "_id") "wrong-identity")
+    (signals error (star.actors:parse-target-record stored))))
+
+(test canonical-target-validation-and-unix-deadline-precede-dispatch
+  (let* ((document (star.frontends.http-api::target-v1-document-from-request
+                    (make-v1-target-request) "human:alice"))
+         (now (- (get-universal-time) 2208988800)))
+    (setf (jsown:val document "deadline") (+ now 60))
+    (let ((record (star.actors:parse-target-record document)))
+      (is (eq record (star.actors:validate-target-dispatch-record record))))
+    (setf (jsown:val document "deadline") (- now 60))
+    (signals star.actors:invalid-target-dispatch
+      (star.actors:validate-target-dispatch-record
+       (star.actors:parse-target-record document)))
+    (jsown:remkey document "deadline")
+    (setf (jsown:val document "options") #())
+    (signals star.documents:document-schema-validation-error
+      (star.actors:parse-target-record document))))

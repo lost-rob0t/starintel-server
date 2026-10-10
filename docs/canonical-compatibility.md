@@ -5,9 +5,17 @@ validation, persistence and readback use that authority. Historical CLOS
 constructors and fixtures explicitly load `starintel-legacy` and name
 `STARINTEL.LEGACY`; the retired `SPEC` alias is not restored.
 
-Legacy HTTP envelope normalization and the existing Target constructor retain
-their historical schema version. Canonical Target options and persisted actor
-output proof remain tracked by issue #319.
+Legacy HTTP envelope normalization retains its historical schema version.
+The targets.create boundary constructs generated flat 0.10.1 Target documents
+with object-valued options. Recovery distinguishes canonical identity from
+explicit historical reads. Canonical dispatch removes CouchDB metadata and
+validates the outgoing document. Durable retries compare typed canonical
+content, including dataset and recursively ordered options, rather than relying
+on historical digests. Existing legacy fingerprint behavior is retained.
+
+Issue #319 completion additionally requires the isolated real actor probe to
+prove authenticated persisted canonical output readback; unit acceptance and
+broker confirmation alone do not establish that result.
 
 The historical URL extractor retains its old URL/relation output and routing.
 It explicitly logs and rejects canonical input before construction/publication.
