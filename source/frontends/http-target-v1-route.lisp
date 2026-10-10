@@ -76,6 +76,13 @@
     (let* ((request (require-json-object (parse-json-request)))
            (principal (request-principal))
            (document (target-v1-document-from-request request principal))
+           ;; Authorize the concrete resource before any lookup or durable effect.
+           (star.authorization:*current-authorization-decision*
+             (star.authorization:authorize-document!
+              "targets:dispatch" document
+              :principal (current-policy-principal)
+              :actor-name (jsown:val document "actor")
+              :metadata (route-policy-metadata +target-v1-path+ "POST")))
            (ledger (target-v1-request-ledger request document principal))
            (record (star.actors::parse-target-record document))
            (outcome (target-v1-accept-record request principal record))
