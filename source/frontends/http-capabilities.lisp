@@ -45,6 +45,7 @@
     ("features"
      (jsown:new-js
        ("documents" :true)
+       ("document_create_only" "if-none-match-star/1")
        ("bulk_ingest" :true)
        ("search" :true)
        ("stats" :true)
