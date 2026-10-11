@@ -166,7 +166,8 @@ legacy path parameter that must match the document dtype."
     (params &optional (route "/document/:id"))
   (with-http-boundary ()
     (let* ((document-id (require-path-string params "id"))
-           (patch (request-json-body)))
+           (patch (request-json-body))
+           (create-only (request-document-create-only-p)))
       (couchdb-handler (client *couchdb-pool*)
         (star.authorization:authorized-update-document
          document-id
@@ -182,7 +183,7 @@ legacy path parameter that must match the document dtype."
              client
              star:*couchdb-default-database*
              document-id
-             candidate)))
+             candidate :create-only create-only)))
          :principal (current-policy-principal)
          :metadata
          (route-policy-metadata route "PUT"))))))
