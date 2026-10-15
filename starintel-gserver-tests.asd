@@ -31,6 +31,7 @@
      (:file "couchdb-outbox-recovery-test")
      (:file "couchdb-session-test")
      (:file "event-actor-test")
+     (:file "llm-actor-test")
      (:file "dataset-export-test")
      (:file "couchdb-view-request-test")
      (:file "lease-store-contract-test")
