@@ -1,0 +1,312 @@
+#+title: StarLang database, Actor2Actor, and runtime-provider integration
+#+options: toc:3
+
+* Status
+
+Design slice for:
+- lost-rob0t/star-lang#147
+- lost-rob0t/star-lang#148
+- lost-rob0t/star-lang#150
+- lost-rob0t/star-lang#151
+- starintel-server#277
+- starintel-server#278
+- starintel-server#279
+- starintel-server#280
+- starintel-server#281
+
+Target server release line: =0.3.x=.
+
+StarLang owns language/runtime-neutral semantics. StarIntel Server owns deployment
+composition, concrete adapters, secrets, authorization, connection pools, and
+remote gateway processes.
+
+* Ownership
+
+** StarLang owns
+
+- closed =.star= grammar;
+- portable database IR;
+- Actor2Actor lifecycle and transport-neutral semantics;
+- typed database messages/results/errors;
+- actor capabilities;
+- runtime-provider requirement IR;
+- canonical manifests.
+
+** StarIntel Server owns
+
+- logical database profile registry;
+- backend adapter registry;
+- connection pools;
+- secret resolution;
+- backend health/circuit state;
+- tenant/principal/capability enforcement;
+- operation deadlines and result limits;
+- A2A HTTP/gRPC/REST/SSE adapter process;
+- AWS Lambda deployment bindings;
+- observability;
+- runtime actor discovery.
+
+Core must not duplicate StarLang's grammar or IR.
+
+* Database runtime registry
+
+The server should expose a generic protocol similar to:
+
+#+begin_src lisp
+(register-database-backend :couchdb backend)
+(register-database-backend :postgresql backend)
+(register-database-backend :neo4j backend)
+(register-database-backend :orientdb backend)
+(register-database-backend :prolog backend)
+
+(register-database-profile
+ "intel-primary"
+ :backend :couchdb
+ :secret-file "/run/secrets/couchdb"
+ :pool-size 20)
+
+(register-database-operation
+ "person-by-id"
+ :profile "intel-primary"
+ :access :read
+ :implementation ...)
+#+end_src
+
+These are trusted host configuration forms, not StarLang source grammar.
+
+The portable StarLang actor only knows:
+- logical database id;
+- named operation id;
+- typed bindings;
+- typed result contract;
+- capability requirements.
+
+* Read/write actor split
+
+Database actors are ordinary StarLang actors materialized by the server.
+
+** Read actor
+
+Capabilities:
+- =databaseRead=
+- optionally =databaseSubscribe=
+
+Its adapter handle must not expose mutation methods.
+
+** Write actor
+
+Capabilities:
+- =databaseWrite=
+- optionally =databaseTransaction=
+
+Every mutation carries replay/idempotency/precondition semantics.
+
+** Logic actor
+
+Prolog-backed operations reuse StarLang =star-logic-protocol= /
+=star-logic-ir=. User/A2A input supplies bindings to a trusted named operation,
+never arbitrary Prolog source/goals/modules/files.
+
+* Backend adapters
+
+** CouchDB
+
+- get/put/delete;
+- Mango/find;
+- registered design-document views;
+- bulk;
+- =_changes= subscriptions;
+- revision/precondition semantics.
+
+The existing CouchDB implementation becomes an adapter behind the generic
+runtime instead of being the generic API.
+
+** PostgreSQL
+
+- trusted named/prepared SQL only;
+- bounded reads;
+- writes;
+- transactions;
+- LISTEN/NOTIFY or explicit later CDC support.
+
+Actor/A2A callers never submit raw SQL.
+
+** Neo4j
+
+- trusted named parameterized Cypher operations;
+- traversal;
+- typed graph projections;
+- bounded transactions.
+
+Actor/A2A callers never submit raw Cypher.
+
+** OrientDB
+
+- trusted named document/graph operations;
+- typed projections;
+- transactions through the generic transaction contract.
+
+Actor/A2A callers never submit raw Orient SQL.
+
+** Prolog
+
+- named logic operations through StarLang logic IR;
+- fact/result actor output;
+- suitable producer for LISA/expert working-memory facts.
+
+* Actor2Actor
+
+Star Server implements a transport gateway for =star.actor2actor/1=.
+
+Local:
+
+#+begin_example
+StarLang actor -> Star lifecycle envelope -> database actor
+#+end_example
+
+Remote:
+
+#+begin_example
+remote peer
+  -> upstream A2A binding / other Star transport
+  -> canonical Star Actor2Actor envelope
+  -> same database actor
+#+end_example
+
+The gateway must preserve:
+- actor reference/incarnation;
+- message id;
+- correlation id;
+- causation id;
+- task/operation id;
+- deadline;
+- idempotency;
+- trace context;
+- ordered streaming state.
+
+Tenant/principal context comes from the authenticated server boundary and cannot
+be manufactured by remote metadata.
+
+A2A is a transport binding. It does not become a second database language,
+authorization layer, or actor lifecycle implementation.
+
+* AWS Lambda runtime provider
+
+Star Server maps trusted logical provider profiles to AWS configuration.
+
+Portable StarLang source sees only a provider requirement/profile.
+
+Server-owned data may include:
+- AWS account/region;
+- function/image id;
+- IAM role;
+- VPC/subnet/security group profile;
+- memory/timeout;
+- concurrency/reserved concurrency;
+- secret references;
+- billing/cost policy.
+
+None of these secrets/private identifiers belong in portable StarLang manifests.
+
+Initial implementation target:
+- =provided.al2023= custom runtime;
+- ARM64 and x86_64;
+- Common Lisp/StarLang bootstrap;
+- Lambda Runtime API;
+- optional response streaming.
+
+One Lambda invocation initially maps to one canonical Actor2Actor command/task.
+
+Warm process reuse must never leak tenant, principal, trace, or mutable actor
+transition state between invocations.
+
+Durable actor state is external/journaled. Lambda RAM is never authoritative.
+
+* init.lisp / addon composition
+
+Keep core generic.
+
+Example trusted deployment composition:
+
+#+begin_src lisp
+(in-package :star)
+
+(load-addon :starintel-database-runtime)
+(load-addon :starintel-a2a)
+(load-addon :starintel-runtime-aws)
+
+(configure-database-profile
+ "intel-primary"
+ :backend :couchdb
+ :secret-file "/run/secrets/couchdb")
+
+(configure-runtime-provider
+ "burst-default"
+ :provider :aws-lambda
+ :secret-file "/run/secrets/aws-provider-profile")
+#+end_src
+
+Private hosted/billing policy remains a separate Biz addon/config layer.
+
+* Security invariants
+
+- no database/runtime credentials in =.star=;
+- no raw SQL/Cypher/Orient SQL/arbitrary Prolog goals through actor/A2A input;
+- database read and write capabilities are separate;
+- provider execution never grants data capabilities by itself;
+- capability checks occur before mailbox/backend side effects;
+- stale ActorRefs fail closed;
+- first terminal outcome wins;
+- write retries obey operation idempotency/fencing;
+- result/stream limits are bounded;
+- logs never include credentials or full sensitive query payloads.
+
+* Testing gates
+
+** Generic adapter conformance
+
+Every backend runs the same protocol suite for:
+- health;
+- valid read;
+- invalid operation;
+- capability denial;
+- timeout;
+- cancellation;
+- result limit;
+- backend failure;
+- close/reopen.
+
+Write-capable backends additionally test:
+- idempotent replay;
+- changed-input conflict;
+- precondition failure;
+- outcome-unknown;
+- transaction abort.
+
+** Actor semantics
+
+Tests claiming actor behavior use the real Sento/StarLang runtime boundary.
+
+** Actor2Actor equivalence
+
+The same request through local dispatch and remote A2A binding must produce
+semantically equivalent Star terminal outcomes.
+
+** Lambda equivalence
+
+A deterministic actor executed locally and through the Lambda provider must
+produce the same typed result and lifecycle state.
+
+* Migration
+
+1. Land StarLang portable contracts/IR.
+2. Add generic server database registry with a fake adapter.
+3. Wrap existing CouchDB implementation behind the registry.
+4. Add PostgreSQL.
+5. Add Neo4j and OrientDB.
+6. Reuse StarLang Prolog logic adapter for logic/fact actors.
+7. Land canonical Actor2Actor gateway.
+8. Add AWS Lambda provider.
+9. Migrate existing server actors to generic runtime declarations without
+   duplicating semantic authority.
+
