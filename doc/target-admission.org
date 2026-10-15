@@ -1,0 +1,138 @@
+#+title: Target admission control
+#+options: toc:2
+
+* Overview
+
+StarIntel target dispatch now has an operator-configurable admission gate.  The
+gate runs for both local actor delivery and RabbitMQ target dispatch, immediately
+before the destination send.
+
+Configuration lives in trusted =init.lisp= and is disabled by default.  Existing
+installations therefore keep the historical unlimited behavior until an operator
+calls =configure-target-admission=.
+
+All enabled policies are composed with logical AND: every policy must admit the
+dispatch.  A rejection signals =star.actors:target-ingress-overloaded=, which is
+already classified as retryable by the target dispatch coordinator.
+
+* Configuration
+
+The stock init file uses =(in-package :star)=, so the operator API is directly
+available there.
+
+** Concurrent dispatch cap
+
+#+begin_src lisp
+(configure-target-admission :max-concurrent 8)
+#+end_src
+
+This limits target dispatch operations active inside StarIntel Server at one
+time.  The slot is released with =unwind-protect= whether destination delivery
+succeeds or fails.
+
+For a local actor, the slot covers the call that submits the envelope to Sento.
+For a RabbitMQ destination, it covers broker publication.  It does not claim
+that a remote actor has finished executing after RabbitMQ publication returns.
+True distributed work concurrency still belongs at the worker/lease/consumer
+boundary; this server-side gate prevents launch/dispatch storms.
+
+** Sliding-window rate limit
+
+#+begin_src lisp
+(configure-target-admission
+ :rate-limit '(:count 60 :per 60))
+#+end_src
+
+The example permits at most 60 dispatch starts in any trailing 60-second window.
+Accepted attempts consume the rate slot even when the destination later fails.
+
+** Token bucket
+
+#+begin_src lisp
+(configure-target-admission
+ :token-bucket '(:capacity 20 :refill-rate 2))
+#+end_src
+
+The bucket starts full by default, allows a burst up to =:capacity=, and refills
+at =:refill-rate= tokens per second.  One admitted target dispatch consumes one
+token.
+
+An explicit initial fill is also supported:
+
+#+begin_src lisp
+(configure-target-admission
+ :token-bucket '(:capacity 20 :refill-rate 2 :initial-tokens 5))
+#+end_src
+
+** Custom condition
+
+#+begin_src lisp
+(configure-target-admission
+ :condition
+ (lambda (envelope snapshot)
+   (declare (ignore envelope))
+   (values (< (getf snapshot :actor-active) 2)
+           "per-actor concurrency limit")))
+#+end_src
+
+The predicate receives the target dispatch envelope and a snapshot plist.  The
+snapshot includes:
+
+- =:actor= and =:actor-active=;
+- =:active= and =:max-concurrent=;
+- =:rate-count= and =:rate-limit=;
+- =:tokens= and =:token-bucket=;
+- =:now=, a monotonic timestamp used by the limiter.
+
+Return a generalized boolean and optionally a human-readable rejection reason.
+The condition executes while the admission lock is held so its decision and the
+reservation are atomic.  It MUST therefore be fast and non-blocking.  It also
+MUST NOT call any target-admission API that acquires the same lock, including
+=configure-target-admission= or =target-admission-state=.
+
+The envelope gives trusted Lisp configuration full freedom to inspect actor,
+target, options, destination kind, schedule, or external process state through
+custom code.
+
+* Combining policies
+
+#+begin_src lisp
+(configure-target-admission
+ :max-concurrent 8
+ :rate-limit '(:count 120 :per 60)
+ :token-bucket '(:capacity 20 :refill-rate 2)
+ :condition
+ (lambda (envelope snapshot)
+   (declare (ignore envelope))
+   (values (< (getf snapshot :actor-active) 4)
+           "actor already has four dispatches active")))
+#+end_src
+
+The dispatch must satisfy all four gates.
+
+* Live reconfiguration
+
+Calling =configure-target-admission= from a trusted REPL or reloaded init file is
+atomic with respect to dispatch admission.  Rate-window and token-bucket history
+are restarted for the new policy, while already-active dispatch tickets and
+per-actor active counts are preserved.  If a new concurrency cap is lower than
+the current active count, existing work is allowed to drain and new admissions
+remain blocked until the count falls below the new cap.
+
+* Disable / reset
+
+Calling the function with no policy arguments disables admission control and
+clears limiter history without corrupting any outstanding dispatch tickets:
+
+#+begin_src lisp
+(configure-target-admission)
+#+end_src
+
+For operator inspection:
+
+#+begin_src lisp
+(target-admission-state)
+#+end_src
+
+This returns current active counts, rate-window occupancy, token count, and the
+configured policy values.  It contains no target payloads or credentials.
