@@ -14,6 +14,7 @@
 - [[file:star-leases.org][STAR.LEASES]] — 73 symbols
 - [[file:star-producers.org][STAR.PRODUCERS]] — 19 symbols
 - [[file:star-rabbit.org][STAR.RABBIT]] — 26 symbols
+- [[file:star-starfs.org][STAR.STARFS]] — 20 symbols
 - [[file:starintel-gserver.org][STARINTEL-GSERVER]] — 95 symbols
 - [[file:starintel-gserver-http-api.org][STARINTEL-GSERVER-HTTP-API]] — 27 symbols
 
