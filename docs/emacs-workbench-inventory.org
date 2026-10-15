@@ -1,0 +1,88 @@
+#+title: Emacs OSINT workbench: implementation inventory
+#+options: toc:2
+
+This inventory records what the StarIntel Emacs client implements today, what
+the current server (v0.9 family) exposes, and where the workbench gaps are.
+It was written by inspecting =client.el=, =client-test.el=,
+=docs/http-api-docs.org=, =source/frontends/http-capabilities.lisp= and
+=source/frontends/http-contract-routes.lisp= at commit
+=e99aadd= (master, 2026-08).
+
+* Current client implementation
+
+** Modern contract layer (=starintel-api-*=, =client.el=)
+
+- Async-capable transport boundary with a pluggable
+  =starintel-api-transport-function=; default is a bounded url.el transport.
+- Typed error taxonomy (=starintel-api-timeout-error=,
+  =starintel-api-http-error=, ...) with secret redaction.
+- Correlation IDs and =X-Request-Timeout-Ms= deadlines on every request.
+- Capability discovery against =GET /api/v1/capabilities= with cache and
+  =legacy_routes= compatibility gating.
+- Contract operations: =starintel-api-health=, =starintel-api-server-info=,
+  =starintel-api-search=, =starintel-api-get-document=.
+
+** Legacy layer (requires =request=, soft dependency)
+
+- Callback-style wrappers for server info, health, documents, targets,
+  documents creation, and the CouchDB view routes
+  (=starintel-hosts-by-ip=, =starintel-messages-by-user=, ...).
+- Document construction through the =starintel-doc= package.
+
+** Presentation layer (=starintel-ui-*=)
+
+- One shared =special-mode= buffer =*StarIntel*= with static text rendering.
+- =starintel-status= renders server info, health and capabilities.
+- =starintel-search= renders search rows as plain lines (not actionable).
+- =starintel-document= renders the raw JSON document.
+
+** Existing modes
+
+- No major modes. The shared buffer is =special-mode= only.
+
+* Server surface available today (v0.9 family)
+
+| Surface | Route | Status |
+|---------+-------+--------|
+| Capabilities | =GET /api/v1/capabilities= | Active, public |
+| Server info | =GET /= | Active: =server=, =version=, =doc_spec_version=, =default-dataset=, =event_log=, =openapi=, =client_manifest= |
+| Health | =GET /health= | Active |
+| Stats | =GET /api/v1/stats= | Active: =documents.total=, =documents.by_dtype=, =targets.total= |
+| Search | =GET /api/v1/search= and legacy =GET /search= | Active: =q= (<=512), =limit= (1..50), =bookmark=; CouchDB FTS =rows= + =bookmark= |
+| OpenAPI / manifest | =GET /openapi.json=, =GET /client-manifest.json= | Active |
+| Auth | =POST /auth/login=, =/auth/bootstrap=, =/auth/context=, user/credential lifecycle | Active (registry operations) |
+| Documents | =POST /new/document/:dtype=, =POST /documents/bulk=, =GET/PUT/DELETE /document/:id= | Active (legacy-marked), strict 0.9 validation |
+| Targets | =POST /new/target/:actor=, =GET /targets/:actor= | Active (legacy-marked, non-strict adapter) |
+| View queries | =/documents/.../by-*= bounded pagination | Active |
+| Target leases | =features.target_leases= | =false=: not advertised; client must treat as unavailable |
+| Streams/events | =features.streams= | =false=: no event stream yet |
+| Actors/jobs | (none) | Not exposed over HTTP; local Sento actors and Rabbit only |
+| Graph/path queries | (none) | Not exposed; relations are documents of dtype =relation= |
+
+* Gap analysis: workbench features missing from the client
+
+1. Server profiles and current-server abstraction (multiple deployments,
+   =auth-source=, server identity in references).
+2. Stable object identity and =star://= URIs; no link handling, no Org
+   integration.
+3. Generic object buffer (typed rendering, actions) - today only raw JSON.
+4. Actionable search results buffer (tabulated list, marking, pagination).
+5. Person/organization/target dedicated views (render 0.9 =data= fields).
+6. Relation/graph traversal (read from =relation= documents).
+7. Ingest commands over the validated =POST /new/document/:dtype= boundary.
+8. Query workbench, saved queries, history.
+9. Timeline assembled from object timestamps (=dateAdded=, =dateUpdated=,
+   extension timestamps).
+10. Provenance surfacing from =extensions.star_server= (exists in schema).
+11. Actor/job workbench: server exposes nothing yet; must render as
+    "under development" without breaking the workbench.
+12. Live updates: =features.streams= is false; nothing to integrate yet.
+13. Bookmarks/recent objects, investigation context.
+
+* Principles honored going forward
+
+- Server-authoritative; client stores references only.
+- Capability-gated: missing features render as unavailable, never crash.
+- No scraping/actor logic in Emacs; the workbench is a cockpit.
+- No heavy frameworks: tabulated-list, buttons, text properties, soft
+  =transient= and =org= dependencies only.

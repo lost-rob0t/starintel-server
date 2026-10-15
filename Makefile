@@ -25,7 +25,7 @@ integration-test:
 	nix run .#star-integration-tests
 
 test-emacs:
-	$(EMACS) -Q --batch -L . -l client-test.el -f ert-run-tests-batch-and-exit
+	$(EMACS) -Q --batch -L . -l client-test.el -l starintel-workbench-test.el -f ert-run-tests-batch-and-exit
 
 ACTOR_FLAKE ?= ../starintel-pro-actors
 
