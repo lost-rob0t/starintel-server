@@ -86,6 +86,10 @@
  (:class qlot/source/github:source-github
   :initargs (:repos "atlas-engineer/nhooks" :ref nil :branch nil :tag nil)
   :version "github-3847bc749a6f6eb1103bc21f8ef3b4f6b301e822"))
+("Lisa" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "youngde811/Lisa" :ref nil :branch nil :tag nil)
+  :version "github-ae3715d74548e451bb08b432c5d25ec93e2a02c1"))
 ("cms-ulid" .
  (:class qlot/source/git:source-git
   :initargs (:remote-url "https://gitlab.com/colinstrickland/cms-ulid.git")

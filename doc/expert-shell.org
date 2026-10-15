@@ -1,0 +1,133 @@
+#+title: StarIntel Lisa Expert Shell
+#+author: StarIntel
+
+* Purpose
+
+=starintel-expert-shell= is a Common Lisp operator shell that routes common
+StarIntel operations through a Lisa forward-chaining inference engine before
+calling the normal StarIntel HTTP client boundary.
+
+The shell is intentionally not a privileged back door.  Authentication,
+authorization, tenant handling, rate limits, and server-side validation remain
+owned by the existing StarIntel API.
+
+* Model
+
+Each shell session owns its own Lisa inference engine and four useful values:
+
+- a =shell-request= fact parsed from operator input;
+- a =shell-plan= fact inferred by Lisa;
+- a =shell-result= returned by the client boundary;
+- an append-only in-memory trace describing request, rule, risk, and result.
+
+A request is classified as one of three risk levels:
+
+| Risk | Behavior |
+|------+----------|
+| =:read= | Executes immediately |
+| =:write= | Requires explicit confirmation |
+| =:destructive= | Requires explicit confirmation |
+
+The confirmation gate is itself expressed as Lisa rules.  It is not merely a
+check hidden in the command parser.
+
+* Build
+
+With Qlot dependencies installed:
+
+#+begin_src sh
+qlot exec sbcl --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:make :starintel-expert-shell)'
+#+end_src
+
+The ASDF program output is =star-expert=.
+
+The client defaults to =http://127.0.0.1:5000=.  Set =STAR_SERVER_URL= and
+=STAR_API_KEY= or pass =--url= and =--api-key= explicitly.
+
+* Interactive use
+
+#+begin_src sh
+./star-expert
+#+end_src
+
+Example session:
+
+#+begin_example
+star> health
+star> info
+star> doc search "alice smith" --limit 10
+star> target list userhunt
+star> dataset size social-posts
+star> why
+#+end_example
+
+* One-shot use
+
+#+begin_src sh
+./star-expert health
+./star-expert doc get 01HXYZ
+./star-expert doc search "alice smith" --limit 10
+./star-expert --json health
+#+end_src
+
+Mutating operations require =--yes=:
+
+#+begin_src sh
+./star-expert doc submit person '{"name":"Alice"}' --yes
+./star-expert target create userhunt '{"username":"alice"}' --yes
+./star-expert doc delete 01HXYZ --yes
+#+end_src
+
+Without =--yes=, Lisa produces a =:confirmation-required= result and the HTTP
+transport is never invoked.
+
+* Commands
+
+| Command | Inferred operation | Risk |
+|---------+--------------------+------|
+| =health=, =status= | server health | read |
+| =info=, =server info= | server metadata | read |
+| =doc get ID= | fetch document | read |
+| =doc search QUERY= | full-text search | read |
+| =doc submit TYPE JSON= | submit document | write |
+| =doc delete ID= | delete document | destructive |
+| =target list ACTOR= | list actor targets | read |
+| =target get ID= | fetch target document | read |
+| =target create ACTOR JSON= | submit target | write |
+| =dataset size NAME= | dataset size | read |
+| =groups= | message groups/channels | read |
+| =messages user USER= | messages by user | read |
+| =messages platform PLATFORM= | messages by platform | read |
+| =messages group= | grouped messages | read |
+| =social user USER= | social posts by user | read |
+| =raw get PATH= | raw client GET | read |
+| =raw post PATH BODY= | raw client POST | write |
+| =raw put PATH BODY= | raw client PUT | write |
+| =raw delete PATH= | raw client DELETE | destructive |
+
+=raw= is an operator escape hatch but still uses =star.api.client:api-request=
+and therefore the normal StarIntel HTTP boundary.
+
+* Lisp command syntax
+
+Commands may also be written as data-oriented Lisp forms:
+
+#+begin_src lisp
+(doc search "alice smith" :limit 10)
+(target create userhunt "{\"username\":\"alice\"}" :transient :yes)
+#+end_src
+
+These forms are *read as data*.  They are never passed to =eval=, and the
+reader binds =*read-eval*= to =nil= so =#.=-style read-time execution is
+rejected.
+
+* Explanation
+
+After a command, =why= reports the Lisa rule that selected the operation, its
+risk class, the human-readable reason, and the session trace.
+
+The intent is to make this a stable reasoning surface for Quasar and Zara later:
+those front ends can submit the same structured request facts and consume the
+same plans/results without scraping terminal output.
