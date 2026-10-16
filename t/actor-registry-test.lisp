@@ -185,3 +185,79 @@
              (star.authorization:validate-grant-scopes '("actors:read"))))
   (signals star.auth:credential-lifecycle-error
     (star.authorization:validate-grant-scopes '("actors:unknown"))))
+
+(test issued-actor-scope-authorizes-live-discovery-only
+  (let* ((pepper "isolated-actor-discovery-test-pepper")
+         (star:*auth-pepper* pepper)
+         (store (star.auth:make-memory-credential-store))
+         (registry (star.actors::build-actor-registry nil))
+         (observations (make-hash-table :test #'equal))
+         (bindings (make-hash-table :test #'equal))
+         (server nil)
+         (base "http://127.0.0.1:18537"))
+    (multiple-value-bind (admin-record admin-key)
+        (star.auth:create-api-key "test-admin" "administrator" '("admin")
+                                  :store store)
+      (declare (ignore admin-record))
+      (labels ((request (path &key key (method :get) content)
+                 (handler-case
+                     (dexador:request
+                      (concatenate 'string base path)
+                      :method method :content content :keep-alive nil
+                      :headers (append
+                                (when key
+                                  (list (cons "Authorization"
+                                              (format nil "Bearer ~a" key))))
+                                (when content
+                                  '(("Content-Type" . "application/json")))))
+                   (dexador:http-request-failed (condition)
+                     (values (dexador:response-body condition)
+                             (dexador:response-status condition)))))
+               (issue (scope)
+                 (request "/auth/credentials" :key admin-key :method :post
+                          :content (jsown:to-json
+                                    (jsown:new-js
+                                      ("owner" "discovery-test")
+                                      ("principal_type" "api_client")
+                                      ("scopes" (list scope)))))))
+        (unwind-protect
+             (progn
+               (setf server
+                     (clack:clackup
+                      (lambda (env)
+                        ;; Clack workers need these bindings on each request.
+                        (let ((star:*auth-mode* "api-key")
+                              (star:*auth-dev-bypass* nil)
+                              (star:*auth-pepper* pepper)
+                              (star.auth:*credential-store* store)
+                              (star.actors::*actor-registry* registry)
+                              (star.actors::*actor-runtime-observations* observations)
+                              (star.actors::*actor-runtime-bindings* bindings))
+                          (lack.component:call star.frontends.http-api::*server* env)))
+                      :server :hunchentoot :address "127.0.0.1"
+                      :port 18537 :silent t))
+               (multiple-value-bind (body status) (issue "actors:read")
+                 (is (= 201 status))
+                 (when (= 201 status)
+                   (let ((key (jsown:val (jsown:parse body) "api_key")))
+                     (multiple-value-bind (catalog code headers)
+                         (request "/v1/actors" :key key)
+                       (is (= 200 code))
+                       (is (string= "no-store" (gethash "cache-control" headers)))
+                       (is (string= "starintel-actor-registry-v1"
+                                    (jsown:val (jsown:val (jsown:parse catalog) "data")
+                                               "schema"))))
+                     (is (= 403 (nth-value 1
+                                  (request "/new/target/test" :key key :method :post)))))))
+               (multiple-value-bind (body status) (issue "actors:unknown")
+                 (is (= 400 status))
+                 (is (string= "invalid_scope" (jsown:val (jsown:parse body) "code"))))
+               (is (= 401 (nth-value 1 (request "/v1/actors"))))
+               (is (= 401 (nth-value 1 (request "/v1/actors" :key "invalid"))))
+               (multiple-value-bind (body status) (issue "documents:read")
+                 (is (= 201 status))
+                 (when (= 201 status)
+                   (is (= 403 (nth-value 1
+                                (request "/v1/actors"
+                                         :key (jsown:val (jsown:parse body) "api_key"))))))))
+          (when server (clack:stop server)))))))
