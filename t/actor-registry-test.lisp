@@ -179,3 +179,9 @@
     (is (not (null endpoint)))
     (is (string= "/v1/actors" (jsown:val endpoint "path")))
     (is (equal '("actors:read") (jsown:val endpoint "scopes")))))
+
+(test actor-list-scope-can-be-issued
+  (is (equal '("actors:read")
+             (star.authorization:validate-grant-scopes '("actors:read"))))
+  (signals star.auth:credential-lifecycle-error
+    (star.authorization:validate-grant-scopes '("actors:unknown"))))
