@@ -3,6 +3,29 @@
 (define-condition target-acceptance-store-conflict (error) ()
   (:documentation "Signalled when writing target acceptance state conflicts."))
 
+(defun couchdb-persist-target-document (client database document equivalent-p)
+  "Create the canonical Target for exact-ID reads; accept only equivalent retries."
+  (let* ((candidate
+           (star.documents:ensure-document (clone-outbox-json document)))
+         (id (star.documents:document-id candidate)))
+    (unless (star.documents:object-has-key-p candidate "tenant_id")
+      (setf (jsown:val candidate "tenant_id")
+            (or (star:tenant-adaptation-for
+                 (star.documents:document-value candidate "dataset"))
+                "default")))
+    (star.documents:validate-stored-document candidate)
+    (handler-case
+        (progn
+          (cl-couch:create-document client database (jsown:to-json candidate))
+          candidate)
+      (dexador:http-request-conflict ()
+        (let ((existing
+                (jsown:with-injective-reader
+                  (jsown:parse (cl-couch:get-document client database id)))))
+          (unless (funcall equivalent-p existing candidate)
+            (error 'target-acceptance-store-conflict))
+          existing)))))
+
 (defun couchdb-load-target-acceptance (client database acceptance-id)
   "Load the acceptance state for a target."
   (handler-case

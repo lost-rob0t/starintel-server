@@ -86,6 +86,18 @@ empty collections are retained. Unsupported values fail closed."
         (error 'invalid-target-dispatch
                :reason "canonical target cannot be serialized as JSON")))))
 
+(defun target-document-equivalent-p (left right)
+  "Compare canonical Target content without CouchDB revision metadata."
+  (handler-case
+      (let ((left-wire (star.documents:canonical-wire-document left))
+            (right-wire (star.documents:canonical-wire-document right)))
+        (dolist (wire (list left-wire right-wire))
+          (when (star.documents:object-has-key-p wire "rev")
+            (jsown:remkey wire "rev")))
+        (string= (canonical-target-json left-wire)
+                 (canonical-target-json right-wire)))
+    (error () nil)))
+
 (defun target-fingerprint-canonical-document-p (document)
   "Canonical intent must not fall back to legacy after a field is removed."
   (or (star.documents:object-has-key-p document "id")
