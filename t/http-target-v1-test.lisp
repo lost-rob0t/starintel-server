@@ -463,6 +463,176 @@
       (is (string= "0.10.1"
                    (jsown:val (jsown:val stored "target_document") "schemaVersion"))))))
 
+(test accepted-canonical-target-is-persisted-for-exact-id-read
+  (let* ((request (make-v1-target-request :idempotency-key "readback-key"))
+         (document (star.frontends.http-api::target-v1-document-from-request
+                    request "human:alice"))
+         (record (star.actors:parse-target-record document))
+         (acceptance nil)
+         (stored-target nil)
+         (reader (make-policy-principal
+                  "target-reader"
+                  '("documents:read" "tenant:default" "dataset:star-intel"
+                    "actor:subfinder")))
+         (other-tenant (make-policy-principal
+                        "other-tenant"
+                        '("documents:read" "tenant:other" "dataset:star-intel"
+                          "actor:subfinder")))
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal)))
+    (is (eq :accepted
+            (star.actors::target-dispatch-outcome-status
+             (star.actors:accept-target-record
+              record
+              :destination (star.actors::make-target-destination-handle
+                            :rabbit "subfinder"
+                            :routing-key "documents.target.dispatch.subfinder")
+              :persist-fn (lambda (desired equivalent-p)
+                            (declare (ignore equivalent-p))
+                            (setf acceptance desired)
+                            (values acceptance :created))
+              :persist-target-fn (lambda (target)
+                                   (setf stored-target target))
+              :update-fn (lambda (id updater)
+                           (is (equal id (jsown:val acceptance "_id")))
+                           (setf acceptance (funcall updater acceptance)))
+              :schedule-once-fn (lambda (&rest args) (declare (ignore args)))))))
+    (is (equal (jsown:val document "id")
+               (jsown:val stored-target "id")))
+    (is (equal (jsown:val stored-target "id")
+               (jsown:val (star.authorization:authorized-fetch-document
+                           (jsown:val document "id")
+                           (lambda (id)
+                             (is (equal id (jsown:val stored-target "id")))
+                             stored-target)
+                           :principal reader) "id")))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorized-fetch-document
+       (jsown:val document "id") (lambda (id) (declare (ignore id)) stored-target)
+       :principal other-tenant))))
+
+(test duplicate-target-readback-uses-original-accepted-document
+  (let* ((original (star.frontends.http-api::target-v1-document-from-request
+                    (make-v1-target-request :idempotency-key "retry-readback")
+                    "human:alice"))
+         (retry (star.documents:clone-document-object original))
+         (destination (star.actors::make-target-destination-handle
+                       :rabbit "subfinder"
+                       :routing-key "documents.target.dispatch.subfinder"))
+         (envelope (star.actors:make-target-dispatch-envelope
+                    (star.actors:parse-target-record original)
+                    :destination destination))
+         (acceptance (star.actors:target-acceptance-document envelope))
+         (stored-target nil))
+    (setf (jsown:val retry "updatedAt") (+ 10 (jsown:val original "updatedAt"))
+          (jsown:val acceptance "status") "scheduled")
+    (is (eq :duplicate
+            (star.actors::target-dispatch-outcome-status
+             (star.actors::process-target-dispatch-envelope
+              (star.actors:make-target-dispatch-envelope
+               (star.actors:parse-target-record retry) :destination destination)
+              (lambda (desired equivalent-p)
+                (is (funcall equivalent-p acceptance desired))
+                (values acceptance :duplicate))
+              (lambda (&rest args) (declare (ignore args))
+                (error "Duplicate must not update acceptance"))
+              :persist-target-fn (lambda (target) (setf stored-target target))
+              :schedule-once-fn (lambda (&rest args) (declare (ignore args))
+                                  (error "Duplicate must not schedule"))))))
+    (is (= (jsown:val original "updatedAt")
+           (jsown:val stored-target "updatedAt")))))
+
+(test canonical-target-readback-conflict-checks-content
+  (let* ((target (star.frontends.http-api::target-v1-document-from-request
+                  (make-v1-target-request :idempotency-key "content-conflict")
+                  "human:alice"))
+         (stored (star.documents:clone-document-object target))
+         (changed (star.documents:clone-document-object target)))
+    (setf (jsown:val stored "_id") (jsown:val target "id")
+          (jsown:val stored "_rev") "1-test"
+          (jsown:val changed "updatedAt") (+ 1 (jsown:val target "updatedAt")))
+    (is (star.actors::target-document-equivalent-p stored target))
+    (is (not (star.actors::target-document-equivalent-p stored changed)))))
+
+(test cold-recovery-restores-only-the-remaining-one-shot-delay
+  (let* ((document (star.frontends.http-api::target-v1-document-from-request
+                    (make-v1-target-request :idempotency-key "restart-delay"
+                                            :delay 10)
+                    "human:alice"))
+         (envelope (star.actors:make-target-dispatch-envelope
+                    (star.actors:parse-target-record document)
+                    :destination (star.actors::make-target-destination-handle
+                                  :rabbit "subfinder"
+                                  :routing-key "documents.target.dispatch.subfinder")))
+         (acceptance (star.actors:target-acceptance-document envelope))
+         (scheduled-delay nil)
+         (callback nil)
+         (dispatched-id nil)
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal)))
+    (setf (jsown:val acceptance "status") "scheduled"
+          (jsown:val acceptance "delay") 10
+          (jsown:val acceptance "accepted_at") "1970-01-01T00:16:35Z")
+    (flet ((persist (desired equivalent-p)
+             (is (funcall equivalent-p acceptance desired))
+             (values acceptance :duplicate))
+           (update (id updater)
+             (is (equal id (jsown:val acceptance "_id")))
+             (setf acceptance (funcall updater acceptance)))
+           (schedule (id delay thunk)
+             (is (equal id (jsown:val acceptance "schedule_id")))
+             (setf scheduled-delay delay callback thunk)))
+      (is (eq :duplicate
+              (star.actors::target-dispatch-outcome-status
+               (star.actors::process-target-dispatch-envelope
+                envelope #'persist #'update
+                :recover-schedule-p t
+                :now-unix-fn (lambda () 1000)
+                :dispatch-fn (lambda (occurrence)
+                               (setf dispatched-id
+                                     (star.actors::target-dispatch-envelope-execution-id
+                                      occurrence)))
+                :schedule-once-fn #'schedule))))
+      (is (= 5 scheduled-delay))
+      (funcall callback)
+      (is (equal dispatched-id (jsown:val acceptance "execution_id")))
+      (is (equal "dispatched" (jsown:val acceptance "status")))
+      (let ((star.actors::*active-target-schedules* (make-hash-table :test #'equal)))
+        (setf scheduled-delay nil)
+        (star.actors::process-target-dispatch-envelope
+         envelope #'persist #'update
+         :recover-schedule-p t :now-unix-fn (lambda () 1001)
+         :schedule-once-fn #'schedule)
+        (is (null scheduled-delay))))))
+
+(test cold-recovery-uses-original-accepted-target-after-storage-stamping
+  (let* ((accepted (star.frontends.http-api::target-v1-document-from-request
+                    (make-v1-target-request :idempotency-key "stored-recovery")
+                    "human:alice"))
+         (stored (star.documents:clone-document-object accepted))
+         (envelope (star.actors:make-target-dispatch-envelope
+                    (star.actors:parse-target-record accepted)
+                    :destination (star.actors::make-target-destination-handle
+                                  :rabbit "subfinder"
+                                  :routing-key "documents.target.dispatch.subfinder")))
+         (acceptance (star.actors:target-acceptance-document envelope)))
+    (setf (jsown:val stored "_id") (jsown:val accepted "id")
+          (jsown:val stored "_rev") "1-stored"
+          (jsown:val stored "tenant_id") "default")
+    (let ((recovered (star.actors::accepted-target-recovery-record
+                      (star.actors:parse-target-record stored) acceptance)))
+      (is (null (star.actors::target-record-revision recovered)))
+      (is (star.actors::target-acceptance-equivalent-p
+           acceptance
+           (star.actors:target-acceptance-document
+            (star.actors:make-target-dispatch-envelope
+             recovered
+             :destination (star.actors::make-target-destination-handle
+                           :rabbit "subfinder"
+                           :routing-key "documents.target.dispatch.subfinder"))))))
+    (setf (jsown:val stored "tenant_id") "other")
+    (signals star.actors:invalid-persisted-target
+      (star.actors::accepted-target-recovery-record
+       (star.actors:parse-target-record stored) acceptance))))
+
 (test v1-target-resource-policy-precedes-all-acceptance-effects
   (let* ((star:*auth-mode* "api-key")
          (star:*auth-dev-bypass* nil)

@@ -238,7 +238,38 @@
           (funcall quarantine-fn client database document condition))))
     (values (nreverse records) invalid-count)))
 
-(defun recover-target-record (record)
+(defun accepted-target-recovery-record (record acceptance)
+  "Resume from the accepted wire Target after validating its stored copy."
+  (if (or (null acceptance)
+          (not (star.documents:canonical-document-p
+                (target-record-document record))))
+      record
+      (let* ((stored (target-record-document record))
+             (accepted (star.documents:object-value acceptance "target_document")))
+        (unless (star.documents:canonical-document-p accepted)
+          (error 'invalid-persisted-target
+                 :document-id (target-record-id record)
+                 :reason "acceptance lacks a canonical Target"))
+        (let ((expected-tenant
+                (or (star.documents:object-value accepted "tenant_id" nil)
+                    (star:tenant-adaptation-for
+                     (star.documents:document-value accepted "dataset"))
+                    "default")))
+          (unless (and (equal "_server_target_acceptance"
+                              (star.documents:object-value acceptance "type"))
+                       (equal (target-record-id record)
+                              (star.documents:object-value acceptance "target_id"))
+                       (equal (target-record-schedule-id record)
+                              (star.documents:object-value acceptance "schedule_id"))
+                       (equal expected-tenant
+                              (star.documents:object-value stored "tenant_id"))
+                       (target-document-equivalent-p stored accepted))
+            (error 'invalid-persisted-target
+                   :document-id (target-record-id record)
+                   :reason "stored Target disagrees with its acceptance"))
+          (parse-target-record accepted)))))
+
+(defun recover-target-record (record &key load-acceptance-fn)
   "Recover one record once per persisted revision in this process."
   (let ((fingerprint (target-record-fingerprint record)))
     (cond
@@ -249,7 +280,12 @@
        (handler-case
            (progn
              (submit-target
-              record
+              (accepted-target-recovery-record
+               record
+               (when load-acceptance-fn
+                 (funcall load-acceptance-fn
+                          (target-acceptance-id
+                           (target-record-schedule-id record)))))
               :first-time-p (target-record-recurring-p record)
               :recovered-p t)
              :recovered)
@@ -260,23 +296,30 @@
 (defun recover-persisted-targets
     (&key (database star:*couchdb-default-database*) actors)
   "Recover valid persisted targets after actor startup and before Rabbit ingest."
-  (anypool:with-connection
-      (client star.databases.couchdb:*couchdb-pool*)
-    (multiple-value-bind (records invalid-count)
-        (load-persisted-target-records client database :actors actors)
-      (let ((recovered 0)
-            (duplicates 0)
-            (leased 0))
-        (dolist (record records)
-          (ecase (recover-target-record record)
-            (:recovered (incf recovered))
-            (:duplicate (incf duplicates))
-            (:leased (incf leased))))
-        (list :loaded (length records)
-              :recovered recovered
-              :duplicates duplicates
-              :leased leased
-              :invalid invalid-count)))))
+  (multiple-value-bind (records invalid-count)
+      (anypool:with-connection
+          (client star.databases.couchdb:*couchdb-pool*)
+        (load-persisted-target-records client database :actors actors))
+    (let ((recovered 0)
+          (duplicates 0)
+          (leased 0))
+      (dolist (record records)
+        (ecase (recover-target-record
+                record
+                :load-acceptance-fn
+                (lambda (id)
+                  (anypool:with-connection
+                      (client star.databases.couchdb:*couchdb-pool*)
+                    (star.databases.couchdb:couchdb-load-target-acceptance
+                     client database id))))
+          (:recovered (incf recovered))
+          (:duplicate (incf duplicates))
+          (:leased (incf leased))))
+      (list :loaded (length records)
+            :recovered recovered
+            :duplicates duplicates
+            :leased leased
+            :invalid invalid-count))))
 
 (defun start-target-loader ()
   "Compatibility entry point for explicit recovery."

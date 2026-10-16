@@ -173,7 +173,8 @@
    #:couchdb-load-target-acceptance
    #:couchdb-save-target-acceptance
    #:couchdb-update-target-acceptance
-   #:couchdb-persist-target-acceptance)
+   #:couchdb-persist-target-acceptance
+   #:couchdb-persist-target-document)
   (:documentation "CouchDB persistence and query helpers."))
 
 (uiop:define-package :star.auth

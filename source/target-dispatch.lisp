@@ -450,7 +450,8 @@
    *target-timer* delay delay callback schedule-id))
 
 (defun register-target-schedule
-    (envelope dispatch-fn schedule-once-fn schedule-recurring-fn)
+    (envelope dispatch-fn schedule-once-fn schedule-recurring-fn
+     &key delay after-dispatch-fn)
   "Register one active schedule identity regardless of destination transport."
   (let* ((record (target-dispatch-envelope-record envelope))
          (schedule-id (target-dispatch-envelope-schedule-id envelope)))
@@ -459,12 +460,15 @@
     (let ((callback
             (lambda ()
               (funcall dispatch-fn
-                       (next-target-occurrence-envelope envelope)))))
+                       (if (target-record-recurring-p record)
+                           (next-target-occurrence-envelope envelope)
+                           envelope))
+              (when after-dispatch-fn (funcall after-dispatch-fn)))))
       (if (target-record-recurring-p record)
           (funcall schedule-recurring-fn
                    schedule-id (target-record-delay record) callback)
           (funcall schedule-once-fn
-                   schedule-id (target-record-delay record) callback)))
+                   schedule-id (or delay (target-record-delay record)) callback)))
     (setf (gethash schedule-id *active-target-schedules*) envelope)
     :scheduled))
 
@@ -479,9 +483,36 @@
    (target-acceptance-id
     (target-dispatch-envelope-schedule-id envelope))))
 
+(defun remaining-target-delay (acceptance now-unix)
+  "Seconds until a persisted one-shot Target is due."
+  (let ((accepted-at (jsown:val acceptance "accepted_at"))
+        (delay (jsown:val acceptance "delay")))
+    (unless (and (stringp accepted-at) (integerp delay) (plusp delay))
+      (error 'invalid-target-dispatch
+             :reason "scheduled Target lacks a valid acceptance time or delay"))
+    (let ((due-unix
+            (+ (local-time:timestamp-to-unix
+                (local-time:parse-timestring accepted-at))
+               delay)))
+      (max 0 (min delay (- due-unix now-unix))))))
+
+(defun target-dispatch-complete-fn (update-fn acceptance recurring-p)
+  (lambda ()
+    (funcall update-fn
+             (jsown:val acceptance "_id")
+             (lambda (document)
+               (setf (jsown:val document "status")
+                     (if recurring-p "scheduled" "dispatched")
+                     (jsown:val document "last_dispatch_at")
+                     (star.documents:utc-now))
+               document))))
+
 (defun process-target-dispatch-envelope
     (envelope persist-fn update-fn
      &key
+       persist-target-fn
+       recover-schedule-p
+       (now-unix-fn (lambda () (local-time:timestamp-to-unix (local-time:now))))
        (dispatch-fn #'dispatch-target-envelope-now)
        (schedule-once-fn #'wheel-schedule-target-once)
        (schedule-recurring-fn #'wheel-schedule-target-recurring))
@@ -496,13 +527,29 @@
                :invalid envelope
                :reason "duplicate active schedule identity has different content")))
           (adopt-target-acceptance-metadata envelope acceptance)
+          (when persist-target-fn
+            (funcall persist-target-fn (jsown:val acceptance "target_document")))
           (when (eq disposition :duplicate)
+            (when (and recover-schedule-p
+                       (not (target-record-recurring-p
+                             (target-dispatch-envelope-record envelope)))
+                       (string= "scheduled" (jsown:val acceptance "status")))
+              (register-target-schedule
+               envelope dispatch-fn schedule-once-fn schedule-recurring-fn
+               :delay (remaining-target-delay acceptance (funcall now-unix-fn))
+               :after-dispatch-fn
+               (target-dispatch-complete-fn update-fn acceptance nil)))
             (return-from process-target-dispatch-envelope
               (target-outcome :duplicate envelope)))
           (let ((schedule-result
                   (register-target-schedule
                    envelope dispatch-fn schedule-once-fn
-                   schedule-recurring-fn)))
+                   schedule-recurring-fn
+                   :after-dispatch-fn
+                   (target-dispatch-complete-fn
+                    update-fn acceptance
+                    (target-record-recurring-p
+                     (target-dispatch-envelope-record envelope))))))
             (funcall update-fn
                      (jsown:val acceptance "_id")
                      (lambda (document)
@@ -534,7 +581,8 @@
 
 (defun accept-target-record
     (record &key (attempt 0) trace-id destination
-                 persist-fn update-fn dispatch-fn
+                 persist-fn persist-target-fn update-fn dispatch-fn
+                 recover-schedule-p
                  schedule-once-fn schedule-recurring-fn)
   "Synchronously durably accept a target and return a structured outcome."
   (handler-case
@@ -547,6 +595,8 @@
         (if persist-fn
             (process-target-dispatch-envelope
              envelope persist-fn update-fn
+             :persist-target-fn persist-target-fn
+             :recover-schedule-p recover-schedule-p
              :dispatch-fn (or dispatch-fn #'dispatch-target-envelope-now)
              :schedule-once-fn
              (or schedule-once-fn #'wheel-schedule-target-once)
@@ -564,6 +614,13 @@
                  (star.databases.couchdb:couchdb-update-target-acceptance
                   client star:*couchdb-default-database*
                   acceptance-id updater))
+               :persist-target-fn
+               (lambda (document)
+                 (when (star.documents:canonical-document-p document)
+                   (star.databases.couchdb:couchdb-persist-target-document
+                    client star:*couchdb-default-database* document
+                    #'target-document-equivalent-p)))
+               :recover-schedule-p recover-schedule-p
                :dispatch-fn (or dispatch-fn #'dispatch-target-envelope-now)
                :schedule-once-fn
                (or schedule-once-fn #'wheel-schedule-target-once)
@@ -603,12 +660,13 @@
 
 (defun submit-target (target &key (first-time-p t) (recovered-p nil))
   "Compatibility submission API backed by durable synchronous acceptance."
-  (declare (ignore first-time-p recovered-p))
+  (declare (ignore first-time-p))
   (let* ((record
            (etypecase target
              (target-record target)
              (list (parse-target-record target))))
-         (outcome (accept-target-record record)))
+         (outcome (accept-target-record record
+                                        :recover-schedule-p recovered-p)))
     (case (target-dispatch-outcome-status outcome)
       ((:accepted :duplicate) outcome)
       (:invalid
