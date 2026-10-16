@@ -482,6 +482,7 @@
 (defun process-target-dispatch-envelope
     (envelope persist-fn update-fn
      &key
+       persist-target-fn
        (dispatch-fn #'dispatch-target-envelope-now)
        (schedule-once-fn #'wheel-schedule-target-once)
        (schedule-recurring-fn #'wheel-schedule-target-recurring))
@@ -496,6 +497,8 @@
                :invalid envelope
                :reason "duplicate active schedule identity has different content")))
           (adopt-target-acceptance-metadata envelope acceptance)
+          (when persist-target-fn
+            (funcall persist-target-fn (jsown:val acceptance "target_document")))
           (when (eq disposition :duplicate)
             (return-from process-target-dispatch-envelope
               (target-outcome :duplicate envelope)))
@@ -534,7 +537,7 @@
 
 (defun accept-target-record
     (record &key (attempt 0) trace-id destination
-                 persist-fn update-fn dispatch-fn
+                 persist-fn persist-target-fn update-fn dispatch-fn
                  schedule-once-fn schedule-recurring-fn)
   "Synchronously durably accept a target and return a structured outcome."
   (handler-case
@@ -547,6 +550,7 @@
         (if persist-fn
             (process-target-dispatch-envelope
              envelope persist-fn update-fn
+             :persist-target-fn persist-target-fn
              :dispatch-fn (or dispatch-fn #'dispatch-target-envelope-now)
              :schedule-once-fn
              (or schedule-once-fn #'wheel-schedule-target-once)
@@ -564,6 +568,12 @@
                  (star.databases.couchdb:couchdb-update-target-acceptance
                   client star:*couchdb-default-database*
                   acceptance-id updater))
+               :persist-target-fn
+               (lambda (document)
+                 (when (star.documents:canonical-document-p document)
+                   (star.databases.couchdb:couchdb-persist-target-document
+                    client star:*couchdb-default-database* document
+                    #'target-document-equivalent-p)))
                :dispatch-fn (or dispatch-fn #'dispatch-target-envelope-now)
                :schedule-once-fn
                (or schedule-once-fn #'wheel-schedule-target-once)
