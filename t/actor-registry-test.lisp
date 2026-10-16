@@ -200,6 +200,7 @@
                                   :store store)
       (declare (ignore admin-record))
       (labels ((request (path &key key (method :get) content)
+                 (format t "~&Actor discovery request: ~a ~a~%" method path)
                  (handler-case
                      (dexador:request
                       (concatenate 'string base path)
@@ -225,6 +226,8 @@
                (setf server
                      (clack:clackup
                       (lambda (env)
+                        (format t "~&Actor discovery received: ~a ~a~%"
+                                (getf env :request-method) (getf env :path-info))
                         ;; Clack workers need these bindings on each request.
                         (let ((star:*auth-mode* "api-key")
                               (star:*auth-dev-bypass* nil)
@@ -235,7 +238,19 @@
                               (star.actors::*actor-runtime-bindings* bindings))
                           (lack.component:call star.frontends.http-api::*server* env)))
                       :server :hunchentoot :address "127.0.0.1"
-                      :port 18537 :silent t))
+                      :port 18537 :silent t :debug nil))
+               ;; CLACKUP starts its listener asynchronously. Wait for it before
+               ;; sending the first request, without retrying application failures.
+               (loop repeat 50
+                     when (handler-case
+                              (let ((socket (usocket:socket-connect
+                                             "127.0.0.1" 18537 :timeout 0.2)))
+                                (usocket:socket-close socket)
+                                t)
+                            (usocket:socket-error () nil))
+                       return t
+                     do (sleep 0.1)
+                     finally (error "Actor discovery test listener did not start"))
                (multiple-value-bind (body status) (issue "actors:read")
                  (is (= 201 status))
                  (when (= 201 status)
