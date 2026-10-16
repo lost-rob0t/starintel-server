@@ -22,11 +22,36 @@ service.
 #+begin_quote
 *Do not expose the HTTP API or RabbitMQ directly to the public Internet.*
 
-The HTTP API currently has no authentication or authorization and sends
-=Access-Control-Allow-Origin: *=. Put it behind an authenticated reverse proxy,
-restrict network access, and treat the Lisp init file as trusted executable
-code.
+The HTTP API applies bearer authentication and route-level authorization.
+Restrict network access, configure the credential store and runtime auth secrets,
+and treat the Lisp init file as trusted executable code. Development bypass is
+not an authenticated deployment configuration.
 #+end_quote
+
+** Authenticated actor discovery
+
+With an existing administrator bearer key in =STAR_ADMIN_KEY= and the server URL
+in =STAR_SERVER_URL=, issue a discovery-only credential through the API:
+
+#+begin_src sh
+actor_key=$(curl --fail --silent --show-error \
+  --header "Authorization: Bearer $STAR_ADMIN_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"owner":"actor-discovery","principal_type":"api_client","scopes":["actors:read"]}' \
+  "$STAR_SERVER_URL/auth/credentials" | jq -er '.api_key')
+curl --fail --silent --show-error \
+  --header "Authorization: Bearer $actor_key" \
+  "$STAR_SERVER_URL/v1/actors" | jq
+unset actor_key
+#+end_src
+
+Supply secrets at runtime; do not put bearer keys in checked-in configuration or
+enable shell tracing around these commands. Credential creation requires an
+administrator. Unknown scopes are rejected. =GET /v1/actors= requires
+=actors:read= (or administrator authority): missing/invalid credentials return
+401 and an authenticated caller without that capability receives 403. The safe
+catalog contains manifest metadata and bounded availability; discovery does not
+grant actor invocation or target dispatch authority.
 
 ** Position in the Quasar / StarIntel stack
 

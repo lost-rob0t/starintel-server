@@ -178,6 +178,9 @@ jobs:
 
           echo "Services ready!"
 
+      - name: Run isolated actor registry and authenticated discovery tests
+        run: nix run .#star-actor-registry-tests
+
       - name: Run service-backed integration tests
         env:
           COUCHDB_USER: admin

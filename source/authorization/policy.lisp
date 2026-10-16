@@ -8,6 +8,7 @@
     "documents:bulk"
     "search:read"
     "views:read"
+    "actors:read"
     "targets:read"
     "targets:dispatch"
     "targets:lease"
