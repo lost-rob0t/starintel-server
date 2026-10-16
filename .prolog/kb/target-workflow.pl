@@ -6,3 +6,9 @@ invariant(target_retry_document,
 
 method(target_readback_regression,
        'nix run .#star-unit-tests exercises accepted canonical readback, tenant denial, duplicate original-document reuse, and content conflict.').
+
+invariant(one_shot_target_recovery,
+          'On startup, a persisted scheduled one-shot Target is rearmed for its remaining delay with the accepted execution ID; a dispatched Target is not rearmed.').
+
+invariant(target_recovery_source,
+          'Recovery validates the stored canonical Target against its acceptance, then dispatches the original accepted document so CouchDB revision and tenant stamping do not change the acceptance fingerprint.').
