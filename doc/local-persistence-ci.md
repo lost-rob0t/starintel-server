@@ -26,6 +26,11 @@ The acceptance helper `scripts/ci-local-persistence.py`:
 3. Uses a new labeled CouchDB volume and randomly generated fixture credentials.
    Server credentials use its existing `*_FILE` entry point and trusted init.
    Auth bypass stays false; leases use the existing explicit memory backend.
+   CouchDB single-node setup uses the authenticated
+   [official cluster-setup API](https://docs.couchdb.org/en/stable/api/server/common.html#post--_cluster_setup)
+   and verifies its state. No read-only config mount conflicts with the upstream
+   entry point's ownership initialization. This configures system databases only,
+   never the canonical fixture document.
 4. Waits for actual dependency health and Server `/ready`, bootstraps an API
    credential through `/auth/bootstrap`, and POSTs one synthetic canonical 0.10.1
    Person through `/api/v1/documents`. POST echo is insufficient: it polls the
