@@ -9,9 +9,7 @@ import signal
 import subprocess
 import tempfile
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 COUCH_IMAGE = 'couchdb@sha256:09c35f535e4df3c4dc789aca8ce0b4cfe6e56619edb873a041d35dec68df9e18'
@@ -19,9 +17,10 @@ RABBIT_IMAGE = 'rabbitmq@sha256:36703420d34df0701f441730ef0ee5a28efc27611ca5b4b4
 SERVER_IMAGE = 'starintel/server:0.1.0'
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, request, fp, code, message, headers, newurl):
-        return None
+class HTTPStatusError(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__('HTTP request failed: ' + str(code))
 
 
 def assert_document(actual, expected):
@@ -46,7 +45,6 @@ class Acceptance:
         self.volume = None
         self.secret_values = [secrets.token_urlsafe(32) for _ in range(4)]
         self.couch_password, self.rabbit_password, self.pepper, self.bootstrap = self.secret_values
-        self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
         self.result = {'platform': 'Linux Docker CI; not Android/PRoot',
                        'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                        'stage': 'initialize', 'status': 'running', 'serverHttp': 'not-run',
@@ -61,8 +59,8 @@ class Acceptance:
         self.save()
         print('CI341 stage=' + name, flush=True)
 
-    def docker(self, *args, timeout=40, check=True):
-        result = subprocess.run(['docker', *map(str, args)], capture_output=True, timeout=timeout)
+    def docker(self, *args, timeout=40, check=True, input=None):
+        result = subprocess.run(['docker', *map(str, args)], capture_output=True, timeout=timeout, input=input)
         if check and result.returncode:
             raise RuntimeError('Docker ' + args[0] + ' failed with exit ' + str(result.returncode))
         return result
@@ -83,19 +81,32 @@ class Acceptance:
                     '--env-file', self.env_file(role + '.env', env), *extra, image, timeout=90)
         return name
 
-    def url(self, container, port):
-        address = self.docker('port', container, str(port) + '/tcp').stdout.decode().strip()
-        host, actual_port = address.rsplit(':', 1)
-        if host != '127.0.0.1' or not actual_port.isdigit():
-            raise RuntimeError('service must be published only on loopback')
-        return 'http://' + address
-
-    def request(self, url, method='GET', value=None, headers=None):
-        request = urllib.request.Request(url, method=method,
-            data=json.dumps(value).encode() if value is not None else None,
-            headers={'Content-Type': 'application/json', **(headers or {})})
-        with self.http.open(request, timeout=3) as response:
-            return json.load(response)
+    def request(self, container, port, path, method='GET', value=None, headers=None):
+        # Keep the network internal. Curl speaks actual container-loopback HTTP;
+        # credentials/body stay in stdin, never Docker/curl process arguments.
+        if not path.startswith('/') or path.startswith('//'):
+            raise RuntimeError('HTTP path must be local and relative')
+        lines = ['url = ' + json.dumps('http://127.0.0.1:' + str(port) + path),
+                 'request = ' + json.dumps(method)]
+        for key, item in {'Content-Type': 'application/json', **(headers or {})}.items():
+            if any(ord(char) < 32 or ord(char) == 127 for char in key + item):
+                raise RuntimeError('invalid HTTP header')
+            lines.append('header = ' + json.dumps(key + ': ' + item))
+        if value is not None:
+            lines.append('data = ' + json.dumps(json.dumps(value)))
+        result = self.docker('exec', '-i', container, 'curl', '--disable', '--silent',
+            '--show-error', '--globoff', '--proto', '=http', '--noproxy', '*',
+            '--location', '--max-redirs', '0', '--max-time', '3',
+            '--write-out', '\n%{http_code}', '--config', '-',
+            input=('\n'.join(lines) + '\n').encode(), check=False, timeout=10)
+        body, _, code = result.stdout.rpartition(b'\n')
+        if not code.isdigit() or code == b'000':
+            raise OSError('container-loopback HTTP transport unavailable')
+        if not 200 <= int(code) < 300:
+            raise HTTPStatusError(int(code))
+        if result.returncode:
+            raise OSError('container-loopback curl failed')
+        return json.loads(body)
 
     def wait(self, operation, seconds=60):
         deadline = time.monotonic() + seconds
@@ -104,10 +115,10 @@ class Acceptance:
                 value = operation()
                 if value is not False:
                     return value
-            except urllib.error.HTTPError as error:
+            except HTTPStatusError as error:
                 if error.code not in (404, 429, 500, 502, 503, 504):
                     raise RuntimeError('HTTP authorization/request failed: ' + str(error.code)) from None
-            except (OSError, urllib.error.URLError):
+            except OSError:
                 pass
             if time.monotonic() >= deadline:
                 raise RuntimeError('readiness/persistence deadline exceeded at ' + self.result['stage'])
@@ -170,11 +181,9 @@ class Acceptance:
             single_node.chmod(0o644)
             couch = self.run_container('couchdb', COUCH_IMAGE, {
                 'COUCHDB_USER': 'ci', 'COUCHDB_PASSWORD': self.couch_password,
-                'ERL_FLAGS': '+S 2:2'}, ('--publish', '127.0.0.1::5984',
-                '--mount', 'type=volume,src=' + self.volume + ',dst=/opt/couchdb/data',
+                'ERL_FLAGS': '+S 2:2'}, ('--mount', 'type=volume,src=' + self.volume + ',dst=/opt/couchdb/data',
                 '--mount', 'type=bind,src=' + str(single_node) + ',dst=/opt/couchdb/etc/local.d/50-ci-single.ini,readonly'))
-            couch_url = self.url(couch, 5984)
-            self.wait(lambda: self.request(couch_url + '/_up').get('status') == 'ok')
+            self.wait(lambda: self.request(couch, 5984, '/_up').get('status') == 'ok')
             rabbit = self.run_container('rabbitmq', RABBIT_IMAGE, {
                 'RABBITMQ_DEFAULT_USER': 'ci', 'RABBITMQ_DEFAULT_PASS': self.rabbit_password,
                 'RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS': '+S 2:2'})
@@ -195,12 +204,11 @@ class Acceptance:
                 server_env[key + '_FILE'] = '/run/secrets/' + name
             self.stage('server-readiness')
             server = self.run_container('server', SERVER_IMAGE, server_env,
-                ('--publish', '127.0.0.1::5000', '--mount', 'type=bind,src=' + str(self.private) + ',dst=/run/secrets,readonly'))
-            server_url = self.url(server, 5000)
-            self.wait(lambda: self.request(server_url + '/ready').get('status') == 'ready')
+                ('--mount', 'type=bind,src=' + str(self.private) + ',dst=/run/secrets,readonly'))
+            self.wait(lambda: self.request(server, 5000, '/ready').get('status') == 'ready')
             self.result['imageIds'] = {name.rsplit('-', 1)[-1]: self.docker('inspect', '--format', '{{.Image}}', name).stdout.decode().strip() for name in self.containers}
             self.stage('canonical-http-create-read')
-            response = self.request(server_url + '/auth/bootstrap', 'POST', {'owner': 'ci341-synthetic'},
+            response = self.request(server, 5000, '/auth/bootstrap', 'POST', {'owner': 'ci341-synthetic'},
                                      {'X-Star-Bootstrap-Secret': self.bootstrap})
             token = response['api_key']
             if not isinstance(token, str) or not token.startswith('star_sk_v1_'):
@@ -209,10 +217,10 @@ class Acceptance:
             headers = {'Authorization': 'Bearer ' + token}
             fixture = {'id': 'ci341:' + secrets.token_hex(12), 'dataset': 'ci341-synthetic',
                        'dtype': 'person', 'schemaVersion': '0.10.1', 'fname': 'Synthetic CI fixture'}
-            assert_document(self.request(server_url + '/api/v1/documents', 'POST', fixture, headers), fixture)
+            assert_document(self.request(server, 5000, '/api/v1/documents', 'POST', fixture, headers), fixture)
             path = '/api/v1/documents/' + urllib.parse.quote(fixture['id'], safe='')
             def readback():
-                actual = self.request(server_url + path, headers=headers)
+                actual = self.request(server, 5000, path, headers=headers)
                 assert_document(actual, fixture)
                 return actual
             before = self.wait(readback, seconds=45)
@@ -223,9 +231,9 @@ class Acceptance:
             if exit_code not in (b'0', b'143'):
                 raise RuntimeError('server did not stop gracefully')
             self.docker('restart', '--time', '20', couch)
-            self.wait(lambda: self.request(couch_url + '/_up').get('status') == 'ok')
+            self.wait(lambda: self.request(couch, 5984, '/_up').get('status') == 'ok')
             self.docker('start', server)
-            self.wait(lambda: self.request(server_url + '/ready').get('status') == 'ready')
+            self.wait(lambda: self.request(server, 5000, '/ready').get('status') == 'ready')
             if readback() != before:
                 raise RuntimeError('restart changed canonical document/revision')
             self.result['restartReadback'] = 'passed'
@@ -245,6 +253,7 @@ class Acceptance:
                 raise
             finally:
                 self.save()
+                print(json.dumps(self.result), flush=True)
 
 
 def main():
