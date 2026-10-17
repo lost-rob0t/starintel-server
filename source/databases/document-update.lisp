@@ -204,7 +204,7 @@ fields remain controlled by persistence."
    :reason (document-update-validation-reason condition)))
 
 (defun upsert-document-update
-    (load-fn save-fn document-id patch &key (max-attempts 8))
+    (load-fn save-fn document-id patch &key (max-attempts 8) create-only)
   "Create or update DOCUMENT-ID with immutable, bounded optimistic retries.
 
 LOAD-FN receives DOCUMENT-ID and returns the latest document or NIL. SAVE-FN
@@ -216,6 +216,11 @@ when its CouchDB revision loses a compare-and-swap race."
     (loop for attempt from 1 to max-attempts
           do
              (let ((existing (funcall load-fn document-id)))
+               ;; Recheck inside every CAS attempt, including a lost insert race.
+               (when (and create-only existing)
+                 (return (make-document-update-outcome
+                          :precondition-failed :attempts attempt
+                          :code "document_exists")))
                (multiple-value-bind (candidate preparation-error)
                    (prepare-document-update-candidate
                     document-id existing immutable-patch)
@@ -257,7 +262,7 @@ when its CouchDB revision loses a compare-and-swap race."
                             "optimistic concurrency retry budget exhausted")))))))))))
 
 (defun couchdb-upsert-document-update
-    (client database document-id patch &key (max-attempts 8))
+    (client database document-id patch &key (max-attempts 8) create-only)
   "CouchDB adapter for UPSERT-DOCUMENT-UPDATE."
   (upsert-document-update
    (lambda (id)
@@ -269,7 +274,7 @@ when its CouchDB revision loses a compare-and-swap race."
          (error 'document-update-store-conflict))))
    document-id
    patch
-   :max-attempts max-attempts))
+   :max-attempts max-attempts :create-only create-only))
 
 (defun document-update-outcome-json (outcome)
   "Serialize a document update outcome to JSON."

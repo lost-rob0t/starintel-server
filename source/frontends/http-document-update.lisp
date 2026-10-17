@@ -12,7 +12,21 @@
        "Route parameter id is required"))
     document-id))
 
+(defun request-document-create-only-p ()
+  "Accept only the supported If-None-Match wildcard; never silently ignore it."
+  (let ((value (request-header-value
+                (lack.request:request-headers *request*) "If-None-Match")))
+    (cond ((null value) nil)
+          ((string= value "*") t)
+          (t (signal-http-input-error 400 "unsupported_write_precondition"
+                                      "Only If-None-Match: * is supported")))))
+
 (defun document-update-response (outcome)
+  (when (eq :precondition-failed
+            (star.databases.couchdb:document-update-outcome-status outcome))
+    (setf (lack.response:response-status *response*) 412)
+    (return-from document-update-response
+      (status-msg "Document already exists" 'error :code "document_exists")))
   (if (eq :validation-failed
           (star.databases.couchdb:document-update-outcome-status outcome))
       (progn

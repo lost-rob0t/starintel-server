@@ -275,7 +275,7 @@ Apply an update to persisted target acceptance state.
 #+begin_src lisp
 (couchdb-upsert-document-update (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
  STAR.DATABASES.COUCHDB::DOCUMENT-ID STAR.DATABASES.COUCHDB::PATCH &KEY
- (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8) STAR.DATABASES.COUCHDB::CREATE-ONLY))
 #+end_src
 CouchDB adapter for UPSERT-DOCUMENT-UPDATE.
 *** couchdb-view-request-body
@@ -1064,7 +1064,7 @@ Update a quarantine record in place.
 #+begin_src lisp
 (upsert-document-update (STAR.DATABASES.COUCHDB::LOAD-FN STAR.DATABASES.COUCHDB::SAVE-FN
  STAR.DATABASES.COUCHDB::DOCUMENT-ID STAR.DATABASES.COUCHDB::PATCH &KEY
- (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8) STAR.DATABASES.COUCHDB::CREATE-ONLY))
 #+end_src
 Create or update DOCUMENT-ID with immutable, bounded optimistic retries.
 
