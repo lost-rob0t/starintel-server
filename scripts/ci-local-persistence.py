@@ -3,6 +3,8 @@
 import argparse
 import base64
 import contextlib
+import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -50,8 +52,10 @@ def redacted(data, values, limit=262144):
 
 
 class Acceptance:
-    def __init__(self, evidence, private):
+    def __init__(self, evidence, private, fec_probe=None, fec_python=None):
         self.evidence, self.private = evidence, private
+        self.fec_probe, self.fec_python = fec_probe, fec_python
+        self.status_name = 'fec-harness.json' if fec_probe else 'persistence.json'
         self.prefix = 'ci341-' + secrets.token_hex(6)
         self.containers = []
         self.network = None
@@ -61,11 +65,17 @@ class Acceptance:
         self.result = {'platform': 'Linux Docker CI; not Android/PRoot',
                        'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                        'stage': 'initialize', 'status': 'running', 'serverHttp': 'not-run',
-                       'restartReadback': 'not-run', 'actor': 'not-run (subsequent existing unit step)'}
+                       'restartReadback': 'not-run', 'actor': 'not-run (subsequent existing unit step)', 'fecProbe': 'not-run'}
+        candidate = os.environ.get('CI341_SERVER_SOURCE')
+        if candidate:
+            actual = subprocess.check_output(['git', '-C', candidate, 'rev-parse', 'HEAD'], text=True).strip()
+            if actual != os.environ.get('CI341_SERVER_COMMIT'):
+                raise RuntimeError('Server candidate checkout mismatch')
+            self.result['serverSource'] = actual
         self.save()
 
     def save(self):
-        (self.evidence / 'persistence.json').write_text(json.dumps(self.result, indent=2) + '\n')
+        (self.evidence / self.status_name).write_text(json.dumps(self.result, indent=2) + '\n')
 
     def stage(self, name):
         self.result['stage'] = name
@@ -200,6 +210,57 @@ class Acceptance:
             if errors:
                 raise RuntimeError('; '.join(errors))
 
+    def run_fec_probe(self, server, rabbit):
+        self.stage('unchanged-synthetic-fec-probe')
+        self.result['fecProbe'] = 'failed'
+        # The runner accesses only addresses assigned on this owned internal
+        # bridge. No service ports or remote listeners are published.
+        def address(container):
+            networks = json.loads(self.docker('inspect', '--format', '{{json .NetworkSettings.Networks}}', container).stdout)
+            value = networks[self.network]['IPAddress']
+            if not ipaddress.ip_address(value).is_private:
+                raise RuntimeError('probe address must be on the private owned network')
+            return value
+        actor_root = self.fec_probe.parents[2]
+        actor_commit = subprocess.check_output(['git', '-C', actor_root, 'rev-parse', 'HEAD'], text=True).strip()
+        if actor_commit != os.environ.get('CI341_PRO_ACTORS_COMMIT'):
+            raise RuntimeError('FEC probe checkout mismatch')
+        probe_hash = hashlib.sha256(self.fec_probe.read_bytes()).hexdigest()
+        proof = self.evidence / 'fec-canonical-server-proof.json'
+        environment = {key: os.environ[key] for key in ('LANG', 'LC_ALL', 'LC_CTYPE') if key in os.environ}
+        environment.update(
+            PATH=str(self.fec_python.parent) + os.pathsep + os.defpath,
+            PYTHONDONTWRITEBYTECODE='1', STAR_SERVER_URL='http://' + address(server) + ':5000',
+            RABBITMQ_HOST=address(rabbit), RABBITMQ_PORT='5672', RABBITMQ_VHOST='/',
+            RABBITMQ_USER='ci', RABBITMQ_PASSWORD=self.rabbit_password,
+            STAR_AUTH_BOOTSTRAP_SECRET=self.bootstrap,
+            STAR_SERVER_COMMIT=self.result.get('serverSource', self.result['source']),
+            STAR_PRO_ACTORS_COMMIT=actor_commit, STAR_FEC_CANONICAL_PROOF_PATH=str(proof))
+        # Provider paths/keys and fixture overrides are deliberately absent.
+        completed = subprocess.run([str(self.fec_python), str(self.fec_probe)],
+            cwd=actor_root / 'python', env=environment, capture_output=True, timeout=180)
+        (self.evidence / 'fec-probe.log').write_bytes(redacted(completed.stdout + completed.stderr, self.secret_values))
+        if not proof.is_file() or proof.stat().st_size > 262144:
+            proof.unlink(missing_ok=True)
+            raise RuntimeError('FEC probe did not emit bounded proof')
+        value = json.loads(proof.read_text())
+        self.result['fecProof'] = {'outcome': value.get('outcome'), 'failure': value.get('failure'),
+            'phases': value.get('phases'), 'serverCommit': value.get('serverCommit'),
+            'probeCommit': value.get('probeCommit'), 'probeSha256': probe_hash,
+            'publisherConfirms': value.get('publisherConfirms')}
+        if (completed.returncode or value.get('outcome') != 'passed'
+                or value.get('serverCommit') != environment['STAR_SERVER_COMMIT']
+                or value.get('probeCommit') != actor_commit
+                or value.get('providerPathRequested') is not False
+                or value.get('publisherConfirms') != 3
+                or value.get('freshOutputAbsenceChecks') != 3
+                or value.get('cliSubmission', {}).get('status') != 'passed'
+                or 'fec-completed-job-replay-no-extra-effects' not in value.get('phases', [])):
+            raise RuntimeError('unchanged strict synthetic FEC probe failed; inspect bounded proof')
+        self.result['fecProbe'] = 'passed'
+        self.result['status'] = 'passed'
+        self.stage('fec-probe-complete')
+
     def run(self, archive):
         try:
             self.stage('load-existing-server-image')
@@ -246,6 +307,10 @@ class Acceptance:
                 ('--mount', 'type=bind,src=' + str(self.private) + ',dst=/run/secrets,readonly'))
             self.wait(lambda: self.request(server, 5000, '/ready').get('status') == 'ready')
             self.result['imageIds'] = {name.rsplit('-', 1)[-1]: self.docker('inspect', '--format', '{{.Image}}', name).stdout.decode().strip() for name in self.containers}
+            if self.fec_probe:
+                self.run_fec_probe(server, rabbit)
+                return
+            self.result['serverHttp'] = 'failed'
             self.stage('canonical-http-create-read')
             response = self.request(server, 5000, '/auth/bootstrap', 'POST', {'owner': 'ci341-synthetic'},
                                      {'X-Star-Bootstrap-Secret': self.bootstrap})
@@ -314,11 +379,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image-archive', type=Path, required=True)
     parser.add_argument('--evidence', type=Path, required=True)
+    parser.add_argument('--fec-probe', type=Path)
+    parser.add_argument('--fec-python', type=Path)
     args = parser.parse_args()
+    if bool(args.fec_probe) != bool(args.fec_python):
+        parser.error('--fec-probe and --fec-python must be supplied together')
     os.umask(0o077)
     args.evidence.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='ci341-private-') as private:
-        Acceptance(args.evidence, Path(private)).run(args.image_archive.resolve())
+        Acceptance(args.evidence.resolve(), Path(private),
+                   args.fec_probe.resolve() if args.fec_probe else None,
+                   args.fec_python.absolute() if args.fec_python else None).run(args.image_archive.resolve())
 
 
 if __name__ == '__main__':
