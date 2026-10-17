@@ -59,7 +59,7 @@ class HelperContracts(unittest.TestCase):
         fixture = {'id': 'ci341:x', 'dataset': 'ci341-synthetic', 'dtype': 'person',
                    'schemaVersion': '0.10.1', 'fname': 'Synthetic CI fixture'}
         self.helper.assert_document(fixture | {'rev': '1-test'}, fixture)
-        for bad in (fixture | {'fname': 'changed'}, fixture | {'_id': 'legacy'},
+        for bad in (fixture | {'fname': 'changed'}, fixture | {'_id': 'legacy'}, fixture | {'extensions': {}},
                     {k: v for k, v in fixture.items() if k != 'fname'}, [fixture]):
             with self.assertRaises(RuntimeError): self.helper.assert_document(bad, fixture)
 
