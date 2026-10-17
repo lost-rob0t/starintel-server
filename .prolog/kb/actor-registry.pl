@@ -11,5 +11,8 @@ invariant(actor_registry_liveness_separation,
 invariant(actor_registry_safe_projection,
           'GET /v1/actors exposes semantic identity, contracts, capabilities, provenance, and bounded liveness; it never exposes actor references, queues, routing keys, endpoints, or secrets.').
 
+invariant(actor_registry_read_scope_issuance,
+          'The actors:read route grant must be present in the closed capability vocabulary so a credential can be issued for discovery.').
+
 method(actor_registry_focused_gate,
        'Run nix run .#star-actor-registry-tests for the isolated actor registry, liveness, authorization, and HTTP contract suite.').

@@ -510,6 +510,32 @@
     (is-false (jsown:keyp wire "tenant_id"))
     (is (string= "legacy:values" (jsown:val wire "_id")))))
 
+(test create-only-existing-document-never-merges-or-saves
+  (let* ((existing (star.documents:ensure-document (v0101-person)))
+         (before (jsown:to-json existing))
+         (outcome (star.databases.couchdb:upsert-document-update
+                   (lambda (id) (declare (ignore id)) existing)
+                   (lambda (document) (declare (ignore document)) (error "must not write"))
+                   "canonical:person" (jsown:new-js ("fname" "Different"))
+                   :create-only t)))
+    (is (eq :precondition-failed (star.databases.couchdb:document-update-outcome-status outcome)))
+    (is (string= before (jsown:to-json existing)))))
+
+(test create-only-lost-insert-race-does-not-update-winner
+  (let ((loads 0) (saves 0))
+    (let ((outcome (star.databases.couchdb:upsert-document-update
+                    (lambda (id)
+                      (declare (ignore id))
+                      (incf loads)
+                      (when (> loads 1) (star.documents:ensure-document (v0101-person))))
+                    (lambda (document)
+                      (declare (ignore document))
+                      (incf saves)
+                      (error 'star.databases.couchdb:document-update-store-conflict))
+                    "canonical:person" (v0101-person) :create-only t)))
+      (is (eq :precondition-failed (star.databases.couchdb:document-update-outcome-status outcome)))
+      (is (= 1 saves))
+      (is (= 2 loads)))))
 
 (defun extension-presence-document (kind &optional (id "canonical:extensions"))
   (let ((document (star.documents:ensure-document (v0101-person id))))
