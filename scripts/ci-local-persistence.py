@@ -2,6 +2,7 @@
 """Synthetic Linux CI acceptance; does not establish Android/PRoot support."""
 import argparse
 import base64
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 COUCH_IMAGE = 'couchdb@sha256:09c35f535e4df3c4dc789aca8ce0b4cfe6e56619edb873a041d35dec68df9e18'
 RABBIT_IMAGE = 'rabbitmq@sha256:36703420d34df0701f441730ef0ee5a28efc27611ca5b4b48a2bf6571c9b2854'
 SERVER_IMAGE = 'starintel/server:0.1.0'
+
+
+@contextlib.contextmanager
+def defer_termination():
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
 
 class HTTPStatusError(RuntimeError):
@@ -86,7 +96,7 @@ class Acceptance:
     def request(self, container, port, path, method='GET', value=None, headers=None, host='127.0.0.1'):
         # Keep the network internal. Curl speaks actual container-loopback HTTP;
         # credentials/body stay in stdin, never Docker/curl process arguments.
-        if host not in ('127.0.0.1', 'couchdb'):
+        if host not in ('127.0.0.1', 'couchdb', 'rabbitmq'):
             raise RuntimeError('HTTP host must be the owned local service')
         if not path.startswith('/') or path.startswith('//'):
             raise RuntimeError('HTTP path must be local and relative')
@@ -142,8 +152,13 @@ class Acceptance:
             raise RuntimeError('CouchDB single-node setup was not confirmed')
 
     def diagnostics(self):
+        self.result['containerStates'] = {}
         for container in self.containers:
             try:
+                state = self.docker('inspect', '--format', '{{json .State}}', container, check=False, timeout=10)
+                if state.returncode == 0:
+                    value = json.loads(state.stdout)
+                    self.result['containerStates'][container.rsplit('-', 1)[-1]] = {key: value.get(key) for key in ('Status', 'ExitCode', 'OOMKilled')}
                 logs = self.docker('logs', '--tail', '1000', container, check=False, timeout=10)
                 (self.evidence / (container.rsplit('-', 1)[-1] + '.log')).write_bytes(
                     redacted(logs.stdout + logs.stderr, self.secret_values))
@@ -164,23 +179,24 @@ class Acceptance:
         self.docker(*command, timeout=15)
 
     def cleanup(self):
-        errors = []
-        for container in reversed(self.containers):
-            try:
-                self.remove_owned('container', container)
-            except (OSError, RuntimeError, subprocess.TimeoutExpired):
-                errors.append('container cleanup failed')
-        self.containers.clear()
-        for kind in ('volume', 'network'):
-            name = getattr(self, kind)
-            if name:
+        with defer_termination():
+            errors = []
+            for container in reversed(self.containers):
                 try:
-                    self.remove_owned(kind, name)
+                    self.remove_owned('container', container)
                 except (OSError, RuntimeError, subprocess.TimeoutExpired):
-                    errors.append(kind + ' cleanup failed')
-                setattr(self, kind, None)
-        if errors:
-            raise RuntimeError('; '.join(errors))
+                    errors.append('container cleanup failed')
+            self.containers.clear()
+            for kind in ('volume', 'network'):
+                name = getattr(self, kind)
+                if name:
+                    try:
+                        self.remove_owned(kind, name)
+                    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                        errors.append(kind + ' cleanup failed')
+                    setattr(self, kind, None)
+            if errors:
+                raise RuntimeError('; '.join(errors))
 
     def run(self, archive):
         try:
@@ -206,8 +222,10 @@ class Acceptance:
                 'RABBITMQ_DEFAULT_USER': 'ci', 'RABBITMQ_DEFAULT_PASS': self.rabbit_password,
                 'RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS': '+S 2:2'})
             self.stage('rabbitmq-readiness')
-            self.wait(lambda: self.docker('exec', rabbit, 'rabbitmq-diagnostics', '-q', 'ping',
-                                         check=False, timeout=10).returncode == 0)
+            encoded = base64.b64encode(('ci:' + self.rabbit_password).encode()).decode()
+            self.secret_values.append(encoded)
+            self.wait(lambda: self.request(probe, 15672, '/api/health/checks/ready-to-serve-clients',
+                headers={'Authorization': 'Basic ' + encoded}, host='rabbitmq').get('status') == 'ok')
             for name, value in zip(('couchdb_password', 'rabbitmq_password', 'auth_pepper', 'auth_bootstrap_secret'), self.secret_values):
                 path = self.private / name
                 path.write_text(value + '\n')
@@ -263,16 +281,29 @@ class Acceptance:
             self.result['failure'] = redacted(str(error).encode(), self.secret_values, 1000).decode('utf-8', 'replace')
             raise
         finally:
+            self.finish()
+
+    def finish(self):
+        try:
             self.diagnostics()
-            try:
-                self.cleanup()
-            except BaseException:
-                self.result['status'] = 'failed'
-                self.result['cleanup'] = 'failed'
-                raise
-            finally:
-                self.save()
-                print(json.dumps(self.result), flush=True)
+        except BaseException:
+            self.result['status'] = 'failed'
+            self.result['diagnostics'] = 'interrupted or failed'
+            raise
+        finally:
+            with defer_termination():
+                try:
+                    self.cleanup()
+                except BaseException:
+                    self.result['status'] = 'failed'
+                    self.result['cleanup'] = 'failed'
+                    raise
+                finally:
+                    if signal.sigpending() & {signal.SIGINT, signal.SIGTERM}:
+                        self.result['status'] = 'failed'
+                        self.result['cancellation'] = 'deferred until owned cleanup completed'
+                    self.save()
+                    print(json.dumps(self.result), flush=True)
 
 
 def main():

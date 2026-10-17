@@ -117,6 +117,46 @@ class HelperContracts(unittest.TestCase):
             runner.cleanup()
             runner.docker.assert_not_called()
 
+    def test_interrupted_diagnostics_still_runs_cleanup(self):
+        import tempfile
+        from unittest import mock
+        for mode in ('blocked-run', 'completed-run'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                runner = self.helper.Acceptance(Path(tmp), Path(tmp))
+                runner.docker = mock.Mock(side_effect=RuntimeError('synthetic blocked stage'))
+                runner.diagnostics = mock.Mock(side_effect=KeyboardInterrupt())
+                runner.cleanup = mock.Mock()
+                runner.result['status'] = 'passed'
+                with mock.patch('builtins.print'):
+                    with self.assertRaises(KeyboardInterrupt):
+                        if mode == 'blocked-run': runner.run(Path(tmp) / 'synthetic.tar')
+                        else: runner.finish()
+                runner.cleanup.assert_called_once()
+                self.assertEqual(runner.result['status'], 'failed')
+
+    def test_termination_is_deferred_until_all_owned_cleanup_attempts(self):
+        import os, signal, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = self.helper.Acceptance(Path(tmp), Path(tmp))
+            runner.containers = ['owned-a', 'owned-b']
+            runner.volume, runner.network = 'owned-data', 'owned-network'
+            calls = []
+            def remove(kind, name):
+                calls.append((kind, name))
+                if len(calls) == 1: os.kill(os.getpid(), signal.SIGTERM)
+            runner.remove_owned = remove
+            runner.diagnostics = mock.Mock()
+            runner.result['status'] = 'passed'
+            previous = signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+            try:
+                with mock.patch('builtins.print'):
+                    with self.assertRaises(KeyboardInterrupt): runner.finish()
+                self.assertEqual(runner.result['status'], 'failed')
+                self.assertEqual(calls, [('container', 'owned-b'), ('container', 'owned-a'),
+                                         ('volume', 'owned-data'), ('network', 'owned-network')])
+            finally: signal.signal(signal.SIGTERM, previous)
+
     def test_successful_cleanup_uses_only_owned_names(self):
         import subprocess
         import tempfile
