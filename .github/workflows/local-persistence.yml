@@ -38,13 +38,6 @@ jobs:
           ref: ${{ env.CI341_SERVER_COMMIT }}
           path: ci341-server-source
           persist-credentials: false
-      - name: Checkout maintained FEC probe without modifying its repository
-        uses: actions/checkout@v4
-        with:
-          repository: lost-rob0t/starintel-pro-actors
-          ref: ${{ env.CI341_PRO_ACTORS_COMMIT }}
-          path: ci341-proactors
-          persist-credentials: false
       - name: Record exact source and initial evidence
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -52,7 +45,6 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(git -C ci341-server-source rev-parse HEAD)" = "$CI341_SERVER_COMMIT"
-          test "$(git -C ci341-proactors rev-parse HEAD)" = "$CI341_PRO_ACTORS_COMMIT"
           mkdir -p "$RUNNER_TEMP/ci341-evidence"
           printf '{"source":"%s","platform":"Linux x86_64 CI; not Android","stage":"preflight","status":"running"}\n' "$EXPECTED_SHA" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
       - name: Install Nix using the existing supported setup
@@ -93,23 +85,6 @@ jobs:
           printf '{"stage":"server-build","exitCode":%s,"status":"%s"}\n' "$status" "$([ "$status" = 0 ] && echo passed || echo failed)" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
           tail -n 80 "$RUNNER_TEMP/ci341-evidence/build.log"
           exit "$status"
-      - name: Build the existing isolated FEC wheel and its pinned runtime
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check build packaging
-          python3 ci341-proactors/ci/fec_package_boundary.py --root "$GITHUB_WORKSPACE/ci341-proactors" --stage "$RUNNER_TEMP/ci341-fec-source"
-          python3 -m build "$RUNNER_TEMP/ci341-fec-source" --outdir "$RUNNER_TEMP/ci341-fec-dist"
-          python3 ci341-proactors/ci/fec_package_boundary.py --root "$GITHUB_WORKSPACE/ci341-proactors" --artifacts "$RUNNER_TEMP/ci341-fec-dist" > "$RUNNER_TEMP/ci341-evidence/fec-archive-proof.json"
-          python3 -m venv "$RUNNER_TEMP/ci341-fec-runtime"
-          "$RUNNER_TEMP/ci341-fec-runtime/bin/python" -m pip install --disable-pip-version-check "$RUNNER_TEMP"/ci341-fec-dist/*.whl
-          cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/ci341-fec-runtime/bin/python" "$GITHUB_WORKSPACE/ci341-proactors/ci/fec_package_boundary.py" --root "$GITHUB_WORKSPACE/ci341-proactors" --installed --require-dependency-origins > "$RUNNER_TEMP/ci341-evidence/fec-package-proof.json"
-      - name: Unchanged strict synthetic FEC persisted-readback prerequisite
-        timeout-minutes: 5
-        run: |
-          python3 scripts/ci-local-persistence.py --image-archive "$RUNNER_TEMP/ci341-server-image" --evidence "$RUNNER_TEMP/ci341-evidence" --fec-probe "$GITHUB_WORKSPACE/ci341-proactors/python/tests/fec_canonical_server_probe.py" --fec-python "$RUNNER_TEMP/ci341-fec-runtime/bin/python"
       - name: Real canonical HTTP create/read and server plus CouchDB restart
         timeout-minutes: 7
         run: python3 scripts/ci-local-persistence.py --image-archive "$RUNNER_TEMP/ci341-server-image" --evidence "$RUNNER_TEMP/ci341-evidence"
@@ -125,6 +100,10 @@ jobs:
           printf '{"stage":"existing-sento-unit-suite","exitCode":%s,"storage":"injected unit storage; not Android or service-backed actor conformance"}\n' "$status" > "$RUNNER_TEMP/ci341-evidence/actor-status.json"
           tail -n 80 "$RUNNER_TEMP/ci341-evidence/actor-unit.log"
           exit "$status"
+      - name: Preserve blocked FEC prerequisite after independent Server proof
+        run: |
+          echo '::error::FEC acceptance BLOCKED: this repository-scoped runner token cannot read private lost-rob0t/starintel-pro-actors (checkout returned Repository not found). No retry, private-source copying, or merge. Run the unchanged probe in its own authorized repository against Server c8ac745a before clearing PR331 hold.'
+          exit 1
       - name: Record terminal job status without credentials
         if: always()
         env:
