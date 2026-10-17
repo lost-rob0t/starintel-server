@@ -80,6 +80,20 @@ class HelperContracts(unittest.TestCase):
             with self.assertRaises(self.helper.HTTPStatusError): runner.request('owned-server', 5000, '/ready')
             with self.assertRaises(RuntimeError): runner.request('owned-server', 5000, '//other/path')
 
+    def test_single_node_setup_is_operational_and_confirmed(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = self.helper.Acceptance(Path(tmp), Path(tmp))
+            runner.request = mock.Mock(side_effect=[{'state': 'cluster_enabled'}, {'ok': True}, {'state': 'single_node_enabled'}])
+            runner.configure_couchdb('owned-probe')
+            self.assertEqual(runner.request.call_args_list[1].args[:4], ('owned-probe', 5984, '/_cluster_setup', 'POST'))
+            runner.request = mock.Mock(return_value={'state': 'single_node_enabled'})
+            runner.configure_couchdb('owned-probe')
+            self.assertTrue(all(len(c.args) == 3 for c in runner.request.call_args_list), 'configured node must not be rewritten')
+            runner.request = mock.Mock(return_value={'state': 'cluster_disabled'})
+            with self.assertRaises(RuntimeError): runner.configure_couchdb('owned-probe')
+
     def test_sanitized_evidence_is_bounded_and_removes_credentials(self):
         secret = 'synthetic-secret-value'
         result = self.helper.redacted((secret * 1000).encode(), [secret], limit=80)

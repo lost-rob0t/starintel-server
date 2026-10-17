@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic Linux CI acceptance; does not establish Android/PRoot support."""
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -127,6 +128,19 @@ class Acceptance:
                 raise RuntimeError('readiness/persistence deadline exceeded at ' + self.result['stage'])
             time.sleep(1)
 
+    def configure_couchdb(self, probe):
+        encoded = base64.b64encode(('ci:' + self.couch_password).encode()).decode()
+        self.secret_values.append(encoded)
+        auth = {'Authorization': 'Basic ' + encoded}
+        state = self.request(probe, 5984, '/_cluster_setup', headers=auth, host='couchdb')
+        if state.get('state') != 'single_node_enabled':
+            self.request(probe, 5984, '/_cluster_setup', 'POST',
+                         {'action': 'enable_single_node', 'bind_address': '0.0.0.0',
+                          'username': 'ci', 'password': self.couch_password}, auth, host='couchdb')
+        state = self.request(probe, 5984, '/_cluster_setup', headers=auth, host='couchdb')
+        if state.get('state') != 'single_node_enabled':
+            raise RuntimeError('CouchDB single-node setup was not confirmed')
+
     def diagnostics(self):
         for container in self.containers:
             try:
@@ -179,16 +193,15 @@ class Acceptance:
             self.volume = self.prefix + '-data'
             self.docker('volume', 'create', '--label', 'ci341.run=' + self.prefix, self.volume)
             self.stage('real-dependency-readiness')
-            single_node = self.private / 'single-node.ini'
-            single_node.write_text('[couchdb]\nsingle_node = true\n[cluster]\nn = 1\n')
-            single_node.chmod(0o644)
             couch = self.run_container('couchdb', COUCH_IMAGE, {
                 'COUCHDB_USER': 'ci', 'COUCHDB_PASSWORD': self.couch_password,
-                'ERL_FLAGS': '+S 2:2'}, ('--mount', 'type=volume,src=' + self.volume + ',dst=/opt/couchdb/data',
-                '--mount', 'type=bind,src=' + str(single_node) + ',dst=/opt/couchdb/etc/local.d/50-ci-single.ini,readonly'))
+                'ERL_FLAGS': '+S 2:2'},
+                ('--mount', 'type=volume,src=' + self.volume + ',dst=/opt/couchdb/data'))
             probe = self.run_container('probe', SERVER_IMAGE, {}, ('--entrypoint', '/bin/sleep'), ('600',))
             self.stage('couchdb-readiness')
             self.wait(lambda: self.request(probe, 5984, '/_up', host='couchdb').get('status') == 'ok')
+            self.stage('couchdb-single-node-setup')
+            self.configure_couchdb(probe)
             rabbit = self.run_container('rabbitmq', RABBIT_IMAGE, {
                 'RABBITMQ_DEFAULT_USER': 'ci', 'RABBITMQ_DEFAULT_PASS': self.rabbit_password,
                 'RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS': '+S 2:2'})
