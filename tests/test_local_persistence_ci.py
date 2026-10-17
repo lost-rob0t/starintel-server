@@ -63,6 +63,23 @@ class HelperContracts(unittest.TestCase):
                     {k: v for k, v in fixture.items() if k != 'fname'}, [fixture]):
             with self.assertRaises(RuntimeError): self.helper.assert_document(bad, fixture)
 
+    def test_internal_http_uses_stdin_and_rejects_redirects(self):
+        import subprocess
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = self.helper.Acceptance(Path(tmp), Path(tmp))
+            runner.docker = mock.Mock(return_value=subprocess.CompletedProcess([], 0, b'{"status":"ready"}\n200', b''))
+            self.assertEqual(runner.request('owned-server', 5000, '/ready', headers={'Authorization': 'Bearer unit-fixture-token'}), {'status': 'ready'})
+            args, kwargs = runner.docker.call_args
+            self.assertEqual(args[:5], ('exec', '-i', 'owned-server', 'curl', '--disable'))
+            self.assertNotIn('unit-fixture-token', ' '.join(args))
+            self.assertIn(b'Bearer unit-fixture-token', kwargs['input'])
+            self.assertIn('--max-redirs', args)
+            runner.docker.return_value = subprocess.CompletedProcess([], 47, b'{}\n302', b'')
+            with self.assertRaises(self.helper.HTTPStatusError): runner.request('owned-server', 5000, '/ready')
+            with self.assertRaises(RuntimeError): runner.request('owned-server', 5000, '//other/path')
+
     def test_sanitized_evidence_is_bounded_and_removes_credentials(self):
         secret = 'synthetic-secret-value'
         result = self.helper.redacted((secret * 1000).encode(), [secret], limit=80)
