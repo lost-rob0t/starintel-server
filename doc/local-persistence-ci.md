@@ -1,0 +1,93 @@
+# Bounded Linux Server persistence acceptance (#341)
+
+`.github/workflows/local-persistence.yml` is one Linux job that reuses the existing
+pinned `.#default` server and `.#star-server-image` derivation. It is an authorized
+GitHub-hosted execution path, with no changes to the restricted development
+machine's proxy, TLS, or denied dependency requests. It does not implement the
+remaining Debian installer and is not Android, PRoot, emulator, or device proof.
+
+The job has a 35-minute overall deadline, one build worker/two cores, no matrix,
+no schedule, per-step deadlines, cancellation of superseded runs, and one-day
+retention for small text/JSON artifacts. It neither deploys nor publishes images.
+It does not read repository or production secrets. Build output and actor output
+retain at most 1 MiB each; sanitized container logs retain 256 KiB per component.
+The Nix image archives and private credential directory are never uploaded.
+
+The acceptance helper `scripts/ci-local-persistence.py`:
+
+1. Loads the existing Server image after the supported Nix build succeeds.
+2. Starts upstream CouchDB and RabbitMQ at the same immutable image digests used
+   by `nix/images.nix`. The dedicated Docker network is internal. Only CouchDB
+   readiness and Server HTTP are published, on ephemeral **127.0.0.1** ports.
+   Each container has two CPUs, 1 GiB RAM, a 512-PID ceiling, and bounded logs.
+3. Uses a new labeled CouchDB volume and randomly generated fixture credentials.
+   Server credentials use its existing `*_FILE` entry point and trusted init.
+   Auth bypass stays false; leases use the existing explicit memory backend.
+4. Waits for actual dependency health and Server `/ready`, bootstraps an API
+   credential through `/auth/bootstrap`, and POSTs one synthetic canonical 0.10.1
+   Person through `/api/v1/documents`. POST echo is insufficient: it polls the
+   authenticated Server GET until the persisted canonical fields match exactly,
+   allowing only the server revision field. No fixture document is inserted
+   directly into CouchDB.
+5. Gracefully stops Server, restarts CouchDB against the same volume, starts the
+   same Server container, and reads the same document with the original API key.
+   Readback must equal the pre-restart document and revision.
+6. Captures bounded logs with generated credentials redacted, then removes only
+   resources whose `ci341.run` ownership label matches this run. Failure stages
+   are retained in `persistence.json`; a definition or contract-test pass is not
+   a Server acceptance pass.
+
+Only after persistence succeeds does CI run the existing `star-unit-tests` and
+require a nonempty passing `COUCHDB-ACTOR-TESTS` suite. This is real Sento mailbox
+unit execution with injected storage functions; it is not an additional
+service-backed actor conformance claim or all-language proof. A failed build,
+missing suite, skipped stage, timeout, billing failure, or permissions failure
+must be reported as such. Do not retry broad runs to hide a blocker.
+
+## Invocation and evidence
+
+A PR touching the exact CI files triggers the job. `workflow_dispatch` also works
+once the workflow exists on the default branch. To run the acceptance locally
+in an authorized Linux Docker/Nix environment, using disposable CI resources:
+
+```sh
+nix build .#star-server-image --out-link /tmp/ci341-server-image
+python3 scripts/ci-local-persistence.py \
+  --image-archive /tmp/ci341-server-image --evidence /tmp/ci341-evidence
+```
+
+This is a test invocation, not an Android install/bootstrap command. Inspect
+`persistence.json`, `build-status.json`, `actor-status.json` when present, and
+`job-status.json`. Missing persistence/actor files mean those stages did not run.
+GitHub scheduler/billing errors may prevent all steps and artifacts; use the
+check-run annotations in that case. Record the exact head and actual executed
+stages before claiming success.
+
+## CI-only routing
+
+The five older workflows retain their jobs and production-change behavior. Their
+PR triggers ignore **only the exact** new helper/workflow/test/docs paths and the
+five workflow configuration files validated by this job. This avoids starting
+native unit, search, image publication, docs, and schema jobs merely to validate
+this CI-only slice. There are no `source/**`, `scripts/**`, `.github/**`, or general
+`tests/**` exclusions. A mixed PR touching any production file triggers the older
+gates normally. The new job runs actionlint and contracts covering these routing
+changes. Push behavior is unchanged; no merge is authorized by issue #341.
+
+## Preflight and present limits
+
+Baseline: `54a5f65f0fb3ecc286da6fe426213f015a255562`. Active schema preflight:
+StarIntel 0.10.1, StarLang `96d26c338078676ec1dc6928755901636c9f7ef0`.
+Independent issue votes: reality IMPLEMENT; ownership NARROW; research NARROW;
+verification NARROW; YAGNI NARROW. Intersection: this CI coverage slice only.
+Research consulted:
+`starintel-auto-research/roam/research/starintel-android/STARINTEL-ANDROID-RESEARCH-001-abcl-starlang-field-runtime.org`
+(pending research, not native Android design approval).
+
+Local contract RED identified the absent bounded workflow/routing. Local contract
+GREEN proves only wiring, canonical comparison, redaction, and ownership-safe
+cleanup with test doubles. A real Server behavior RED is not claimed until the
+new acceptance actually executes after healthy dependencies. Existing native
+ECL port #318, canonical-ingest #319 and their held PRs remain separate. The
+Debian/PRoot installer, exact dependency closure, and actual Android execution
+remain open under #341 regardless of Linux CI outcome.
