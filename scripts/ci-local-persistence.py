@@ -36,7 +36,9 @@ class HTTPStatusError(RuntimeError):
 
 def assert_document(actual, expected):
     if not isinstance(actual, dict) or set(actual) - set(expected) - {'rev'}:
-        raise RuntimeError('readback is not the canonical fixture plus optional revision')
+        raise RuntimeError('readback is not the canonical fixture plus optional revision; response type=' +
+                           type(actual).__name__ + '; unexpected keys=' +
+                           repr(sorted(set(actual) - set(expected) - {'rev'}) if isinstance(actual, dict) else []))
     if {key: actual.get(key) for key in expected} != expected:
         raise RuntimeError('canonical fixture identity/content changed')
 
@@ -254,7 +256,9 @@ class Acceptance:
             headers = {'Authorization': 'Bearer ' + token}
             fixture = {'id': 'ci341:' + secrets.token_hex(12), 'dataset': 'ci341-synthetic',
                        'dtype': 'person', 'schemaVersion': '0.10.1', 'fname': 'Synthetic CI fixture'}
+            self.stage('canonical-http-post-echo')
             assert_document(self.request(server, 5000, '/api/v1/documents', 'POST', fixture, headers), fixture)
+            self.stage('canonical-http-persisted-get')
             path = '/api/v1/documents/' + urllib.parse.quote(fixture['id'], safe='')
             def readback():
                 actual = self.request(server, 5000, path, headers=headers)
