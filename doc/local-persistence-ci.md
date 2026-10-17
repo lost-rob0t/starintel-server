@@ -22,6 +22,9 @@ The acceptance helper `scripts/ci-local-persistence.py`:
    (the pinned CouchDB base removes curl); Server HTTP is probed on its own
    container loopback via `docker exec` and curl; **no ports are published**. Credential headers/body travel on stdin,
    with curlrc/proxies/globbing and redirects disabled.
+   RabbitMQ readiness uses its authenticated
+   [ready-to-serve-clients API](https://www.rabbitmq.com/docs/http-api-reference#get-apihealthchecksready-to-serve-clients),
+   checking service readiness, an AMQP listener, and the connection limit.
    Each container has two CPUs, 1 GiB RAM, a 512-PID ceiling, and bounded logs.
 3. Uses a new labeled CouchDB volume and randomly generated fixture credentials.
    Server credentials use its existing `*_FILE` entry point and trusted init.
@@ -42,7 +45,10 @@ The acceptance helper `scripts/ci-local-persistence.py`:
    Readback must equal the pre-restart document and revision.
 6. Captures bounded logs with generated credentials redacted, then removes only
    resources whose `ci341.run` ownership label matches this run. Failure stages
-   are retained in `persistence.json`; a definition or contract-test pass is not
+   are retained in `persistence.json`, including container state/OOM metadata;
+   interrupted diagnostics cannot bypass teardown. INT/TERM are deferred until
+   all bounded owned-resource removals and evidence writes complete. Pending
+   cancellation marks acceptance failed, then propagates; a definition or contract-test pass is not
    a Server acceptance pass.
 
 Only after persistence succeeds does CI run the existing `star-unit-tests` and
