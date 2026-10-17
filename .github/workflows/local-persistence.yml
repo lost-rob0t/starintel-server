@@ -1,0 +1,131 @@
+name: Bounded Linux Server persistence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/local-persistence.yml'
+      - 'scripts/ci-local-persistence.py'
+      - 'tests/test_local_persistence_ci.py'
+      - 'doc/local-persistence-ci.md'
+      - 'doc/testing.md'
+      - '.github/workflows/smoke-tests.yml'
+      - '.github/workflows/docker.yml'
+      - '.github/workflows/doc-coverage.yml'
+      - '.github/workflows/starintel-schema-lock.yml'
+      - '.github/workflows/operational-salvage.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: local-persistence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  canonical-persistence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CI341_SERVER_COMMIT: c8ac745a6a6c14f33a083a607c556bf08c65220b
+      CI341_PRO_ACTORS_COMMIT: 6095facbc005caa1251e86936ce2a1339499f195
+      CI341_SERVER_SOURCE: ${{ github.workspace }}/ci341-server-source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Checkout the exact refreshed Server prerequisite
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/starintel-server
+          ref: ${{ env.CI341_SERVER_COMMIT }}
+          path: ci341-server-source
+          persist-credentials: false
+      - name: Record exact source and initial evidence
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git -C ci341-server-source rev-parse HEAD)" = "$CI341_SERVER_COMMIT"
+          mkdir -p "$RUNNER_TEMP/ci341-evidence"
+          printf '{"source":"%s","platform":"Linux x86_64 CI; not Android","stage":"preflight","status":"running"}\n' "$EXPECTED_SHA" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
+      - name: Install Nix using the existing supported setup
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = 1
+            cores = 2
+            max-substitution-jobs = 4
+            connect-timeout = 15
+      - name: Verify official dependency channel and immutable schema
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --fail --silent --show-error --max-time 20 --connect-timeout 10 --retry 0 https://cache.nixos.org/nix-cache-info > "$RUNNER_TEMP/ci341-evidence/nix-cache-info.txt"
+          python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
+          python3 scripts/check-starintel-dependency-lock.py
+      - name: Validate workflow contracts
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+          python3 -m unittest discover -s tests -p test_local_persistence_ci.py -v
+          nix shell --inputs-from . nixpkgs#actionlint --command actionlint
+      - name: Build the existing server and its existing runtime image
+        timeout-minutes: 23
+        shell: bash
+        run: |
+          set -uo pipefail
+          printf '{"stage":"server-build","status":"running"}\n' > "$RUNNER_TEMP/ci341-evidence/build-status.json"
+          timeout --signal=TERM --kill-after=30 22m bash -euo pipefail <<'BUILD' 2>&1 | tail -c 1048576 > "$RUNNER_TEMP/ci341-evidence/build.log"
+            cd "$CI341_SERVER_SOURCE"
+            nix build .#default --out-link "$RUNNER_TEMP/ci341-server" --print-build-logs
+            nix build .#star-server-image --out-link "$RUNNER_TEMP/ci341-server-image" --print-build-logs
+          BUILD
+          status=${PIPESTATUS[0]}
+          printf '{"stage":"server-build","exitCode":%s,"status":"%s"}\n' "$status" "$([ "$status" = 0 ] && echo passed || echo failed)" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
+          tail -n 80 "$RUNNER_TEMP/ci341-evidence/build.log"
+          exit "$status"
+      - name: Real canonical HTTP create/read and server plus CouchDB restart
+        timeout-minutes: 7
+        run: python3 scripts/ci-local-persistence.py --image-archive "$RUNNER_TEMP/ci341-server-image" --evidence "$RUNNER_TEMP/ci341-evidence"
+      - name: Existing real Sento unit roundtrips after persistence
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd "$CI341_SERVER_SOURCE"
+          timeout --signal=TERM --kill-after=15 4m nix run .#star-unit-tests 2>&1 | tail -c 1048576 > "$RUNNER_TEMP/ci341-evidence/actor-unit.log"
+          status=${PIPESTATUS[0]}
+          grep -E '^SUITE .*COUCHDB-ACTOR-TESTS.*discovered=[1-9][0-9]* executed=[1-9][0-9]* passed=[1-9][0-9]* failed=0 skipped=0$' "$RUNNER_TEMP/ci341-evidence/actor-unit.log" || status=1
+          printf '{"stage":"existing-sento-unit-suite","exitCode":%s,"storage":"injected unit storage; not Android or service-backed actor conformance"}\n' "$status" > "$RUNNER_TEMP/ci341-evidence/actor-status.json"
+          tail -n 80 "$RUNNER_TEMP/ci341-evidence/actor-unit.log"
+          exit "$status"
+      - name: Preserve blocked FEC prerequisite after independent Server proof
+        run: |
+          echo '::error::FEC acceptance BLOCKED: this repository-scoped runner token cannot read private lost-rob0t/starintel-pro-actors (checkout returned Repository not found). No retry, private-source copying, or merge. Run the unchanged probe in its own authorized repository against Server c8ac745a before clearing PR331 hold.'
+          exit 1
+      - name: Record terminal job status without credentials
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          TESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'ci341-evidence'
+          root.mkdir(exist_ok=True)
+          (root / 'job-status.json').write_text(json.dumps({
+              'source': os.environ['TESTED_HEAD'], 'job': os.environ['JOB_STATUS'],
+              'platform': 'Linux CI, not Android',
+              'persistence': 'see persistence.json if executed; otherwise not-run',
+              'actor': 'see actor-status.json if executed; otherwise not-run'}) + '\n')
+          PYTHON
+      - name: Upload bounded sanitized evidence (one day)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci341-linux-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/ci341-evidence/
+          if-no-files-found: error
+          retention-days: 1
