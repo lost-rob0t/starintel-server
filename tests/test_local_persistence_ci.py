@@ -38,6 +38,21 @@ class CoverageContract(unittest.TestCase):
         upload = next(s for s in job['steps'] if 'upload-artifact' in s.get('uses', ''))
         self.assertEqual(upload['with']['retention-days'], 1)
 
+    def test_stack_builds_exact_prerequisite_and_runs_existing_synthetic_probe_first(self):
+        workflow = self.load(CI_FILES[0])
+        job = workflow['jobs']['canonical-persistence']
+        self.assertEqual(job['env']['CI341_SERVER_COMMIT'], 'c8ac745a6a6c14f33a083a607c556bf08c65220b')
+        self.assertEqual(job['env']['CI341_PRO_ACTORS_COMMIT'], '6095facbc005caa1251e86936ce2a1339499f195')
+        steps = job['steps']
+        names = [step.get('name', '') for step in steps]
+        fec = names.index('Unchanged strict synthetic FEC persisted-readback prerequisite')
+        persistence = names.index('Real canonical HTTP create/read and server plus CouchDB restart')
+        self.assertLess(fec, persistence)
+        self.assertNotIn('if', steps[fec])
+        self.assertIn('fec_canonical_server_probe.py', steps[fec]['run'])
+        build = next(step['run'] for step in steps if step.get('name') == 'Build the existing server and its existing runtime image')
+        self.assertIn('cd "$CI341_SERVER_SOURCE"', build)
+
     def test_only_exact_ci_files_excluded_from_old_pr_workflows(self):
         for path in CI_FILES[5:]:
             with self.subTest(path=path):
@@ -62,6 +77,50 @@ class HelperContracts(unittest.TestCase):
         for bad in (fixture | {'fname': 'changed'}, fixture | {'_id': 'legacy'}, fixture | {'extensions': {}},
                     {k: v for k, v in fixture.items() if k != 'fname'}, [fixture]):
             with self.assertRaises(RuntimeError): self.helper.assert_document(bad, fixture)
+
+    def test_unchanged_fec_probe_is_synthetic_exact_and_strict(self):
+        import json, os, subprocess, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            probe = root / 'python/tests/fec_canonical_server_probe.py'
+            probe.parent.mkdir(parents=True)
+            probe.write_text('# unchanged probe fixture\n')
+            runner = self.helper.Acceptance(root, root, probe, root / 'venv/bin/python')
+            runner.network = 'owned-network'
+            runner.docker = mock.Mock(return_value=subprocess.CompletedProcess([], 0,
+                b'{"owned-network":{"IPAddress":"172.20.0.2"}}', b''))
+            candidate, actor = 'a' * 40, 'b' * 40
+            runner.result['serverSource'] = candidate
+            def execute(command, **kwargs):
+                environment = kwargs['env']
+                self.assertEqual(command, [str(runner.fec_python), str(probe)])
+                self.assertEqual(environment['STAR_SERVER_COMMIT'], candidate)
+                self.assertEqual(environment['STAR_PRO_ACTORS_COMMIT'], actor)
+                self.assertEqual(environment['STAR_SERVER_URL'], 'http://172.20.0.2:5000')
+                self.assertFalse(set(environment) & {'FEC_PROVIDER_DOCUMENTS', 'FEC_PROVIDER_PROOF',
+                    'FEC_API_KEY', 'STARINTEL_PROBE_FIXTURE', 'HTTPS_PROXY'})
+                self.assertNotIn(runner.bootstrap, ' '.join(command))
+                proof = {'outcome': 'passed', 'serverCommit': candidate, 'probeCommit': actor,
+                    'providerPathRequested': False, 'publisherConfirms': 3,
+                    'freshOutputAbsenceChecks': 3, 'cliSubmission': {'status': 'passed'},
+                    'phases': ['fec-completed-job-replay-no-extra-effects']}
+                (root / 'fec-canonical-server-proof.json').write_text(json.dumps(proof))
+                return subprocess.CompletedProcess(command, 0, b'safe synthetic proof', b'')
+            with mock.patch.dict(os.environ, {'CI341_PRO_ACTORS_COMMIT': actor,
+                    'FEC_PROVIDER_DOCUMENTS': '/must-not-read', 'FEC_API_KEY': 'must-not-use',
+                    'STARINTEL_PROBE_FIXTURE': 'must-not-use'}), \
+                 mock.patch.object(self.helper.subprocess, 'check_output', return_value=actor), \
+                 mock.patch.object(self.helper.subprocess, 'run', side_effect=execute), \
+                 mock.patch('builtins.print'):
+                runner.run_fec_probe('owned-server', 'owned-rabbit')
+                self.assertEqual(runner.result['fecProbe'], 'passed')
+                self.assertEqual(runner.result['fecProof']['probeCommit'], actor)
+                # A failed actual probe never passes on a fabricated success file.
+                with mock.patch.object(self.helper.subprocess, 'run', return_value=
+                        subprocess.CompletedProcess([], 1, b'', b'')):
+                    with self.assertRaises(RuntimeError): runner.run_fec_probe('owned-server', 'owned-rabbit')
+                self.assertEqual(runner.result['fecProbe'], 'failed')
 
     def test_internal_http_uses_stdin_and_rejects_redirects(self):
         import subprocess

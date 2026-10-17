@@ -22,10 +22,28 @@ jobs:
   canonical-persistence:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      CI341_SERVER_COMMIT: c8ac745a6a6c14f33a083a607c556bf08c65220b
+      CI341_PRO_ACTORS_COMMIT: 6095facbc005caa1251e86936ce2a1339499f195
+      CI341_SERVER_SOURCE: ${{ github.workspace }}/ci341-server-source
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Checkout the exact refreshed Server prerequisite
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/starintel-server
+          ref: ${{ env.CI341_SERVER_COMMIT }}
+          path: ci341-server-source
+          persist-credentials: false
+      - name: Checkout maintained FEC probe without modifying its repository
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/starintel-pro-actors
+          ref: ${{ env.CI341_PRO_ACTORS_COMMIT }}
+          path: ci341-proactors
           persist-credentials: false
       - name: Record exact source and initial evidence
         env:
@@ -33,6 +51,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git -C ci341-server-source rev-parse HEAD)" = "$CI341_SERVER_COMMIT"
+          test "$(git -C ci341-proactors rev-parse HEAD)" = "$CI341_PRO_ACTORS_COMMIT"
           mkdir -p "$RUNNER_TEMP/ci341-evidence"
           printf '{"source":"%s","platform":"Linux x86_64 CI; not Android","stage":"preflight","status":"running"}\n' "$EXPECTED_SHA" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
       - name: Install Nix using the existing supported setup
@@ -65,6 +85,7 @@ jobs:
           set -uo pipefail
           printf '{"stage":"server-build","status":"running"}\n' > "$RUNNER_TEMP/ci341-evidence/build-status.json"
           timeout --signal=TERM --kill-after=30 22m bash -euo pipefail <<'BUILD' 2>&1 | tail -c 1048576 > "$RUNNER_TEMP/ci341-evidence/build.log"
+            cd "$CI341_SERVER_SOURCE"
             nix build .#default --out-link "$RUNNER_TEMP/ci341-server" --print-build-logs
             nix build .#star-server-image --out-link "$RUNNER_TEMP/ci341-server-image" --print-build-logs
           BUILD
@@ -72,6 +93,23 @@ jobs:
           printf '{"stage":"server-build","exitCode":%s,"status":"%s"}\n' "$status" "$([ "$status" = 0 ] && echo passed || echo failed)" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
           tail -n 80 "$RUNNER_TEMP/ci341-evidence/build.log"
           exit "$status"
+      - name: Build the existing isolated FEC wheel and its pinned runtime
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check build packaging
+          python3 ci341-proactors/ci/fec_package_boundary.py --root "$GITHUB_WORKSPACE/ci341-proactors" --stage "$RUNNER_TEMP/ci341-fec-source"
+          python3 -m build "$RUNNER_TEMP/ci341-fec-source" --outdir "$RUNNER_TEMP/ci341-fec-dist"
+          python3 ci341-proactors/ci/fec_package_boundary.py --root "$GITHUB_WORKSPACE/ci341-proactors" --artifacts "$RUNNER_TEMP/ci341-fec-dist" > "$RUNNER_TEMP/ci341-evidence/fec-archive-proof.json"
+          python3 -m venv "$RUNNER_TEMP/ci341-fec-runtime"
+          "$RUNNER_TEMP/ci341-fec-runtime/bin/python" -m pip install --disable-pip-version-check "$RUNNER_TEMP"/ci341-fec-dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/ci341-fec-runtime/bin/python" "$GITHUB_WORKSPACE/ci341-proactors/ci/fec_package_boundary.py" --root "$GITHUB_WORKSPACE/ci341-proactors" --installed --require-dependency-origins > "$RUNNER_TEMP/ci341-evidence/fec-package-proof.json"
+      - name: Unchanged strict synthetic FEC persisted-readback prerequisite
+        timeout-minutes: 5
+        run: |
+          python3 scripts/ci-local-persistence.py --image-archive "$RUNNER_TEMP/ci341-server-image" --evidence "$RUNNER_TEMP/ci341-evidence" --fec-probe "$GITHUB_WORKSPACE/ci341-proactors/python/tests/fec_canonical_server_probe.py" --fec-python "$RUNNER_TEMP/ci341-fec-runtime/bin/python"
       - name: Real canonical HTTP create/read and server plus CouchDB restart
         timeout-minutes: 7
         run: python3 scripts/ci-local-persistence.py --image-archive "$RUNNER_TEMP/ci341-server-image" --evidence "$RUNNER_TEMP/ci341-evidence"
@@ -80,6 +118,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          cd "$CI341_SERVER_SOURCE"
           timeout --signal=TERM --kill-after=15 4m nix run .#star-unit-tests 2>&1 | tail -c 1048576 > "$RUNNER_TEMP/ci341-evidence/actor-unit.log"
           status=${PIPESTATUS[0]}
           grep -E '^SUITE .*COUCHDB-ACTOR-TESTS.*discovered=[1-9][0-9]* executed=[1-9][0-9]* passed=[1-9][0-9]* failed=0 skipped=0$' "$RUNNER_TEMP/ci341-evidence/actor-unit.log" || status=1
