@@ -4,6 +4,17 @@ on:
   push:
     branches: [master]
   pull_request:
+    paths-ignore:
+      - '.github/workflows/local-persistence.yml'
+      - 'scripts/ci-local-persistence.py'
+      - 'tests/test_local_persistence_ci.py'
+      - 'doc/local-persistence-ci.md'
+      - 'doc/testing.md'
+      - '.github/workflows/smoke-tests.yml'
+      - '.github/workflows/docker.yml'
+      - '.github/workflows/doc-coverage.yml'
+      - '.github/workflows/starintel-schema-lock.yml'
+      - '.github/workflows/operational-salvage.yml'
     branches: [master, codex/starintel-0101-ingest]
 
 permissions:
