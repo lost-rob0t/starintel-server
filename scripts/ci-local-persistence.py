@@ -56,6 +56,7 @@ class Acceptance:
 
     def stage(self, name):
         self.result['stage'] = name
+        self.result.pop('lastProbeError', None)
         self.save()
         print('CI341 stage=' + name, flush=True)
 
@@ -71,22 +72,24 @@ class Acceptance:
         path.chmod(0o600)
         return path
 
-    def run_container(self, role, image, env, extra=()):
+    def run_container(self, role, image, env, extra=(), command=()):
         name = self.prefix + '-' + role
         # Register the known owned name before the interruptible Docker request.
         self.containers.append(name)
         self.docker('run', '--detach', '--name', name, '--network', self.network,
                     '--network-alias', role, '--label', 'ci341.run=' + self.prefix, '--cpus', '2', '--memory', '1g', '--pids-limit', '512',
                     '--log-opt', 'max-size=1m', '--log-opt', 'max-file=2',
-                    '--env-file', self.env_file(role + '.env', env), *extra, image, timeout=90)
+                    '--env-file', self.env_file(role + '.env', env), *extra, image, *command, timeout=90)
         return name
 
-    def request(self, container, port, path, method='GET', value=None, headers=None):
+    def request(self, container, port, path, method='GET', value=None, headers=None, host='127.0.0.1'):
         # Keep the network internal. Curl speaks actual container-loopback HTTP;
         # credentials/body stay in stdin, never Docker/curl process arguments.
+        if host not in ('127.0.0.1', 'couchdb'):
+            raise RuntimeError('HTTP host must be the owned local service')
         if not path.startswith('/') or path.startswith('//'):
             raise RuntimeError('HTTP path must be local and relative')
-        lines = ['url = ' + json.dumps('http://127.0.0.1:' + str(port) + path),
+        lines = ['url = ' + json.dumps('http://' + host + ':' + str(port) + path),
                  'request = ' + json.dumps(method)]
         for key, item in {'Content-Type': 'application/json', **(headers or {})}.items():
             if any(ord(char) < 32 or ord(char) == 127 for char in key + item):
@@ -101,7 +104,7 @@ class Acceptance:
             input=('\n'.join(lines) + '\n').encode(), check=False, timeout=10)
         body, _, code = result.stdout.rpartition(b'\n')
         if not code.isdigit() or code == b'000':
-            raise OSError('container-loopback HTTP transport unavailable')
+            raise OSError('internal HTTP transport unavailable: ' + redacted(result.stderr, self.secret_values, 500).decode('utf-8', 'replace'))
         if not 200 <= int(code) < 300:
             raise HTTPStatusError(int(code))
         if result.returncode:
@@ -118,8 +121,8 @@ class Acceptance:
             except HTTPStatusError as error:
                 if error.code not in (404, 429, 500, 502, 503, 504):
                     raise RuntimeError('HTTP authorization/request failed: ' + str(error.code)) from None
-            except OSError:
-                pass
+            except OSError as error:
+                self.result['lastProbeError'] = redacted(str(error).encode(), self.secret_values, 500).decode('utf-8', 'replace')
             if time.monotonic() >= deadline:
                 raise RuntimeError('readiness/persistence deadline exceeded at ' + self.result['stage'])
             time.sleep(1)
@@ -183,10 +186,13 @@ class Acceptance:
                 'COUCHDB_USER': 'ci', 'COUCHDB_PASSWORD': self.couch_password,
                 'ERL_FLAGS': '+S 2:2'}, ('--mount', 'type=volume,src=' + self.volume + ',dst=/opt/couchdb/data',
                 '--mount', 'type=bind,src=' + str(single_node) + ',dst=/opt/couchdb/etc/local.d/50-ci-single.ini,readonly'))
-            self.wait(lambda: self.request(couch, 5984, '/_up').get('status') == 'ok')
+            probe = self.run_container('probe', SERVER_IMAGE, {}, ('--entrypoint', '/bin/sleep'), ('600',))
+            self.stage('couchdb-readiness')
+            self.wait(lambda: self.request(probe, 5984, '/_up', host='couchdb').get('status') == 'ok')
             rabbit = self.run_container('rabbitmq', RABBIT_IMAGE, {
                 'RABBITMQ_DEFAULT_USER': 'ci', 'RABBITMQ_DEFAULT_PASS': self.rabbit_password,
                 'RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS': '+S 2:2'})
+            self.stage('rabbitmq-readiness')
             self.wait(lambda: self.docker('exec', rabbit, 'rabbitmq-diagnostics', '-q', 'ping',
                                          check=False, timeout=10).returncode == 0)
             for name, value in zip(('couchdb_password', 'rabbitmq_password', 'auth_pepper', 'auth_bootstrap_secret'), self.secret_values):
@@ -231,7 +237,7 @@ class Acceptance:
             if exit_code not in (b'0', b'143'):
                 raise RuntimeError('server did not stop gracefully')
             self.docker('restart', '--time', '20', couch)
-            self.wait(lambda: self.request(couch, 5984, '/_up').get('status') == 'ok')
+            self.wait(lambda: self.request(probe, 5984, '/_up', host='couchdb').get('status') == 'ok')
             self.docker('start', server)
             self.wait(lambda: self.request(server, 5000, '/ready').get('status') == 'ready')
             if readback() != before:

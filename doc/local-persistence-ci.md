@@ -18,8 +18,9 @@ The acceptance helper `scripts/ci-local-persistence.py`:
 1. Loads the existing Server image after the supported Nix build succeeds.
 2. Starts upstream CouchDB and RabbitMQ at the same immutable image digests used
    by `nix/images.nix`. The dedicated Docker network is internal. CouchDB
-   readiness and Server HTTP are probed on container loopback via `docker exec`
-   and curl; **no ports are published**. Credential headers/body travel on stdin,
+   readiness is probed by a small client using the already-built Server image
+   (the pinned CouchDB base removes curl); Server HTTP is probed on its own
+   container loopback via `docker exec` and curl; **no ports are published**. Credential headers/body travel on stdin,
    with curlrc/proxies/globbing and redirects disabled.
    Each container has two CPUs, 1 GiB RAM, a 512-PID ceiling, and bounded logs.
 3. Uses a new labeled CouchDB volume and randomly generated fixture credentials.
