@@ -16,25 +16,25 @@ It does not read repository or production secrets. Build output and actor output
 retain at most 1 MiB each; sanitized container logs retain 256 KiB per component.
 The Nix image archives and private credential directory are never uploaded.
 
-The job first builds the existing isolated FEC wheel using the unchanged
-packaging boundary in pro-actors `6095facbc005caa1251e86936ce2a1339499f195`.
-It runs the unchanged maintained `python/tests/fec_canonical_server_probe.py`
-(SHA-256 `cb55d04752f6a8afeacd9617215e88de946df070f5b440d3c0adafeaa505e219`)
-against a fresh owned stack. The probe exercises the installed sa-fec CLI,
-actual target dispatch/handler/publisher confirmations and strict canonical
-persisted readback, then replay/rejection controls. Its default provider HTTP
-responses are synthetic. No provider paths/keys, fixture overrides, production
-credentials or proxy variables reach this probe. The runner accesses only IPs
-assigned on the owned internal bridge; no ports are published. The actor
-repository is checked out read-only and is not modified or published.
+The maintained FEC prerequisite is currently **BLOCKED by cross-repository
+runner authorization**. Run39045266144 checked out the Server candidate, then
+private `lost-rob0t/starintel-pro-actors` checkout returned Repository not found
+under this repository-scoped GITHUB_TOKEN. It failed before Server build/runtime.
+The connector can read the actor repository; that does not give this runner
+cross-repository access. No credential escalation, retry, copying private sources
+into this repository, or actor-repository write was attempted.
 
-The FEC helper invocation owns its own stack/auth database, allowing the probe's
-unchanged first-administrator bootstrap. It cleans up before the separate
-canonical HTTP/restart invocation starts; credentials and resources are not
-reused between those runs. Both invocations share the already-built Server
-image and pinned upstream images. Only a passed FEC proof allows the following
-HTTP/restart step to execute. PR #331 remains draft with its FEC verification
-hold; this workflow does not authorize merge.
+The independent Server HTTP/restart and Sento steps still run. After they pass,
+the job deliberately fails with the explicit FEC access blocker. A green Server
+phase never clears PR331's FEC hold. The required unchanged probe is
+`python/tests/fec_canonical_server_probe.py` at pro-actors
+`6095facbc005caa1251e86936ce2a1339499f195`, SHA256
+`cb55d04752f6a8afeacd9617215e88de946df070f5b440d3c0adafeaa505e219`.
+Run it in its own authorized repository against exact Server c8ac745a before
+clearing that hold. Its default provider responses are synthetic. The existing
+optional helper adapter preserves the probe's strict assertions, exact commit
+binding, synthetic-only environment and private bridge HTTP, but it is not
+invoked while repository access is unavailable. Actor sources remain read-only.
 
 The acceptance helper `scripts/ci-local-persistence.py`:
 

@@ -38,18 +38,20 @@ class CoverageContract(unittest.TestCase):
         upload = next(s for s in job['steps'] if 'upload-artifact' in s.get('uses', ''))
         self.assertEqual(upload['with']['retention-days'], 1)
 
-    def test_stack_builds_exact_prerequisite_and_runs_existing_synthetic_probe_first(self):
+    def test_stack_builds_exact_prerequisite_and_preserves_blocked_fec_hold(self):
         workflow = self.load(CI_FILES[0])
         job = workflow['jobs']['canonical-persistence']
         self.assertEqual(job['env']['CI341_SERVER_COMMIT'], 'c8ac745a6a6c14f33a083a607c556bf08c65220b')
         self.assertEqual(job['env']['CI341_PRO_ACTORS_COMMIT'], '6095facbc005caa1251e86936ce2a1339499f195')
         steps = job['steps']
         names = [step.get('name', '') for step in steps]
-        fec = names.index('Unchanged strict synthetic FEC persisted-readback prerequisite')
+        fec = names.index('Preserve blocked FEC prerequisite after independent Server proof')
         persistence = names.index('Real canonical HTTP create/read and server plus CouchDB restart')
-        self.assertLess(fec, persistence)
+        self.assertLess(persistence, fec)
         self.assertNotIn('if', steps[fec])
-        self.assertIn('fec_canonical_server_probe.py', steps[fec]['run'])
+        self.assertIn('FEC acceptance BLOCKED', steps[fec]['run'])
+        self.assertIn('exit 1', steps[fec]['run'])
+        self.assertNotIn('starintel-pro-actors', str([step.get('with', {}) for step in steps]))
         build = next(step['run'] for step in steps if step.get('name') == 'Build the existing server and its existing runtime image')
         self.assertIn('cd "$CI341_SERVER_SOURCE"', build)
 
