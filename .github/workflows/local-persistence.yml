@@ -64,10 +64,10 @@ jobs:
         run: |
           set -uo pipefail
           printf '{"stage":"server-build","status":"running"}\n' > "$RUNNER_TEMP/ci341-evidence/build-status.json"
-          timeout --signal=TERM --kill-after=30 22m bash -euc '
+          timeout --signal=TERM --kill-after=30 22m bash -euo pipefail <<'BUILD' 2>&1 | tail -c 1048576 > "$RUNNER_TEMP/ci341-evidence/build.log"
             nix build .#default --out-link "$RUNNER_TEMP/ci341-server" --print-build-logs
             nix build .#star-server-image --out-link "$RUNNER_TEMP/ci341-server-image" --print-build-logs
-          ' 2>&1 | tail -c 1048576 > "$RUNNER_TEMP/ci341-evidence/build.log"
+          BUILD
           status=${PIPESTATUS[0]}
           printf '{"stage":"server-build","exitCode":%s,"status":"%s"}\n' "$status" "$([ "$status" = 0 ] && echo passed || echo failed)" > "$RUNNER_TEMP/ci341-evidence/build-status.json"
           tail -n 80 "$RUNNER_TEMP/ci341-evidence/build.log"
