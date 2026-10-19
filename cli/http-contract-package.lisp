@@ -16,6 +16,12 @@
    #:http-operation-responses
    #:http-operation-idempotency
    #:all-http-operations
+   #:make-http-operation
+   #:upsert-http-operation
+   #:response
+   #:object-schema
+   #:string-schema
+   #:standard-errors
    #:find-http-operation
    #:openapi-document
    #:openapi-json

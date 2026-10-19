@@ -447,4 +447,5 @@
   (:documentation "StarIntel HTTP API.")
   (:export
    #:*app*
+   #:mount-http-operation
    #:*default-headers*))
