@@ -157,6 +157,30 @@ Human summary of the operation.
 (http-operation-tags (SB-KERNEL:INSTANCE))
 #+end_src
 Tags grouping the operation.
+*** make-http-operation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(make-http-operation (&KEY STAR.HTTP.CONTRACT::ID STAR.HTTP.CONTRACT::CLIENT-NAME METHOD
+ STAR.HTTP.CONTRACT::PATH STAR.HTTP.CONTRACT::SUMMARY STAR.HTTP.CONTRACT::TAGS
+ STAR.HTTP.CONTRACT::AUTHORITY STAR.HTTP.CONTRACT::SCOPES
+ STAR.HTTP.CONTRACT::PATH-PARAMETERS STAR.HTTP.CONTRACT::QUERY-PARAMETERS
+ STAR.HTTP.CONTRACT::REQUEST-SCHEMA STAR.HTTP.CONTRACT::RESPONSES
+ STAR.HTTP.CONTRACT::IDEMPOTENCY))
+#+end_src
+Construct a client-visible HTTP operation contract.
+*** object-schema
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(object-schema (STAR.HTTP.CONTRACT::PROPERTIES &KEY STAR.HTTP.CONTRACT::REQUIRED
+ STAR.HTTP.CONTRACT::ADDITIONAL-PROPERTIES STAR.HTTP.CONTRACT::DESCRIPTION))
+#+end_src
+Return a JSON object schema from named property schemas.
 *** openapi-document
 :PROPERTIES:
 :KIND: fn
@@ -187,3 +211,38 @@ Path entry of the OpenAPI document.
 (operation-request-symbol-name (STAR.HTTP.CONTRACT::OPERATION))
 #+end_src
 Client symbol name generated for the operation.
+*** response
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(response (STAR.HTTP.CONTRACT::STATUS STAR.HTTP.CONTRACT::DESCRIPTION &OPTIONAL
+ STAR.HTTP.CONTRACT::SCHEMA))
+#+end_src
+Describe one HTTP response status and its optional JSON schema.
+*** standard-errors
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+Return the shared HTTP error responses for a contracted operation.
+*** string-schema
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(string-schema (&KEY STAR.HTTP.CONTRACT::MIN-LENGTH FORMAT STAR.HTTP.CONTRACT::DESCRIPTION
+ STAR.HTTP.CONTRACT::SECRET))
+#+end_src
+Return a JSON Schema for a string, optionally marked as secret.
+*** upsert-http-operation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.HTTP.CONTRACT
+:END:
+#+begin_src lisp
+(upsert-http-operation (STAR.HTTP.CONTRACT::OPERATION))
+#+end_src
+Replace OPERATION by ID or append it once. Safe across interactive reloads.
