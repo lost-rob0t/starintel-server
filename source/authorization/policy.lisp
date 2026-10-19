@@ -9,6 +9,7 @@
     "search:read"
     "views:read"
     "actors:read"
+    "actor-credentials:read"
     "targets:read"
     "targets:dispatch"
     "targets:lease"
@@ -28,6 +29,8 @@
   '("tenant:"
     "dataset:"
     "actor:"
+    "account:"
+    "credential-type:"
     "target:"
     "target-namespace:"
     "program:")
@@ -57,13 +60,15 @@
 
 (defstruct (authorization-resource
             (:constructor make-authorization-resource
-                (&key tenant-id dataset-id actor-name target-id
+                (&key tenant-id dataset-id actor-name account-id credential-type target-id
                       target-namespace program-id resource-id dtype))
             (:copier nil))
   "The resource side of an authorization request."
   (tenant-id nil :read-only t)
   (dataset-id nil :read-only t)
   (actor-name nil :read-only t)
+  (account-id nil :read-only t)
+  (credential-type nil :read-only t)
   (target-id nil :read-only t)
   (target-namespace nil :read-only t)
   (program-id nil :read-only t)
@@ -73,6 +78,10 @@
 ;; Accessor documentation for authorization-resource
 (setf (documentation 'AUTHORIZATION-RESOURCE-ACTOR-NAME 'function)
 "The =actor-name= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-ACCOUNT-ID 'function)
+"The =account-id= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-CREDENTIAL-TYPE 'function)
+"The =credential-type= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-DATASET-ID 'function)
 "The =dataset-id= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-DTYPE 'function)
@@ -300,6 +309,11 @@
            (dimension-granted-p
             scopes "actor:" (authorization-resource-actor-name resource))
            (dimension-granted-p
+            scopes "account:" (authorization-resource-account-id resource))
+           (dimension-granted-p
+            scopes "credential-type:"
+            (authorization-resource-credential-type resource))
+           (dimension-granted-p
             scopes "target:" (authorization-resource-target-id resource))
            (dimension-granted-p
             scopes "target-namespace:"
@@ -346,6 +360,10 @@
                        (authorization-resource-dataset-id resource)))
         ("actor_name" (json-nullable
                        (authorization-resource-actor-name resource)))
+        ("account_id" (json-nullable
+                       (authorization-resource-account-id resource)))
+        ("credential_type" (json-nullable
+                            (authorization-resource-credential-type resource)))
         ("target_id" (json-nullable
                       (authorization-resource-target-id resource)))
         ("target_namespace" (json-nullable
