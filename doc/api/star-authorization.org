@@ -73,7 +73,7 @@ One authorization question: principal, action, resource.
 :PACKAGE: STAR.AUTHORIZATION
 :END:
 The resource side of an authorization request.
-- Slots: =tenant-id=, =dataset-id=, =actor-name=, =target-id=, =target-namespace=, =program-id=, =resource-id=, =dtype=
+- Slots: =tenant-id=, =dataset-id=, =actor-name=, =account-id=, =credential-type=, =target-id=, =target-namespace=, =program-id=, =resource-id=, =dtype=
 *** trusted-authorization-context
 :PROPERTIES:
 :KIND: struct
@@ -401,10 +401,10 @@ RabbitMQ headers encoding an authorization decision.
 :PACKAGE: STAR.AUTHORIZATION
 :END:
 #+begin_src lisp
-(make-authorization-resource (&KEY TENANT-ID DATASET-ID ACTOR-NAME TARGET-ID TARGET-NAMESPACE PROGRAM-ID
- RESOURCE-ID DTYPE))
+(make-authorization-resource (&KEY TENANT-ID DATASET-ID ACTOR-NAME ACCOUNT-ID CREDENTIAL-TYPE TARGET-ID
+ TARGET-NAMESPACE PROGRAM-ID RESOURCE-ID DTYPE))
 #+end_src
-Build an authorization resource for TENANT, PROGRAM, DATASET and TARGET.
+Build an authorization resource with the requested tenant, actor, account, credential type, and other scope dimensions.
 *** make-trusted-authorization-context
 :PROPERTIES:
 :KIND: fn
