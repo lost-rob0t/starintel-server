@@ -500,7 +500,7 @@
                "")))))
 
 (setf (documentation 'MAKE-AUTHORIZATION-RESOURCE 'function)
-  "Build an authorization resource for TENANT, PROGRAM, DATASET and TARGET.")
+  "Build an authorization resource with the requested tenant, actor, account, credential type, and other scope dimensions.")
 
 (setf (documentation 'MAKE-TRUSTED-AUTHORIZATION-CONTEXT 'function)
   "Build a trusted context for internal service calls by PRINCIPAL-ID and TYPE.")

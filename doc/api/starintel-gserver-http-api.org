@@ -131,6 +131,15 @@ True when the parsed payload is a JSON array.
 (json-object-p (STARINTEL-GSERVER-HTTP-API::VALUE))
 #+end_src
 True when the parsed payload is a JSON object.
+*** mount-http-operation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(mount-http-operation (STARINTEL-GSERVER-HTTP-API::OPERATION-ID STARINTEL-GSERVER-HTTP-API::HANDLER))
+#+end_src
+Mount HANDLER using the canonical method/path for OPERATION-ID.
 *** parse-json-octets
 :PROPERTIES:
 :KIND: fn
