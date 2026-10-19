@@ -20,6 +20,9 @@
   responses
   idempotency)
 
+(setf (documentation 'MAKE-HTTP-OPERATION 'function)
+      "Construct a client-visible HTTP operation contract.")
+
 ;; Accessor documentation for http-operation
 (setf (documentation 'HTTP-OPERATION-AUTHORITY 'function)
 "Authority (host base) of the operation.")
@@ -55,6 +58,7 @@ property lists.")
       (setf (jsown:val object (car pair)) (cdr pair)))))
 
 (defun string-schema (&key min-length format description secret)
+  "Return a JSON Schema for a string, optionally marked as secret."
   (let ((schema (json-object (cons "type" "string"))))
     (when min-length
       (setf (jsown:val schema "minLength") min-length))
@@ -90,6 +94,7 @@ property lists.")
     schema))
 
 (defun object-schema (properties &key required additional-properties description)
+  "Return a JSON object schema from named property schemas."
   (let ((property-object (list :obj))
         (schema (json-object (cons "type" "object"))))
     (dolist (property properties)
@@ -112,6 +117,7 @@ property lists.")
     schema))
 
 (defun response (status description &optional schema)
+  "Describe one HTTP response status and its optional JSON schema."
   (list :status status :description description :schema schema))
 
 (defparameter +error-schema+
@@ -211,6 +217,7 @@ property lists.")
    :additional-properties nil))
 
 (defun standard-errors ()
+  "Return the shared HTTP error responses for a contracted operation."
   (list
    (response 400 "Malformed or invalid request." +error-schema+)
    (response 401 "Authentication failed." +error-schema+)

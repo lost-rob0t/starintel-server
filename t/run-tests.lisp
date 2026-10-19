@@ -23,6 +23,7 @@
     auth-users-tests
     oauth-authorization-code-tests
     addon-system-tests
+    actor-credentials-tests
     authorization-policy-tests
     http-target-tenant-tests
     http-tenant-injection-tests
