@@ -82,6 +82,21 @@ method(heap_snapshot_minimal_allocation,
      safely. Attribution verified exact: a 50,000-element octet vector
      was reported as 50,016 grown bytes via with-heap-growth.").
 
+method(prebuilt_closure_probe,
+    "To run ad-hoc Lisp against the full loaded server: take the wrapped
+     sbcl path out of the built runner (grep -oE '/nix/store/...-sbcl-
+     with-packages/bin/sbcl' in $(nix build --no-link --print-out-paths
+     .#star-unit-tests)/bin/star-unit-tests), replicate its env (fresh
+     HOME, XDG_CACHE_HOME under it, TMPDIR=/tmp, the script's
+     LD_LIBRARY_PATH, STARINTEL_SOURCE_ROOT) and invoke with
+     --no-userinit --no-sysinit --eval '(require :asdf)' then --load
+     probes. nix develop does NOT work for this: it lacks ASDF output
+     translations, and setting ASDF_OUTPUT_TRANSLATIONS does not save it
+     because cffi-grovel writes temp files NEXT TO SOURCE in the
+     read-only store (permission denied). Verified 2026-10-20 running
+     tools/probe-findings.lisp against the prebuilt starintel-gserver
+     closure.").
+
 % --- bounded streaming ---
 
 invariant(bounded_queue_backpressure,
