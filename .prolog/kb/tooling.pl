@@ -12,6 +12,11 @@ cmd(integration_tests_local,
     "full required suites: valkey-lease, couchdb-view, http-api (~3-4 min)").
 
 cmd(unit_tests, "nix run .#star-unit-tests", "all unit suites").
+cmd(cl_alloc_tools_tests,
+    "sbcl --noinform --disable-debugger --load tools/cl-alloc-tools.lisp --load t/cl-alloc-tools-test.lisp --quit",
+    "leak/streaming tool suite; prints 'all cl-alloc-tools tests passed'. \
+Verified with ambient sbcl 2.6.0; operator prefers flake-env invocation \
+(nix develop -c sbcl ...) - swap once verified green there.").
 cmd(python_contract, "python3 -m unittest discover -s tests -p test_*.py", "operational salvage + v09 runtime contract").
 cmd(schema_lock, "python3 scripts/check-starintel-schema-lock.py", "canonical schema pin verification (needs network)").
 cmd(api_docs, "make docs-api", "regenerate doc/api/*.org; CI doc-coverage fails if stale").
