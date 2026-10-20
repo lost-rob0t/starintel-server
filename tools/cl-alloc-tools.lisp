@@ -27,9 +27,16 @@
            #:close-bounded-queue
            #:run-pipeline
            #:map-stream-chunks
-           #:with-allocation-profiling
+           #:heap-snapshot
+           #:heap-census
+           #:heap-census-report
+           #:heap-diff
+           #:with-heap-growth
+           #:with-cpu-profiling
            #:selftest))
 (in-package #:cl-alloc-tools)
+
+(require :sb-sprof)
 
 ;;; ------------------------------------------------------------------
 ;;; Net-retained allocation accounting
@@ -265,3 +272,146 @@ retains.  Memory use is O(CHUNK-SIZE) no matter the stream length."
           until (zerop nread)
           do (funcall function buffer nread)))
   (values))
+
+;;; ------------------------------------------------------------------
+;;; Heap census: live-heap composition and growth
+;;;;
+;;; Snapshots count live objects by CLASS-OF (eq-keyed, so the census
+;;; callback itself barely allocates -- map-allocated-objects runs with
+;;; GC inhibited and heavy allocation there is unsafe).
+
+(defun heap-snapshot (&key (space :dynamic))
+  "Walk live objects in SPACE (:DYNAMIC or :ALL) and return
+(values table total-objects total-bytes), where TABLE is an eq hash
+class -> (COUNT . BYTES)."
+  (let ((table (make-hash-table :test #'eq :size 1024))
+        (total-objects 0)
+        (total-bytes 0))
+    (sb-vm:map-allocated-objects
+     (lambda (object widetag size)
+       (declare (ignore widetag))
+       (let ((entry (gethash (class-of object) table)))
+         (if entry
+             (setf (car entry) (the fixnum (1+ (car entry)))
+                   (cdr entry) (the fixnum (+ (cdr entry) size)))
+             (setf (gethash (class-of object) table)
+                   (cons 1 size))))
+       (incf total-objects)
+       (incf total-bytes size))
+     space)
+    (values table total-objects total-bytes)))
+
+(defun heap-census (&key (space :dynamic))
+  "Return an alist ((class-name objects bytes) ...), sorted by descending
+bytes, plus (values alist total-objects total-bytes)."
+  (multiple-value-bind (table total-objects total-bytes)
+      (heap-snapshot :space space)
+    (let (alist)
+      (maphash (lambda (class cell)
+                 (push (list (or (ignore-errors (class-name class))
+                                 class)
+                             (car cell) (cdr cell))
+                       alist))
+               table)
+      (values (sort alist #'> :key #'third)
+              total-objects total-bytes))))
+
+(defun heap-census-report (&key (stream *trace-output*) (top-n 20)
+                                (space :dynamic))
+  "Print the TOP-N heap consumers; returns the alist."
+  (multiple-value-bind (alist total-objects total-bytes)
+      (heap-census :space space)
+    (format stream "~&;; --- heap census (~A): ~:D objects, ~:D bytes ---~%"
+            space total-objects total-bytes)
+    (format stream ";;  ~12@a  ~12@a  ~a~%" "objects" "bytes" "class")
+    (loop for row in alist
+          repeat top-n
+          do (format stream ";;  ~12:d  ~12:d  ~a~%"
+                     (second row) (third row) (first row)))
+    alist))
+
+(defun heap-diff (before after)
+  "Compare two HEAP-SNAPSHOT tables; returns rows
+(class-name objects-delta bytes-delta before-bytes after-bytes),
+sorted by descending bytes growth."
+  (let (rows)
+    (maphash
+     (lambda (class after-cell)
+       (let* ((before-cell (gethash class before))
+              (before-bytes (if before-cell (cdr before-cell) 0))
+              (after-bytes (cdr after-cell)))
+         (unless (= before-bytes after-bytes)
+           (push (list (or (ignore-errors (class-name class)) class)
+                       (- (car after-cell)
+                          (if before-cell (car before-cell) 0))
+                       (- after-bytes before-bytes)
+                       before-bytes after-bytes)
+                 rows))))
+     after)
+    ;; classes that vanished entirely
+    (maphash
+     (lambda (class before-cell)
+       (unless (gethash class after)
+         (push (list (or (ignore-errors (class-name class)) class)
+                     (- (car before-cell))
+                     (- (cdr before-cell))
+                     (cdr before-cell) 0)
+               rows)))
+     before)
+    (sort rows #'> :key #'third)))
+
+(defmacro with-heap-growth ((place &key (stream '*trace-output*))
+                            &body body)
+  "SETF PLACE to HEAP-DIFF rows for the heap change caused by BODY.
+The classic leak loop: run phases, compare which classes grew.
+  (let (g) (with-heap-growth (g) (leaky-phase)) g)"
+  (let ((before (gensym "BEFORE")) (after (gensym "AFTER")))
+    `(let ((,before (progn (force-full-gc) (heap-snapshot))))
+       (multiple-value-prog1 (progn ,@body)
+         (force-full-gc)
+         (let ((,after (heap-snapshot)))
+           (setf ,place (heap-diff ,before ,after))
+           (format ,stream "~&;; heap growth: ~:D changed class~:[es~;~]~%"
+                   (length ,place) (= 1 (length ,place))))))))
+
+;;; -------------------------------------------------------------------
+;;; CPU profiling over sb-sprof (allocation mode is not available in
+;;; this build; sb-analyzer contrib missing -- see KB).
+
+(defmacro with-cpu-profiling ((&key (report :flat) (stream '*trace-output*)
+                                    (max-samples 10000))
+                              &body body)
+  "Run BODY under SB-SPROF CPU sampling and print REPORT (:FLAT or
+:GRAPH) to STREAM.  Returns BODY's values."
+  `(let ((*standard-output* ,stream))
+     (sb-sprof:with-profiling (:reset t :mode :cpu :report ,report
+                               :max-samples ,max-samples
+                               :loop nil)
+       ,@body)))
+
+;;; -------------------------------------------------------------------
+;;; Selftest
+
+(defparameter *selftest-keep* nil)
+
+(defun selftest ()
+  "Smoke-check every subsystem; returns T, asserts otherwise."
+  (assert (plusp (nth-value 1 (retained-bytes-of
+                               (lambda ()
+                                 (setf *selftest-keep*
+                                       (make-list 1000)))))))
+  (setf *selftest-keep* nil)
+  (let ((q (make-bounded-queue 1)))
+    (assert (bounded-queue-push q :a))
+    (assert (eq :a (bounded-queue-pop q)))
+    (close-bounded-queue q)
+    (assert (eq +queue-eof+ (bounded-queue-pop q))))
+  (with-input-from-string (s "hello")
+    (let ((n 0))
+      (map-stream-chunks s 2 (lambda (buffer read) (incf n read))
+                         :element-type 'character)
+      (assert (= 5 n))))
+  (multiple-value-bind (alist objects bytes) (heap-census)
+    (assert (and alist (plusp objects) (plusp bytes))))
+  (format *trace-output* "~&;; cl-alloc-tools selftest OK~%")
+  t)

@@ -117,6 +117,43 @@ new threads start from the root binding of specials."
             retained))
   :chunked-ok)
 
+(defun test-heap-census ()
+  ;; census sees retained objects by class
+  (multiple-value-bind (alist objects bytes) (heap-census)
+    (assert (and alist (plusp objects) (plusp bytes)))
+    (assert (every (lambda (row) (and (symbolp (first row))
+                                      (plusp (second row))
+                                      (plusp (third row))))
+                   alist))
+    ;; sorted by descending bytes
+    (assert (equal (mapcar #'third alist)
+                   (sort (copy-list (mapcar #'third alist)) #'>))))
+  ;; with-heap-growth attributes retained buffers to the right class
+  (let (growth)
+    (with-heap-growth (growth :stream *terminal-io*)
+      (setf *kept* (make-array 50000 :element-type '(unsigned-byte 8))))
+    (let ((row (find "SIMPLE-ARRAY-UNSIGNED-BYTE-8" growth
+                     :key (lambda (r) (symbol-name (first r)))
+                     :test #'string=)))
+      (assert row () "50KB octet vector should appear in heap growth: ~S"
+              growth)
+      (assert (> (third row) 40000) () "growth bytes too small: ~S" row)
+      (setf *kept* nil)))
+  :heap-census-ok)
+
+(defun test-cpu-profiling ()
+  ;; enough work to guarantee samples; report goes to /dev/null stream
+  (with-open-stream (sink (make-broadcast-stream))
+    (with-cpu-profiling (:stream sink :max-samples 2000)
+      (let ((acc 0))
+        (loop repeat 3000000 do (incf acc (mod acc 7)))
+        (assert (integerp acc)))))
+  :cpu-profiling-ok)
+
+(defun test-selftest ()
+  (assert (eql t (selftest)))
+  :selftest-ok)
+
 (defun test-census-diff ()
   (let (before after)
     (let ((survivors1 (list (make-instance 'buffer))))
@@ -138,7 +175,9 @@ new threads start from the root binding of specials."
       (assert (= 1 (fourth (first diff))))))
   :diff-ok)
 
-(format t "~&~A ~A ~A ~A ~A~%"
+(format t "~&~A ~A ~A ~A ~A ~A ~A~%"
         (test-accounting) (test-registry) (test-census-diff)
-        (test-streaming) (test-chunked))
+        (test-streaming) (test-chunked)
+        (test-heap-census) (test-cpu-profiling))
+(assert (eql t (selftest)))
 (format t "~&all cl-alloc-tools tests passed~%")
