@@ -11,6 +11,7 @@ import re
 import subprocess
 import threading
 import time
+from urllib.parse import urlsplit
 
 
 def percentile95(values):
@@ -59,7 +60,42 @@ def stack_sampler(project, compose_file):
     return sample
 
 
-def run_load(fixture, sampler, *, count, concurrency, duration, sample_interval):
+def stack_identity(config, project, compose_file):
+    """Bind fixture endpoints to the sampled local Compose project."""
+    if config.get('rabbit_vhost', '/') != '/':
+        raise ValueError('only the default RabbitMQ virtual host is supported')
+    local_hosts = {'127.0.0.1', 'localhost', '::1'}
+    api = urlsplit(config.get('api_url', 'http://127.0.0.1:5000'))
+    if (config.get('rabbit_host', '127.0.0.1') not in local_hosts
+            or api.hostname not in local_hosts or api.scheme != 'http'
+            or api.username is not None or api.password is not None
+            or api.path not in ('', '/') or api.query or api.fragment):
+        raise ValueError('fixture must use local mapped stack endpoints')
+    compose = ['docker', 'compose', '-f', str(compose_file), '-p', project]
+    for service, internal_port, requested_port in (
+            ('rabbitmq', 5672, int(config.get('rabbit_port', 5672))),
+            ('star-server', 5000, api.port or 80)):
+        mappings = command(compose + ['port', service, str(internal_port)]).splitlines()
+        ports = {int(mapping.rsplit(':', 1)[1]) for mapping in mappings if mapping.strip()}
+        if requested_port not in ports:
+            raise ValueError('fixture endpoint does not match sampled stack')
+    images = {}
+    template = ('{"id":{{json .Id}},"repo_digests":{{json .RepoDigests}},'
+                '"source_revision":{{if .Config.Labels}}'
+                '{{json (index .Config.Labels "org.opencontainers.image.revision")}}'
+                '{{else}}null{{end}}}')
+    for service in ('star-server', 'couchdb', 'rabbitmq'):
+        ids = command(compose + ['ps', '-q', service]).split()
+        if len(ids) != 1:
+            raise ValueError('exactly one running container per core service required')
+        image_id = command(['docker', 'inspect', '--format', '{{.Image}}', ids[0]]).strip()
+        images[service] = json.loads(command(['docker', 'image', 'inspect', '--format', template, image_id]))
+        if images[service].get('id') != image_id or not image_id.startswith('sha256:'):
+            raise ValueError('running image identity could not be verified')
+    return images
+
+
+def run_load(fixture, sampler, *, count, concurrency, duration, sample_interval, drain_timeout=30):
     """Stop submitting at count or duration; drain all bounded fixture calls."""
     if not 1 <= count <= 1000000 or not 1 <= concurrency <= 128:
         raise ValueError('count must be 1..1000000; concurrency 1..128')
@@ -67,13 +103,20 @@ def run_load(fixture, sampler, *, count, concurrency, duration, sample_interval)
         raise ValueError('duration must be >0 and <=86400 seconds')
     if not math.isfinite(sample_interval) or not 0 < sample_interval <= 60:
         raise ValueError('sample interval must be >0 and <=60 seconds')
+    if not math.isfinite(drain_timeout) or not 0 <= drain_timeout <= 300:
+        raise ValueError('drain timeout must be 0..300 seconds')
     start = time.monotonic()
     stop = threading.Event()
     samples, sample_errors, failures, latencies = [], [], [], []
 
     def take_sample():
         try:
-            samples.append({'elapsed_seconds': time.monotonic() - start, **sampler()})
+            sample = {'elapsed_seconds': time.monotonic() - start, **sampler()}
+            for field in ('messages_ready', 'messages_unacknowledged'):
+                if type(sample.get(field)) is not int or sample[field] < 0:
+                    raise ValueError('missing or invalid queue totals')
+            samples.append(sample)
+            return sample
         except Exception as exc:
             sample_errors.append({'elapsed_seconds': time.monotonic() - start,
                                   'error_type': type(exc).__name__})
@@ -115,11 +158,25 @@ def run_load(fixture, sampler, *, count, concurrency, duration, sample_interval)
     finally:
         stop.set()
         thread.join()
-        take_sample()
+    drain_start = time.monotonic()
+    queue_drained = False
+    while True:
+        sample = take_sample()
+        if sample is None:
+            break
+        if sample['messages_ready'] == 0 and sample['messages_unacknowledged'] == 0:
+            queue_drained = True
+            break
+        remaining = drain_timeout - (time.monotonic() - drain_start)
+        if remaining <= 0:
+            break
+        time.sleep(min(sample_interval, remaining))
+    drain_elapsed = time.monotonic() - drain_start
     elapsed = time.monotonic() - start
     active = submission_end - start
-    return {'passed': submitted > 0 and len(latencies) == submitted and not failures and not sample_errors,
+    return {'passed': submitted > 0 and len(latencies) == submitted and not failures and not sample_errors and queue_drained,
             'evidence_class': 'sustained-load' if active >= 3600 else 'smoke',
+            'queue_drained': queue_drained, 'drain_elapsed_seconds': drain_elapsed,
             'requested_count': count, 'submitted': submitted, 'completed': len(latencies),
             'count_limit_reached': submitted == count, 'elapsed_seconds': elapsed,
             'submission_window_seconds': active, 'completion_p95_ms': percentile95(latencies),
@@ -137,19 +194,23 @@ def main():
     parser.add_argument('--concurrency', type=int, default=1)
     parser.add_argument('--duration', type=float, default=60)
     parser.add_argument('--sample-interval', type=float, default=5)
+    parser.add_argument('--drain-timeout', type=float, default=30)
     parser.add_argument('--output', required=True, type=pathlib.Path)
     args = parser.parse_args()
     try:
         from readiness_ingest import run_fixture
         config = json.loads(args.config.read_text())
+        images = stack_identity(config, args.project, args.compose_file)
         report = run_load(lambda index: run_fixture(config, index),
                           stack_sampler(args.project, args.compose_file),
                           count=args.count, concurrency=args.concurrency, duration=args.duration,
-                          sample_interval=args.sample_interval)
+                          sample_interval=args.sample_interval, drain_timeout=args.drain_timeout)
         report['settings'] = {'count': args.count, 'concurrency': args.concurrency,
-                              'duration_seconds': args.duration, 'sample_interval_seconds': args.sample_interval}
+                              'duration_seconds': args.duration, 'sample_interval_seconds': args.sample_interval,
+                              'drain_timeout_seconds': args.drain_timeout}
         root = pathlib.Path(__file__).resolve().parents[1]
-        report['revision'] = command(['git', '-C', str(root), 'rev-parse', 'HEAD']).strip()
+        report['running_images'] = images
+        report['harness_revision'] = command(['git', '-C', str(root), 'rev-parse', 'HEAD']).strip()
         report['worktree_dirty'] = bool(command(['git', '-C', str(root), 'status', '--porcelain']).strip())
         report['machine'] = {'system': platform.system(), 'release': platform.release(),
                              'architecture': platform.machine(), 'logical_cpus': os.cpu_count(),
@@ -157,7 +218,8 @@ def main():
         report['limitations'] = ['Local synthetic fixture only; not a production capacity certification.',
                                 'Closed-loop bounded concurrency; p95 is publication-through-retrieval completion latency.',
                                 'Docker memory follows docker stats accounting; interval sampling can miss peaks.',
-                                'Duration bounds submission, with bounded fixture completion and sampling drain afterward.']
+                                'Duration bounds submission, with bounded fixture completion and sampling drain afterward.',
+                                'Harness revision does not prove running server source; image source labels may be absent or untrusted.']
         # Exclusive creation prevents clobbering earlier evidence or following a symlink.
         fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as output:

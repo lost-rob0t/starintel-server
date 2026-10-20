@@ -11,7 +11,9 @@ Supply the same private JSON configuration accepted by `readiness_ingest.py`:
 `timeout_seconds`. Passwords and API keys belong in permission-restricted files,
 never literal JSON values, command arguments, tracked files, or Nix expressions.
 Use the environment/client command prepared for the ingestion smoke test. The
-RabbitMQ virtual host must be `/`, which is the queue sampler's current scope.
+RabbitMQ virtual host must be `/`; other values are rejected. Before running,
+the driver verifies local RabbitMQ/API endpoint ports match the selected Compose
+project. A mismatched project, remote endpoint, or missing mapping fails setup.
 
 From the checkout with those dependencies and an already running project:
 
@@ -37,11 +39,21 @@ verification before starting another fixture. At duration expiry, outstanding
 fixtures drain within their configured timeout. Sampling commands also have
 15-second timeouts. The driver does not replace an external process deadline.
 
-The JSON report records exact source HEAD and dirty state, machine resources,
+The JSON report records exact harness source HEAD and dirty state, running core-service image IDs and available
+registry digests/source revision labels, machine resources,
 settings, completed/submitted counts, individual completion latencies, nearest-rank
 p95, failures, memory samples for server/CouchDB/RabbitMQ, and RabbitMQ ready and
 unacknowledged queue counts. Samples include initial and final observations;
 sampler errors fail the result. Missing or unverified completions fail it too.
+After fixtures complete, the runner samples until both ready and unacknowledged
+queue totals reach zero or `--drain-timeout` expires (default 30 seconds, maximum
+300). An undrained queue fails the run, even if every retrieval succeeded. This
+checks all queues in the isolated project's default virtual host.
+
+The harness HEAD is not evidence of the running server source. Image IDs identify
+actual running image content; a source label is optional metadata, not an
+independently verified build attestation. Release integration must match those
+image identities to its reproducible candidate build.
 
 A run with fewer than 3600 seconds of actual submission activity is labelled
 `smoke`, even if a longer duration was requested. `sustained-load` only describes
