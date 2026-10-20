@@ -21,8 +21,10 @@
            #:census-diff
            #:census-report
            #:make-bounded-queue
+           #:+queue-eof+
            #:bounded-queue-push
            #:bounded-queue-pop
+           #:close-bounded-queue
            #:run-pipeline
            #:map-stream-chunks
            #:with-allocation-profiling
@@ -153,3 +155,113 @@ phase of a workload leaks:
        (setf ,place (census))
        ,@(when labelp
            `((format *trace-output* "~&;; tracking ~S: ~S~%" ,label ,place))))))
+
+;;; ------------------------------------------------------------------
+;;; Bounded-memory streaming
+;;;;
+;;; A blocking bounded queue provides backpressure: a producer faster
+;;; than its consumer parks instead of accumulating unbounded results.
+
+(defstruct (bounded-queue (:constructor %make-bounded-queue))
+  buffer lock not-full not-empty head tail count (closed nil))
+
+(defconstant +queue-eof+ '+queue-eof+
+  "Sentinel returned by BOUNDED-QUEUE-POP once the queue is closed and
+drained.  Compare with EQ.")
+
+(defun make-bounded-queue (capacity)
+  "Create a bounded queue holding at most CAPACITY items."
+  (assert (typep capacity '(integer 1)))
+  (%make-bounded-queue
+   :buffer (make-array capacity)
+   :lock (sb-thread:make-mutex :name "bounded-queue")
+   :not-full (sb-thread:make-waitqueue :name "bq/not-full")
+   :not-empty (sb-thread:make-waitqueue :name "bq/not-empty")
+   :head 0 :tail 0 :count 0))
+
+(defun bounded-queue-push (queue item)
+  "Push ITEM, blocking while the queue is full.  Returns T on success,
+NIL if the queue was closed while waiting."
+  (sb-thread:with-mutex ((bounded-queue-lock queue))
+    (loop until (or (< (bounded-queue-count queue)
+                       (length (bounded-queue-buffer queue)))
+                    (bounded-queue-closed queue))
+          do (sb-thread:condition-wait (bounded-queue-not-full queue)
+                                       (bounded-queue-lock queue)))
+    (cond ((bounded-queue-closed queue) nil)
+          (t (setf (aref (bounded-queue-buffer queue) (bounded-queue-tail queue))
+                   item
+                   (bounded-queue-tail queue)
+                   (mod (1+ (bounded-queue-tail queue))
+                        (length (bounded-queue-buffer queue))))
+             (incf (bounded-queue-count queue))
+             (sb-thread:condition-notify (bounded-queue-not-empty queue))
+             t))))
+
+(defun bounded-queue-pop (queue)
+  "Pop the oldest item, blocking while empty.  Returns +QUEUE-EOF+
+once the queue is closed and drained."
+  (sb-thread:with-mutex ((bounded-queue-lock queue))
+    (loop until (or (plusp (bounded-queue-count queue))
+                    (bounded-queue-closed queue))
+          do (sb-thread:condition-wait (bounded-queue-not-empty queue)
+                                       (bounded-queue-lock queue)))
+    (cond ((plusp (bounded-queue-count queue))
+           (let ((item (aref (bounded-queue-buffer queue)
+                             (bounded-queue-head queue))))
+             (setf (aref (bounded-queue-buffer queue)
+                         (bounded-queue-head queue))
+                   nil                 ; do not retain popped items
+                   (bounded-queue-head queue)
+                   (mod (1+ (bounded-queue-head queue))
+                        (length (bounded-queue-buffer queue))))
+             (decf (bounded-queue-count queue))
+             (sb-thread:condition-notify (bounded-queue-not-full queue))
+             item))
+          (t +queue-eof+))))
+
+(defun close-bounded-queue (queue)
+  "Wake all waiters; pending items stay poppable until drained."
+  (sb-thread:with-mutex ((bounded-queue-lock queue))
+    (setf (bounded-queue-closed queue) t))
+  (sb-thread:condition-notify (bounded-queue-not-full queue))
+  (sb-thread:condition-notify (bounded-queue-not-empty queue))
+  (values))
+
+(defun run-pipeline (producer consumer &key (capacity 16) (name "pipeline"))
+  "Run (FUNCALL PRODUCER PUSH) in a thread, feeding items through a
+bounded queue to CONSUMER in the calling thread.  The queue enforces
+backpressure: memory stays O(CAPACITY) regardless of producer speed.
+Producer errors are re-signaled in the calling thread after the
+pipeline drains.  Returns the values of the final CONSUMER call..."
+  (let ((queue (make-bounded-queue capacity))
+        (producer-error nil)
+        (last nil))
+    (flet ((push-item (item)
+             (bounded-queue-push queue item)))
+      (let ((thread (sb-thread:make-thread
+                     (lambda ()
+                       (unwind-protect
+                            (handler-case (funcall producer #'push-item)
+                              (error (e) (setf producer-error e)))
+                         (close-bounded-queue queue)))
+                     :name name)))
+        (unwind-protect
+             (loop for item = (bounded-queue-pop queue)
+                   until (eq item +queue-eof+)
+                   do (setf last (funcall consumer item)))
+          (close-bounded-queue queue)
+          (sb-thread:join-thread thread))))
+    (when producer-error (error producer-error))
+    last))
+
+(defun map-stream-chunks (stream chunk-size function
+                          &key (element-type '(unsigned-byte 8)))
+  "Call FUNCTION on each CHUNK-SIZE-aligned piece of STREAM, reusing one
+buffer: (funcall FUNCTION BUFFER NREAD).  FUNCTION must copy anything it
+retains.  Memory use is O(CHUNK-SIZE) no matter the stream length."
+  (let ((buffer (make-array chunk-size :element-type element-type)))
+    (loop for nread = (read-sequence buffer stream)
+          until (zerop nread)
+          do (funcall function buffer nread)))
+  (values))

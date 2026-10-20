@@ -68,6 +68,55 @@ new threads start from the root binding of specials."
               "weak registry must not resurrect dead objects: ~S" c3)))
   :registry-ok)
 
+(defun test-streaming ()
+  ;; bounded queue: FIFO order across threads
+  (let ((q (make-bounded-queue 2)))
+    (assert (eq t (bounded-queue-push q 1)))
+    (assert (eql 1 (bounded-queue-pop q)))
+    (close-bounded-queue q)
+    (assert (eq '+queue-eof+ (bounded-queue-pop q)))
+    (assert (null (bounded-queue-push q 2))))
+  ;; pipeline: 100k items through a capacity-8 queue; consumer sums
+  (let ((total 0)
+        (seen 0))
+    (run-pipeline (lambda (push)
+                    (loop for i from 1 to 100000 do (funcall push i)))
+                  (lambda (i) (incf total i) (incf seen))
+                  :capacity 8)
+    (assert (= 100000 seen))
+    (assert (= (loop for i from 1 to 100000 sum i) total)))
+  ;; producer errors propagate to the calling thread
+  (let ((failed nil))
+    (handler-case
+        (run-pipeline (lambda (push)
+                        (funcall push 1)
+                        (funcall push 2)
+                        (error "producer boom"))
+                      (lambda (i) (declare (ignore i))))
+      (error (e) (assert (search "producer boom" (princ-to-string e)))
+             (setf failed t)))
+    (assert failed))
+  :streaming-ok)
+
+(defun test-chunked ()
+  ;; 1 MB string through 4 KB chunks: every char seen, nothing retained
+  (let* ((meg (make-string (* 1024 1024) :initial-element #\7))
+         (total 0)
+         (retained (with-input-from-string (s meg)
+                     (nth-value
+                      1 (retained-bytes-of
+                         (lambda ()
+                           (map-stream-chunks
+                            s 4096
+                            (lambda (buffer nread)
+                              (incf total nread)
+                              (assert (char= #\7 (aref buffer 0))))
+                            :element-type 'character)))))))
+    (assert (= (* 1024 1024) total) () "lost chars: ~D" total)
+    (assert (< retained 100000) () "chunked read must stay bounded: ~D"
+            retained))
+  :chunked-ok)
+
 (defun test-census-diff ()
   (let (before after)
     (let ((survivors1 (list (make-instance 'buffer))))
@@ -89,6 +138,7 @@ new threads start from the root binding of specials."
       (assert (= 1 (fourth (first diff))))))
   :diff-ok)
 
-(format t "~&~A ~A ~A~%"
-        (test-accounting) (test-registry) (test-census-diff))
+(format t "~&~A ~A ~A ~A ~A~%"
+        (test-accounting) (test-registry) (test-census-diff)
+        (test-streaming) (test-chunked))
 (format t "~&all cl-alloc-tools tests passed~%")
