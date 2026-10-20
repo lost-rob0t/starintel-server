@@ -118,13 +118,21 @@ def run_fixture(config, index, *, publish=publish_document, read=read_document):
     if not 1 <= timeout <= 300:
         raise ValueError('timeout_seconds must be 1..300')
     document = fixture_document(config['run_id'], index, config.get('dataset', 'readiness'))
+    deadline = time.monotonic() + timeout
+    if read(config, document['id'], timeout) is not None:
+        raise FixtureError('fixture ID already exists; choose a fresh run_id')
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise FixtureError('freshness check exhausted fixture deadline')
     started = time.monotonic()
-    publish(config, document)
+    publish(dict(config, timeout_seconds=remaining), document)
     while True:
-        remaining = timeout - (time.monotonic() - started)
+        remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise FixtureError('canonical read deadline exceeded')
         actual = read(config, document['id'], remaining)
+        if time.monotonic() >= deadline:
+            raise FixtureError('canonical read deadline exceeded')
         if actual is not None:
             if not canonical_equal(document, actual):
                 raise FixtureError('persisted canonical document differs from fixture')
@@ -137,16 +145,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True)
     parser.add_argument('--index', type=int, default=0)
-    parser.add_argument('--duplicate', action='store_true', help='Repeat same confirmed mutation and require stable revision')
     args = parser.parse_args()
     try:
         config = json.loads(Path(args.config).read_text())
         first = run_fixture(config, args.index)
-        if args.duplicate:
-            second = run_fixture(config, args.index)
-            if not first['revision'] or first['revision'] != second['revision']:
-                raise FixtureError('duplicate changed or omitted persisted revision')
-            first['duplicate_revision_equal'] = True
         print(json.dumps(first))
     except (FixtureError, ValueError, KeyError, OSError):
         print(json.dumps({'status':'failed', 'reason':'fixture or runtime prerequisite failed'}))

@@ -22,6 +22,15 @@ class FixtureTests(unittest.TestCase):
         self.assertFalse(m.canonical_equal(a, dict(a, extensions={})))
         self.assertFalse(m.canonical_equal(a, dict(a, message='changed')))
 
+    def test_stale_fixture_rejected_before_publish(self):
+        document = m.fixture_document('run', 0)
+        published = []
+        with self.assertRaises(m.FixtureError):
+            m.run_fixture({'run_id':'run'}, 0,
+                          publish=lambda *a: published.append(a),
+                          read=lambda *a: dict(document, rev='1-old'))
+        self.assertEqual([], published)
+
     def test_bounds(self):
         for run, index in [('bad/identifier', 0), ('run', -1), ('run', True)]:
             with self.assertRaises(ValueError):
@@ -31,7 +40,8 @@ class FixtureTests(unittest.TestCase):
         doc = m.fixture_document('run', 0)
         calls = []
         config = {'run_id': 'run', 'timeout_seconds': 1}
-        result = m.run_fixture(config, 0, publish=lambda c,d: calls.append(d), read=lambda c,i,t: dict(doc, rev='1-ok'))
+        reads = iter([None, dict(doc, rev='1-ok')])
+        result = m.run_fixture(config, 0, publish=lambda c,d: calls.append(d), read=lambda c,i,t: next(reads))
         self.assertEqual([doc], calls)
         self.assertTrue(result['canonical_equal'])
         self.assertGreaterEqual(result['latency_ms'], 0)
@@ -39,13 +49,21 @@ class FixtureTests(unittest.TestCase):
     def test_missing_read_polls_but_publish_occurs_once(self):
         document = m.fixture_document('run', 0)
         with patch.object(m.time, 'sleep'):
-            reads = iter([None, dict(document, rev='1-ok')])
+            reads = iter([None, None, dict(document, rev='1-ok')])
             published = []
             result = m.run_fixture({'run_id':'run'}, 0,
                                    publish=lambda *a: published.append(a),
                                    read=lambda *a: next(reads))
         self.assertEqual(1, len(published))
         self.assertTrue(result['canonical_equal'])
+
+    def test_preflight_spends_same_deadline(self):
+        published = []
+        with patch.object(m.time, 'monotonic', side_effect=[100, 102]):
+            with self.assertRaises(m.FixtureError):
+                m.run_fixture({'run_id':'run', 'timeout_seconds':1}, 0,
+                              publish=lambda *a: published.append(a), read=lambda *a: None)
+        self.assertEqual([], published)
 
     def test_secret_file_mode(self):
         with tempfile.NamedTemporaryFile(mode='w') as file:
@@ -56,17 +74,22 @@ class FixtureTests(unittest.TestCase):
             with self.assertRaises(m.FixtureError):
                 m._secret(file.name)
 
-    def test_publish_failure_never_reads(self):
+    def test_publish_failure_never_reads_after_preflight(self):
         def fail(*args):
             raise m.FixtureError('publish failed')
+        reads = []
         def forbidden(*args):
-            self.fail('read after failed publish')
+            reads.append(args)
+            if len(reads) > 1:
+                self.fail('read after failed publish')
+            return None
         with self.assertRaises(m.FixtureError):
             m.run_fixture({'run_id':'run'}, 0, publish=fail, read=forbidden)
 
     def test_mismatch_fails(self):
+        reads = iter([None, {}])
         with self.assertRaises(m.FixtureError):
-            m.run_fixture({'run_id':'run'}, 0, publish=lambda *a: None, read=lambda *a: {})
+            m.run_fixture({'run_id':'run'}, 0, publish=lambda *a: None, read=lambda *a: next(reads))
 
 if __name__ == '__main__':
     unittest.main()

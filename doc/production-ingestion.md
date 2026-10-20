@@ -18,7 +18,7 @@ this dependency pin does not replace the repository's Nix dependency lock.
 python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
 python3 -m venv /tmp/star-readiness-venv
 /tmp/star-readiness-venv/bin/pip install pika==1.3.2
-/tmp/star-readiness-venv/bin/python scripts/readiness_ingest.py --config /tmp/readiness.json --duplicate
+/tmp/star-readiness-venv/bin/python scripts/readiness_ingest.py --config /tmp/readiness.json
 ```
 
 Configuration is JSON, containing references only (never credential values):
@@ -52,13 +52,13 @@ Timeout is 1–300 seconds, with broker connection setup allowed a one-second ma
 Use a unique run ID for each experiment; the fixture ID is deterministic within a
 run. `fixture_document(run_id,index,dataset)` produces the canonical message.
 
-`--duplicate` republishes the identical mutation and compares the returned revision.
-A stable immediately observed revision alone does not prove the second delivery was
-settled: the full stack gate must also drain the ingress queue and repeat readback.
-No exactly-once publication claim is made. Restart verification should retain the
-same dataset/run ID and independently read the original ID after restarting the
-server and broker before publishing anything else. Never use another invocation
-that republishes first as restart survival proof.
+Freshness is checked through the supported client before publication. An existing
+ID fails before any publish; choose a new run ID. Preflight, publish and retrieval
+share one deadline. Reported publish-to-read latency excludes preflight.
+Duplicate completion is not implemented or claimed: it requires queue settlement
+and a subsequent readback oracle. Restart verification must independently read the
+original ID after restarting the server and broker before publishing anything else.
+Never use another invocation that republishes first as restart survival proof.
 
 Current helper tests use injected publisher/read callbacks. They prove fixture
 identity, equality strictness, and failure handling, not live ingestion, invalid
