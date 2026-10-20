@@ -50,6 +50,39 @@ def verify(data, root, expected_head, source_root=None):
         require(type(gate.get('assertions')) is int and gate['assertions'] > 0, 'nonzero assertions required: ' + name)
         require(type(gate.get('exitCode')) is int and gate['exitCode'] == 0, 'successful exit required: ' + name)
         proof(gate.get('evidence'), root)
+    ingestion = gates['ingestion'].get('measurements', {})
+    for name in ('publisherConfirms', 'expectedRecords', 'persistedRecords'):
+        require(type(ingestion.get(name)) is int and ingestion[name] > 0,
+                'positive ingestion measurement required: ' + name)
+    require(ingestion['persistedRecords'] == ingestion['expectedRecords'], 'persisted records differ')
+    require(ingestion['publisherConfirms'] >= ingestion['expectedRecords'], 'missing publisher confirmations')
+    for name in ('persistedEquality', 'duplicateReplay', 'restartReadback', 'schemaRejection', 'supportedClientReadback'):
+        require(ingestion.get(name) is True, 'ingestion proof required: ' + name)
+    recovery = gates['recovery'].get('measurements', {})
+    for name in ('cleanInstance', 'identicalRecords'):
+        require(recovery.get(name) is True, 'recovery proof required: ' + name)
+    for name in ('upgrade', 'rollback'):
+        require(recovery.get(name) == 'passed', 'recovery transition required: ' + name)
+    for name in ('baselineImage', 'candidateImage'):
+        value = recovery.get(name, '')
+        require(isinstance(value, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', value), 'recovery immutable image required: ' + name)
+    require(recovery['baselineImage'] != recovery['candidateImage'], 'same-image restart is not upgrade/rollback')
+    require(recovery['candidateImage'] == data['images']['server'], 'recovery must test candidate server image')
+    isolation = gates['isolation'].get('coverage', {})
+    for name in ('reads', 'writes', 'search', 'attachments', 'changes'):
+        record = isolation.get(name, {})
+        if name in ('attachments', 'changes') and record.get('supported') is False:
+            require(record.get('status') == 'inaccessible' and
+                    record.get('routeDenied') is True and
+                    record.get('directDatabaseExposed') is False and
+                    isinstance(record.get('reason'), str) and record['reason'].strip(),
+                    'unsupported surface needs denial and database boundary proof: ' + name)
+        else:
+            require(record.get('status') == 'passed', 'isolation surface missing/inaccessible/failed: ' + name)
+        require(type(record.get('assertions')) is int and record['assertions'] > 0,
+                'nonzero isolation assertions required: ' + name)
+    require(gates['isolation'].get('boundedRequests') is True and
+            gates['isolation'].get('boundedQueryWork') is True, 'request/query bounds must be proved')
     load = gates['load']
     measures = load.get('measurements', {})
     for name in ('durationSeconds', 'requests', 'p95Milliseconds', 'peakMemoryBytes',
@@ -58,6 +91,7 @@ def verify(data, root, expected_head, source_root=None):
         require(type(value) in (int, float) and math.isfinite(value) and value >= 0, 'missing/invalid measurement: ' + name)
     for name in ('durationSeconds', 'requests', 'peakMemoryBytes', 'concurrency', 'documents'):
         require(measures[name] > 0, 'positive measurement required: ' + name)
+    require(measures['durationSeconds'] >= 3600, 'sustained soak requires at least 3600 seconds')
     require(measures['errors'] == 0 and measures['finalQueueBacklog'] == 0, 'load errors or undrained backlog')
     require(isinstance(load.get('testedLimits'), dict) and load['testedLimits'].get('description'), 'honest tested limits required')
     for name, status in (('ci', 'passed'), ('review', 'approved')):

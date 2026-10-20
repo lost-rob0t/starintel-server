@@ -49,9 +49,28 @@ Required gate meanings:
 and documents must be positive; errors and final backlog must be zero.
 `load.testedLimits.description` states host resources, document sizes, duration,
 load shape, and resulting tested limits. Reviewers must judge whether the duration
-and thresholds meet the approved milestone. No universal throughput or soak
-threshold is invented here. Include raw samples, chosen thresholds, and failure
+and thresholds meet the approved milestone. The minimum sustained soak is 3600 seconds; shorter runs remain smoke tests.
+No universal throughput threshold is invented here. Include raw samples, chosen thresholds, and failure
 criteria in the referenced evidence. Short smoke tests do not establish soak.
+
+Concrete subproofs are mandatory, not an arbitrary aggregate passed flag:
+
+- `ingestion.measurements`: positive integers `publisherConfirms`,
+  `expectedRecords`, `persistedRecords`; persisted count must equal expected and
+  confirmations must cover it. `persistedEquality`, `duplicateReplay`,
+  `restartReadback`, `schemaRejection`, `supportedClientReadback` must be true.
+- `recovery.measurements`: `cleanInstance`, `identicalRecords` true; `upgrade`,
+  `rollback` both `"passed"`; distinct immutable `baselineImage` and
+  `candidateImage`, with candidate equal to `images.server`. Same-image restart
+  cannot count as upgrade/rollback.
+- `isolation.coverage`: records for `reads`, `writes`, `search`, `attachments`,
+  `changes`, each with nonzero integer `assertions` and `status: "passed"`.
+  Attachments/changes may instead explicitly record `supported: false`,
+  `status: "inaccessible"`, `routeDenied: true`, `directDatabaseExposed: false`,
+  and a nonempty `reason`, backed by actual denial/network boundary assertions.
+  This records unavailable surfaces without claiming enabled isolation or adding
+  new APIs. Supported reads/writes/search must pass. `boundedRequests` and
+  `boundedQueryWork` must both be true on the isolation gate.
 
 Run the structural check after independently inspecting the underlying evidence:
 

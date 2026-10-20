@@ -34,10 +34,25 @@ class ReleaseVerifierTests(unittest.TestCase):
             'review': {'source': self.head, 'status': 'approved', 'blocking': False, 'evidence': proof},
         }
         self.manifest['gates']['load']['measurements'] = {
-            'durationSeconds': 60, 'requests': 100, 'p95Milliseconds': 10,
+            'durationSeconds': 3600, 'requests': 100, 'p95Milliseconds': 10,
             'peakMemoryBytes': 1000, 'peakQueueBacklog': 2, 'finalQueueBacklog': 0,
             'errors': 0, 'concurrency': 1, 'documents': 100,
         }
+        self.manifest['gates']['ingestion']['measurements'] = {
+            'publisherConfirms': 3, 'expectedRecords': 3, 'persistedRecords': 3,
+            'persistedEquality': True, 'duplicateReplay': True, 'restartReadback': True,
+            'schemaRejection': True, 'supportedClientReadback': True,
+        }
+        self.manifest['gates']['recovery']['measurements'] = {
+            'cleanInstance': True, 'identicalRecords': True, 'upgrade': 'passed',
+            'rollback': 'passed', 'baselineImage': 'sha256:' + 'c' * 64,
+            'candidateImage': 'sha256:' + 'b' * 64,
+        }
+        self.manifest['gates']['isolation'].update({
+            'boundedRequests': True, 'boundedQueryWork': True,
+            'coverage': {name: {'status': 'passed', 'assertions': 1}
+                         for name in ('reads', 'writes', 'search', 'attachments', 'changes')},
+        })
         self.manifest['gates']['load']['testedLimits'] = {'description': 'test fixture, not performance evidence'}
 
     def verify(self):
@@ -100,6 +115,39 @@ class ReleaseVerifierTests(unittest.TestCase):
             measures[key] = value
             with self.assertRaises(ValueError): self.verify()
             measures[key] = original
+
+    def test_smoke_cannot_count_as_soak(self):
+        self.manifest['gates']['load']['measurements']['durationSeconds'] = 3599
+        with self.assertRaisesRegex(ValueError, '3600'): self.verify()
+
+    def test_same_image_rollback_and_wrong_candidate_fail(self):
+        recovery = self.manifest['gates']['recovery']['measurements']
+        recovery['baselineImage'] = recovery['candidateImage']
+        with self.assertRaisesRegex(ValueError, 'same-image'): self.verify()
+        recovery['baselineImage'] = 'sha256:' + 'c' * 64
+        recovery['candidateImage'] = 'sha256:' + 'd' * 64
+        with self.assertRaisesRegex(ValueError, 'candidate server'): self.verify()
+
+    def test_unverified_ingestion_and_inaccessible_isolation_fail(self):
+        ingestion = self.manifest['gates']['ingestion']['measurements']
+        ingestion['persistedRecords'] = 2
+        with self.assertRaises(ValueError): self.verify()
+        ingestion['persistedRecords'] = 3
+        ingestion['duplicateReplay'] = False
+        with self.assertRaises(ValueError): self.verify()
+        ingestion['duplicateReplay'] = True
+        self.manifest['gates']['isolation']['coverage']['attachments'] = {
+            'status': 'inaccessible', 'reason': 'unsupported route'}
+        with self.assertRaisesRegex(ValueError, 'attachments'): self.verify()
+
+    def test_unsupported_surface_requires_denial_and_closed_database(self):
+        record = {'supported': False, 'status': 'inaccessible', 'assertions': 2,
+                  'reason': 'no supported attachment route', 'routeDenied': True,
+                  'directDatabaseExposed': False}
+        self.manifest['gates']['isolation']['coverage']['attachments'] = record
+        self.verify()
+        record['directDatabaseExposed'] = True
+        with self.assertRaises(ValueError): self.verify()
 
     def test_version_tags_are_not_published_automatically(self):
         workflow = (ROOT / '.github/workflows/docker.yml').read_text()
