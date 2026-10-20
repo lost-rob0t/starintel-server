@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import json
 import subprocess
+import sys
 from unittest.mock import patch
 import tempfile
 import unittest
@@ -109,5 +110,43 @@ class StackUpTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.module.prepare_secrets(self.path)
 
+def docker_secret_probe():
+    """Explicit Docker probe: real UID drop, actual entrypoint, synthetic server."""
+    with tempfile.TemporaryDirectory(prefix='starintel-secret-probe-') as temporary:
+        directory = Path(temporary)
+        fixtures = {
+            'secret': 'synthetic-valkey-only\n',
+            'su-exec': '#!/bin/sh\nids="$1"\nshift\nexec chroot --userspec="$ids" / "$@"\n',
+            'server': '#!/bin/sh\nset -eu\ntest "$(id -u)" = 65532\n'
+                      'test "$(cat "$VALKEY_PASSWORD_FILE")" = synthetic-valkey-only\n'
+                      'test "$(stat -c %a "$VALKEY_PASSWORD_FILE")" = 600\n'
+                      'test "$(stat -c %a "$(dirname "$VALKEY_PASSWORD_FILE")")" = 700\n'
+                      'test "$(stat -f -c %T "$VALKEY_PASSWORD_FILE")" = tmpfs\n',
+        }
+        for name, value in fixtures.items():
+            fixture = directory / name
+            fixture.write_text(value)
+            fixture.chmod(0o600 if name == 'secret' else 0o755)
+        image = 'nixos/nix@sha256:e2bff159b88c242722022a273d3832a4392f01dba35b796204d852b89042526e'
+        base = ['docker', 'run', '--rm', '--network', 'none', '--entrypoint', '/bin/sh',
+                '-e', 'PATH=/bin:/nix/var/nix/profiles/default/bin',
+                '--mount', f'type=bind,src={directory / "secret"},dst=/run/secrets/valkey_password,readonly']
+        denied = subprocess.run(base + ['--user', '65532:65532', image, '-c',
+                                'test -r /run/secrets/valkey_password'], timeout=180)
+        assert denied.returncode == 1, 'expected UID65532 to be denied host0600 secret'
+        command = base + ['-e', 'VALKEY_PASSWORD_FILE=/run/secrets/valkey_password']
+        for source, target in ((directory / 'su-exec', '/bin/su-exec'),
+                               (directory / 'server', '/bin/star-server'),
+                               (ROOT / 'docker/star-server-entrypoint.sh', '/test-entrypoint.sh')):
+            command += ['--mount', f'type=bind,src={source},dst={target},readonly']
+        subprocess.run(command + [image, '/test-entrypoint.sh'], check=True, timeout=180)
+        assert (directory / 'secret').stat().st_mode & 0o777 == 0o600
+        assert (directory / 'secret').read_text() == fixtures['secret']
+        print('Docker secret probe passed: UID denial, private staging, host secret unchanged.')
+
+
 if __name__ == '__main__':
-    unittest.main()
+    if sys.argv[1:] == ['--docker-secrets']:
+        docker_secret_probe()
+    else:
+        unittest.main()

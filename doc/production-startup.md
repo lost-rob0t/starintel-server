@@ -46,6 +46,24 @@ overriding `.env` so the checked directory is always used. Do not put credential
 values into `.env`, init files, command arguments, tracked files, or Nix inputs.
 Only use trusted repository/build inputs.
 
+The server entrypoint starts as root, reads its existing environment-backed
+secrets, and drops to UID 65532. The Valkey client needs a file after this drop,
+so the entrypoint copies that one secret into a fresh private directory in the
+container's `/dev/shm` tmpfs, owned by UID 65532 with file mode 0600. The host
+secret stays unchanged. Docker's default private `/dev/shm` mount is required;
+do not disable it or share the IPC namespace. The runtime copy lives for the
+container lifetime and never enters a Nix output or image layer.
+
+To verify this boundary separately with Docker and the pinned Nix test image:
+
+```sh
+python3 tests/test_stack_up.py --docker-secrets
+```
+
+This probe uses a synthetic secret and server stub, the actual entrypoint, and a
+real UID change. It proves file access across the privilege boundary, not Lisp
+startup or Valkey connectivity.
+
 ## Subsequent operations
 
 For manual Compose operations, select the same directory and project settings:
