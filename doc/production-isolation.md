@@ -49,5 +49,22 @@ raw CouchDB access is isolated: infrastructure credentials and network exposure
 must remain separate. It does not prove transport memory bounds (the existing
 JSON size check runs after body buffering), backend query complexity limits,
 timeouts, deep search pagination, or anonymous public-mode privacy. Authenticated
-query text, sort and bookmark bounds need a separate executable RED and fix;
-the current authenticated search path lacks public search's 512-character cap.
+search now rejects query text longer than 512 characters before authorization
+query compilation or backend work, matching public search's existing length
+limit. Sort and bookmark bounds remain unverified. A text length bound does not
+establish a backend complexity or execution-time bound.
+
+## Query length regression evidence
+
+The tests-only commit `bffa109679875d2286b6657f5cf7a63fd0ffc312` ran the native
+`nix run .#star-unit-tests` gate in GitHub Actions run `39346895223`, job
+`118381554821`. The build succeeded. `HTTP-AUTH-TESTS` discovered and executed
+14 tests: 13 passed, one failed, none skipped. The new regression produced four
+expected assertion failures: on both `/search` and `/api/v1/documents/search`,
+a 513-character query reached the query-scoping sentinel once and returned
+`probe_query_reached` instead of stopping with `search_query_too_long`.
+Both 512-character positive controls passed. This establishes a behavior RED,
+not a dependency or zero-discovery failure.
+
+The fix checks length before constructing the authorized query. Its exact-head
+hosted GREEN remains required; this document does not claim that run completed.
