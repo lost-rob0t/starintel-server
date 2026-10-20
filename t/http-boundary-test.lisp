@@ -408,7 +408,64 @@
                 :ensure-workers-fn ensure-workers
                 :tell-fn tell-noop)))))
       (is (= 429
-             (star.frontends.http-api:http-input-error-status condition)))
+              (star.frontends.http-api:http-input-error-status condition)))
       (is (string= "principal_bulk_quota_exceeded"
                    (star.frontends.http-api:http-input-error-code
                     condition))))))
+
+(test terminal-bulk-jobs-are-evicted-after-bounded-retention
+  ;; issue 23: *bulk-ingest-jobs* must not retain every terminal job
+  ;; forever.  After more terminal jobs than any sane retention window,
+  ;; older entries must be evicted while the newest stays queryable.
+  (let* ((fake-system (list :test-system))
+         (star.actors:*sys* fake-system)
+         (star.frontends.http-api::*bulk-ingest-workers*
+           (list :fake-worker))
+         (star.frontends.http-api::*bulk-ingest-worker-system* fake-system)
+         (star.frontends.http-api::*bulk-ingest-worker-index* 0)
+         (star.frontends.http-api::*bulk-ingest-jobs*
+           (make-hash-table :test #'equal))
+         (star.frontends.http-api::*bulk-terminal-job-ids* nil)
+         (star.frontends.http-api::*bulk-pending-jobs* 0)
+         (star.frontends.http-api::*bulk-pending-by-principal*
+           (make-hash-table :test #'equal))
+         (star.frontends.http-api::*bulk-ingest-lock*
+           (bt:make-lock "http-boundary-retention-lock"))
+         (star.frontends.http-api::*http-correlation-id* "corr-retention")
+         (documents (list (make-boundary-document)))
+         (newest-job nil)
+         (told nil))
+    (flet ((submit-and-terminate (count)
+             (dotimes (index count)
+               (declare (ignore index))
+               (star.frontends.http-api:submit-bulk-ingest-job
+                documents
+                "retention-principal"
+                :ensure-workers-fn
+                (lambda ()
+                  star.frontends.http-api::*bulk-ingest-workers*)
+                :tell-fn
+                (lambda (worker job)
+                  (declare (ignore worker))
+                  (push job told))))
+             (dolist (job (nreverse told))
+               (star.frontends.http-api:execute-bulk-job
+                job
+                :publish-fn
+                (lambda (document)
+                  (declare (ignore document))))
+               (star.frontends.http-api::release-bulk-job-slot job)
+               (setf newest-job job))
+             (setf told nil)))
+      (dotimes (chunk 72)                    ; 288 terminal jobs total
+        (declare (ignore chunk))
+        (submit-and-terminate 4))
+      (let ((registry star.frontends.http-api::*bulk-ingest-jobs*))
+        (is (< (hash-table-count registry) 288))
+        (is (plusp (hash-table-count registry)))
+        (is-true (gethash
+                  (star.frontends.http-api::bulk-ingest-job-id newest-job)
+                  registry))
+        (is (eq :completed
+                (star.frontends.http-api:bulk-ingest-job-status
+                 newest-job)))))))

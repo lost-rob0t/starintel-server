@@ -5,11 +5,16 @@
 (defparameter +bulk-max-pending-jobs+ 32)
 (defparameter +bulk-max-pending-per-principal+ 4)
 (defparameter +bulk-worker-count+ 4)
+(defparameter +bulk-terminal-job-retention+ 256
+  "How many terminal jobs stay queryable by id; older ones are evicted
+so the registry stays bounded (issue 23).")
 
 (defvar *bulk-ingest-workers* nil)
 (defvar *bulk-ingest-worker-system* nil)
 (defvar *bulk-ingest-worker-index* 0)
 (defvar *bulk-ingest-jobs* (make-hash-table :test #'equal))
+(defvar *bulk-terminal-job-ids* nil
+  "Newest-first ids of terminal jobs retained for status polling.")
 (defvar *bulk-pending-jobs* 0)
 (defvar *bulk-pending-by-principal* (make-hash-table :test #'equal))
 (defvar *bulk-ingest-lock* (bt:make-lock "bulk-ingest-state"))
@@ -67,6 +72,20 @@
           (setf (gethash principal *bulk-pending-by-principal*)
                 (1- count))
           (remhash principal *bulk-pending-by-principal*)))))
+
+(defun retain-terminal-job (job)
+  "Keep a terminal job queryable by id, evicting the oldest terminal
+jobs beyond +BULK-TERMINAL-JOB-RETENTION+.  Without this the registry
+grows without bound under sustained bulk ingest (issue 23)."
+  (bt:with-lock-held (*bulk-ingest-lock*)
+    (push (bulk-ingest-job-id job) *bulk-terminal-job-ids*)
+    (let ((cut (nthcdr (1- +bulk-terminal-job-retention+)
+                       *bulk-terminal-job-ids*)))
+      (when (cdr cut)
+        (let ((evicted (cdr cut)))
+          (setf (cdr cut) nil)
+          (dolist (id evicted)
+            (remhash id *bulk-ingest-jobs*)))))))
 
 (defun comma-separated-scopes (scopes)
   (format nil "~{~a~^,~}" scopes))
@@ -181,9 +200,10 @@
     (when (eq (bulk-ingest-job-status job) :running)
       (setf (bulk-ingest-job-status job) :failed
             (bulk-ingest-job-error-code job) "bulk_job_failed"))
-    (setf (bulk-ingest-job-documents job) nil
-          (bulk-ingest-job-service-context job) nil))
-  job)
+     (setf (bulk-ingest-job-documents job) nil
+           (bulk-ingest-job-service-context job) nil)
+     (retain-terminal-job job))
+   job)
 
 (defun bulk-worker-handler (job)
   (unwind-protect
