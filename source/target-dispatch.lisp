@@ -456,16 +456,29 @@
          (schedule-id (target-dispatch-envelope-schedule-id envelope)))
     (when (gethash schedule-id *active-target-schedules*)
       (return-from register-target-schedule :duplicate))
-    (let ((callback
-            (lambda ()
-              (funcall dispatch-fn
-                       (next-target-occurrence-envelope envelope)))))
-      (if (target-record-recurring-p record)
+    (if (target-record-recurring-p record)
+        (progn
           (funcall schedule-recurring-fn
-                   schedule-id (target-record-delay record) callback)
+                   schedule-id (target-record-delay record)
+                   (lambda ()
+                     (funcall dispatch-fn
+                              (next-target-occurrence-envelope envelope))))
+          (setf (gethash schedule-id *active-target-schedules*) envelope))
+        ;; One-shot schedules die after a single dispatch; dropping the
+        ;; registration then keeps the registry bounded (issue 24).  The
+        ;; fired flag covers timers that fire during registration.
+        (let ((fired nil))
           (funcall schedule-once-fn
-                   schedule-id (target-record-delay record) callback)))
-    (setf (gethash schedule-id *active-target-schedules*) envelope)
+                   schedule-id (target-record-delay record)
+                   (lambda ()
+                     (unwind-protect
+                          (funcall dispatch-fn
+                                   (next-target-occurrence-envelope envelope))
+                       (setf fired t)
+                       (remhash schedule-id *active-target-schedules*))))
+          (unless fired
+            (setf (gethash schedule-id *active-target-schedules*)
+                  envelope))))
     :scheduled))
 
 (defun target-outcome

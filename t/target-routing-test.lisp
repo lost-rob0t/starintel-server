@@ -569,6 +569,79 @@
 ;;; Run all routing tests
 ;;; ----------------------------------------------------------------------
 
+;;; ----------------------------------------------------------------------
+;;; Schedule registry eviction (issue 24)
+;;; ----------------------------------------------------------------------
+
+(defun make-schedule-probe-envelope (schedule-id)
+  "Minimal one-shot dispatch envelope for registry behavior tests."
+  (star.actors::%make-target-dispatch-envelope
+   (star.actors::%make-target-record
+    (format nil "record-~a" schedule-id)
+    "probe-actor"
+    "probe-target"
+    1
+    nil
+    nil
+    (jsown:new-js ("dtype" "person"))
+    "1"
+    nil
+    nil)
+   nil
+   schedule-id
+   "probe-execution"
+   0
+   "probe-trace"
+   "probe-lease"
+   1
+   (+ (get-universal-time) 60)))
+
+(test fired-one-shot-schedule-is-removed-from-registry
+  ;; issue 24: a fired one-shot schedule is dead; retaining its envelope
+  ;; forever makes *active-target-schedules* grow without bound.
+  (let ((star.actors::*active-target-schedules*
+          (make-hash-table :test #'equal))
+        (dispatched nil))
+    (let ((result
+            (star.actors::register-target-schedule
+             (make-schedule-probe-envelope "probe-one-shot")
+             (lambda (envelope)
+               (declare (ignore envelope))
+               (push :dispatched dispatched))
+             ;; wheel timer stand-in that fires the one-shot immediately
+             (lambda (id delay callback)
+               (declare (ignore id delay))
+               (funcall callback))
+             (lambda (&rest args)
+               (declare (ignore args))))))
+      (is (eq :scheduled result))
+      (is (eq :dispatched (first dispatched)))
+      (is-false (gethash "probe-one-shot"
+                         star.actors::*active-target-schedules*)
+                "fired one-shot schedules must be evicted"))))
+
+(test recurring-schedule-stays-registered
+  ;; recurring schedules are bounded by schedule identity and must keep
+  ;; their registration while active.
+  (let ((star.actors::*active-target-schedules*
+          (make-hash-table :test #'equal))
+        (envelope (make-schedule-probe-envelope "probe-recurring")))
+    (setf (star.actors::target-record-recurring-p
+           (star.actors::target-dispatch-envelope-record envelope))
+          t)
+    (let ((result
+            (star.actors::register-target-schedule
+             envelope
+             (lambda (envelope)
+               (declare (ignore envelope)))
+             (lambda (id delay callback)
+               (declare (ignore id delay callback)))
+             (lambda (id delay callback)
+               (declare (ignore id delay callback))))))
+      (is (eq :scheduled result))
+      (is-true (gethash "probe-recurring"
+                        star.actors::*active-target-schedules*)))))
+
 (defun run-target-routing-tests ()
   "Run all target routing tests"
   (run! 'target-routing-tests))
