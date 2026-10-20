@@ -75,3 +75,40 @@ alone; compare acknowledged fixture identities through the supported client.
 ```sh
 python3 -m unittest discover -s tests -p test_readiness_recovery.py
 ```
+
+## Executed CouchDB-only drill — 2026-10-20
+
+The helper passed against two real, isolated CouchDB instances in the saved
+execution environment. This is partial recovery evidence; the full server,
+RabbitMQ ingestion, supported client, upgrade and rollback were not exercised.
+
+- Pull command: `docker pull couchdb:3.5.2` (exit 0).
+- Exact image used for both instances:
+  `couchdb@sha256:5fc596110eac7f412173a7d9de14f70aa5d3e816790fb6e70642755d4a4cf464`.
+- Driver command: `python3 /tmp/star-readiness-live-recovery.py` (exit 0).
+  The temporary driver used `docker volume create`, `docker create --name
+  <unique-name> --publish 127.0.0.1::5984 --mount
+  type=volume,src=<unique-volume>,dst=/opt/couchdb/data --entrypoint /bin/sh
+  <exact-image> -c <startup-script>`, `docker cp <private-password-file>
+  <container>:/run/readiness-password`, then `docker start` for each instance.
+  The startup script wrote the random password into a private CouchDB config,
+  removed its temporary password copy, and exec'd the official entrypoint.
+  No credential was passed in command arguments or environment variables.
+- Each instance had its own newly created volume; both reached HTTP `/_up` 200.
+- Inserted two synthetic records into `readiness-source`; one carried a 27-byte
+  attachment containing a NUL and newline. No writers ran during export.
+- Executed both helper CLI commands from the example above, using dynamically
+  allocated loopback ports and a temporary private password file/backup path.
+- Backup and restore each returned `status: passed`, `records: 2`, and SHA-256
+  `576e58188b068dd875c34ab0c1dccb85688109025c6968e931314cca0a1ec45a`.
+- Independently reread both databases and compared normalized hashes; identical.
+  A second restore into the existing destination was refused as required.
+- `docker rm --force <owned-container>` and `docker volume rm <owned-volume>`
+  removed both owned containers and volumes. Temporary password/backup files
+  were removed. The pulled image remains cached.
+- Re-ran `python3 -m unittest discover -s tests -p test_readiness_recovery.py`:
+  10 passed, including simulated partial bulk errors.
+
+The driver's informational attachment-length label initially printed 26;
+`len(b'synthetic attachment\x00bytes\n')` verified the correct length is 27.
+This labeling error did not affect actual byte equality or the checksum proof.
