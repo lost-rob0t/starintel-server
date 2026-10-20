@@ -45,27 +45,27 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish images
+      # Candidate publication is not a versioned release. Release gates live in
+      # doc/production-release.md; never overwrite a semantic version here.
+      - name: Publish commit candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          short_sha="${GITHUB_SHA::12}"
-
+          candidate="ghcr.io/${owner}/starintel-server:sha-${GITHUB_SHA}"
           echo "$GHCR_TOKEN" |
             docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-
-          docker tag starintel/server:0.1.0 \
-            "ghcr.io/${owner}/starintel-server:0.1.0"
-          docker tag starintel/server:0.1.0 \
-            "ghcr.io/${owner}/starintel-server:sha-${short_sha}"
-          docker tag starintel/couchdb:3.5.2 \
-            "ghcr.io/${owner}/starintel-couchdb:3.5.2"
-          docker tag starintel/clouseau:3.3.0 \
-            "ghcr.io/${owner}/starintel-clouseau:3.3.0"
-
-          docker push "ghcr.io/${owner}/starintel-server:0.1.0"
-          docker push "ghcr.io/${owner}/starintel-server:sha-${short_sha}"
-          docker push "ghcr.io/${owner}/starintel-couchdb:3.5.2"
-          docker push "ghcr.io/${owner}/starintel-clouseau:3.3.0"
+          # Repeated CI must not overwrite even a commit candidate.
+          # Inspect failures other than explicit absence fail closed.
+          if docker manifest inspect "$candidate" >/dev/null 2>manifest-error.txt; then
+            echo 'Candidate already exists; refusing to replace it.'
+            exit 0
+          fi
+          if ! grep -q 'manifest unknown' manifest-error.txt; then
+            echo 'Cannot establish candidate absence; refusing publication.' >&2
+            exit 1
+          fi
+          docker tag starintel/server:0.1.0 "$candidate"
+          docker push "$candidate"
