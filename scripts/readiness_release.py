@@ -56,7 +56,7 @@ def verify(data, root, expected_head, source_root=None):
                 'positive ingestion measurement required: ' + name)
     require(ingestion['persistedRecords'] == ingestion['expectedRecords'], 'persisted records differ')
     require(ingestion['publisherConfirms'] >= ingestion['expectedRecords'], 'missing publisher confirmations')
-    for name in ('persistedEquality', 'duplicateReplay', 'restartReadback', 'schemaRejection', 'supportedClientReadback'):
+    for name in ('persistedEquality', 'duplicateReplay', 'restartReadback', 'durableRetry', 'forcedCrashRecovery', 'schemaRejection', 'supportedClientReadback'):
         require(ingestion.get(name) is True, 'ingestion proof required: ' + name)
     recovery = gates['recovery'].get('measurements', {})
     for name in ('cleanInstance', 'identicalRecords'):

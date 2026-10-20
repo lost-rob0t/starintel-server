@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master, codex/starintel-0101-ingest]
 
+concurrency:
+  group: container-candidate-${{ github.sha }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
