@@ -19,7 +19,10 @@
   (let ((runtime
           (initialize-runtime (clingon:getopt command :init-value))))
     (unwind-protect
-         (star.runtime:run-runtime-loop runtime)
+         (progn
+           (when star:*slynk-enabled*
+             (start-debugger))
+           (star.runtime:run-runtime-loop runtime))
       (star.runtime:stop-runtime runtime :reason :handler-exit))))
 
 (defun server/command ()
@@ -54,7 +57,7 @@
 Connect from Emacs with =M-x sly-connect= and the port configured by
 =STAR_SLYNK_PORT= (default 4009)."
   (format t "Creating slynk server on port: ~a" star:*slynk-port*)
-  (slynk:create-server :port star:*slynk-port*))
+  (slynk:create-server :port star:*slynk-port* :interface "127.0.0.1"))
 
 (defun main ()
   "Binary entry point; parses argv via clingon and dispatches subcommands.
