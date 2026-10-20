@@ -38,3 +38,11 @@ gate(gh_actions_is_effective_ci, 'Forgejo Actions doc-coverage is flaky/red-by-d
 % .prolog/.facts.lock ignored). Verification/KB state must ride with
 % checkouts, branches, and worktrees.
 policy(prolog_state_tracked, 'git-track .prolog/ (kb, runs, facts.kb, verify.pl); ignore only .prolog/.facts.lock').
+
+% Operator directive 2026-10-20: Forgejo (origin, git.starintel.actor) is
+% the DEFAULT again for pushes, PRs and follow-up actions (tea); github
+% stays a fallback/mirror. Refines - does not delete - the 2026-09-14
+% gh_actions_is_effective_ci gate fact.
+operator_directive(forgejo_default_remote, '2026-10-20',
+    'Pushes, PRs, and issue filing default to Forgejo origin via tea; \
+use github only as outage fallback or explicit operator request.').

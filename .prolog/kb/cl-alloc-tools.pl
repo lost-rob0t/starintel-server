@@ -54,6 +54,34 @@ sbcl_api(map_allocated_objects,
      interned in SB-VM or SB-KERNEL on this build; derive type labels
      via type-of or an explicit widetag table.").
 
+root_cause(class_of_reader_error, sb_kernel_class_of_inherited,
+    "sb-kernel:class-of does not READ: CLASS-OF is INHERITED into
+     SB-KERNEL from the CL package, not external, so a double-colon-free
+     reference signals 'not external in the SB-KERNEL package'. Use
+     cl:class-of (same function). Verified SBCL 2.6.0.").
+
+invariant(array_class_names_are_sb_kernel_internals,
+    "(class-name (class-of v)) for specialized arrays returns
+     SB-KERNEL-internal symbols, e.g. SB-KERNEL::SIMPLE-ARRAY-
+     UNSIGNED-BYTE-8, not CL names. Tests and heap-diff consumers must
+     match by SYMBOL-NAME, never by CL package symbols.").
+
+method(sprof_contrib_load_order,
+    "(require :sb-sprof) must complete before the reader sees
+     sb-sprof: symbols: a single --eval string is READ as a whole before
+     the require executes, so package references fail with 'Package
+     SB-SPROF does not exist'. Put the require in an earlier --eval (or
+     file prologue) than any sb-sprof: form. with-profiling (:reset t
+     :mode :cpu :report :flat :loop nil) verified working; report goes
+     to *standard-output* - bind it to redirect.").
+
+method(heap_snapshot_minimal_allocation,
+    "Under map-allocated-objects (GC inhibited) the census callback must
+     barely allocate: an eq hash keyed by CLASS objects with pre-sized
+     table and fixnum-only (count . bytes) cells walks 1.8M objects
+     safely. Attribution verified exact: a 50,000-element octet vector
+     was reported as 50,016 grown bytes via with-heap-growth.").
+
 % --- bounded streaming ---
 
 invariant(bounded_queue_backpressure,
