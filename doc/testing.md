@@ -33,3 +33,8 @@ nix run .#star-integration-tests
 CI runs the unit system without services, then provisions CouchDB and
 RabbitMQ for the integration system. Dependency startup failures are test
 failures; the required integration suite never silently skips them.
+
+The bounded [Linux canonical HTTP persistence job](local-persistence-ci.md)
+reuses the pinned Server image with only CouchDB/RabbitMQ and checks authenticated
+create/read plus Server/CouchDB restart readback. Its evidence is distinct from
+Android/PRoot execution and from the broader search stack test.
