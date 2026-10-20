@@ -1,5 +1,7 @@
 (in-package :star.frontends.http-api)
 
+(defparameter +authenticated-search-max-query-length+ 512)
+
 (defun route-policy-metadata (route method)
   (list :route route
         :method method
@@ -91,7 +93,13 @@ legacy path parameter that must match the document dtype."
 (defun handle-authorized-search-route
     (params &optional (route "/search"))
   (with-http-boundary ()
-    (let* ((q (require-query-string params "q"))
+    (let* ((q (let ((value (require-query-string params "q")))
+                (when (> (length value) +authenticated-search-max-query-length+)
+                  (signal-http-input-error
+                   400
+                   "search_query_too_long"
+                   "Search query exceeds the configured length limit"))
+                value))
            (limit (bounded-query-integer
                    params "limit" :default 25 :minimum 1))
            (dataset (query-value params "dataset"))
