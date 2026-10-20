@@ -58,7 +58,11 @@ Concrete subproofs are mandatory, not an arbitrary aggregate passed flag:
 - `ingestion.measurements`: positive integers `publisherConfirms`,
   `expectedRecords`, `persistedRecords`; persisted count must equal expected and
   confirmations must cover it. `persistedEquality`, `duplicateReplay`,
-  `restartReadback`, `schemaRejection`, `supportedClientReadback` must be true.
+  `restartReadback`, `durableRetry`, `forcedCrashRecovery`, `schemaRejection`,
+  `supportedClientReadback` must be true. Durable retry must exercise a transient
+  persistence failure and subsequent successful redelivery; forced-crash recovery
+  must terminate the server without graceful shutdown and prove acknowledged
+  records survive restart. Graceful restart alone proves neither subcondition.
 - `recovery.measurements`: `cleanInstance`, `identicalRecords` true; `upgrade`,
   `rollback` both `"passed"`; distinct immutable `baselineImage` and
   `candidateImage`, with candidate equal to `images.server`. Same-image restart
@@ -95,6 +99,7 @@ index with release artifacts. No tagging/publishing command is automated here.
 
 The existing stack workflow publishes only a full-commit candidate, never a
 semantic version or mutable dependency image. It checks candidate absence and
-fails closed on ambiguous registry errors. Registry tag checks are not an atomic
+fails closed on ambiguous registry errors. SHA-keyed workflow concurrency
+serializes identical-commit runs without cancellation. Registry tag checks are not an atomic
 immutability guarantee: configure registry protection and serialize publication
 before treating tags as immutable; consume OCI digests for exact identity.

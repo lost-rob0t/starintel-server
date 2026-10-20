@@ -42,6 +42,7 @@ class ReleaseVerifierTests(unittest.TestCase):
             'publisherConfirms': 3, 'expectedRecords': 3, 'persistedRecords': 3,
             'persistedEquality': True, 'duplicateReplay': True, 'restartReadback': True,
             'schemaRejection': True, 'supportedClientReadback': True,
+            'durableRetry': True, 'forcedCrashRecovery': True,
         }
         self.manifest['gates']['recovery']['measurements'] = {
             'cleanInstance': True, 'identicalRecords': True, 'upgrade': 'passed',
@@ -148,6 +149,21 @@ class ReleaseVerifierTests(unittest.TestCase):
         self.verify()
         record['directDatabaseExposed'] = True
         with self.assertRaises(ValueError): self.verify()
+
+    def test_graceful_restart_does_not_prove_durable_retry_or_crash(self):
+        measurements = self.manifest['gates']['ingestion']['measurements']
+        for key in ('durableRetry', 'forcedCrashRecovery'):
+            original = measurements.pop(key)
+            with self.assertRaisesRegex(ValueError, key): self.verify()
+            measurements[key] = False
+            with self.assertRaisesRegex(ValueError, key): self.verify()
+            measurements[key] = original
+
+    def test_candidate_publication_serializes_identical_commits(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/docker.yml').read_text())
+        self.assertIn('github.sha', workflow['concurrency']['group'])
+        self.assertIs(workflow['concurrency']['cancel-in-progress'], False)
 
     def test_version_tags_are_not_published_automatically(self):
         workflow = (ROOT / '.github/workflows/docker.yml').read_text()
