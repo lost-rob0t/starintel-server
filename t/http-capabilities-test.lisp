@@ -110,45 +110,61 @@
     (let ((query
             (star.frontends.http-api::public-search-authorized-query
              "alice")))
+      (is (search "tenant_id:\"public\"" query))
       (is (search "dataset:\"public-a\"" query))
       (is (search "dataset:\"public-b\"" query))
       (is (null (search "private-dataset" query))))))
 
-(test api-v1-public-search-wildcard-mode-is-explicit
-  (let ((star.frontends.http-api::*public-search-datasets* '("*")))
-    (is (string=
-         "(alice)"
-         (star.frontends.http-api::public-search-authorized-query
-          "alice")))))
+(test api-v1-public-search-fails-closed-without-explicit-datasets
+  (dolist (datasets '(nil ("*")))
+    (let ((star.frontends.http-api::*public-search-datasets* datasets))
+      (signals error
+        (star.frontends.http-api::public-search-authorized-query
+         "alice")))))
+
+(test api-v1-public-search-keeps-caller-query-inside-scope
+  (let ((star.frontends.http-api::*public-search-datasets* '("public")))
+    (let ((query
+            (star.frontends.http-api::public-search-authorized-query
+             "alice) OR (tenant_id:private")))
+      (is (search "alice\\) OR \\(tenant_id\\:private" query))
+      (is (search "tenant_id:\"public\"" query))
+      (is (null (search "(alice) OR" query))))))
 
 (test api-v1-public-stats-are-aggregate-only
-  (let* ((total-response
-           (jsown:new-js
-             ("rows"
-              (list (jsown:new-js ("key" :null) ("value" 42))))))
-         (dtype-response
+  (let* ((star.frontends.http-api::*public-search-datasets* '("public-a"))
+         (response
            (jsown:new-js
              ("rows"
               (list
-               (jsown:new-js ("key" "person") ("value" 10))
-               (jsown:new-js ("key" "relation") ("value" 20))
-               (jsown:new-js ("key" "target") ("value" 3))
+               (jsown:new-js ("key" '("public" "public-a" "person")) ("value" 10))
+               (jsown:new-js ("key" '("public" "public-a" "relation")) ("value" 20))
+               (jsown:new-js ("key" '("public" "public-a" "target")) ("value" 3))
                (jsown:new-js
-                 ("key" "investigation-target") ("value" 2))))))
+                 ("key" '("public" "public-a" "investigation-target")) ("value" 2))))))
          (document
            (star.frontends.http-api::public-stats-document-from-view-responses
-            total-response dtype-response))
+            (list response)))
          (data (jsown:val document "data"))
          (documents (jsown:val data "documents"))
          (by-dtype (jsown:val documents "by_dtype"))
          (targets (jsown:val data "targets")))
     (is (string= "ok" (jsown:val document "status")))
-    (is (= 42 (jsown:val documents "total")))
+    (is (= 35 (jsown:val documents "total")))
     (is (= 10 (jsown:val by-dtype "person")))
     (is (= 20 (jsown:val by-dtype "relation")))
     (is (= 5 (jsown:val targets "total")))
     (is (null (jsown:val-safe data "documents_raw")))
     (is (null (search "_id" (jsown:to-json document))))))
+
+(test api-v1-public-stats-rejects-cross-tenant-view-row
+  (let ((star.frontends.http-api::*public-search-datasets* '("public-a")))
+    (signals error
+      (star.frontends.http-api::public-stats-document-from-view-responses
+       (list (jsown:new-js
+              ("rows" (list (jsown:new-js
+                              ("key" '("private" "public-a" "person"))
+                              ("value" 1))))))))))
 
 (test api-v1-capabilities-is-public-discovery
   (is (member "/api/v1/capabilities"

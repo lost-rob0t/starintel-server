@@ -13,43 +13,76 @@
 
 (test test-public-stats-does-not-require-authentication
   "The watch-safe aggregate stats endpoint is intentionally public by default."
-  (multiple-value-bind (status body)
-      (perform-request
-       (lambda ()
-         (dex:get
-          (make-test-url "/api/v1/stats")
-          :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
-    (report-public-api-response "public-stats" status body)
-    (is (= 200 status))
-    (let* ((document (jsown:parse body))
-           (data (jsown:val document "data"))
-           (documents (jsown:val data "documents"))
-           (targets (jsown:val data "targets")))
-      (is (string= "ok" (jsown:val document "status")))
-      (is (integerp (jsown:val data "generated_at")))
-      (is (integerp (jsown:val documents "total")))
-      (is (not (null (jsown:val documents "by_dtype"))))
-      (is (integerp (jsown:val targets "total")))
-      (is (null (search "password" body :test #'char-equal)))
-      (is (null (search "credential" body :test #'char-equal))))))
+  (let ((original star.frontends.http-api::*public-search-datasets*))
+    (unwind-protect
+         (progn
+           (setf star.frontends.http-api::*public-search-datasets* '("testing"))
+           (multiple-value-bind (status body)
+               (perform-request
+                (lambda ()
+                  (dex:get
+                   (make-test-url "/api/v1/stats")
+                   :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+             (report-public-api-response "public-stats" status body)
+             (is (= 200 status))
+             (let* ((document (jsown:parse body))
+                    (data (jsown:val document "data"))
+                    (documents (jsown:val data "documents"))
+                    (targets (jsown:val data "targets")))
+               (is (string= "ok" (jsown:val document "status")))
+               (is (integerp (jsown:val data "generated_at")))
+               (is (integerp (jsown:val documents "total")))
+               (is (not (null (jsown:val documents "by_dtype"))))
+               (is (integerp (jsown:val targets "total")))
+               (is (null (search "password" body :test #'char-equal)))
+               (is (null (search "credential" body :test #'char-equal))))))
+      (setf star.frontends.http-api::*public-search-datasets* original))))
 
 (test test-public-search-does-not-require-authentication
   "Public v1 search bypasses credential authentication but still uses the
 server-owned authorization scope before the backend query executes."
-  (insert-test-document
-   (make-test-user
-    :id "public-search-test-user"
-    :name "public-search-needle"
-    :platform "github"))
-  (sleep 2)
-  (multiple-value-bind (status body)
-      (perform-request
-       (lambda ()
-         (dex:get
-          (make-test-url "/api/v1/search?q=public-search-needle&limit=5")
-          :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
-    (report-public-api-response "public-search" status body)
-    (is (= 200 status))))
+  (let* ((original star.frontends.http-api::*public-search-datasets*)
+         (public-document
+           (make-test-user :id "public-search-test-user"
+                           :name "public-search-needle" :platform "github"))
+         (private-document
+           (make-test-user :id "private-search-test-user"
+                           :name "public-search-needle" :platform "github")))
+    (unwind-protect
+         (progn
+           (setf star.frontends.http-api::*public-search-datasets* '("testing")
+                 (jsown:val public-document "tenant_id") "public"
+                 (jsown:val private-document "tenant_id") "private")
+           (insert-test-document public-document)
+           (insert-test-document private-document)
+           (sleep 2)
+           (multiple-value-bind (status body)
+               (perform-request
+                (lambda ()
+                  (dex:get
+                   (make-test-url "/api/v1/search?q=public-search-needle&limit=5")
+                   :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+             (report-public-api-response "public-search" status body)
+             (is (= 200 status))
+             (is (search "public-search-test-user" body))
+             (is (null (search "private-search-test-user" body)))))
+      (setf star.frontends.http-api::*public-search-datasets* original))))
+
+(test test-public-reads-fail-closed-without-datasets
+  (let ((original star.frontends.http-api::*public-search-datasets*))
+    (unwind-protect
+         (progn
+           (setf star.frontends.http-api::*public-search-datasets* nil)
+           (dolist (path '("/api/v1/search?q=test" "/api/v1/stats"))
+             (multiple-value-bind (status body)
+                 (perform-request
+                  (lambda ()
+                    (dex:get
+                     (make-test-url path)
+                     :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+               (is (= 503 status))
+               (is (search "public_scope_unconfigured" body)))))
+      (setf star.frontends.http-api::*public-search-datasets* original))))
 
 (test test-private-mode-requires-authentication-for-v1-search
   "Init can disable public reads without removing the versioned search route."
