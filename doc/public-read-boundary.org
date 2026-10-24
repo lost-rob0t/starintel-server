@@ -19,3 +19,13 @@ Only server-side assignment of the =public= tenant gives a document that
 boundary. A schema =visibility= tag alone does not grant public API access.
 Before removing a reverse-proxy guard, verify both endpoints anonymously,
 including a matching private-tenant search document that remains absent.
+
+* Future authenticated user scope
+
+Each user should have an own tenant and shared read access to the =public=
+tenant. A user's read scope must exclude every other user's private tenant.
+This contract is not implemented by the anonymous route change above: user
+provisioning and authenticated query enforcement need their own design and
+regression tests. The public tenant must not be inferred from a document's
+=visibility= tag.
+This future work is tracked in [[https://git.starintel.actor/starintel-labs/starintel-server/issues/28][server issue #28]].
