@@ -9,3 +9,8 @@ method(public_read_activation,
        'Set STAR_PUBLIC_SEARCH_DATASETS to reviewed dataset names and install the data design document before enabling anonymous reads. Never set a wildcard in a mixed-tenant database.').
 root_cause(public_read_cross_tenant_exposure, wildcard_trusted_context,
            'The prior public search context used tenant:* and default dataset:*, while public stats queried global aggregate views; both could span tenants.').
+planned_scope(authenticated_user, own_tenant, read).
+planned_scope(authenticated_user, public_tenant, read).
+planned_denial(authenticated_user, peer_private_tenant, read).
+implementation_status(authenticated_user_own_plus_public_scope, not_implemented).
+planned_in_issue(authenticated_user_own_plus_public_scope, 28).
