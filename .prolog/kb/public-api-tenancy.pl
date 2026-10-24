@@ -14,3 +14,8 @@ planned_scope(authenticated_user, public_tenant, read).
 planned_denial(authenticated_user, peer_private_tenant, read).
 implementation_status(authenticated_user_own_plus_public_scope, not_implemented).
 planned_in_issue(authenticated_user_own_plus_public_scope, 28).
+
+invariant(public_stats_matches_scoped_view,
+          'For every allowlisted dataset, anonymous stats totals must match the tenant=public keyed CouchDB reduce view after persisted writes; a zero total is not evidence of an empty public tenant without this check.').
+blocker(public_stats_count_mismatch,
+        'https://git.starintel.actor/starintel-labs/starintel-server/issues/30').
