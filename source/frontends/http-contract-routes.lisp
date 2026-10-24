@@ -1,12 +1,22 @@
 (in-package :star.frontends.http-api)
 
 (defparameter *public-search-datasets*
-  (or (star::split-comma-setting
-       (uiop:getenv "STAR_PUBLIC_SEARCH_DATASETS"))
-      '("*"))
-  "Datasets visible through the v1 public-read search surface.
-The default wildcard matches the public-server deployment model. Operators
-that mix public and private datasets must explicitly configure this list.")
+  (star::split-comma-setting (uiop:getenv "STAR_PUBLIC_SEARCH_DATASETS"))
+  "Explicitly approved datasets for anonymous reads; empty disables them.")
+
+(defparameter +public-tenant+ "public")
+
+(defun require-public-datasets ()
+  (unless (and *public-search-datasets*
+               (every (lambda (dataset)
+                        (and (stringp dataset)
+                             (plusp (length dataset))
+                             (not (string= dataset "*"))))
+                      *public-search-datasets*))
+    (signal-http-input-error
+     503 "public_scope_unconfigured"
+     "Public dataset allowlist is not configured"))
+  *public-search-datasets*)
 
 (defparameter +public-search-path+ "/api/v1/search")
 (defparameter +public-stats-path+ "/api/v1/stats")
@@ -58,10 +68,10 @@ that mix public and private datasets must explicitly configure this list.")
 
 (defun public-search-scopes ()
   (append
-   '("search:read" "tenant:*")
+   '("search:read" "tenant:public")
    (mapcar (lambda (dataset)
              (format nil "dataset:~a" dataset))
-           *public-search-datasets*)))
+           (require-public-datasets))))
 
 (defun public-search-context ()
   (star.authorization:make-trusted-authorization-context
@@ -75,10 +85,10 @@ server-owned public scopes. No caller principal or caller scope enters here."
   (let ((context (public-search-context)))
     (star.authorization:with-trusted-authorization-context (context)
       (star.authorization:authorized-search-query
-       query
+       (star.authorization::lucene-escape query)
        :principal context
        :requested-dataset nil
-       :requested-tenant nil
+       :requested-tenant +public-tenant+
        :metadata (route-policy-metadata +public-search-path+ "GET")))))
 
 (defun reject-public-scope-overrides (params)
@@ -123,18 +133,27 @@ server-owned public scopes. No caller principal or caller scope enters here."
               "search"
               "fts"))))))))
 
-(defun reduced-view-value (response)
-  (let* ((rows (or (jsown:val-safe response "rows") nil))
-         (row (first rows)))
-    (or (and row (jsown:val-safe row "value")) 0)))
-
-(defun dtype-count-object (response)
-  (let ((result (list :obj)))
-    (dolist (row (or (jsown:val-safe response "rows") nil) result)
-      (let ((dtype (jsown:val-safe row "key"))
-            (count (jsown:val-safe row "value")))
-        (when (and (stringp dtype) (numberp count))
-          (setf (jsown:val result dtype) count))))))
+(defun public-dtype-counts (responses)
+  (let ((counts (list :obj))
+        (total 0))
+    (loop for response in responses
+          for dataset in *public-search-datasets* do
+      (when (>= (length (or (jsown:val-safe response "rows") nil)) 1000)
+        (error "Public statistics view result may be truncated"))
+      (dolist (row (or (jsown:val-safe response "rows") nil))
+        (let* ((key (jsown:val-safe row "key"))
+               (dtype (and (listp key) (third key)))
+               (count (jsown:val-safe row "value")))
+          (unless (and (listp key)
+                       (= (length key) 3)
+                       (string= (first key) +public-tenant+)
+                       (string= (second key) dataset)
+                       (stringp dtype) (integerp count) (>= count 0))
+            (error "Invalid public statistics view row"))
+          (incf total count)
+          (setf (jsown:val counts dtype)
+                (+ count (or (jsown:val-safe counts dtype) 0))))))
+    (values counts total)))
 
 (defun dtype-count (counts dtype)
   (or (jsown:val-safe counts dtype) 0))
@@ -142,56 +161,47 @@ server-owned public scopes. No caller principal or caller scope enters here."
 (defun unix-time-now ()
   (- (get-universal-time) 2208988800))
 
-(defun public-stats-document-from-view-responses
-    (total-response dtype-response)
+(defun public-stats-document-from-view-responses (responses)
   "Build the stable public stats envelope from aggregate CouchDB view output."
-  (let* ((by-dtype (dtype-count-object dtype-response))
-         (target-total
-           (+ (dtype-count by-dtype "target")
-              (dtype-count by-dtype "investigation-target"))))
-    (jsown:new-js
-      ("status" "ok")
-      ("data"
-       (jsown:new-js
-         ("service" "starintel-gserver")
-         ("version" star:*star-server-version*)
-         ("generated_at" (unix-time-now))
-         ("documents"
-          (jsown:new-js
-            ("total" (reduced-view-value total-response))
-            ("by_dtype" by-dtype)))
-         ("targets"
-          (jsown:new-js
-            ("total" target-total))))))))
+  (multiple-value-bind (by-dtype total) (public-dtype-counts responses)
+    (let ((target-total
+            (+ (dtype-count by-dtype "target")
+               (dtype-count by-dtype "investigation-target"))))
+      (jsown:new-js
+        ("status" "ok")
+        ("data"
+         (jsown:new-js
+           ("service" "starintel-gserver")
+           ("version" star:*star-server-version*)
+           ("generated_at" (unix-time-now))
+           ("documents"
+            (jsown:new-js
+              ("total" total)
+              ("by_dtype" by-dtype)))
+           ("targets"
+            (jsown:new-js
+              ("total" target-total)))))))))
 
 (defun handle-public-stats-route (params)
   (declare (ignore params))
   (with-http-boundary ()
+    (require-public-datasets)
     (couchdb-handler (client *couchdb-pool*)
-      (let ((total-response
-              (query-view
-               client
-               star:*couchdb-default-database*
-               "data"
-               "total"
-               :limit 1
-               :include-docs nil
-               :reduce t))
-            (dtype-response
-              (query-view
-               client
-               star:*couchdb-default-database*
-               "data"
-               "count_by_dtype"
-               :limit 1000
-               :include-docs nil
-               :reduce t
-               :group t)))
+      (let ((responses
+              (mapcar
+               (lambda (dataset)
+                 (query-view
+                  client star:*couchdb-default-database*
+                  "data" "count_by_tenant_dataset_dtype"
+                  :start-key (list +public-tenant+ dataset)
+                  :end-key (list +public-tenant+ dataset (jsown:new-js))
+                  :limit 1000 :include-docs nil :reduce t :group t))
+               *public-search-datasets*)))
         (set-cache-control
          (format nil "public, max-age=~d" +public-stats-cache-seconds+))
         (jsown:to-json
          (public-stats-document-from-view-responses
-          total-response dtype-response))))))
+          responses))))))
 
 (defun handle-openapi-route (params)
   (declare (ignore params))
