@@ -132,9 +132,11 @@ registers the pending invocation durably before enqueue. The host intercepts
 ACK/reply/error and applies the canonical correlation/completion guards before
 serialized journal CAS. Queue receipt stays separate from accepted/completed;
 unknown observations are nonterminal. Existing registrations require explicit
-reconciliation rather than automatic resend. The coordinator's configured limit
-currently bounds all registered invocation identities for its lifetime, including
-terminal ones; automatic retirement/recovery scanning is not implemented. An
+reconciliation rather than automatic resend. The configured limit bounds enrolled invocation identities. Trusted owners can
+call =retire-invocation= or =retire-terminal-invocations= to release process
+bookkeeping for durable terminal rows. Journal evidence is retained;
+re-registration returns existing and never permits resend. Pending and unknown
+executions cannot retire, and late unregistered outcomes fail closed. An
 expired Target retry fails closed pending persisted-acceptance recovery; it must
 not acquire a new execution and silently repeat an effect. Observer checks are repeated on
 CAS retry; lease-store observation and CouchDB CAS are not one distributed
@@ -173,3 +175,39 @@ cause is unknown. Cross-private StarLang checkout additionally requires an
 approved GitHub credential with read access to that repository. Its default
 repository token cannot supply that permission. No private canonical source may
 be copied into public StarRouter to bypass access control.
+
+* Explicit recovery and event API
+
+=star.router.leases:prepare-recovery-envelope= takes a predecessor and a NEW
+persisted execution ID from the trusted recovery owner. It acquires a real
+replacement lease/fence after expiry, preserves the predecessor and advances
+attempt. It neither stores acceptance nor schedules/resends; callers must
+reconcile the replacement through the existing acceptance authority first.
+An active predecessor cannot be displaced. This is a source API, not completed
+automatic Target recovery.
+
+=star.router.events:make-document-event-binding= declares a manifest event,
+actor and document payload field with a current credential resolver.
+=make-event-handler= composes it into the host callback; other kinds delegate.
+=commit-document-event= validates canonical event/schema/dataset/tenant and uses
+the existing authorized mutation/outbox commit. It emits no command ACK or reply.
+Transient documents, Targets, commands, controls and stream-frame objects are
+rejected. Persistence exceptions may represent unknown effects.
+
+Canonical streaming is not a released wire contract: StarLang's in-process
+stream frame defines task/correlation/sequence/envelope/terminal fields but not
+subscribe/resume/ACK payloads or persistence/backpressure arbitration. The
+internal document-bus observer is not a transport subscription. Implementing
+those wire operations requires canonical generator/contract authority first.
+
+Recurring native execution similarly needs an occurrence cursor and CAS
+transition in the existing schedule acceptance, stable next execution/request
+identity, and pending-versus-admitted recovery rules. Current acceptance treats
+scheduled/dispatched as duplicate. No second acceptance ledger was introduced.
+
+Atomic fencing remains a cross-store authority decision. Existing Valkey
+=fenced-set= atomically checks an active lease and writes its one Valkey value;
+it cannot atomically commit the CouchDB execution journal or document mutation.
+A new lease observation before a CouchDB CAS cannot close that race. A shared
+transactional authority or explicit canonical fencing commit protocol is needed;
+these source APIs do not promise that missing transaction.

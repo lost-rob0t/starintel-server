@@ -25,9 +25,12 @@
      record :attempt attempt
      :destination (star.actors::make-target-destination-handle :zmq "actor-a"))))
 (defun setup (&key (allowed t) (ttl-ms 60000))
-  (let* ((now (* 1000 (- (get-universal-time) 2208988800))) (count 0)
+  (let* ((now (* 1000 (- (get-universal-time) 2208988800))) (count 0) (ids 0)
          (store (star.leases:make-memory-lease-store
-                 :clock (lambda () now) :id-generator (lambda () "real-lease")
+                 :clock (lambda () now)
+                 :id-generator (lambda ()
+                                 (if (= 1 (incf ids)) "real-lease"
+                                     (format nil "real-lease-~d" ids)))
                  :audit-hook (lambda (&rest ignored) (declare (ignore ignored)) (incf count)))))
     (values (star.router.leases:make-policy store (owner allowed) #'lease-identity "instance-a"
                                            :ttl-ms ttl-ms :clock (lambda () now))
@@ -139,3 +142,67 @@
                          (star.actors::target-dispatch-envelope-record changed)) "target") "different.invalid")
         (signals star.actors::target-destination-unavailable
           (star.router.leases:prepare-envelope policy changed))))))
+
+(test explicit-expired-recovery-acquires-a-new-fence-without-mutating-predecessor
+  (multiple-value-bind (policy audits advance) (setup)
+    (declare (ignore audits))
+    (let ((original (dispatch)))
+      (star.router.leases:prepare-envelope policy original)
+      (let ((execution (star.actors::target-dispatch-envelope-execution-id original))
+            (fence (star.actors::target-dispatch-envelope-fencing-token original)))
+        (funcall advance 60001)
+        (let* ((recovered (star.router.leases:prepare-recovery-envelope
+                           policy original "persisted-recovery-execution-1"))
+               (lease (star.router.leases:verify-envelope policy recovered))
+               (replay (star.router.leases:prepare-recovery-envelope
+                        policy original "persisted-recovery-execution-1")))
+          (is (not (eq original recovered)))
+          (is (equal execution (star.actors::target-dispatch-envelope-execution-id original)))
+          (is (= fence (star.actors::target-dispatch-envelope-fencing-token original)))
+          (is (equal "persisted-recovery-execution-1" (star.leases:lease-record-execution-id lease)))
+          (is (> (star.leases:lease-record-fencing-token lease) fence))
+          (is (not (equal (star.actors::target-dispatch-envelope-lease-id original)
+                          (star.actors::target-dispatch-envelope-lease-id recovered))))
+          (is (= 2 (jsown:val (star.leases:lease-record-metadata lease) "wireAttempt")))
+          (is (equal (star.actors::target-dispatch-envelope-lease-id recovered)
+                     (star.actors::target-dispatch-envelope-lease-id replay)))
+          (is (= (star.actors::target-dispatch-envelope-fencing-token recovered)
+                 (star.actors::target-dispatch-envelope-fencing-token replay)))
+          (signals star.actors::target-destination-unavailable
+            (star.router.leases:verify-envelope policy original))
+          (funcall advance 60001)
+          (signals star.actors::target-destination-unavailable
+            (star.router.leases:prepare-recovery-envelope
+             policy original "persisted-recovery-execution-1")))))))
+
+(test explicit-recovery-cannot-displace-an-active-predecessor
+  (multiple-value-bind (policy audits advance) (setup)
+    (declare (ignore audits advance))
+    (let ((original (dispatch)))
+      (star.router.leases:prepare-envelope policy original)
+      (signals star.actors::target-destination-unavailable
+        (star.router.leases:prepare-recovery-envelope policy original "new-execution"))
+      (is (not (null (star.router.leases:verify-envelope policy original)))))))
+
+(test recovery-requires-explicit-new-identity-and-native-one-shot-before-io
+  (multiple-value-bind (policy audits advance) (setup)
+    (declare (ignore advance))
+    (let ((original (dispatch)))
+      (dolist (identity (list nil "" (make-string 1025 :initial-element #\x)
+                            (star.actors::target-dispatch-envelope-execution-id original)))
+        (signals star.actors::target-destination-unavailable
+          (star.router.leases:prepare-recovery-envelope policy original identity)))
+      (signals star.actors::target-destination-unavailable
+        (star.router.leases:prepare-recovery-envelope policy (dispatch :recurring t) "new-execution"))
+      (setf (star.actors::target-dispatch-envelope-destination original)
+            (star.actors::make-target-destination-handle :rabbit "actor-a"))
+      (signals star.actors::target-destination-unavailable
+        (star.router.leases:prepare-recovery-envelope policy original "new-execution"))
+      (is (zerop (funcall audits))))))
+
+(test recovery-authorization-still-precedes-lease-io
+  (multiple-value-bind (policy audits advance) (setup :allowed nil)
+    (declare (ignore advance))
+    (signals star.authorization:authorization-error
+      (star.router.leases:prepare-recovery-envelope policy (dispatch) "new-execution"))
+    (is (zerop (funcall audits)))))

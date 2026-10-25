@@ -143,3 +143,35 @@
       (signals error
         (star.router.outbound:register-invocation coordinator (command) changed-reference
                                                  (context) (key) "tenant" "execution-1" "lease-1" 9)))))
+
+(test retirement-releases-capacity-without-erasing-durable-terminal
+  (let* ((store (store)) (coordinator (coordinator store)))
+    (setf (star.router.outbound::coordinator-limit coordinator) 1)
+    (register coordinator)
+    (is (eq :pending (star.router.outbound:retire-invocation coordinator "execution-1")))
+    (star.router.outbound:observe-outcome coordinator (ack :completed) (key))
+    (let* ((before (star.router.outbound:invocation-snapshot coordinator "execution-1"))
+           (journal-key (jsown:val before "_id")))
+      (is (eq :retired (star.router.outbound:retire-invocation coordinator "execution-1")))
+      (is (equal before (star.router.journal:journal-read store journal-key)))
+      (is (eq :not-enrolled (star.router.outbound:retire-invocation coordinator "execution-1")))
+      (signals star.router.application:application-rejection
+        (star.router.outbound:observe-outcome coordinator (ack :completed "late") (key)))
+      ;; An explicit recovery of the old enrollment cannot execute it again.
+      (is (eq :existing (nth-value 1 (register coordinator))))
+      (is (eq :already-terminal
+              (star.router.outbound:observe-outcome coordinator (ack :rejected "late") (key))))
+      (is (equal '("execution-1")
+                 (star.router.outbound:retire-terminal-invocations coordinator)))
+      (is (zerop (hash-table-count (star.router.outbound::coordinator-index coordinator)))))))
+
+(test uncertain-execution-cannot-be-retired-to-evade-bound
+  (let ((coordinator (coordinator (store))))
+    (register coordinator)
+    (star.router.outbound:observe-outcome
+     coordinator (staractorprotocol:make-error-envelope
+                  (command) :message-id "uncertain-retire" :actor "worker" :sender "worker"
+                  :code "star.outcome-unknown" :message "reconcile" :retryable nil) (key))
+    (is (eq :pending (star.router.outbound:retire-invocation coordinator "execution-1")))
+    (is (null (star.router.outbound:retire-terminal-invocations coordinator)))
+    (is (= 1 (hash-table-count (star.router.outbound::coordinator-index coordinator))))))

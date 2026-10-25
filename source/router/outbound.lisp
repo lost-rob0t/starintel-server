@@ -2,7 +2,7 @@
   (:use :cl)
   (:export #:make-coordinator #:register-invocation #:mark-transport-queued
            #:observe-outcome #:invocation-snapshot #:arbitrate-invocation
-           #:make-outcome-handler))
+           #:make-outcome-handler #:retire-invocation #:retire-terminal-invocations))
 (in-package :star.router.outbound)
 
 (defstruct (coordinator (:constructor %make-coordinator))
@@ -19,9 +19,9 @@ command,execution-id,lease-id,fence) returns current :actor-reference, :attempt,
 :execution-id, :lease-id, :fencing-token, :lease-valid-p, :authorized-p and optional
 :cancel-won-p from authoritative runtime state. It must not infer these from wire
 claims. JOURNAL is mandatory; no volatile fallback or automatic effect replay.
-LIMIT bounds lifetime enrollment, including terminal executions. Rebuild a
-coordinator and explicitly re-register stored identities for recovery; terminal
-entries are never evicted to make an old invocation executable again."
+LIMIT bounds enrolled executions. Explicit retirement releases only durable
+terminal entries from the process index, retaining their journal evidence.
+Re-registration still returns :EXISTING and never authorizes replay."
   (unless (and journal (functionp authenticate) (functionp observe) (functionp clock)
                (integerp limit) (<= 1 limit 4096)
                (integerp wait-seconds) (<= 1 wait-seconds 3600))
@@ -233,3 +233,38 @@ deadline records outcome-unknown; it is not evidence that remote effects stopped
     (if (member (getf envelope :kind) '(:ack :reply :error))
         (progn (observe-outcome coordinator envelope peer-key) nil)
         (funcall inbound-handler route envelope peer-key))))
+
+(defun retire-invocation (coordinator invocation)
+  "Release terminal process bookkeeping, retaining durable replay protection.
+Trusted owner API: no network delivery/effect or lease release is implied.
+Pending, reply-only and outcome-unknown executions cannot be retired. A journal
+read failure leaves the enrollment intact. Late wire outcomes fail closed as
+unknown invocations after retirement; durable evidence remains inspectable by
+the journal owner. Re-registration must still reconcile the existing row."
+  (bordeaux-threads:with-lock-held ((coordinator-lock coordinator))
+    (let ((key (gethash invocation (coordinator-index coordinator))))
+      (unless key (return-from retire-invocation :not-enrolled))
+      (let ((row (star.router.journal:journal-read (coordinator-journal coordinator) key)))
+        (unless row (reject :missing-durable-invocation))
+        (unless (equal "yes" (jsown:val row "terminal"))
+          (return-from retire-invocation :pending))
+        (remhash invocation (coordinator-index coordinator))
+        :retired))))
+
+(defun retire-terminal-invocations (coordinator)
+  "Retire enrolled durable terminals; return their invocation IDs.
+The bounded enrollment is scanned under its owner lock. Storage failures
+propagate; entries not yet examined remain enrolled. No journal row is deleted."
+  (bordeaux-threads:with-lock-held ((coordinator-lock coordinator))
+    (let ((retired nil))
+      (maphash
+       (lambda (invocation key)
+         (let ((row (star.router.journal:journal-read (coordinator-journal coordinator) key)))
+           (unless row (reject :missing-durable-invocation))
+           (when (equal "yes" (jsown:val row "terminal"))
+             (push invocation retired))))
+       (coordinator-index coordinator))
+      ;; Complete all reads before mutation: an unavailable journal cannot
+      ;; cause partially forgotten enrollment in this sweep.
+      (dolist (invocation retired) (remhash invocation (coordinator-index coordinator)))
+      retired)))

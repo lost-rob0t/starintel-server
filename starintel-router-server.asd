@@ -4,6 +4,7 @@
   :depends-on ("starintel-gserver" "starintel-router" "starlang-runtime")
   :serial t
   :components ((:file "source/router/application")
+               (:file "source/router/events")
                (:file "source/router/journal")
                (:file "source/router/outbound")
                (:file "source/router/lease")
@@ -18,6 +19,7 @@
   :depends-on ("starintel-router-server" "fiveam")
   :serial t
   :components ((:file "t/router-application-test")
+               (:file "t/router-events-test")
                (:file "t/router-journal-test")
                (:file "t/router-outbound-test")
                (:file "t/router-lease-test")
@@ -29,6 +31,7 @@
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (and (uiop:symbol-call :fiveam :run! :router-application)
+                          (uiop:symbol-call :fiveam :run! :router-events)
                           (uiop:symbol-call :fiveam :run! :router-journal)
                           (uiop:symbol-call :fiveam :run! :router-outbound)
                           (uiop:symbol-call :fiveam :run! :router-lease)

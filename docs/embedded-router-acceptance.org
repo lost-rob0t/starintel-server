@@ -34,8 +34,9 @@ runtime scenarios remain unrun. FediWatch interoperability and sustained
 network backpressure remain separate gaps. Durable lifecycle and outbound
 client-outcome integration have reviewable source and focused tests, all Lisp
 execution still unrun. Native recurring execution, expired/missing-lease recovery,
-automatic invocation retirement, cross-store atomic fencing and event/stream
-application semantics remain incomplete. Fixture source or a bounded replay
+automatic pending recovery, cross-store atomic fencing and stream wire
+application semantics remain incomplete. Explicit terminal retirement and durable
+document-event ingestion now have source/tests, still unrun. Fixture source or a bounded replay
 cache alone does not establish their safety.
 
 * Native gate
@@ -189,3 +190,23 @@ Target releases its actual lease through the ownership-checked lease API before
 the old completion arrives; the journal must refuse the inactive authority. Outcome delivery attempt is not the authoritative
 invocation attempt and is not treated as such. A real stale-generation Target across actor restart remains
 a separate gap; unit guard coverage is not substituted for that scenario.
+
+* Isolated readback dependency composition
+
+PR331 current head =e355b055c121503d77bd5cf04e94b2d8980f6ccc= is open/draft
+against Server =b5d60e3e452c39e7f6a195aa28d73c5ed2163e9c=. The actor owner's
+strict probe on that baseline observed HTTP200 with only unsolicited
+=extensions:{}= plus expected revision. Its expected absence remains unchanged.
+The existing PR331 fix records public extensions presence in private outbox
+metadata and preserves absent/empty/populated projection distinctions.
+
+An isolated local worktree composed the exact PR331 diff with router source
+=5cea080618122eec6fde1480997fa77c028321b3=. One textual outbox-entry conflict
+was resolved by retaining BOTH =public_extensions_present= and =message_context=
+metadata. Neither owning branch was changed. Local composition commit
+=64d92cfe909c9735eb6f27d0228139fdfa64de41=, tree
+=4e1eaeaeeffcc21d6c06a62ccb07001711acba5c=, is not published and has no runtime
+proof. For the actor's isolated readback-fix verification, pin the existing
+PR331 exact head; combined router acceptance additionally requires a reviewed
+composition incorporating subsequent router changes. No private actor source
+is copied into this repository.

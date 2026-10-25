@@ -1,6 +1,6 @@
 (defpackage :star.router.leases
   (:use :cl)
-  (:export #:make-policy #:prepare-envelope #:verify-envelope
+  (:export #:make-policy #:prepare-envelope #:prepare-recovery-envelope #:verify-envelope
            #:make-outbound-observer #:canonical-attempt))
 (in-package :star.router.leases)
 
@@ -110,7 +110,10 @@ acceptance/lease transaction and are deliberately refused."
                  (star.actors::target-dispatch-envelope-fencing-token dispatch) (star.leases:lease-record-fencing-token lease)
                  (star.actors::target-dispatch-envelope-trace-id dispatch) (star.leases:lease-record-trace-id lease))
            (return-from prepare-envelope dispatch)))
-        (:not-found nil)
+        ;; Expiry permits a NEW acquisition, never renewal of the old grant.
+        ;; Replaying the old execution/request id still returns its original
+        ;; idempotency result; GET-CURRENT below must prove a live grant.
+        ((:not-found :expired) nil)
         (otherwise (reject "native lease reconciliation requires an active or absent lease")))
       (let ((outcome
              (star.leases:acquire-lease
@@ -133,6 +136,33 @@ acceptance/lease transaction and are deliberately refused."
           (setf (star.actors::target-dispatch-envelope-lease-id dispatch) (star.leases:lease-record-lease-id lease)
                 (star.actors::target-dispatch-envelope-fencing-token dispatch) (star.leases:lease-record-fencing-token lease)))))
     dispatch))
+
+(defun prepare-recovery-envelope (policy predecessor execution-id &key (reply-budget-ms 1000))
+  "Acquire a replacement one-shot grant for an explicitly persisted recovery ID.
+The trusted caller owns the durable recovery decision and must reuse EXECUTION-ID
+on every retry. This API neither persists acceptance nor schedules/resends work;
+the returned real lease/fence must be durably reconciled before delivery. It
+cannot displace an active predecessor or revive an expired request. Recurrence
+still requires a separately defined per-occurrence acceptance transaction."
+  (check-type policy policy)
+  (check-type predecessor star.actors::target-dispatch-envelope)
+  (unless (and (star.leases::valid-lease-identifier-p execution-id)
+               (not (equal execution-id
+                           (star.actors::target-dispatch-envelope-execution-id predecessor))))
+    (reject "recovery requires a persisted new execution identity"))
+  (unless (and (eq :zmq (star.actors::target-destination-handle-kind
+                        (star.actors::target-dispatch-envelope-destination predecessor)))
+               (not (star.actors::target-record-recurring-p
+                     (star.actors::target-dispatch-envelope-record predecessor))))
+    (reject "explicit lease recovery requires a native one-shot Target"))
+  (let ((replacement (star.actors::copy-target-dispatch-envelope predecessor))
+        ;; Validate the zero-based predecessor attempt before any backend I/O.
+        (attempt (canonical-attempt predecessor)))
+    (setf (star.actors::target-dispatch-envelope-execution-id replacement) (copy-seq execution-id)
+          (star.actors::target-dispatch-envelope-attempt replacement) attempt
+          (star.actors::target-dispatch-envelope-lease-id replacement) nil
+          (star.actors::target-dispatch-envelope-fencing-token replacement) nil)
+    (prepare-envelope policy replacement :reply-budget-ms reply-budget-ms)))
 
 (defun verify-envelope (policy dispatch)
   (let* ((doc (document dispatch))
