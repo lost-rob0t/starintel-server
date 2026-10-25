@@ -113,14 +113,25 @@ persistence keeps tenancy while the client contract stays v0.9.0."
 
 (defun publish-outbox-event (routing-key payload event-id)
   "Publish one physical delivery carrying a stable logical EVENT-ID."
-  (emit-document
+  (let* ((context star.databases.couchdb::*outbox-message-context*)
+         (properties
+           (list (cons :content-type "application/json")
+                 (cons :delivery-mode 2) (cons :message-id event-id))))
+    (when context
+      (let ((correlation (jsown:val-safe context "correlationId"))
+            (headers nil))
+        (when correlation (push (cons :correlation-id correlation) properties))
+        (dolist (pair '(("messageId" . "x-star-origin-message-id")
+                        ("causationId" . "x-star-causation-id")
+                        ("idempotencyKey" . "x-star-idempotency-key")))
+          (let ((value (jsown:val-safe context (car pair))))
+            (when value (push (cons (cdr pair) value) headers))))
+        (when headers (push (cons :headers headers) properties))))
+    (emit-document
    +documents-exchange+
    routing-key
    payload
-   :properties
-   (list (cons :content-type "application/json")
-         (cons :delivery-mode 2)
-         (cons :message-id event-id)))
+   :properties properties))
   t)
 
 (defun persist-quarantine-record (record)

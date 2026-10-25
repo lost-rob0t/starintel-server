@@ -277,6 +277,11 @@ Covers the FTS stored-fields projection (=fields=), the embedded document
                           (coerce rows 'list)))
            (stripped
              (loop for row in rows-list
+                   unless (or (star.documents::router-journal-document-p row)
+                              (star.documents::router-journal-document-p
+                               (jsown:val-safe row "doc"))
+                              (star.documents::router-journal-document-p
+                               (jsown:val-safe row "fields")))
                    collect
                    (progn
                      (when (jsown:keyp row "fields")

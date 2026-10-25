@@ -1,0 +1,76 @@
+#+title: Embedded router remaining authority decisions
+
+* Recurring Targets and accepted-execution recovery (required integration)
+
+Existing primitives: =process-target-dispatch-envelope= persists a deterministic
+schedule acceptance, =ensure-target-dispatch-scheduled= installs the timer, and
+=next-target-occurrence-envelope= creates an execution. The existing strict
+acceptance projection binds its ID to the original schedule. Scheduled/dispatched
+records are duplicates. Lease acquisition is atomic in the existing memory/Valkey
+store, and reacquisition requires a new request/execution identity. PR338/339 own
+durable accepted Targets/restart scheduling; this adapter must compose with that
+authority rather than introduce a second occurrence queue or ledger.
+
+Minimum decision for that authority: define the private acceptance row's durable
+occurrence cursor and CAS transition, including (1) the stable next execution and
+request IDs persisted before acquiring its grant, (2) how a crash between grant,
+admission and delivery is reconciled, and (3) whether a recurring due time while
+the prior occurrence is leased queues, skips or coalesces. Existing Rabbit/local
+timer behavior must not silently change. An automatic new execution after an
+ambiguous effect would violate idempotency and is not a valid recovery rule.
+
+Safe default: refuse native recurring dispatch; keep ambiguous accepted effects
+unknown and do not automatically resend. =prepare-recovery-envelope= supplies
+only the lease step for a NEW identity already persisted by the trusted recovery
+owner. It cannot replace that owner's acceptance CAS or determine that an effect
+never started. Tests must kill after each transition and prove stable execution
+identity, no duplicate effect and readback through the normal API.
+
+* Atomic lease fencing with durable mutation (required guarantee)
+
+Existing primitives: Valkey acquire/renew/release scripts linearize lease state
+using backend time. =valkey-fenced-set= checks the active exact ownership tuple
+and writes one designated Valkey value in the same Lua operation. The execution
+journal and document/outbox mutation each use CouchDB revision CAS; document and
+outbox entry are one mutation, while the execution journal is a separate row.
+Neither primitive atomically spans Valkey and CouchDB. Rechecking a lease before
+a CouchDB CAS leaves a release/reacquire race between those operations.
+
+Minimum authority decision: choose the durable linearization point for a fenced
+commit. Either lease ownership and authoritative committed outcome must share a
+transactional store, or a defined commit protocol must connect the two existing
+stores with durable prepare/commit/recovery rules. That decision must specify
+expiry/release concurrent with commit, which result is authoritative after a
+lost reply, and how a successor's fence prevents stale writes. A callback or an
+extra lease read is not a transaction and must not be labeled atomic fencing.
+Changing the production store or its durability policy is outside this draft's
+automatic authority; coordinate existing lease/persistence owners #315/#319.
+
+Safe default: reject observed stale/inactive authority, persist terminal outcomes
+only through current journal CAS, retain uncertainty on ambiguous storage failure,
+and make no distributed atomicity claim. Required runtime tests must race actual
+release/reacquire against commit and crash both sides of the chosen linearization
+point. Mocked observation tests cannot satisfy that gate.
+
+* Streaming wire operations (future canonical extension)
+
+Existing canonical =make-actor2actor-stream-frame= validates an in-process
+(task-id, correlation-id, positive sequence, envelope, terminal-p) projection.
+StarLang =docs/DOMAIN-SERVICE-CONTRACT.md= explicitly says that constructor is not
+proof of buffering/order/resume/backpressure; =docs/DOCUMENT-BUS-CONFORMANCE.md=
+defines an internal observer API, not a new wire record/registry/authentication.
+The released codec supplies canonical events but no subscribe/resume/ACK operation
+payloads or negotiated stream retention semantics.
+
+Minimum canonical decision if streaming is requested: generated operation/message
+identities and schema, authorization and tenant scope, sequence/cursor ownership,
+retention and reconnect/resume rules, ACK meaning, bounded buffers and overflow
+behavior, cancellation/terminal ordering, and whether resumability is durable.
+Publish those through the canonical generator/fixtures before consumer adapters;
+do not hand-copy a new codec or overload a document-schema release as a profile.
+
+Safe default: accept only declared canonical event envelopes through the event
+binding; reject stream-frame/control/command inputs there. No synthetic event ACK,
+subscription, fallback or durable-stream promise is emitted. Current-spec event
+commit/readback and unsupported-frame rejection remain required tests; an
+undefined future subscribe/resume protocol is not represented as implemented.

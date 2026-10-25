@@ -1,0 +1,232 @@
+#+title: Embedded StarRouter acceptance evidence
+
+* Scope and current status
+
+This is the acceptance matrix for Server #193 / StarRouter #5. A native
+transport check is not the complete Server target/document acceptance test.
+RabbitMQ remains a parallel supported transport. SC01 compatibility and
+=star.actor2actor/1= are separate profiles; neither implies document schema
+version. The server schema lock remains authoritative.
+
+* Required matrix
+
+| Boundary | Required proof | Status at implementation |
+|----------+----------------+--------------------------|
+| Native embedding | Shared library loaded by CFFI into the Lisp process; borrowed host context, real loopback DEALER roundtrip | Pending native execution |
+| Resource ownership | Same-thread I/O, caller-owned buffers, stale handles, repeated open/close, context teardown | Pending native execution |
+| Failure bounds | Malformed multipart, oversized input, unsupported profile, unknown route, receive timeout, bounded shutdown | Pending native execution |
+| Canonical actor wire | Existing StarLang encode/decode/profile selection; correlation, causation, cancellation/deadline and terminal outcomes | Executable application harness added; unrun |
+| Server dispatch | Authenticated Target accepted by existing durable acceptance path, routed to registered synthetic actor | Executable application harness added; unrun |
+| Canonical events | Manifest-declared event, current authentication, existing authorized durable document commit; no command ACK | Adapter and focused tests authored; live event harness/execution pending |
+| Terminal retirement | Release process capacity only after durable terminal; retain replay journal; pending/unknown remain enrolled | Source and focused tests authored; unrun |
+| Server ingest | Actor result uses existing validation/authorization and persistence; HTTP GET returns exact canonical content | Executable application harness added; unrun |
+| Durability | Replay/dedupe, conflicting replay rejected, Server restart then authenticated readback | Fresh-process harness added; unrun |
+| Isolation | Invalid auth, tenant/dataset mismatch, spoofed route identity rejected before effect | CURVE + application denial harness added; unrun |
+| Compatibility | Explicit SC01 fixture; incompatible profile fails without fallback | Synthetic SC01 Server harness added; unrun; FediWatch remains separate |
+| Rabbit regression | Real ephemeral Rabbit target delivery and ingest/readback, plus existing unit/service suites | Real broker harness added; unrun |
+| Packaging | Fresh installed library, optional ASDF system, pinned Nix closure and exact-head CI | Pending CI |
+
+No row is satisfied by task admission, source inspection, a mock, a skipped
+test, or successful transport send. Socket queue acceptance does not prove
+durable storage. A possibly committed operation with a lost reply remains an
+unknown outcome until the application idempotency path reconciles it.
+
+The application fixture covers Actor2Actor, SC01 and Rabbit paths. All Server
+runtime scenarios remain unrun. FediWatch interoperability and sustained
+network backpressure remain separate gaps. Durable lifecycle and outbound
+client-outcome integration have reviewable source and focused tests, all Lisp
+execution still unrun. Native recurring execution, expired/missing-lease recovery,
+automatic pending recovery and cross-store atomic fencing remain incomplete.
+Streaming subscribe/resume/ACK is an undefined extension, not a missing released
+wire operation; current code must reject unsupported frames without fallback. Explicit terminal retirement and durable
+document-event ingestion now have source/tests, still unrun. Fixture source or a bounded replay
+cache alone does not establish their safety.
+
+* Native gate
+
+=scripts/test-embedded-router.sh= runs a bounded SBCL driver. It requires the
+shared library and a local StarLang checkout supplied by the build; it does not
+install tools, download dependencies, start public listeners, or fall back to a
+subprocess router. Missing prerequisites fail the command rather than skip.
+Use a freshly installed native library for packaging evidence.
+
+The driver must be followed by real Server application and Rabbit integration
+gates before claiming end-to-end support. Existing =t/http-api-test.lisp= uses
+a no-op =stub-producer= and cannot establish Rabbit publication evidence.
+
+* Existing required gates
+
+#+begin_src sh
+python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
+nix flake check --show-trace
+nix build .#default --no-link --print-build-logs
+nix run .#star-unit-tests
+nix run .#star-integration-tests
+#+end_src
+
+Also run the upstream =star-actor-wire= ASDF tests and StarRouter flake checks.
+Keep readback fixes owned by Server PR #331 and Target persistence/recovery
+owned by PRs #338/#339 as explicit dependencies; do not copy their changes or
+weaken exact canonical assertions to hide those failures.
+
+* Application acceptance command
+
+Run =scripts/test-embedded-router.sh --application= inside the supported Server
+Nix development environment with =STAR_ROUTER_LIBRARY= and =STAR_LANG_SOURCE=
+set to the pinned installed library and StarLang checkout. This requires
+=STAR_ROUTER_E2E_ACK_DISPOSABLE=1=, real dedicated loopback CouchDB/RabbitMQ,
+and their synthetic fixture credentials. Missing requirements fail, not skip.
+
+=tests/embedded-router-application.py= launches the Lisp Server fixture twice
+as separate processes. It uses the generated minimal-operation fixture,
+supported authenticated HTTP targets/documents, a real Rabbit target queue,
+and real Server Rabbit ingestion. Rabbit duplicate processing waits for actual
+consumer acknowledgement counters, followed by independent revision/content
+readback. It does not equate broker routing with durable commit.
+
+=tests/embedded-router-application.lisp= starts =star.runtime=, uses the native
+CFFI host and a real loopback DEALER, and emits its synthetic message manifest
+through the pinned StarLang compiler. The existing StarLang dispatcher owns
+accepted/reply/completed/error/cancel/deadline/replay behavior. Trusted fixture
+configuration maps an allowlisted CURVE public key to a context authenticated
+through the real credential store. Routing identities never grant authority;
+the fixture attempts the same identity using an unlisted key. It reconnects
+under a different routing identity with the authenticated key.
+
+The workflow provisions only private disposable service containers, records
+their image digests and actual Rabbit server version, and removes the owned
+containers/credentials. The new fixture selects RabbitMQ =4.3.7-management=
+and CouchDB =3.5.3=; those selections are not claims that either image has run.
+No production image pin is changed. If full application acceptance fails,
+=--rabbit-only= runs the independent Rabbit subset in a fresh fixture database;
+that result cannot turn the failed native acceptance green.
+
+=--sc01= selects a separate, explicit legacy fixture using
+=tests/embedded-router-sc01.lisp=. A real CURVE DEALER registers the pinned
+actor instance, and a real CURVE SUB observes a broker heartbeat before any
+HTTP Target is submitted. The Target passes through the existing Server
+acceptance path, the SC01 owner queue, and the embedded Nim PUB projection.
+The actor sends the canonical generated document as =newDocument= and waits
+for the host-settled ACK; replay, forbidden dataset, malformed JSON and wrong
+profile checks follow. Authenticated HTTP readback and a fresh Lisp Server
+process then verify the stored content and revision. The frame fixture follows
+StarRouter's actual =embedded_sc01.py= tests; it introduces no Actor2Actor
+cancellation/result semantics or fallback into SC01. No real collector runs.
+
+The exact minimal-operation fixture deliberately omits optional =extensions=.
+If the existing readback path adds that field, acceptance fails and records
+the separately owned PR #331 prerequisite. Do not normalize the expected
+fixture or copy that PR's fix into this transport change.
+
+* Required observed application sequence
+
+Provision a disposable loopback-only Server/CouchDB/Rabbit stack and synthetic
+dataset using the repository's existing startup/authentication mechanisms.
+Keep credentials in private files. Authenticate =POST /api/v1/targets= using
+the supported Target contract in =cli/http-contract-targets.lisp=,
+then receive the Target through the embedded router using the canonical actor
+codec. Submit the synthetic actor's document through the configured router
+ingest adapter; poll =GET /api/v1/documents/:id= with a finite deadline.
+Replay exactly the same operation and compare durable content, reject a
+conflicting replay, restart the owned Server, and read again. Neither direct
+CouchDB inserts nor an HTTP POST echo substitute for this chain.
+
+The Rabbit sibling test observes actual target delivery through the
+existing Rabbit route and actual document ingestion through
+=documents.ingest.<dtype>=. Preserve broker confirmation and application
+commit as separate assertions. Do not transplant the separately owned
+readiness-ingestion PR #344 merely to make this branch appear complete.
+
+* Live revocation and bounded overload fixture
+
+The Actor2Actor fixture creates a separate persistent actor API credential and
+authenticates it on every lifecycle submission. After successful document
+commit and authenticated reconnect, the fixture revokes that credential in the
+real credential store while retaining the live CURVE connection. Both a new
+document and cached terminal replay must fail; independent HTTP authority must
+observe that the new document does not exist. CURVE authentication alone does
+not grant continuing application authority.
+
+For overload, a real actor event holds the owner at a bounded fixture callback.
+The producer attempts 512 admissions against a queue bound of eight. Exactly
+eight tickets must be admitted and 504 rejected as queue-full within five
+seconds; the queue snapshot must never exceed its configured bound. After
+release, the real actor must observe all eight frames in FIFO order and every
+ticket must settle. These are deterministic application-queue overload checks,
+not proof of sustained network throughput or arbitrary OS-buffer exhaustion.
+Both scenarios are source-only until the hosted Lisp/service gate executes.
+
+* Process-crash acceptance
+
+=--crash= runs four independent actual HTTP Target → CURVE actor submissions.
+The receiver's real CouchDB journal invokes bounded test checkpoints after
+=admitted=, =started= and persisted =terminal= transitions. A fourth checkpoint
+runs after the ordinary document mutation commits, before returning a result.
+At each boundary Python sends SIGKILL to the Server process and verifies its
+signal exit status. Graceful shutdown cannot satisfy this assertion.
+
+The fresh process uses the same private fixture CURVE keys, authenticated
+principal and exact canonical command bytes. Pending executions must return
+one =star.outcome-unknown= observation with retryable false, never invoke the
+effect again, and retain the pre-crash document state. Terminal replay must
+return the exact two canonical outcome byte strings read from the persisted
+journal before the crash. HTTP independently checks document absence before
+effect and exact content plus unchanged revision after effect. Checkpoint
+markers coordinate SIGKILL; only real journal transitions and readback supply
+durability evidence. Secret fixtures remain in mode-0600 files under a private
+temporary directory; diagnostics redact them and cleanup removes the directory.
+
+These scenarios require the durable receiver and outbound Target coordinator
+integration. They are executable acceptance source, not reported execution
+results; hosted Server CI must reach and pass every phase before this matrix
+can be marked satisfied.
+
+The native Target fixture now configures the production lease-preparation
+boundary with the repository's deterministic memory lease backend. The normal
+acquire/get/expiry/fencing code runs; no lease IDs or successful observations
+are fabricated. This checks single-process lease behavior and does not prove
+Valkey deployment or distributed lease survival. The observer reads that actual
+lease and trusted synthetic actor enrollment; wire claims do not set actor
+generation. Enrollment increments on fixture actor startup and is removed on
+owned shutdown. The actor sends valid reply/completed frames for one invocation. A separate
+Target releases its actual lease through the ownership-checked lease API before
+the old completion arrives; the journal must refuse the inactive authority. Outcome delivery attempt is not the authoritative
+invocation attempt and is not treated as such. A real stale-generation Target across actor restart remains
+a separate gap; unit guard coverage is not substituted for that scenario.
+
+* Isolated readback dependency composition
+
+PR331 current head =e355b055c121503d77bd5cf04e94b2d8980f6ccc= is open/draft
+against Server =b5d60e3e452c39e7f6a195aa28d73c5ed2163e9c=. The actor owner's
+strict probe on that baseline observed HTTP200 with only unsolicited
+=extensions:{}= plus expected revision. Its expected absence remains unchanged.
+The existing PR331 fix records public extensions presence in private outbox
+metadata and preserves absent/empty/populated projection distinctions.
+
+An isolated local worktree composed the exact PR331 diff with router source
+=5cea080618122eec6fde1480997fa77c028321b3=. One textual outbox-entry conflict
+was resolved by retaining BOTH =public_extensions_present= and =message_context=
+metadata. Neither owning branch was changed. Local composition commit
+=64d92cfe909c9735eb6f27d0228139fdfa64de41=, tree
+=4e1eaeaeeffcc21d6c06a62ccb07001711acba5c=, is not published and has no runtime
+proof. For the actor's isolated readback-fix verification, pin the existing
+PR331 exact head; combined router acceptance additionally requires a reviewed
+composition incorporating subsequent router changes. No private actor source
+is copied into this repository.
+
+* Current contract gaps versus future extensions
+
+=embedded-router-decisions.org= records the unresolved choices and safe defaults.
+
+| Item | Classification | Acceptance consequence |
+|------+----------------+------------------------|
+| Commands, ACK/reply/error, cancel, deadlines, identity/replay, canonical events | Released actor2actor/1 contracts | Required now; all Lisp runtime execution remains unrun |
+| Native repeated/recurring Target scheduling and accepted-execution restart | Existing Server behavior required by this integration | Required now; occurrence/recovery authority remains incomplete |
+| Lease ownership/fencing and durable effect acknowledgement | Existing Server guarantees to preserve | Required now; cross-store commit race remains unresolved |
+| SC01 nine-frame API/six-frame PUB | Explicit compatibility profile | Required now; canonical cancellation/streaming is not assigned to SC01 |
+| Stream subscribe/resume/ACK operation payloads | Not a released canonical wire contract | Do not invent; explicit unsupported rejection required now; protocol extension requires canonical owner |
+| Stream-frame in-process projection and internal document-bus observer | Existing internal APIs, not subscriptions | Constructor/observer behavior does not establish wire delivery or durable stream semantics |
+
+This distinction does not clear any runtime, Rabbit, durability or compatibility
+gate. It prevents a proposed extension from being presented as an existing wire
+operation or from silently changing the released profile.

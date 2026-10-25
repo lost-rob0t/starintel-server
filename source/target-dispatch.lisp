@@ -5,6 +5,22 @@
 (defparameter *active-target-schedules* (make-hash-table :test #'equal)
   "Table of live target schedules keyed by schedule id.")
 
+(defvar *target-zmq-destination-resolver* nil
+  "Optional trusted deployment resolver. NIL preserves local/Rabbit selection.")
+
+(defgeneric send-zmq-target (component envelope)
+  (:documentation "Submit through an explicitly configured native transport component."))
+
+(defgeneric prepare-zmq-target-envelope (component envelope)
+  (:documentation "Authorize/acquire native execution lease before durable acceptance."))
+(defmethod prepare-zmq-target-envelope ((component t) envelope)
+  (declare (ignore component envelope))
+  (error 'target-destination-unavailable :reason "native lease authority is not configured"))
+
+(defmethod send-zmq-target ((component t) envelope)
+  (declare (ignore component envelope))
+  (error 'target-destination-unavailable :reason "native target transport is unavailable"))
+
 (defstruct (target-destination-handle
              (:constructor make-target-destination-handle
                  (kind name &key component routing-key compatibility-routing-keys)))
@@ -179,10 +195,18 @@
   (format nil "documents.new.target.~a" (string-downcase actor-name)))
 
 (defun resolve-target-destination (actor-name &key (resolver #'get-dest-actor))
-  "Resolve ACTOR-NAME into an explicit local or Rabbit component handle."
+  "Resolve an explicit native binding, otherwise preserve local/Rabbit selection."
   (unless (valid-target-actor-name-p actor-name)
     (error 'invalid-target-dispatch
            :reason (format nil "invalid actor identity ~s" actor-name)))
+  (when *target-zmq-destination-resolver*
+    (let ((destination (funcall *target-zmq-destination-resolver* actor-name)))
+      (when destination
+        (unless (and (typep destination 'target-destination-handle)
+                     (eq (target-destination-handle-kind destination) :zmq)
+                     (equal (target-destination-handle-name destination) actor-name))
+          (error 'invalid-target-dispatch :reason "invalid native deployment binding"))
+        (return-from resolve-target-destination destination))))
   (let ((component (funcall resolver actor-name)))
     (if component
         (make-target-destination-handle
@@ -415,6 +439,8 @@
   (let ((destination (target-dispatch-envelope-destination envelope)))
     (handler-case
         (ecase (target-destination-handle-kind destination)
+          (:zmq
+           (send-zmq-target (target-destination-handle-component destination) envelope))
           (:local
            (unless (target-destination-handle-component destination)
              (error 'target-destination-unavailable
@@ -431,6 +457,12 @@
   t)
 
 (defun next-target-occurrence-envelope (envelope)
+  ;; Native one-shot admission already acquired its execution lease. Changing
+  ;; execution here would invalidate that durable acceptance and its fence.
+  (when (eq :zmq (target-destination-handle-kind (target-dispatch-envelope-destination envelope)))
+    (when (target-record-recurring-p (target-dispatch-envelope-record envelope))
+      (error 'target-destination-unavailable :reason "native recurring execution leases are unsupported"))
+    (return-from next-target-occurrence-envelope envelope))
   (%make-target-dispatch-envelope
    (target-dispatch-envelope-record envelope)
    (target-dispatch-envelope-destination envelope)
@@ -487,31 +519,35 @@
        (schedule-recurring-fn #'wheel-schedule-target-recurring))
   "Persist acceptance, establish schedule, and return a structured outcome."
   (handler-case
-      (let ((desired (target-acceptance-document envelope)))
-        (multiple-value-bind (acceptance disposition)
-            (funcall persist-fn desired #'target-acceptance-equivalent-p)
-          (when (eq disposition :conflict)
-            (return-from process-target-dispatch-envelope
+      (progn
+        (let ((destination (target-dispatch-envelope-destination envelope)))
+          (when (eq :zmq (target-destination-handle-kind destination))
+            (prepare-zmq-target-envelope (target-destination-handle-component destination) envelope)))
+        (let ((desired (target-acceptance-document envelope)))
+          (multiple-value-bind (acceptance disposition)
+              (funcall persist-fn desired #'target-acceptance-equivalent-p)
+            (when (eq disposition :conflict)
+              (return-from process-target-dispatch-envelope
+                (target-outcome
+                 :invalid envelope
+                 :reason "duplicate active schedule identity has different content")))
+            (adopt-target-acceptance-metadata envelope acceptance)
+            (when (eq disposition :duplicate)
+              (return-from process-target-dispatch-envelope
+                (target-outcome :duplicate envelope)))
+            (let ((schedule-result
+                    (register-target-schedule
+                     envelope dispatch-fn schedule-once-fn
+                     schedule-recurring-fn)))
+              (funcall update-fn
+                       (jsown:val acceptance "_id")
+                       (lambda (document)
+                         (setf (jsown:val document "status") "scheduled"
+                               (jsown:val document "accepted_at") (star.documents:utc-now))
+                         document))
               (target-outcome
-               :invalid envelope
-               :reason "duplicate active schedule identity has different content")))
-          (adopt-target-acceptance-metadata envelope acceptance)
-          (when (eq disposition :duplicate)
-            (return-from process-target-dispatch-envelope
-              (target-outcome :duplicate envelope)))
-          (let ((schedule-result
-                  (register-target-schedule
-                   envelope dispatch-fn schedule-once-fn
-                   schedule-recurring-fn)))
-            (funcall update-fn
-                     (jsown:val acceptance "_id")
-                     (lambda (document)
-                       (setf (jsown:val document "status") "scheduled"
-                             (jsown:val document "accepted_at") (star.documents:utc-now))
-                       document))
-            (target-outcome
-             (if (eq schedule-result :duplicate) :duplicate :accepted)
-             envelope))))
+               (if (eq schedule-result :duplicate) :duplicate :accepted)
+               envelope)))))
     (invalid-target-dispatch (condition)
       (target-outcome
        :invalid envelope

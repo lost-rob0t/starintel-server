@@ -336,6 +336,8 @@ EOF
 
       sbcl-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-gserver starintel-bixby ]);
+      sbcl-development-wrapped = sbcl'.withPackages
+        (ps: with ps; [ starintel-gserver starintel-bixby fiveam ]);
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver-tests ]);
       sbcl-actor-registry-test-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-actor-registry-tests ]);
@@ -701,7 +703,7 @@ PY
 
 
       devShells.${system}.default = pkgs.mkShell {
-        buildInputs = with pkgs; [ sbcl-wrapped pkg-config ] ++ runtimeLibs;
+        buildInputs = with pkgs; [ sbcl-development-wrapped pkg-config ] ++ runtimeLibs;
 
         shellHook = ''
           export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

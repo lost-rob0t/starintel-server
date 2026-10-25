@@ -8,6 +8,9 @@
   "Maximum bounded CouchDB pending-view batches drained during startup recovery.")
 (defparameter *outbox-recovery-view-limit* 10000
   "Bounded CouchDB pending-view page size; may be rebound by integration tests.")
+(defvar *outbox-message-context* nil
+  "Trusted ingress lifecycle metadata retained with the existing atomic outbox entry.
+This is not read from document fields and never contains credentials.")
 
 (define-condition mutation-conflict (error)
   ((mutation-id
@@ -72,6 +75,22 @@
 (defun clone-outbox-json (object)
   (jsown:with-injective-reader
     (jsown:parse (jsown:to-json object))))
+
+(defun checked-outbox-message-context (context)
+  "Snapshot only non-secret lifecycle metadata, including during recovery."
+  (when context
+    (unless (and (json-object-p context) (listp (cdr context)))
+      (error "Invalid trusted outbox message context"))
+    (let ((seen nil))
+      (dolist (pair (cdr context))
+        (unless (and (consp pair)
+                     (member (car pair) '("messageId" "correlationId" "causationId" "idempotencyKey")
+                             :test #'equal)
+                     (not (member (car pair) seen :test #'equal))
+                     (stringp (cdr pair)) (<= 1 (length (cdr pair)) 1024))
+          (error "Invalid trusted outbox message context"))
+        (push (car pair) seen)))
+    (clone-outbox-json context)))
 
 (defun copy-json-object-excluding (object excluded-keys)
   (let ((copy (jsown:empty-object)))
@@ -231,6 +250,9 @@
           :null
           (jsown:val entry "payload")
           (event-payload document mutation-id operation sequence))
+    (when *outbox-message-context*
+      (setf (jsown:val entry "message_context")
+            (checked-outbox-message-context *outbox-message-context*)))
     entry))
 
 (defun merge-server-state (target existing entry mutation-id content-hash)
@@ -257,6 +279,10 @@
   "Prepare one atomic document revision containing document and pending event state.
 
 Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
+  (when (or (star.documents::router-journal-document-p existing)
+            (star.documents::router-journal-document-p incoming))
+    (error 'mutation-conflict :mutation-id nil :document-id nil
+           :reason "Server-private documents cannot be mutated here"))
   (let* ((document (public-document-copy incoming))
          (document-id (jsown:val document "_id"))
          (mutation-id (document-mutation-id operation document))
@@ -387,10 +413,12 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
                       mutation-id))))))))
 
 (defun publish-outbox-entry (publish-fn entry)
-  (funcall publish-fn
+  (let ((*outbox-message-context*
+          (checked-outbox-message-context (jsown:val-safe entry "message_context"))))
+    (funcall publish-fn
            (jsown:val entry "routing_key")
            (jsown:val entry "payload")
-           (jsown:val entry "event_id")))
+           (jsown:val entry "event_id"))))
 
 (defun process-outbox-mutation (load-fn save-fn publish-fn incoming operation)
   "Persist mutation state, publish at least once, then mark the logical event.

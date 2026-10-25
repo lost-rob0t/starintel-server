@@ -1,0 +1,64 @@
+#+title: Embedded router CI provisioning evidence
+
+* Runner startup
+
+Exact Server head f4b926595c487eb12548758b8ca5de3d0cd2b91a:
+https://github.com/lost-rob0t/starintel-server/actions/runs/40216025051
+Job 121237212496 was created/started at 2026-10-25T17:20:57Z and completed
+failed at 17:21:00Z. Supported run/jobs metadata reports =steps: []=,
+=runner_id: 0=, empty runner name, =ubuntu-latest= label, attempt 1.
+No application test executed. No cause is exposed by that metadata.
+
+The connector rejects standalone job/check-run endpoint reads as unsupported;
+run/jobs reads work. Earlier absent-step logs returned BlobNotFound. This does
+not establish a billing, permission or workflow syntax cause. An operator with
+GitHub Actions/check-annotation visibility must inspect the run's startup error.
+Unchanged jobs have not been rerun to manufacture evidence.
+
+* Canonical source permission
+
+The workflow needs read access to private =lost-rob0t/star-lang=, including its
+exact pinned runtime commit and schema commit
+=96d26c338078676ec1dc6928755901636c9f7ef0=. The required repository permission is
+=Contents: read= (with normal metadata read); write/admin/secrets permissions
+are not required for checkout. An approved GitHub App installation credential
+or fine-grained repository-read credential must be available to the CI job via
+an operator-approved mechanism. The connector's own access does not give the
+hosted runner that credential.
+
+The workflow's default =GITHUB_TOKEN= is scoped to its current repository and
+cannot checkout another private repository. Official checkout documentation:
+https://github.com/actions/checkout#checkout-multiple-repos-private
+An unauthenticated raw canonical source request returns HTTP404. The pinned
+source exists and verifies through the authorized connector/local source.
+No canonical source was copied into public StarRouter, and no credential,
+secret, installation or repository setting was created/changed.
+
+* Local provisioning
+
+No SBCL/Nim/Nix toolchain is installed. System apt state was not writable.
+The permitted workspace-local apt-state attempt used:
+
+#+begin_src sh
+apt-get -o Dir::State::lists=/workspace/toolchain/apt/lists \
+  -o Dir::Cache=/workspace/toolchain/apt/cache \
+  -o APT::Sandbox::User=agent update
+#+end_src
+
+The configured proxy returned HTTP403 for:
+- https://snapshot.debian.org/archive/debian/20260925T181338Z/dists/trixie/InRelease
+- https://snapshot.debian.org/archive/debian/20260925T181338Z/dists/trixie-updates/InRelease
+- https://snapshot.debian.org/archive/debian-security/20260925T181338Z/dists/trixie-security/InRelease
+
+No mirror/proxy/environment substitution was attempted. Operator provisioning
+of the selected environment through an approved dependency path is needed for
+local Lisp execution; hosted CI remains the user's requested validation path.
+
+* Canonical runtime companion
+
+Server runtime dependency is StarLang PR #217 at
+=995bbae94549d174ee6ed5edc9223077f68c7535= (separate from the schema pin).
+https://github.com/lost-rob0t/star-lang/actions/runs/40217497584
+reported failure with =steps: null= on job121241720308. The repository-contract
+script passed locally; no Lisp test executed in that run. Its local source tree
+matches the published commit even though connector commit metadata differs.

@@ -1,0 +1,213 @@
+#+title: Experimental embedded StarRouter configuration
+
+* Support boundary
+
+Draft PR #355 and its companion StarRouter PR #12 are unfinished integration
+work. Consult =embedded-router-acceptance.org= for executed evidence. Loading
+source or admitting a frame is not proof of durable ingestion. RabbitMQ and
+local Sento dispatch remain supported independently; this optional system does
+not change their defaults or remove their bindings.
+
+The native library contains the actual shared Nim SC01 routing core and a
+separate =star.actor2actor/1= body transport. SC01 is never a fallback when an
+actor2actor descriptor is incompatible. The document schema is separately
+resolved by =schema/starintel-schema.lock.json= (currently release 0.10.1).
+
+* Build and load
+
+Build the exact companion revision with =nix build .#embedded -L= in StarRouter.
+Set =STAR_ROUTER_LIBRARY= to its installed =lib/libstarrouter.so= and provide the
+exact pinned StarLang checkout through the existing ASDF source registry.
+=STAR_LANG_SOURCE= is consumed by the test driver. The native library must use
+the same libzmq as =star-zmq=; =STAR_ZMQ_LIBRARY= selects the tested dependency in
+the harness. Load =starintel-router-server= for the application adapter or
+=starintel-router= for the standalone transport boundary. ASDF load starts no
+listener and changes no production configuration.
+
+The wrapper borrows the existing =star-zmq= process context and accounts native
+resources against it. It presently relies on private context accessors in the
+pinned StarLang revision. A stable upstream context-borrow API remains a
+packaging dependency; do not silently repin StarLang or load another libzmq.
+
+* Explicit application composition
+
+Trusted Server initialization owns endpoint configuration, generated portable
+actor manifests, credential-to-service-context lookup and deployment bindings.
+Endpoints must be loopback TCP. No endpoint accepts public binding. Generate
+CURVE keypairs with =star.router:keypair=, enroll public keys with
+=start-authenticator= and configure DEALER/SUB peers before connecting through
+=configure-curve-client=. Keys are raw 32-byte vectors. Never interpret a ROUTER
+identity, envelope sender or document field as an authenticated principal.
+
+=start-host= owns its socket on one Lisp thread. Its handler receives route,
+canonical envelope and authenticated peer public key. Construct
+=star.router.lifecycle:make-runtime-binding= on that owner thread (the fixture
+initializes it lazily). Authentication resolves the key to an existing trusted
+service-call context on every operation. Use the generated manifest and the
+canonical runtime's completion/retry/failure/defer results; do not hand-code
+lifecycle bodies or invent handshake frames.
+
+=bind-target-route= explicitly selects native delivery for an existing actor
+name. Its projection function must preserve execution ID, idempotency key,
+trace/correlation, target causation, dataset, and the complete dispatch document
+including lease/fencing extensions. Existing HTTP authorization, acceptance,
+scheduling and recovery continue to own the Target. Missing/stale bindings and
+backpressure fail closed. Both native binding APIs require =:lease-policy=,
+constructed with =star.router.leases:make-policy= from the existing lease store,
+a trusted owner service context, Target identity mapping and service instance.
+Preparation authorizes =targets:dispatch= and =targets:lease= and acquires the
+actual lease before durable Target acceptance. Delivery rechecks that lease.
+The TTL must cover scheduled delay and the configured outcome wait budget;
+Target and owner deadlines cap it. Native recurring Targets currently fail
+closed: their per-occurrence durable acceptance/lease transaction remains
+unfinished. Rabbit/local recurring behavior is unchanged.
+Socket acceptance means queued, not actor execution.
+Outbound bindings require a singleton authenticator allowlist: a route cannot
+prove which of several admitted keys owns it. Secure SC01 PUB likewise requires
+a singleton key because a subscriber can select arbitrary topics. These checks
+are enforced; multi-key target dispatch awaits an upstream route/key contract.
+Pass the authenticator explicitly to =start-host= or =open-sc01=. It is pinned
+until the listener closes, preventing replacement during active delivery.
+
+=make-document-binding= selects a manifest-declared command and document field.
+=commit-document-command= validates through the existing HTTP document boundary,
+authorizes using the trusted context, stamps tenancy and calls the existing
+Rabbit consumer mutation/outbox authority. It reports committed only after that
+authority returns its durable settlement. Transient documents cannot produce
+this acknowledgment. =submit-document-command= instead submits through Rabbit
+and explicitly reports nondurable submission. Existing Rabbit confirmation
+semantics are retained; neither API upgrades broker receipt into durable ACK.
+
+Message/correlation/causation/idempotency metadata is retained in the existing
+atomic outbox entry for recovery publication. Stable event IDs and persistent
+Rabbit deliveries remain unchanged. No credentials enter this metadata.
+
+* Lifecycle, limits and shutdown
+
+For legacy deployment, configure =star.router.sc01-application:make-binding=
+with the sole public key, actor topic, pinned instance ID and trusted current
+credential resolver. Start =star.router.sc01-host:start-host= with separate API
+and PUB loopback endpoints, then =star.router.server:bind-sc01-target-route=
+with that host and a trusted dispatch context resolver. The same Target
+registry/scheduler hands work through a bounded queue to the Lisp owner; only
+that owner calls SC01 native methods. Registration and heartbeat require policy
+acceptance. =newDocument= is ACKed after existing durable mutation/outbox
+completion. Legacy updates and actor-originated Target ingestion are rejected
+explicitly. SC01 provides no canonical cancellation/result/stream semantics.
+
+The inbound adapter uses the canonical deterministic dispatcher for command,
+reply, terminal outcome, cancellation, deadline and conflict semantics. Durable
+mode is now the default and requires =:journal=; =:durable-p nil= explicitly
+selects volatile behavior. The Server admission/effect gate stores canonical
+command bytes before enqueue, records the start before calling the handler,
+and stores canonical outcome bytes before returning them to the transport.
+The public canonical identity validator is supplied by StarLang PR #217.
+
+Receiver records are scoped by authenticated principal type/ID, the existing
+Server tenant mapping, and canonical actor/message-type/idempotency key. Key
+rotation does not erase that scope. Restart replays committed terminal bytes;
+admitted or started effects without a terminal record return canonical
+=star.outcome-unknown= and are not executed again. Targeted cancellation is
+recorded before dispatch arbitration. Cancellation of the addressed command
+competes with its start in one journal row. Correlation cancellation markers
+span rows and are not transactional; concurrently starting correlated work
+may already have begun. Known commands remain cancellable at the
+request-budget limit. This conservative recovery preserves ambiguity rather
+than promising exactly-once external effects.
+
+=star.router.journal:make-couchdb-journal-store= uses the existing database's
+revision/CAS adapter. Reserved =router-execution:= rows are denied through
+public document authorization/mutation and excluded from search. Bounded pure
+CAS updaters retry conflicts only; ambiguous I/O errors propagate. Journal and
+application document writes are separate commits, deliberately covered by the
+unknown-outcome recovery rule. CouchDB 3.x uses full commits by default; the
+adapter also sets the compatibility full-commit header on its private client.
+This API contract is not a claim that crash tests have executed. See
+https://docs.couchdb.org/en/stable/whatsnew/3.0.html .
+
+=star.router.outbound:make-coordinator= requires the journal, current key-to-
+principal/tenant authentication, and an authoritative observer of ActorRef
+incarnation, attempt and active Target lease/execution/fence. Target binding
+registers the pending invocation durably before enqueue. The host intercepts
+ACK/reply/error and applies the canonical correlation/completion guards before
+serialized journal CAS. Queue receipt stays separate from accepted/completed;
+unknown observations are nonterminal. Existing registrations require explicit
+reconciliation rather than automatic resend. The configured limit bounds enrolled invocation identities. Trusted owners can
+call =retire-invocation= or =retire-terminal-invocations= to release process
+bookkeeping for durable terminal rows. Journal evidence is retained;
+re-registration returns existing and never permits resend. Pending and unknown
+executions cannot retire, and late unregistered outcomes fail closed. An
+expired Target retry fails closed pending persisted-acceptance recovery; it must
+not acquire a new execution and silently repeat an effect. Observer checks are repeated on
+CAS retry; lease-store observation and CouchDB CAS are not one distributed
+transaction. A production observer must use the actual lease authority and must
+not copy expected values from a wire message or the pending record.
+
+These source paths and crash/revocation/backpressure fixtures are implemented
+for review but remain unexecuted in Lisp. Event/stream application contracts,
+cross-store atomic lease arbitration and distributed runtime acceptance are
+not established by successful envelope decoding or static tests.
+
+Host send admission and reply queues are bounded. =host-snapshot= exposes
+sanitized rejection/loss counters. Lost terminal replies require application
+reconciliation; no counter or queue result asserts delivery. Stop the host,
+close SC01 handles, close the authenticator, then release the borrowed context.
+Handles enforce owner-thread use; native workers never call Lisp. Repeated close
+is harmless, while a shutdown timeout explicitly reports cleanup still pending.
+
+* Validation and known gates
+
+=scripts/test-embedded-router.sh= runs the actual CFFI transport gate.
+=--application= runs the real Server/actor/Rabbit/CouchDB fixture and fresh-process
+readback; =--rabbit-only= independently exercises the preserved Rabbit path.
+=--sc01= exercises the explicit legacy profile; =--crash= runs the SIGKILL
+receiver-journal recovery scenarios.
+All services must be disposable loopback fixtures with the explicit safety flag
+and private credentials required by the driver. No real data collector runs.
+
+Hosted CI records image digest/ID and executed Rabbit version. Requested tags
+are not tested-version evidence until the job executes. The existing service
+pin audits #352/#353/#354 are not production upgrade authorization.
+
+Local Nim/SBCL execution is blocked by missing packages and the denied configured
+Debian snapshot proxy. Hosted Server jobs currently fail before any step; their
+cause is unknown. Cross-private StarLang checkout additionally requires an
+approved GitHub credential with read access to that repository. Its default
+repository token cannot supply that permission. No private canonical source may
+be copied into public StarRouter to bypass access control.
+
+* Explicit recovery and event API
+
+=star.router.leases:prepare-recovery-envelope= takes a predecessor and a NEW
+persisted execution ID from the trusted recovery owner. It acquires a real
+replacement lease/fence after expiry, preserves the predecessor and advances
+attempt. It neither stores acceptance nor schedules/resends; callers must
+reconcile the replacement through the existing acceptance authority first.
+An active predecessor cannot be displaced. This is a source API, not completed
+automatic Target recovery.
+
+=star.router.events:make-document-event-binding= declares a manifest event,
+actor and document payload field with a current credential resolver.
+=make-event-handler= composes it into the host callback; other kinds delegate.
+=commit-document-event= validates canonical event/schema/dataset/tenant and uses
+the existing authorized mutation/outbox commit. It emits no command ACK or reply.
+Transient documents, Targets, commands, controls and stream-frame objects are
+rejected. Persistence exceptions may represent unknown effects.
+
+Canonical streaming is not a released wire contract: StarLang's in-process
+stream frame defines task/correlation/sequence/envelope/terminal fields but not
+subscribe/resume/ACK payloads or persistence/backpressure arbitration. The
+internal document-bus observer is not a transport subscription. Implementing
+those wire operations requires canonical generator/contract authority first.
+
+Recurring native execution similarly needs an occurrence cursor and CAS
+transition in the existing schedule acceptance, stable next execution/request
+identity, and pending-versus-admitted recovery rules. Current acceptance treats
+scheduled/dispatched as duplicate. No second acceptance ledger was introduced.
+
+Atomic fencing remains a cross-store authority decision. Existing Valkey
+=fenced-set= atomically checks an active lease and writes its one Valkey value;
+it cannot atomically commit the CouchDB execution journal or document mutation.
+A new lease observation before a CouchDB CAS cannot close that race. A shared
+transactional authority or explicit canonical fencing commit protocol is needed;
+these source APIs do not promise that missing transaction.

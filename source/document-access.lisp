@@ -1,5 +1,17 @@
 (in-package :star.documents)
 
+(defun router-journal-id-p (id)
+  "Reserved internal identity, even when a caller supplies a different type."
+  (and (stringp id) (<= 17 (length id))
+       (string= "router-execution:" id :end2 17)))
+
+(defun router-journal-document-p (document)
+  "Internal execution rows never enter public document or search boundaries."
+  (and (consp document) (eq :obj (car document))
+       (or (router-journal-id-p (jsown:val-safe document "_id"))
+           (router-journal-id-p (jsown:val-safe document "id"))
+           (equal "_server_router_execution" (jsown:val-safe document "type")))))
+
 (define-condition document-schema-validation-error (error)
   ((category
     :initarg :category
