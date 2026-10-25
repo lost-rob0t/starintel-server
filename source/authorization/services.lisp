@@ -1,5 +1,11 @@
 (in-package :star.authorization)
 
+(defun reject-router-journal-access (&key document id)
+  ;; This is a server-private namespace, including for administrator clients.
+  (when (or (star.documents::router-journal-id-p id)
+            (star.documents::router-journal-document-p document))
+    (error 'authorization-error :code "access_denied" :decision nil)))
+
 (defun request-metadata (&key route method correlation-id)
   (list :route route
         :method method
@@ -24,6 +30,7 @@
 
 (defun authorize-document! (action document &key principal actor-name metadata)
   "Authorize an action on a document resource."
+  (reject-router-journal-access :document document)
   (authorize!
    action
    :principal principal
@@ -38,6 +45,7 @@
 (defun authorized-fetch-document (document-id fetch-fn
                                   &key principal metadata)
   "Fetch and authorize one document. FETCH-FN receives DOCUMENT-ID."
+  (reject-router-journal-access :id document-id)
   (let* ((raw (funcall fetch-fn document-id))
          (document (parse-document-value raw)))
     (authorize-document!
@@ -50,6 +58,7 @@
 (defun authorized-delete-document (document-id fetch-fn delete-fn
                                     &key principal metadata)
   "Fetch, authorize, and delete one document through explicit injected I/O."
+  (reject-router-journal-access :id document-id)
   (let* ((raw (funcall fetch-fn document-id))
          (document (parse-document-value raw))
          (revision (jsown:val document "_rev")))
@@ -66,6 +75,7 @@
 
 FETCH-FN returns the current document or NIL for an insert candidate. UPDATE-FN
 receives PATCH only after the resource decision has been made."
+  (reject-router-journal-access :id document-id :document patch)
   (let* ((raw (funcall fetch-fn document-id))
          (document (parse-document-value (or raw patch)))
          (decision

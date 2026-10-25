@@ -178,13 +178,19 @@ fields remain controlled by persistence."
     (document-id existing immutable-patch)
   "Return raw candidate and NIL, or NIL and a compatibility condition."
   (handler-case
-      (values
-       (if existing
-           (merge-document-update
-            document-id existing immutable-patch)
-           (prepare-document-insert
-            document-id immutable-patch))
-       nil)
+      (progn
+        (when (or (star.documents::router-journal-id-p document-id)
+                  (star.documents::router-journal-document-p existing)
+                  (star.documents::router-journal-document-p immutable-patch))
+          (error 'document-update-validation-error :code "reserved_document"
+                 :reason "Server-private documents cannot be mutated here"))
+        (values
+         (if existing
+             (merge-document-update
+              document-id existing immutable-patch)
+             (prepare-document-insert
+              document-id immutable-patch))
+         nil))
     (document-update-validation-error (condition)
       (values nil condition))))
 

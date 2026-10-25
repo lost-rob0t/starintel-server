@@ -52,7 +52,16 @@ name. Its projection function must preserve execution ID, idempotency key,
 trace/correlation, target causation, dataset, and the complete dispatch document
 including lease/fencing extensions. Existing HTTP authorization, acceptance,
 scheduling and recovery continue to own the Target. Missing/stale bindings and
-backpressure fail closed. Socket acceptance means queued, not actor execution.
+backpressure fail closed. Both native binding APIs require =:lease-policy=,
+constructed with =star.router.leases:make-policy= from the existing lease store,
+a trusted owner service context, Target identity mapping and service instance.
+Preparation authorizes =targets:dispatch= and =targets:lease= and acquires the
+actual lease before durable Target acceptance. Delivery rechecks that lease.
+The TTL must cover scheduled delay and the configured outcome wait budget;
+Target and owner deadlines cap it. Native recurring Targets currently fail
+closed: their per-occurrence durable acceptance/lease transaction remains
+unfinished. Rabbit/local recurring behavior is unchanged.
+Socket acceptance means queued, not actor execution.
 Outbound bindings require a singleton authenticator allowlist: a route cannot
 prove which of several admitted keys owns it. Secure SC01 PUB likewise requires
 a singleton key because a subscriber can select arbitrary topics. These checks
@@ -86,27 +95,56 @@ acceptance. =newDocument= is ACKed after existing durable mutation/outbox
 completion. Legacy updates and actor-originated Target ingestion are rejected
 explicitly. SC01 provides no canonical cancellation/result/stream semantics.
 
-The canonical deterministic dispatcher implements command acceptance, reply,
-terminal outcomes, cancellation, deadlines, replay and conflicts for inbound
-commands. The Server adapter admits command/cancel inputs and emits their
-canonical outcomes; arbitrary incoming event/reply/ack/error settlement for
-outbound Targets is not yet composed with the Server runtime. The transport
-codec accepting these envelope kinds is not full application support. Its per-peer
-execution journal is bounded and volatile. Document effects use the existing
-durable document ledger; replaying arbitrary completed lifecycle outcomes after
-process restart is not yet supported by a durable execution journal. Exhausted
-budgets fail closed instead of evicting replay protection. Known commands remain
-cancellable at the budget limit.
+The inbound adapter uses the canonical deterministic dispatcher for command,
+reply, terminal outcome, cancellation, deadline and conflict semantics. Durable
+mode is now the default and requires =:journal=; =:durable-p nil= explicitly
+selects volatile behavior. The Server admission/effect gate stores canonical
+command bytes before enqueue, records the start before calling the handler,
+and stores canonical outcome bytes before returning them to the transport.
+The public canonical identity validator is supplied by StarLang PR #217.
 
-The pinned =star-journal= port exposes append/replay, but the authoritative
-deterministic dispatcher has no journal attachment/recovery hook. Integrating
-that port upstream must preserve canonical actor/message-type/idempotency-key
-identity checks, authenticated principal/tenant isolation, cancellation state,
-and admission-before-effects ordering. A pending command whose document may
-already be committed needs reconciliation or outcome-unknown after restart;
-blind re-execution is not an acceptable recovery policy. The file journal's
-=finish-output= is not demonstrated fsync/atomic durability. These are explicit
-upstream integration dependencies, not guarantees supplied by document dedupe.
+Receiver records are scoped by authenticated principal type/ID, the existing
+Server tenant mapping, and canonical actor/message-type/idempotency key. Key
+rotation does not erase that scope. Restart replays committed terminal bytes;
+admitted or started effects without a terminal record return canonical
+=star.outcome-unknown= and are not executed again. Targeted cancellation is
+recorded before dispatch arbitration. Cancellation of the addressed command
+competes with its start in one journal row. Correlation cancellation markers
+span rows and are not transactional; concurrently starting correlated work
+may already have begun. Known commands remain cancellable at the
+request-budget limit. This conservative recovery preserves ambiguity rather
+than promising exactly-once external effects.
+
+=star.router.journal:make-couchdb-journal-store= uses the existing database's
+revision/CAS adapter. Reserved =router-execution:= rows are denied through
+public document authorization/mutation and excluded from search. Bounded pure
+CAS updaters retry conflicts only; ambiguous I/O errors propagate. Journal and
+application document writes are separate commits, deliberately covered by the
+unknown-outcome recovery rule. CouchDB 3.x uses full commits by default; the
+adapter also sets the compatibility full-commit header on its private client.
+This API contract is not a claim that crash tests have executed. See
+https://docs.couchdb.org/en/stable/whatsnew/3.0.html .
+
+=star.router.outbound:make-coordinator= requires the journal, current key-to-
+principal/tenant authentication, and an authoritative observer of ActorRef
+incarnation, attempt and active Target lease/execution/fence. Target binding
+registers the pending invocation durably before enqueue. The host intercepts
+ACK/reply/error and applies the canonical correlation/completion guards before
+serialized journal CAS. Queue receipt stays separate from accepted/completed;
+unknown observations are nonterminal. Existing registrations require explicit
+reconciliation rather than automatic resend. The coordinator's configured limit
+currently bounds all registered invocation identities for its lifetime, including
+terminal ones; automatic retirement/recovery scanning is not implemented. An
+expired Target retry fails closed pending persisted-acceptance recovery; it must
+not acquire a new execution and silently repeat an effect. Observer checks are repeated on
+CAS retry; lease-store observation and CouchDB CAS are not one distributed
+transaction. A production observer must use the actual lease authority and must
+not copy expected values from a wire message or the pending record.
+
+These source paths and crash/revocation/backpressure fixtures are implemented
+for review but remain unexecuted in Lisp. Event/stream application contracts,
+cross-store atomic lease arbitration and distributed runtime acceptance are
+not established by successful envelope decoding or static tests.
 
 Host send admission and reply queues are bounded. =host-snapshot= exposes
 sanitized rejection/loss counters. Lost terminal replies require application
@@ -120,6 +158,8 @@ is harmless, while a shutdown timeout explicitly reports cleanup still pending.
 =scripts/test-embedded-router.sh= runs the actual CFFI transport gate.
 =--application= runs the real Server/actor/Rabbit/CouchDB fixture and fresh-process
 readback; =--rabbit-only= independently exercises the preserved Rabbit path.
+=--sc01= exercises the explicit legacy profile; =--crash= runs the SIGKILL
+receiver-journal recovery scenarios.
 All services must be disposable loopback fixtures with the explicit safety flag
 and private credentials required by the driver. No real data collector runs.
 

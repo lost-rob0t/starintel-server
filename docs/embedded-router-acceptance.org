@@ -29,13 +29,14 @@ test, or successful transport send. Socket queue acceptance does not prove
 durable storage. A possibly committed operation with a lost reply remains an
 unknown outcome until the application idempotency path reconciles it.
 
-The application fixture covers Actor2Actor, SC01 and Rabbit paths. It does not yet
-prove executed Server SC01 ingestion/dispatch, FediWatch interoperability, mid-commit
-crash recovery, credential revocation during active traffic, or sustained
-backpressure. Canonical outbound Target client-outcome tracking and a durable
-Actor2Actor lifecycle journal also remain unimplemented; the bounded in-memory
-dispatcher replay cache is not restart-safe lifecycle recovery. These remain
-separate acceptance gaps even if this fixture passes.
+The application fixture covers Actor2Actor, SC01 and Rabbit paths. All Server
+runtime scenarios remain unrun. FediWatch interoperability and sustained
+network backpressure remain separate gaps. Durable lifecycle and outbound
+client-outcome integration have reviewable source and focused tests, all Lisp
+execution still unrun. Native recurring execution, expired/missing-lease recovery,
+automatic invocation retirement, cross-store atomic fencing and event/stream
+application semantics remain incomplete. Fixture source or a bounded replay
+cache alone does not establish their safety.
 
 * Native gate
 
@@ -131,3 +132,60 @@ existing Rabbit route and actual document ingestion through
 =documents.ingest.<dtype>=. Preserve broker confirmation and application
 commit as separate assertions. Do not transplant the separately owned
 readiness-ingestion PR #344 merely to make this branch appear complete.
+
+* Live revocation and bounded overload fixture
+
+The Actor2Actor fixture creates a separate persistent actor API credential and
+authenticates it on every lifecycle submission. After successful document
+commit and authenticated reconnect, the fixture revokes that credential in the
+real credential store while retaining the live CURVE connection. Both a new
+document and cached terminal replay must fail; independent HTTP authority must
+observe that the new document does not exist. CURVE authentication alone does
+not grant continuing application authority.
+
+For overload, a real actor event holds the owner at a bounded fixture callback.
+The producer attempts 512 admissions against a queue bound of eight. Exactly
+eight tickets must be admitted and 504 rejected as queue-full within five
+seconds; the queue snapshot must never exceed its configured bound. After
+release, the real actor must observe all eight frames in FIFO order and every
+ticket must settle. These are deterministic application-queue overload checks,
+not proof of sustained network throughput or arbitrary OS-buffer exhaustion.
+Both scenarios are source-only until the hosted Lisp/service gate executes.
+
+* Process-crash acceptance
+
+=--crash= runs four independent actual HTTP Target → CURVE actor submissions.
+The receiver's real CouchDB journal invokes bounded test checkpoints after
+=admitted=, =started= and persisted =terminal= transitions. A fourth checkpoint
+runs after the ordinary document mutation commits, before returning a result.
+At each boundary Python sends SIGKILL to the Server process and verifies its
+signal exit status. Graceful shutdown cannot satisfy this assertion.
+
+The fresh process uses the same private fixture CURVE keys, authenticated
+principal and exact canonical command bytes. Pending executions must return
+one =star.outcome-unknown= observation with retryable false, never invoke the
+effect again, and retain the pre-crash document state. Terminal replay must
+return the exact two canonical outcome byte strings read from the persisted
+journal before the crash. HTTP independently checks document absence before
+effect and exact content plus unchanged revision after effect. Checkpoint
+markers coordinate SIGKILL; only real journal transitions and readback supply
+durability evidence. Secret fixtures remain in mode-0600 files under a private
+temporary directory; diagnostics redact them and cleanup removes the directory.
+
+These scenarios require the durable receiver and outbound Target coordinator
+integration. They are executable acceptance source, not reported execution
+results; hosted Server CI must reach and pass every phase before this matrix
+can be marked satisfied.
+
+The native Target fixture now configures the production lease-preparation
+boundary with the repository's deterministic memory lease backend. The normal
+acquire/get/expiry/fencing code runs; no lease IDs or successful observations
+are fabricated. This checks single-process lease behavior and does not prove
+Valkey deployment or distributed lease survival. The observer reads that actual
+lease and trusted synthetic actor enrollment; wire claims do not set actor
+generation. Enrollment increments on fixture actor startup and is removed on
+owned shutdown. The actor sends valid reply/completed frames for one invocation. A separate
+Target releases its actual lease through the ownership-checked lease API before
+the old completion arrives; the journal must refuse the inactive authority. Outcome delivery attempt is not the authoritative
+invocation attempt and is not treated as such. A real stale-generation Target across actor restart remains
+a separate gap; unit guard coverage is not substituted for that scenario.

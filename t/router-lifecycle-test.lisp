@@ -25,6 +25,7 @@
 (defun runtime (handler &rest options)
   (apply #'star.router.lifecycle:make-runtime-binding (manifest) "worker" handler
          (lambda (key) (declare (ignore key)) (context))
+         :durable-p nil
          :clock (lambda () "2026-10-25T12:00:00Z") options))
 (defun complete (context command)
   (declare (ignore context command))
@@ -91,6 +92,7 @@
          (runtime (star.router.lifecycle:make-runtime-binding
                    (manifest) "worker" #'complete
                    (lambda (key) (declare (ignore key)) (when allowed (context)))
+                   :durable-p nil
                    :max-requests-per-peer 1)))
     (star.router.lifecycle:runtime-handle-envelope runtime (command) (peer))
     (signals star.router.application:application-rejection

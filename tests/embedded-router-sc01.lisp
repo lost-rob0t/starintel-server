@@ -136,7 +136,8 @@
                              context api pub binding :server-secret-key server-secret
                              :authenticator authenticator)))
                (star.router.server:bind-sc01-target-route
-                *actor* host (lambda (dispatch) (declare (ignore dispatch)) trusted))
+                *actor* host (lambda (dispatch) (declare (ignore dispatch)) trusted)
+                :lease-policy (fixture-lease-policy trusted))
                (setf actor-thread
                      (bordeaux-threads:make-thread
                       (lambda () (sc01-actor context api pub client-public client-secret server-public))

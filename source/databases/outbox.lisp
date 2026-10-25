@@ -279,6 +279,10 @@ This is not read from document fields and never contains credentials.")
   "Prepare one atomic document revision containing document and pending event state.
 
 Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
+  (when (or (star.documents::router-journal-document-p existing)
+            (star.documents::router-journal-document-p incoming))
+    (error 'mutation-conflict :mutation-id nil :document-id nil
+           :reason "Server-private documents cannot be mutated here"))
   (let* ((document (public-document-copy incoming))
          (document-id (jsown:val document "_id"))
          (mutation-id (document-mutation-id operation document))

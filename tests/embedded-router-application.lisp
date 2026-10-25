@@ -50,13 +50,17 @@
      :source-id "embedded-router-application-fixture.star"))))
 
 (defun write-key (name value)
-  ;; Driver creates these files mode 0600 in its private directory.
-  (with-open-file (stream (state-path name) :direction :output :if-exists :overwrite
+  ;; Truncate each checkpoint: later canonical results can be shorter. Keep
+  ;; replacement files private as well as their containing directory.
+  (with-open-file (stream (state-path name) :direction :output :if-exists :supersede
                                           :if-does-not-exist :error)
+    (fixture-assert (zerop (cffi:foreign-funcall "chmod" :string (namestring (state-path name))
+                                                       :unsigned-int #o600 :int))
+                    "private fixture file permissions")
     (write-string value stream)))
 
 (defun provision-context ()
-  (let ((scopes (list "documents:read" "documents:write" "targets:dispatch"
+  (let ((scopes (list "documents:read" "documents:write" "targets:dispatch" "targets:lease" "targets:read"
                       "actor:*" (concatenate 'string "dataset:" *dataset*)
                       (concatenate 'string "tenant:" *dataset*))))
     (multiple-value-bind (record key) (star.auth:create-api-key "embedded-fixture" "service" scopes)
@@ -79,6 +83,7 @@
          (execution (star.actors::target-dispatch-envelope-execution-id dispatch)))
     (staractorprotocol:make-command-envelope
      :message-id execution :message-type "star.router.fixture/target@1"
+     :attempt (star.router.leases:canonical-attempt dispatch)
      :actor *actor* :sender "fixture-server" :reply-to "fixture-server"
      :idempotency-key execution :correlation-id (star.actors::target-dispatch-envelope-trace-id dispatch)
      :causation-id (star.actors:target-record-id
@@ -199,6 +204,8 @@
                    (fixture-assert
                     (eq :error (getf (roundtrip socket manifest cancelled) :kind))
                     "cancelled command produced no successful effect"))
+                 (actor-target-outcomes socket manifest target)
+                 (actor-pressure socket manifest)
                  ;; Reconnect with a different routing identity while retaining
                  ;; the same authenticated key and canonical replay identity.
                  (star-zmq:close-socket socket)
@@ -208,6 +215,7 @@
                  (star-zmq:connect-endpoint socket endpoint)
                  (fixture-assert (eq :reply (getf (roundtrip socket manifest command) :kind))
                                  "authenticated reconnect replay")
+                 (actor-revocation socket manifest target document command)
                  (marker "actor-done"))
                (loop until (probe-file (state-path "stop")) do (sleep 0.05)))
            (error (condition)
@@ -218,14 +226,16 @@
 (defun exercise (context)
   (let* ((endpoint (format nil "tcp://127.0.0.1:~A" (uiop:getenv "STAR_ROUTER_E2E_PORT")))
          (manifest (fixture-manifest endpoint))
-         (trusted (provision-context))
+         (_http-context (provision-context))
          (binding (star.router.application:make-document-binding
                    manifest "star.router.fixture/document@1" *actor*))
          (authenticator nil) (host nil) (actor-thread nil) (lifecycle nil))
+    (declare (ignore _http-context))
     (multiple-value-bind (server-public server-secret) (star.router:keypair)
       (multiple-value-bind (client-public client-secret) (star.router:keypair)
         (unwind-protect
              (progn
+               (provision-actor-credential)
                (setf authenticator (star.router:start-authenticator context (list client-public)))
                (setf host
                      (star.router:start-host
@@ -246,11 +256,18 @@
                                       :message-type "star.router.fixture/result@1"
                                       :payload (list (cons "status" "committed") (cons "durable" t)))))
                                  (lambda (key)
-                                   (when (equalp key client-public) trusted)))))
+                                   (when (equalp key client-public) (funcall *actor-authenticate*)))
+                                 :journal (fixture-journal) :durable-p t)))
                         (fixture-assert (equalp authenticated-key client-public) "authenticated CURVE identity")
                         (bordeaux-threads:with-lock-held (*lock*) (incf *handler-calls*))
                         (if (equal (getf envelope :message-type) "star.router.fixture/ready@1")
-                            (progn (bordeaux-threads:with-lock-held (*lock*) (setf *peer-ready* t)) nil)
+                            (progn
+                              (outbound-barrier-event envelope)
+                              (when (equal (getf envelope :message-id)
+                                           (getf (pressure-event "hold") :message-id))
+                                (marker "pressure-entered")
+                                (wait-marker "pressure-release"))
+                              (bordeaux-threads:with-lock-held (*lock*) (setf *peer-ready* t)) nil)
                             (handler-case
                                 (star.router.lifecycle:runtime-handle-envelope lifecycle envelope authenticated-key)
                               (error ()
@@ -260,9 +277,9 @@
                                        envelope :message-id (star.ids:ulid) :actor *actor* :sender "fixture-server"
                                        :code "fixture_boundary_rejected" :message "Synthetic command rejected"
                                        :retryable nil))))))
-                      :server-secret-key server-secret :authenticator authenticator))
+                      :server-secret-key server-secret :authenticator authenticator :queue-limit 8))
                (reject-unlisted-peer context endpoint manifest server-public)
-               (star.router.server:bind-target-route *actor* host *route* #'target-command)
+               (bind-fixture-target host manifest client-public *actor-authenticate*)
                (setf actor-thread (bordeaux-threads:make-thread
                                    (lambda () (synthetic-actor context endpoint manifest client-public client-secret server-public))
                                    :name "synthetic native actor"))
@@ -273,12 +290,26 @@
                             (error "Authenticated synthetic actor readiness failed"))
                           (sleep 0.01)))
                (marker "ready")
-               (loop until (probe-file (state-path "stop")) do (sleep 0.05)))
+               (loop until (probe-file (state-path "stop"))
+                     do (service-outbound-controls) (service-adversarial-controls host) (sleep 0.01)))
           (star.router.server:unbind-target-route *actor*)
+          (setf *fixture-enrollment* nil)
           (marker "stop")
           (when actor-thread (bordeaux-threads:join-thread actor-thread))
           (when host (star.router:stop-host host))
           (when authenticator (star.router:close-authenticator authenticator)))))))
+
+(load (merge-pathnames "tests/embedded-router-adversarial.lisp"
+                       (uiop:ensure-directory-pathname (uiop:getenv "STAR_ROUTER_TEST_ROOT")))
+      :verbose nil :print nil)
+
+(load (merge-pathnames "tests/embedded-router-crash.lisp"
+                       (uiop:ensure-directory-pathname (uiop:getenv "STAR_ROUTER_TEST_ROOT")))
+      :verbose nil :print nil)
+
+(load (merge-pathnames "tests/embedded-router-outbound.lisp"
+                       (uiop:ensure-directory-pathname (uiop:getenv "STAR_ROUTER_TEST_ROOT")))
+      :verbose nil :print nil)
 
 (load (merge-pathnames "tests/embedded-router-sc01.lisp"
                        (uiop:ensure-directory-pathname (uiop:getenv "STAR_ROUTER_TEST_ROOT")))
@@ -292,6 +323,8 @@
              (cond
                ((equal (uiop:getenv "STAR_ROUTER_E2E_MODE") "exercise")
                 (setf context (star-zmq:make-context)) (exercise context))
+               ((member (uiop:getenv "STAR_ROUTER_E2E_MODE") '("crash-first" "crash-resume") :test #'equal)
+                (setf context (star-zmq:make-context)) (exercise-crash context))
                ((equal (uiop:getenv "STAR_ROUTER_E2E_MODE") "sc01")
                 (setf context (star-zmq:make-context)) (exercise-sc01 context))
                (t

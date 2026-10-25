@@ -91,7 +91,7 @@ def preserve_diagnostics(state, env):
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     secret_values = [env.get(name, "") for name in
                      ("COUCHDB_PASSWORD", "RABBITMQ_PASSWORD", "STAR_AUTH_PEPPER", "STAR_AUTH_BOOTSTRAP_SECRET")]
-    for name in ("api-key", "denied-key", "pepper", "bootstrap"):
+    for name in ("api-key", "denied-key", "pepper", "bootstrap", "crash-server-secret", "crash-client-secret"):
         if (state / name).exists():
             secret_values.append((state / name).read_text().strip())
     for path in state.glob("*.log"):
@@ -131,7 +131,7 @@ class ServerProcess:
         self.state = state
         for name in ("ready", "stop", "actor-done", "actor-error"):
             (state / name).unlink(missing_ok=True)
-        self.log = open(state / (mode + ".log"), "wb")
+        self.log = open(state / (mode + ("-" + env["STAR_ROUTER_E2E_CRASH_STAGE"] if "STAR_ROUTER_E2E_CRASH_STAGE" in env else "") + ".log"), "wb")
         child_env = dict(env, STAR_ROUTER_E2E_MODE=mode)
         self.process = subprocess.Popen(
             ["sbcl", "--noinform", "--no-sysinit", "--no-userinit", "--script",
@@ -165,9 +165,82 @@ class ServerProcess:
             raise Failure(f"Lisp Server fixture exited unsuccessfully ({result})")
 
 
+def await_fixture_marker(server, state, name, seconds=30):
+    deadline = time.monotonic() + seconds
+    while not (state / name).exists():
+        if server.process.poll() is not None or (state / "actor-error").exists():
+            raise Failure("Crash fixture terminated before " + name)
+        if time.monotonic() >= deadline:
+            raise Failure("Crash fixture deadline: " + name)
+        time.sleep(0.05)
+
+
+def run_crash_matrix(state, env, base, document, actor):
+    # Every fixture secret and canonical byte checkpoint starts private.
+    for name in ("crash-server-public", "crash-server-secret", "crash-client-public",
+                 "crash-client-secret", "crash-command.json", "crash-observed.json",
+                 "crash-expected.json"):
+        private_write(state / name, "")
+    for stage in ("admitted", "started", "effect", "terminal"):
+        for name in ("crash-checkpoint", "unexpected-effect"):
+            (state / name).unlink(missing_ok=True)
+        trial = dict(document, id=env["STAR_ROUTER_E2E_RUN"] + ":crash:" + stage)
+        private_write(state / "document.json", json.dumps(trial))
+        trial_env = dict(env, STAR_ROUTER_E2E_CRASH_STAGE=stage)
+        server = ServerProcess(state, trial_env, "crash-first")
+        try:
+            server.ready()
+            api = Client(base, "Bearer " + (state / "api-key").read_text().strip())
+            target = {"actor": actor, "target": "synthetic:crash:" + stage,
+                      "dataset": env["STAR_ROUTER_E2E_DATASET"], "idempotency_key": trial["id"],
+                      "delay": 1, "recurring": False}
+            api.expect("POST", "/api/v1/targets", {201}, target)
+            await_fixture_marker(server, state, "crash-checkpoint")
+            revision = None
+            if stage in ("effect", "terminal"):
+                revision = readback(api, trial)
+            else:
+                api.expect("GET", "/api/v1/documents/" + quote(trial["id"], safe=""), {404})
+            # POSIX SIGKILL: unwind-protect and graceful cleanup cannot run.
+            server.process.kill()
+            if server.process.wait(timeout=5) != -9:
+                raise Failure("Fixture was not terminated by SIGKILL")
+            server.log.close()
+            server = ServerProcess(state, trial_env, "crash-resume")
+            server.ready()
+            await_fixture_marker(server, state, "actor-done")
+            observed = json.loads((state / "crash-observed.json").read_text())
+            if (state / "unexpected-effect").exists():
+                raise Failure("Recovery reran an unknown or terminal effect")
+            if stage == "terminal":
+                expected = json.loads((state / "crash-expected.json").read_text())
+                if observed != expected or len(observed) != 2:
+                    raise Failure("Recovered terminal outcomes changed persisted canonical bytes")
+            else:
+                if len(observed) != 1:
+                    raise Failure("Pending recovery did not produce exactly one unknown observation")
+                outcome = json.loads(observed[0])
+                if outcome.get("kind") != "error" or outcome.get("payload", {}).get("code") != "star.outcome-unknown":
+                    raise Failure("Pending recovery falsely claimed a terminal outcome")
+                if outcome.get("payload", {}).get("retryable") is not False:
+                    raise Failure("Unknown recovery encouraged blind effect retry")
+            api = Client(base, "Bearer " + (state / "api-key").read_text().strip())
+            if revision is None:
+                api.expect("GET", "/api/v1/documents/" + quote(trial["id"], safe=""), {404})
+            elif readback(api, trial) != revision:
+                raise Failure("Crash recovery changed acknowledged document revision")
+            print("PASS SIGKILL recovery at durable " + stage + " boundary", flush=True)
+        finally:
+            if server.process.poll() is None:
+                server.stop()
+            else:
+                server.log.close()
+
+
 def run():
-    if sys.argv[1:] not in ([], ["--rabbit-only"], ["--sc01"]):
+    if sys.argv[1:] not in ([], ["--rabbit-only"], ["--sc01"], ["--crash"]):
         raise Failure("unknown application fixture mode")
+    crash_enabled = sys.argv[1:] == ["--crash"]
     sc01_enabled = sys.argv[1:] == ["--sc01"]
     native_enabled = sys.argv[1:] != ["--rabbit-only"]
     if os.environ.get("STAR_ROUTER_E2E_ACK_DISPOSABLE") != "1":
@@ -194,6 +267,8 @@ def run():
         private_write(state / "pepper", secrets.token_hex(32))
         private_write(state / "bootstrap", secrets.token_hex(32))
         private_write(state / "api-key", "")
+        private_write(state / "enrollment-generation", "0")
+        private_write(state / "stale-target.json", "")
         private_write(state / "denied-key", "")
         private_write(state / "init.lisp", '(in-package :star)\n(setf *public-mode* nil *ingest-workers* 1 *couchdb-event-log-database* "' + run_id + '-events")\n')
         fixtures = json.loads((ROOT / "schemas/starintel-0.10.1/research-fixtures.json").read_text())
@@ -213,6 +288,9 @@ def run():
         server = None
         queue_created = False
         try:
+            if crash_enabled:
+                run_crash_matrix(state, env, base, document, actor)
+                return
             server = ServerProcess(state, env, "sc01" if sc01_enabled else ("exercise" if native_enabled else "rabbit"))
             server.ready()
             api = Client(base, "Bearer " + (state / "api-key").read_text().strip())
@@ -230,15 +308,26 @@ def run():
                 api.expect("POST", "/api/v1/targets", {409}, dict(target, target="synthetic:conflict"))
                 revision = readback(api, document)
                 denied.expect("GET", "/api/v1/documents/" + quote(document["id"], safe=""), {403})
-                deadline = time.monotonic() + 30
+                deadline = time.monotonic() + 45
+                stale_target_submitted = False
                 while not (state / "actor-done").exists():
+                    if not sc01_enabled and not stale_target_submitted and (state / "request-stale-target").exists():
+                        api.expect("POST", "/api/v1/targets", {201},
+                                   dict(target, target="synthetic:stale-lease",
+                                        idempotency_key=run_id + ":stale-lease-target"))
+                        stale_target_submitted = True
                     if (state / "actor-error").exists() or time.monotonic() >= deadline:
                         raise Failure("synthetic native actor lifecycle/replay proof did not complete")
                     time.sleep(0.1)
                 if readback(api, document) != revision:
                     raise Failure("native replay changed stored revision")
-                for suffix in ((":denied",) if sc01_enabled else (":denied", ":cancelled")):
+                for suffix in ((":denied",) if sc01_enabled else (":denied", ":cancelled", ":revoked")):
                     api.expect("GET", "/api/v1/documents/" + quote(run_id + suffix, safe=""), {404})
+                if not sc01_enabled:
+                    for proof in ("pressure-passed", "revocation-passed", "outbound-terminal-passed",
+                                  "outbound-stale-lease-passed"):
+                        if not (state / proof).exists():
+                            raise Failure("Missing observed adversarial proof: " + proof)
                 durable_records.append((document, revision))
                 print("PASS " + ("SC01" if sc01_enabled else "Actor2Actor") + " Target→actor→document→durable HTTP readback/replay/denial", flush=True)
 

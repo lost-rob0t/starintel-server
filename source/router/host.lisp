@@ -19,6 +19,7 @@
 
 (defstruct (host (:constructor %make-host))
   context endpoint manifest profiles handler thread secret-key secure-p authenticator auth-pinned-p
+  outcome-authority
   (queue nil) (queue-limit 64) (timeout-ms 25)
   (replies nil) (reply-timeout-seconds 2)
   (counters (make-hash-table :test #'eq)) last-failure
@@ -74,7 +75,9 @@
   ;; Application denials and semantic errors affect this message only. Native
   ;; transport exceptions retain their fatal classification in the owner loop.
   (handler-case
-      (retain-host-replies host route (funcall (host-handler host) route envelope peer-key))
+      (let ((handler (bordeaux-threads:with-lock-held ((host-lock host))
+                       (host-handler host))))
+        (retain-host-replies host route (funcall handler route envelope peer-key)))
     (router-error (condition) (error condition))
     (error () (host-count host :handler-rejections :handler-rejected))))
 

@@ -6,6 +6,7 @@
 
 (defstruct (runtime-binding (:constructor %make-runtime-binding))
   manifest actor handler authenticate clock owner max-peers max-requests max-queue
+  journal durable-p journal-owner journal-checkpoint
   (sessions (make-hash-table :test #'equal)))
 (defstruct runtime-session dispatcher context identity (requests 0))
 
@@ -17,18 +18,26 @@
 
 (defun make-runtime-binding (manifest actor handler authenticate
                              &key (max-peers 8) (max-requests-per-peer 64)
-                               (max-queue 8) (clock #'utc-clock))
+                               (max-queue 8) (clock #'utc-clock)
+                               journal (durable-p t) journal-checkpoint)
   "Host-side composition of the canonical StarLang deterministic dispatcher.
 AUTHENTICATE receives a transport-authenticated CURVE public key and returns a
 trusted service context or NIL. HANDLER receives that context and a canonical
 command, returning a StarLang complete/retry/fail/defer result. It must perform
 application authorization and commit before returning a completed effect.
-Each key has isolated cancellation/replay state. State is bounded and volatile;
-budget exhaustion fails closed rather than evicting replay protection. Recreate
-only with an explicit host lifecycle transition and reconcile durable effects."
+Durable mode requires JOURNAL and persists admission before effects and canonical
+outcomes before emission. Recovery of an ambiguous effect never executes again.
+Volatile mode requires explicit :DURABLE-P NIL and offers no restart protection.
+JOURNAL-CHECKPOINT(stage command), when supplied by trusted configuration, runs
+after durable :ADMITTED/:STARTED/:TERMINAL transitions, for crash acceptance."
   (unless (and (functionp handler) (functionp authenticate) (functionp clock)
                (stringp actor) (plusp (length actor)))
     (star.router.application::reject :invalid-runtime-binding))
+  (unless (and (member durable-p '(nil t))
+               (or (not durable-p) journal)
+               (or (null journal-checkpoint) (functionp journal-checkpoint)))
+    (star.router.application::reject :durable-journal-required))
+  (when durable-p (check-type journal star.router.journal::journal-store))
   (dolist (bound (list max-peers max-requests-per-peer max-queue))
     (unless (and (integerp bound) (<= 1 bound 1024))
       (star.router.application::reject :invalid-runtime-bound)))
@@ -41,7 +50,9 @@ only with an explicit host lifecycle transition and reconcile durable effects."
                            :handler handler :authenticate authenticate :clock clock
                            :owner (bordeaux-threads:current-thread)
                            :max-peers max-peers :max-requests max-requests-per-peer
-                           :max-queue max-queue)))
+                           :max-queue max-queue :journal journal :durable-p durable-p
+                           :journal-owner (princ-to-string (uuid:make-v4-uuid))
+                           :journal-checkpoint journal-checkpoint)))
 
 (defun context-identity (context)
   (list (star.auth:service-call-context-principal-id context)
@@ -80,8 +91,10 @@ only with an explicit host lifecycle transition and reconcile durable effects."
            (runtime-session-dispatcher session) (runtime-binding-actor binding)
            (lambda (dispatcher command)
              (declare (ignore dispatcher))
-             (funcall (runtime-binding-handler binding)
-                      (runtime-session-context session) command)))
+             (if (runtime-binding-durable-p binding)
+                 (durable-invoke-handler binding session command)
+                 (funcall (runtime-binding-handler binding)
+                          (runtime-session-context session) command))))
           (setf (gethash key (runtime-binding-sessions binding)) session)))
     (setf (runtime-session-context session) context)
     (starlangruntime:advance-dispatcher-clock
@@ -123,26 +136,58 @@ ACK/reply/event/error are output/control observations, never command admission."
                (>= (length (starlangruntime:deterministic-dispatcher-queue dispatcher))
                    (runtime-binding-max-queue binding)))
       (star.router.application::reject :queue-full))
+    (when (runtime-binding-durable-p binding)
+      (multiple-value-bind (admit-p outcomes)
+          (durable-admit-envelope binding session owned)
+        (unless admit-p
+          (return-from runtime-submit-envelope (values outcomes :observation)))))
     ;; A cancel for an exact retained target pair cannot add unbounded keys:
     ;; its own message ID is not indexed by the canonical cancellation tables.
     (unless (tracked-cancel-p dispatcher owned)
       (incf (runtime-session-requests session)))
     (starlangruntime:submit-dispatch-envelope dispatcher owned)
-    (starlangruntime:drain-dispatcher-emitted dispatcher)))
+    (let ((outputs (starlangruntime:drain-dispatcher-emitted dispatcher)))
+      (when (and (runtime-binding-durable-p binding) (eq :cancel (getf owned :kind)))
+        (durable-checkpoint-cancel-results binding session dispatcher))
+      (values outputs :admitted))))
 
 (defun runtime-run-next (binding peer-key)
   "Execute one admitted command on the owner thread and return canonical outputs."
-  (let ((dispatcher (runtime-session-dispatcher (authenticated-session binding peer-key))))
+  (let* ((session (authenticated-session binding peer-key))
+         (dispatcher (runtime-session-dispatcher session))
+         (command (first (starlangruntime:deterministic-dispatcher-queue dispatcher))))
     (starlangruntime:run-dispatcher-next dispatcher)
-    (starlangruntime:drain-dispatcher-emitted dispatcher)))
+    (let ((outputs (starlangruntime:drain-dispatcher-emitted dispatcher)))
+      (when (and command (runtime-binding-durable-p binding))
+        (setf outputs (receiver-public-outcomes binding command outputs))
+        (durable-checkpoint-result binding session dispatcher command))
+      outputs)))
 
 (defun runtime-handle-envelope (binding envelope peer-key)
   "Synchronous host callback; output is a LIST of canonical lifecycle envelopes."
-  (append (runtime-submit-envelope binding envelope peer-key)
-          (runtime-run-next binding peer-key)))
+  (multiple-value-bind (outputs admission)
+      (runtime-submit-envelope binding envelope peer-key)
+    ;; A journal replay/unknown observation admits no work. It must not consume
+    ;; a different command already waiting in this session.
+    (if (eq admission :observation) outputs
+        (append outputs (runtime-run-next binding peer-key)))))
 
 (defun runtime-finish-deferred (binding peer-key command result)
   "Owner-thread completion through canonical late-terminal/cancel handling."
-  (let ((dispatcher (runtime-session-dispatcher (authenticated-session binding peer-key))))
+  (let* ((session (authenticated-session binding peer-key))
+         (dispatcher (runtime-session-dispatcher session)))
+    (let ((record (gethash (staractorprotocol:idempotency-scope-key command)
+                           (starlangruntime:deterministic-dispatcher-idempotency dispatcher))))
+      (when record
+        (starlangruntime:validate-command-idempotency-identity
+         (getf record :command) command)
+        ;; Delivery IDs may vary under canonical idempotency comparison, but
+        ;; deferred settlement belongs to the delivery that actually started.
+        (setf command (staractorprotocol:snapshot-portable-wire-value
+                       (getf record :command)))))
     (starlangruntime:finish-deferred-dispatch dispatcher command result)
-    (starlangruntime:drain-dispatcher-emitted dispatcher)))
+    (let ((outputs (starlangruntime:drain-dispatcher-emitted dispatcher)))
+      (when (runtime-binding-durable-p binding)
+        (setf outputs (receiver-public-outcomes binding command outputs))
+        (durable-checkpoint-result binding session dispatcher command))
+      outputs)))

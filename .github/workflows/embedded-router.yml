@@ -9,6 +9,13 @@ on:
       - 'tests/embedded-router*'
       - 'starintel-router-server.asd'
       - 'source/target-dispatch.lisp'
+      - 'source/authorization/**'
+      - 'source/databases/**'
+      - 'source/document-access.lisp'
+      - 'source/frontends/http-boundary-core.lisp'
+      - 'source/views/search.json'
+      - 't/router-*.lisp'
+      - 'tests/test_router_journal_privacy.py'
   push:
     paths:
       - '.github/workflows/embedded-router.yml'
@@ -18,6 +25,13 @@ on:
       - 'tests/embedded-router*'
       - 'starintel-router-server.asd'
       - 'source/target-dispatch.lisp'
+      - 'source/authorization/**'
+      - 'source/databases/**'
+      - 'source/document-access.lisp'
+      - 'source/frontends/http-boundary-core.lisp'
+      - 'source/views/search.json'
+      - 't/router-*.lisp'
+      - 'tests/test_router_journal_privacy.py'
   workflow_dispatch:
 
 permissions:
@@ -33,7 +47,7 @@ jobs:
     env:
       # Companion native-boundary commit; publish it before this workflow runs.
       ROUTER_SHA: 0a0d0186b423ee69d857d85b23fffcdac8b8b5a8
-      STARLANG_SHA: 010873f8e4462b5c705a21206d8cee55e5c5b2e0
+      STARLANG_SHA: 995bbae94549d174ee6ed5edc9223077f68c7535
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,9 +159,14 @@ jobs:
           nix develop --command bash scripts/test-embedded-router.sh --sc01 2>&1 | tee "$RUNNER_TEMP/embedded-sc01.log"
           sc01_status=$?
           printf 'SC01 application acceptance exit_status=%s\n' "$sc01_status"
-          # Separate transport evidence cannot turn another failed gate green.
+          export STAR_ROUTER_E2E_EVIDENCE="$RUNNER_TEMP/embedded-crash-diagnostics"
+          nix develop --command bash scripts/test-embedded-router.sh --crash 2>&1 | tee "$RUNNER_TEMP/embedded-crash.log"
+          crash_status=$?
+          printf 'SIGKILL lifecycle recovery exit_status=%s\n' "$crash_status"
+          # Separate evidence cannot turn another failed gate green.
           if [[ "$application_status" != 0 ]]; then exit "$application_status"; fi
-          exit "$sc01_status"
+          if [[ "$sc01_status" != 0 ]]; then exit "$sc01_status"; fi
+          exit "$crash_status"
       - name: Remove owned fixture containers and private credentials
         if: always()
         shell: bash
@@ -171,5 +190,7 @@ jobs:
             ${{ runner.temp }}/embedded-rabbit-diagnostics/
             ${{ runner.temp }}/embedded-sc01.log
             ${{ runner.temp }}/embedded-sc01-diagnostics/
+            ${{ runner.temp }}/embedded-crash.log
+            ${{ runner.temp }}/embedded-crash-diagnostics/
           retention-days: 3
           if-no-files-found: warn
