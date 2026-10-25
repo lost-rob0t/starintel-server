@@ -1,0 +1,76 @@
+#+title: Embedded StarRouter acceptance evidence
+
+* Scope and current status
+
+This is the acceptance matrix for Server #193 / StarRouter #5. A native
+transport check is not the complete Server target/document acceptance test.
+RabbitMQ remains a parallel supported transport. SC01 compatibility and
+=star.actor2actor/1= are separate profiles; neither implies document schema
+version. The server schema lock remains authoritative.
+
+* Required matrix
+
+| Boundary | Required proof | Status at implementation |
+|----------+----------------+--------------------------|
+| Native embedding | Shared library loaded by CFFI into the Lisp process; borrowed host context, real loopback DEALER roundtrip | Pending native execution |
+| Resource ownership | Same-thread I/O, caller-owned buffers, stale handles, repeated open/close, context teardown | Pending native execution |
+| Failure bounds | Malformed multipart, oversized input, unsupported profile, unknown route, receive timeout, bounded shutdown | Pending native execution |
+| Canonical actor wire | Existing StarLang encode/decode/profile selection; correlation, causation, cancellation/deadline and terminal outcomes | Pending integration |
+| Server dispatch | Authenticated Target accepted by existing durable acceptance path, routed to registered synthetic actor | Pending application harness |
+| Server ingest | Actor result uses existing validation/authorization and persistence; HTTP GET returns exact canonical content | Pending application harness |
+| Durability | Replay/dedupe, conflicting replay rejected, Server restart then authenticated readback | Pending application harness |
+| Isolation | Invalid auth, tenant/dataset mismatch, spoofed route identity rejected before effect | Pending application harness |
+| Compatibility | Explicit SC01 FediWatch fixture; incompatible profile fails without fallback | Pending legacy adapter |
+| Rabbit regression | Real ephemeral Rabbit target delivery and ingest/readback, plus existing unit/service suites | Pending broker harness |
+| Packaging | Fresh installed library, optional ASDF system, pinned Nix closure and exact-head CI | Pending CI |
+
+No row is satisfied by task admission, source inspection, a mock, a skipped
+test, or successful transport send. Socket queue acceptance does not prove
+durable storage. A possibly committed operation with a lost reply remains an
+unknown outcome until the application idempotency path reconciles it.
+
+* Native gate
+
+=scripts/test-embedded-router.sh= runs a bounded SBCL driver. It requires the
+shared library and a local StarLang checkout supplied by the build; it does not
+install tools, download dependencies, start public listeners, or fall back to a
+subprocess router. Missing prerequisites fail the command rather than skip.
+Use a freshly installed native library for packaging evidence.
+
+The driver must be followed by real Server application and Rabbit integration
+gates before claiming end-to-end support. Existing =t/http-api-test.lisp= uses
+a no-op =stub-producer= and cannot establish Rabbit publication evidence.
+
+* Existing required gates
+
+#+begin_src sh
+python3 scripts/check-starintel-schema-lock.py schema/starintel-schema.lock.json
+nix flake check --show-trace
+nix build .#default --no-link --print-build-logs
+nix run .#star-unit-tests
+nix run .#star-integration-tests
+#+end_src
+
+Also run the upstream =star-actor-wire= ASDF tests and StarRouter flake checks.
+Keep readback fixes owned by Server PR #331 and Target persistence/recovery
+owned by PRs #338/#339 as explicit dependencies; do not copy their changes or
+weaken exact canonical assertions to hide those failures.
+
+* Application harness seam still required
+
+Provision a disposable loopback-only Server/CouchDB/Rabbit stack and synthetic
+dataset using the repository's existing startup/authentication mechanisms.
+Keep credentials in private files. Authenticate =POST /api/v1/targets= using
+the supported Target contract in =cli/http-contract-targets.lisp=,
+then receive the Target through the embedded router using the canonical actor
+codec. Submit the synthetic actor's document through the configured router
+ingest adapter; poll =GET /api/v1/documents/:id= with a finite deadline.
+Replay exactly the same operation and compare durable content, reject a
+conflicting replay, restart the owned Server, and read again. Neither direct
+CouchDB inserts nor an HTTP POST echo substitute for this chain.
+
+The Rabbit sibling test must observe actual target delivery through the
+existing Rabbit route and actual document ingestion through
+=documents.ingest.<dtype>=. Preserve broker confirmation and application
+commit as separate assertions. Do not transplant the separately owned
+readiness-ingestion PR #344 merely to make this branch appear complete.

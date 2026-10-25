@@ -1,0 +1,84 @@
+name: Embedded router native boundary
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/embedded-router.yml'
+      - 'starintel-router.asd'
+      - 'source/router/**'
+      - 'scripts/test-embedded-router.sh'
+      - 'tests/embedded-router-native.lisp'
+  push:
+    paths:
+      - '.github/workflows/embedded-router.yml'
+      - 'starintel-router.asd'
+      - 'source/router/**'
+      - 'scripts/test-embedded-router.sh'
+      - 'tests/embedded-router-native.lisp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: embedded-router-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Companion native-boundary commit; publish it before this workflow runs.
+      ROUTER_SHA: dcd05df9d8b1a977c6d6e4657599721b8df4327c
+      STARLANG_SHA: 010873f8e4462b5c705a21206d8cee55e5c5b2e0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record exact source revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          printf 'TESTED_HEAD=%s\n' "$EXPECTED_SHA"
+      - name: Require immutable companion pins
+        shell: bash
+        run: |
+          [[ "$ROUTER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$STARLANG_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/starRouter
+          ref: ${{ env.ROUTER_SHA }}
+          path: .embedded-deps/router
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/star-lang
+          ref: ${{ env.STARLANG_SHA }}
+          path: .embedded-deps/star-lang
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - name: Verify pins and build installed native library
+        shell: bash
+        run: |
+          test "$(git -C .embedded-deps/router rev-parse HEAD)" = "$ROUTER_SHA"
+          test "$(git -C .embedded-deps/star-lang rev-parse HEAD)" = "$STARLANG_SHA"
+          nix build ./.embedded-deps/router#embedded --out-link "$RUNNER_TEMP/embedded-router" --print-build-logs
+      - name: Run real CFFI loopback boundary and canonical wire tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export STAR_ROUTER_LIBRARY="$RUNNER_TEMP/embedded-router/lib/libstarrouter.so"
+          export STAR_LANG_SOURCE="$GITHUB_WORKSPACE/.embedded-deps/star-lang"
+          export STAR_ZMQ_LIBRARY="$(ldd "$STAR_ROUTER_LIBRARY" | awk '$1 == "libzmq.so.5" {print $3}')"
+          test -f "$STAR_ZMQ_LIBRARY"
+          nix develop --command bash scripts/test-embedded-router.sh 2>&1 | tee "$RUNNER_TEMP/embedded-router.log"
+      - name: Retain native boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-router-native-${{ github.sha }}
+          path: ${{ runner.temp }}/embedded-router.log
+          retention-days: 3
+          if-no-files-found: warn
