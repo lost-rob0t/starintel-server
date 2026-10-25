@@ -75,13 +75,38 @@ Rabbit deliveries remain unchanged. No credentials enter this metadata.
 
 * Lifecycle, limits and shutdown
 
+For legacy deployment, configure =star.router.sc01-application:make-binding=
+with the sole public key, actor topic, pinned instance ID and trusted current
+credential resolver. Start =star.router.sc01-host:start-host= with separate API
+and PUB loopback endpoints, then =star.router.server:bind-sc01-target-route=
+with that host and a trusted dispatch context resolver. The same Target
+registry/scheduler hands work through a bounded queue to the Lisp owner; only
+that owner calls SC01 native methods. Registration and heartbeat require policy
+acceptance. =newDocument= is ACKed after existing durable mutation/outbox
+completion. Legacy updates and actor-originated Target ingestion are rejected
+explicitly. SC01 provides no canonical cancellation/result/stream semantics.
+
 The canonical deterministic dispatcher implements command acceptance, reply,
-terminal outcomes, cancellation, deadlines, replay and conflicts. Its per-peer
+terminal outcomes, cancellation, deadlines, replay and conflicts for inbound
+commands. The Server adapter admits command/cancel inputs and emits their
+canonical outcomes; arbitrary incoming event/reply/ack/error settlement for
+outbound Targets is not yet composed with the Server runtime. The transport
+codec accepting these envelope kinds is not full application support. Its per-peer
 execution journal is bounded and volatile. Document effects use the existing
 durable document ledger; replaying arbitrary completed lifecycle outcomes after
 process restart is not yet supported by a durable execution journal. Exhausted
 budgets fail closed instead of evicting replay protection. Known commands remain
 cancellable at the budget limit.
+
+The pinned =star-journal= port exposes append/replay, but the authoritative
+deterministic dispatcher has no journal attachment/recovery hook. Integrating
+that port upstream must preserve canonical actor/message-type/idempotency-key
+identity checks, authenticated principal/tenant isolation, cancellation state,
+and admission-before-effects ordering. A pending command whose document may
+already be committed needs reconciliation or outcome-unknown after restart;
+blind re-execution is not an acceptable recovery policy. The file journal's
+=finish-output= is not demonstrated fsync/atomic durability. These are explicit
+upstream integration dependencies, not guarantees supplied by document dedupe.
 
 Host send admission and reply queues are bounded. =host-snapshot= exposes
 sanitized rejection/loss counters. Lost terminal replies require application

@@ -280,14 +280,21 @@
           (when host (star.router:stop-host host))
           (when authenticator (star.router:close-authenticator authenticator)))))))
 
+(load (merge-pathnames "tests/embedded-router-sc01.lisp"
+                       (uiop:ensure-directory-pathname (uiop:getenv "STAR_ROUTER_TEST_ROOT")))
+      :verbose nil :print nil)
+
 (handler-case
     (let ((runtime nil) (context nil))
       (unwind-protect
            (progn
              (setf runtime (star.runtime:start-runtime (state-path "init.lisp")))
-             (if (equal (uiop:getenv "STAR_ROUTER_E2E_MODE") "exercise")
-                 (progn (setf context (star-zmq:make-context)) (exercise context))
-                 (progn
+             (cond
+               ((equal (uiop:getenv "STAR_ROUTER_E2E_MODE") "exercise")
+                (setf context (star-zmq:make-context)) (exercise context))
+               ((equal (uiop:getenv "STAR_ROUTER_E2E_MODE") "sc01")
+                (setf context (star-zmq:make-context)) (exercise-sc01 context))
+               (t
                    (when (equal (uiop:getenv "STAR_ROUTER_E2E_MODE") "rabbit") (provision-context))
                    (marker "ready")
                    (loop until (probe-file (state-path "stop")) do (sleep 0.05)))))

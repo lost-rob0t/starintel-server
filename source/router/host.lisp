@@ -1,11 +1,16 @@
 (in-package :star.router)
 
-(export '(start-host stop-host enqueue-envelope await-send host-error host-snapshot secure-host-p))
+(export '(start-host stop-host enqueue-envelope await-send host-error host-snapshot secure-host-p
+          host-startup-error host-startup-error-host host-startup-error-cause))
 
 (define-condition host-error (error)
   ((reason :initarg :reason :reader host-error-reason))
   (:report (lambda (condition stream)
              (format stream "StarRouter host: ~A" (host-error-reason condition)))))
+
+(define-condition host-startup-error (host-error)
+  ((host :initarg :host :reader host-startup-error-host)
+   (cause :initarg :cause :initform nil :reader host-startup-error-cause)))
 
 (defstruct (send-ticket (:constructor %make-ticket))
   route bytes (state :pending) error
@@ -225,11 +230,12 @@ delivery or completion. Callers reconcile canonical lifecycle/document identity.
         (bordeaux-threads:with-lock-held ((host-lock host))
           (when (eq (host-state host) :running) (return-from start-host host))
           (when (eq (host-state host) :stopped)
-            (error (or (host-error host)
-                       (make-condition 'host-error :reason "startup failed")))))
+            (error 'host-startup-error :host host :cause (host-error host)
+                   :reason "startup failed")))
         (when (> (get-internal-real-time) deadline)
           (bordeaux-threads:with-lock-held ((host-lock host)) (setf (host-stop host) t))
-          (error 'host-error :reason "startup timeout; cleanup still pending"))
+          (error 'host-startup-error :host host
+                 :reason "startup timeout; cleanup still pending"))
         (sleep 0.005)))))
 
 (defun enqueue-envelope (host route envelope)

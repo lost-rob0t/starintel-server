@@ -20,7 +20,7 @@ version. The server schema lock remains authoritative.
 | Server ingest | Actor result uses existing validation/authorization and persistence; HTTP GET returns exact canonical content | Executable application harness added; unrun |
 | Durability | Replay/dedupe, conflicting replay rejected, Server restart then authenticated readback | Fresh-process harness added; unrun |
 | Isolation | Invalid auth, tenant/dataset mismatch, spoofed route identity rejected before effect | CURVE + application denial harness added; unrun |
-| Compatibility | Explicit SC01 FediWatch fixture; incompatible profile fails without fallback | Separate SC01 Server/FediWatch E2E proof still required |
+| Compatibility | Explicit SC01 fixture; incompatible profile fails without fallback | Synthetic SC01 Server harness added; unrun; FediWatch remains separate |
 | Rabbit regression | Real ephemeral Rabbit target delivery and ingest/readback, plus existing unit/service suites | Real broker harness added; unrun |
 | Packaging | Fresh installed library, optional ASDF system, pinned Nix closure and exact-head CI | Pending CI |
 
@@ -29,10 +29,13 @@ test, or successful transport send. Socket queue acceptance does not prove
 durable storage. A possibly committed operation with a lost reply remains an
 unknown outcome until the application idempotency path reconciles it.
 
-The application fixture covers Actor2Actor and Rabbit paths. It does not yet
-prove Server SC01 ingestion/dispatch, FediWatch interoperability, mid-commit
+The application fixture covers Actor2Actor, SC01 and Rabbit paths. It does not yet
+prove executed Server SC01 ingestion/dispatch, FediWatch interoperability, mid-commit
 crash recovery, credential revocation during active traffic, or sustained
-backpressure. Those remain separate acceptance gaps even if this fixture passes.
+backpressure. Canonical outbound Target client-outcome tracking and a durable
+Actor2Actor lifecycle journal also remain unimplemented; the bounded in-memory
+dispatcher replay cache is not restart-safe lifecycle recovery. These remain
+separate acceptance gaps even if this fixture passes.
 
 * Native gate
 
@@ -92,6 +95,18 @@ and CouchDB =3.5.3=; those selections are not claims that either image has run.
 No production image pin is changed. If full application acceptance fails,
 =--rabbit-only= runs the independent Rabbit subset in a fresh fixture database;
 that result cannot turn the failed native acceptance green.
+
+=--sc01= selects a separate, explicit legacy fixture using
+=tests/embedded-router-sc01.lisp=. A real CURVE DEALER registers the pinned
+actor instance, and a real CURVE SUB observes a broker heartbeat before any
+HTTP Target is submitted. The Target passes through the existing Server
+acceptance path, the SC01 owner queue, and the embedded Nim PUB projection.
+The actor sends the canonical generated document as =newDocument= and waits
+for the host-settled ACK; replay, forbidden dataset, malformed JSON and wrong
+profile checks follow. Authenticated HTTP readback and a fresh Lisp Server
+process then verify the stored content and revision. The frame fixture follows
+StarRouter's actual =embedded_sc01.py= tests; it introduces no Actor2Actor
+cancellation/result semantics or fallback into SC01. No real collector runs.
 
 The exact minimal-operation fixture deliberately omits optional =extensions=.
 If the existing readback path adds that field, acceptance fails and records

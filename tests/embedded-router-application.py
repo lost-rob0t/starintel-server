@@ -166,9 +166,10 @@ class ServerProcess:
 
 
 def run():
-    if sys.argv[1:] not in ([], ["--rabbit-only"]):
+    if sys.argv[1:] not in ([], ["--rabbit-only"], ["--sc01"]):
         raise Failure("unknown application fixture mode")
-    native_enabled = not sys.argv[1:]
+    sc01_enabled = sys.argv[1:] == ["--sc01"]
+    native_enabled = sys.argv[1:] != ["--rabbit-only"]
     if os.environ.get("STAR_ROUTER_E2E_ACK_DISPOSABLE") != "1":
         raise Failure("set STAR_ROUTER_E2E_ACK_DISPOSABLE=1 for dedicated disposable services")
     required = ("STAR_ROUTER_LIBRARY", "STAR_LANG_SOURCE", "COUCHDB_PASSWORD", "RABBITMQ_PASSWORD")
@@ -185,6 +186,7 @@ def run():
                    STAR_ROUTER_E2E_RUN=run_id, COUCHDB_DATABASE=run_id,
                    STAR_AUTH_DATABASE=run_id + "-auth", HTTP_API_LISTEN_ADDRESS="127.0.0.1",
                    HTTP_API_PORT=str(free_port()), STAR_ROUTER_E2E_PORT=str(free_port()),
+                   STAR_ROUTER_E2E_PUB_PORT=str(free_port()),
                    STAR_AUTH_PEPPER_FILE=str(state / "pepper"),
                    STAR_AUTH_BOOTSTRAP_SECRET_FILE=str(state / "bootstrap"),
                    STAR_TENANT_DATASET_MAP=run_id + "=" + run_id,
@@ -197,7 +199,7 @@ def run():
         fixtures = json.loads((ROOT / "schemas/starintel-0.10.1/research-fixtures.json").read_text())
         document = copy.deepcopy(next(item["document"] for item in fixtures
                                       if item["name"] == "minimal-operation" and item["valid"]))
-        document.update(id=run_id + ":native", dataset=run_id)
+        document.update(id=run_id + (":sc01" if sc01_enabled else ":native"), dataset=run_id)
         # The canonical fixture deliberately omits optional extensions. Never
         # normalize them into existence to hide a storage/readback regression.
         private_write(state / "document.json", json.dumps(document))
@@ -211,7 +213,7 @@ def run():
         server = None
         queue_created = False
         try:
-            server = ServerProcess(state, env, "exercise" if native_enabled else "rabbit")
+            server = ServerProcess(state, env, "sc01" if sc01_enabled else ("exercise" if native_enabled else "rabbit"))
             server.ready()
             api = Client(base, "Bearer " + (state / "api-key").read_text().strip())
             denied = Client(base, "Bearer " + (state / "denied-key").read_text().strip())
@@ -235,53 +237,54 @@ def run():
                     time.sleep(0.1)
                 if readback(api, document) != revision:
                     raise Failure("native replay changed stored revision")
-                for suffix in (":denied", ":cancelled"):
+                for suffix in ((":denied",) if sc01_enabled else (":denied", ":cancelled")):
                     api.expect("GET", "/api/v1/documents/" + quote(run_id + suffix, safe=""), {404})
                 durable_records.append((document, revision))
-                print("PASS native Target→actor→document→durable HTTP readback/replay/denial", flush=True)
+                print("PASS " + ("SC01" if sc01_enabled else "Actor2Actor") + " Target→actor→document→durable HTTP readback/replay/denial", flush=True)
 
-            rabbit.expect("PUT", "/api/queues/%2F/" + queue, {201, 204},
-                          {"durable": False, "auto_delete": False, "arguments": {}})
-            queue_created = True
-            rabbit.expect("POST", "/api/bindings/%2F/e/documents/q/" + queue, {201, 204},
-                          {"routing_key": "documents.target.dispatch." + rabbit_actor, "arguments": {}})
-            api.expect("POST", "/api/v1/targets", {201},
-                       dict(target, actor=rabbit_actor, idempotency_key=run_id + ":rabbit-target"))
-            deadline = time.monotonic() + 30
-            while True:
-                messages = rabbit.expect("POST", "/api/queues/%2F/" + queue + "/get", {200},
-                                         {"count": 1, "ackmode": "ack_requeue_false", "encoding": "auto", "truncate": 1048576})
-                if messages:
-                    delivered = json.loads(messages[0]["payload"])
-                    if delivered.get("actor") != rabbit_actor or delivered.get("dataset") != run_id:
-                        raise Failure("Rabbit target was misrouted")
-                    break
-                if time.monotonic() >= deadline:
-                    raise Failure("Rabbit target was not delivered")
-                time.sleep(0.1)
-            rabbit_document = dict(document, id=run_id + ":rabbit")
-            internal_document = dict(rabbit_document, tenant_id=run_id)
-            publication = {"properties": {"content_type": "application/json", "delivery_mode": 2,
-                                           "message_id": run_id + ":rabbit-document"},
-                           "routing_key": "documents.ingest." + document["dtype"],
-                           "payload": json.dumps(internal_document), "payload_encoding": "string"}
-            before_ack = rabbit.expect("GET", "/api/queues/%2F/documents.ingest", {200}).get("message_stats", {}).get("ack", 0)
-            if rabbit.expect("POST", "/api/exchanges/%2F/documents/publish", {200}, publication).get("routed") is not True:
-                raise Failure("Rabbit ingest publication was not routed")
-            rabbit_revision = readback(api, rabbit_document)
-            rabbit.expect("POST", "/api/exchanges/%2F/documents/publish", {200}, publication)
-            # Wait for both real consumer acknowledgments, not a fixed sleep or
-            # an eventually stale queue-depth snapshot. Readback still supplies
-            # the independent application storage assertion.
-            deadline = time.monotonic() + 30
-            while rabbit.expect("GET", "/api/queues/%2F/documents.ingest", {200}).get("message_stats", {}).get("ack", 0) < before_ack + 2:
-                if time.monotonic() >= deadline:
-                    raise Failure("Rabbit did not acknowledge both original and replay")
-                time.sleep(0.25)
-            if readback(api, rabbit_document) != rabbit_revision:
-                raise Failure("Rabbit duplicate changed stored revision")
-            durable_records.append((rabbit_document, rabbit_revision))
-            print("PASS real Rabbit Target delivery and document ingest/readback", flush=True)
+            if not sc01_enabled:
+                rabbit.expect("PUT", "/api/queues/%2F/" + queue, {201, 204},
+                              {"durable": False, "auto_delete": False, "arguments": {}})
+                queue_created = True
+                rabbit.expect("POST", "/api/bindings/%2F/e/documents/q/" + queue, {201, 204},
+                              {"routing_key": "documents.target.dispatch." + rabbit_actor, "arguments": {}})
+                api.expect("POST", "/api/v1/targets", {201},
+                           dict(target, actor=rabbit_actor, idempotency_key=run_id + ":rabbit-target"))
+                deadline = time.monotonic() + 30
+                while True:
+                    messages = rabbit.expect("POST", "/api/queues/%2F/" + queue + "/get", {200},
+                                             {"count": 1, "ackmode": "ack_requeue_false", "encoding": "auto", "truncate": 1048576})
+                    if messages:
+                        delivered = json.loads(messages[0]["payload"])
+                        if delivered.get("actor") != rabbit_actor or delivered.get("dataset") != run_id:
+                            raise Failure("Rabbit target was misrouted")
+                        break
+                    if time.monotonic() >= deadline:
+                        raise Failure("Rabbit target was not delivered")
+                    time.sleep(0.1)
+                rabbit_document = dict(document, id=run_id + ":rabbit")
+                internal_document = dict(rabbit_document, tenant_id=run_id)
+                publication = {"properties": {"content_type": "application/json", "delivery_mode": 2,
+                                               "message_id": run_id + ":rabbit-document"},
+                               "routing_key": "documents.ingest." + document["dtype"],
+                               "payload": json.dumps(internal_document), "payload_encoding": "string"}
+                before_ack = rabbit.expect("GET", "/api/queues/%2F/documents.ingest", {200}).get("message_stats", {}).get("ack", 0)
+                if rabbit.expect("POST", "/api/exchanges/%2F/documents/publish", {200}, publication).get("routed") is not True:
+                    raise Failure("Rabbit ingest publication was not routed")
+                rabbit_revision = readback(api, rabbit_document)
+                rabbit.expect("POST", "/api/exchanges/%2F/documents/publish", {200}, publication)
+                # Wait for both real consumer acknowledgments, not a fixed sleep or
+                # an eventually stale queue-depth snapshot. Readback still supplies
+                # the independent application storage assertion.
+                deadline = time.monotonic() + 30
+                while rabbit.expect("GET", "/api/queues/%2F/documents.ingest", {200}).get("message_stats", {}).get("ack", 0) < before_ack + 2:
+                    if time.monotonic() >= deadline:
+                        raise Failure("Rabbit did not acknowledge both original and replay")
+                    time.sleep(0.25)
+                if readback(api, rabbit_document) != rabbit_revision:
+                    raise Failure("Rabbit duplicate changed stored revision")
+                durable_records.append((rabbit_document, rabbit_revision))
+                print("PASS real Rabbit Target delivery and document ingest/readback", flush=True)
             server.stop()
             server = ServerProcess(state, env, "readback")
             server.ready()

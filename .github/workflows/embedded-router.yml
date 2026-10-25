@@ -141,8 +141,13 @@ jobs:
             rabbit_status=$?
             printf 'Independent Rabbit regression exit_status=%s\n' "$rabbit_status"
           fi
-          # Independent Rabbit evidence cannot turn failed native E2E green.
-          exit "$application_status"
+          export STAR_ROUTER_E2E_EVIDENCE="$RUNNER_TEMP/embedded-sc01-diagnostics"
+          nix develop --command bash scripts/test-embedded-router.sh --sc01 2>&1 | tee "$RUNNER_TEMP/embedded-sc01.log"
+          sc01_status=$?
+          printf 'SC01 application acceptance exit_status=%s\n' "$sc01_status"
+          # Separate transport evidence cannot turn another failed gate green.
+          if [[ "$application_status" != 0 ]]; then exit "$application_status"; fi
+          exit "$sc01_status"
       - name: Remove owned fixture containers and private credentials
         if: always()
         shell: bash
@@ -164,5 +169,7 @@ jobs:
             ${{ runner.temp }}/embedded-application-diagnostics/
             ${{ runner.temp }}/embedded-rabbit.log
             ${{ runner.temp }}/embedded-rabbit-diagnostics/
+            ${{ runner.temp }}/embedded-sc01.log
+            ${{ runner.temp }}/embedded-sc01-diagnostics/
           retention-days: 3
           if-no-files-found: warn

@@ -48,7 +48,7 @@ Binding permits only the pinned registration, heartbeat and newDocument ingest."
     (unless (and (star.router::sc01-router-secure router)
                  (star.router::authenticator-valid-p
                   auth (star.router::sc01-router-context router) t)
-                 (equalp (first (star.router::authenticator-keys auth))
+                 (equalp (star.router:authenticator-single-key auth)
                          (binding-public-key binding)))
       (reject :sc01-private-peer-required))))
 
