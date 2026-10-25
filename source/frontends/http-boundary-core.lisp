@@ -244,10 +244,11 @@ operating on the type it started with."
            (if (jsown:keyp wire "extensions")
                (star.databases.couchdb::public-document-copy wire :restore-extensions-presence t)
                wire))
-         (progn
-           (when (jsown:keyp document "tenant_id")
-             (jsown:remkey document "tenant_id"))
-           document)))))
+         ;; Legacy GET/search compatibility retains CouchDB _id/_rev, but must
+         ;; still hide server-private extensions. Project a copy so callers
+         ;; retaining storage evidence are not mutated.
+         (star.databases.couchdb::public-document-copy
+          document :restore-extensions-presence t :preserve-revision t :strip-tenant t))))))
 
 (defun strip-outbox-payload-tenants (extensions)
   "Strip tenant_id from outbox payloads embedded in server extensions.
