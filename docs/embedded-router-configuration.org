@@ -1,0 +1,110 @@
+#+title: Experimental embedded StarRouter configuration
+
+* Support boundary
+
+Draft PR #355 and its companion StarRouter PR #12 are unfinished integration
+work. Consult =embedded-router-acceptance.org= for executed evidence. Loading
+source or admitting a frame is not proof of durable ingestion. RabbitMQ and
+local Sento dispatch remain supported independently; this optional system does
+not change their defaults or remove their bindings.
+
+The native library contains the actual shared Nim SC01 routing core and a
+separate =star.actor2actor/1= body transport. SC01 is never a fallback when an
+actor2actor descriptor is incompatible. The document schema is separately
+resolved by =schema/starintel-schema.lock.json= (currently release 0.10.1).
+
+* Build and load
+
+Build the exact companion revision with =nix build .#embedded -L= in StarRouter.
+Set =STAR_ROUTER_LIBRARY= to its installed =lib/libstarrouter.so= and provide the
+exact pinned StarLang checkout through the existing ASDF source registry.
+=STAR_LANG_SOURCE= is consumed by the test driver. The native library must use
+the same libzmq as =star-zmq=; =STAR_ZMQ_LIBRARY= selects the tested dependency in
+the harness. Load =starintel-router-server= for the application adapter or
+=starintel-router= for the standalone transport boundary. ASDF load starts no
+listener and changes no production configuration.
+
+The wrapper borrows the existing =star-zmq= process context and accounts native
+resources against it. It presently relies on private context accessors in the
+pinned StarLang revision. A stable upstream context-borrow API remains a
+packaging dependency; do not silently repin StarLang or load another libzmq.
+
+* Explicit application composition
+
+Trusted Server initialization owns endpoint configuration, generated portable
+actor manifests, credential-to-service-context lookup and deployment bindings.
+Endpoints must be loopback TCP. No endpoint accepts public binding. Generate
+CURVE keypairs with =star.router:keypair=, enroll public keys with
+=start-authenticator= and configure DEALER/SUB peers before connecting through
+=configure-curve-client=. Keys are raw 32-byte vectors. Never interpret a ROUTER
+identity, envelope sender or document field as an authenticated principal.
+
+=start-host= owns its socket on one Lisp thread. Its handler receives route,
+canonical envelope and authenticated peer public key. Construct
+=star.router.lifecycle:make-runtime-binding= on that owner thread (the fixture
+initializes it lazily). Authentication resolves the key to an existing trusted
+service-call context on every operation. Use the generated manifest and the
+canonical runtime's completion/retry/failure/defer results; do not hand-code
+lifecycle bodies or invent handshake frames.
+
+=bind-target-route= explicitly selects native delivery for an existing actor
+name. Its projection function must preserve execution ID, idempotency key,
+trace/correlation, target causation, dataset, and the complete dispatch document
+including lease/fencing extensions. Existing HTTP authorization, acceptance,
+scheduling and recovery continue to own the Target. Missing/stale bindings and
+backpressure fail closed. Socket acceptance means queued, not actor execution.
+Outbound bindings require a singleton authenticator allowlist: a route cannot
+prove which of several admitted keys owns it. Secure SC01 PUB likewise requires
+a singleton key because a subscriber can select arbitrary topics. These checks
+are enforced; multi-key target dispatch awaits an upstream route/key contract.
+Pass the authenticator explicitly to =start-host= or =open-sc01=. It is pinned
+until the listener closes, preventing replacement during active delivery.
+
+=make-document-binding= selects a manifest-declared command and document field.
+=commit-document-command= validates through the existing HTTP document boundary,
+authorizes using the trusted context, stamps tenancy and calls the existing
+Rabbit consumer mutation/outbox authority. It reports committed only after that
+authority returns its durable settlement. Transient documents cannot produce
+this acknowledgment. =submit-document-command= instead submits through Rabbit
+and explicitly reports nondurable submission. Existing Rabbit confirmation
+semantics are retained; neither API upgrades broker receipt into durable ACK.
+
+Message/correlation/causation/idempotency metadata is retained in the existing
+atomic outbox entry for recovery publication. Stable event IDs and persistent
+Rabbit deliveries remain unchanged. No credentials enter this metadata.
+
+* Lifecycle, limits and shutdown
+
+The canonical deterministic dispatcher implements command acceptance, reply,
+terminal outcomes, cancellation, deadlines, replay and conflicts. Its per-peer
+execution journal is bounded and volatile. Document effects use the existing
+durable document ledger; replaying arbitrary completed lifecycle outcomes after
+process restart is not yet supported by a durable execution journal. Exhausted
+budgets fail closed instead of evicting replay protection. Known commands remain
+cancellable at the budget limit.
+
+Host send admission and reply queues are bounded. =host-snapshot= exposes
+sanitized rejection/loss counters. Lost terminal replies require application
+reconciliation; no counter or queue result asserts delivery. Stop the host,
+close SC01 handles, close the authenticator, then release the borrowed context.
+Handles enforce owner-thread use; native workers never call Lisp. Repeated close
+is harmless, while a shutdown timeout explicitly reports cleanup still pending.
+
+* Validation and known gates
+
+=scripts/test-embedded-router.sh= runs the actual CFFI transport gate.
+=--application= runs the real Server/actor/Rabbit/CouchDB fixture and fresh-process
+readback; =--rabbit-only= independently exercises the preserved Rabbit path.
+All services must be disposable loopback fixtures with the explicit safety flag
+and private credentials required by the driver. No real data collector runs.
+
+Hosted CI records image digest/ID and executed Rabbit version. Requested tags
+are not tested-version evidence until the job executes. The existing service
+pin audits #352/#353/#354 are not production upgrade authorization.
+
+Local Nim/SBCL execution is blocked by missing packages and the denied configured
+Debian snapshot proxy. Hosted Server jobs currently fail before any step; their
+cause is unknown. Cross-private StarLang checkout additionally requires an
+approved GitHub credential with read access to that repository. Its default
+repository token cannot supply that permission. No private canonical source may
+be copied into public StarRouter to bypass access control.

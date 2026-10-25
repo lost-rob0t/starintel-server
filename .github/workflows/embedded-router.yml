@@ -1,4 +1,4 @@
-name: Embedded router native boundary
+name: Embedded router acceptance
 on:
   pull_request:
     paths:
@@ -6,14 +6,18 @@ on:
       - 'starintel-router.asd'
       - 'source/router/**'
       - 'scripts/test-embedded-router.sh'
-      - 'tests/embedded-router-native.lisp'
+      - 'tests/embedded-router*'
+      - 'starintel-router-server.asd'
+      - 'source/target-dispatch.lisp'
   push:
     paths:
       - '.github/workflows/embedded-router.yml'
       - 'starintel-router.asd'
       - 'source/router/**'
       - 'scripts/test-embedded-router.sh'
-      - 'tests/embedded-router-native.lisp'
+      - 'tests/embedded-router*'
+      - 'starintel-router-server.asd'
+      - 'source/target-dispatch.lisp'
   workflow_dispatch:
 
 permissions:
@@ -25,10 +29,10 @@ concurrency:
 jobs:
   native-boundary:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       # Companion native-boundary commit; publish it before this workflow runs.
-      ROUTER_SHA: dcd05df9d8b1a977c6d6e4657599721b8df4327c
+      ROUTER_SHA: 0a0d0186b423ee69d857d85b23fffcdac8b8b5a8
       STARLANG_SHA: 010873f8e4462b5c705a21206d8cee55e5c5b2e0
     steps:
       - uses: actions/checkout@v4
@@ -74,11 +78,91 @@ jobs:
           export STAR_ZMQ_LIBRARY="$(ldd "$STAR_ROUTER_LIBRARY" | awk '$1 == "libzmq.so.5" {print $3}')"
           test -f "$STAR_ZMQ_LIBRARY"
           nix develop --command bash scripts/test-embedded-router.sh 2>&1 | tee "$RUNNER_TEMP/embedded-router.log"
+      - name: Start dedicated loopback CouchDB and RabbitMQ fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_state="$(mktemp -d "$RUNNER_TEMP/embedded-services.XXXXXX")"
+          chmod 700 "$fixture_state"
+          echo "EMBEDDED_SERVICE_STATE=$fixture_state" >> "$GITHUB_ENV"
+          echo "EMBEDDED_COUCH_NAME=embedded-couch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "EMBEDDED_RABBIT_NAME=embedded-rabbit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          export fixture_state
+          python3 - <<'PY'
+          import os, pathlib, secrets, shlex
+          root = pathlib.Path(os.environ['fixture_state'])
+          couch, rabbit = secrets.token_hex(24), secrets.token_hex(24)
+          files = {
+              'couch.env': 'COUCHDB_USER=fixture\nCOUCHDB_PASSWORD=' + couch + '\n',
+              'rabbit.env': 'RABBITMQ_DEFAULT_USER=fixture\nRABBITMQ_DEFAULT_PASS=' + rabbit + '\n',
+              'application.env': '\n'.join('export ' + k + '=' + shlex.quote(v) for k,v in {
+                  'COUCHDB_USER':'fixture', 'COUCHDB_PASSWORD':couch,
+                  'RABBITMQ_USER':'fixture', 'RABBITMQ_PASSWORD':rabbit,
+                  'COUCHDB_HOST':'127.0.0.1', 'RABBITMQ_ADDRESS':'127.0.0.1',
+                  'STAR_ROUTER_E2E_ACK_DISPOSABLE':'1'}.items()) + '\n'
+          }
+          for name, value in files.items():
+              path = root / name
+              path.write_text(value)
+              path.chmod(0o600)
+          PY
+          docker pull couchdb:3.5.3
+          docker pull rabbitmq:4.3.7-management
+          docker image inspect --format '{{json .RepoDigests}} {{.Id}}' couchdb:3.5.3 rabbitmq:4.3.7-management > "$RUNNER_TEMP/embedded-service-images.log"
+          docker run --detach --name "embedded-couch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --env-file "$fixture_state/couch.env" -p 127.0.0.1:5984:5984 couchdb:3.5.3
+          docker run --detach --name "embedded-rabbit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --env-file "$fixture_state/rabbit.env" -p 127.0.0.1:5672:5672 -p 127.0.0.1:15672:15672 rabbitmq:4.3.7-management
+          source "$fixture_state/application.env"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5984/_up >/dev/null && docker exec "embedded-rabbit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
+              break
+            fi
+            test "$attempt" -lt 60
+            sleep 2
+          done
+          for database in _users _replicator _global_changes; do
+            curl --fail --silent --show-error --user "$COUCHDB_USER:$COUCHDB_PASSWORD" --request PUT "http://127.0.0.1:5984/$database" >/dev/null
+          done
+          docker exec "embedded-rabbit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" rabbitmq-diagnostics -q server_version >> "$RUNNER_TEMP/embedded-service-images.log"
+      - name: Run real Server target ingest Rabbit regression and fresh-process readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$EMBEDDED_SERVICE_STATE/application.env"
+          export STAR_ROUTER_LIBRARY="$RUNNER_TEMP/embedded-router/lib/libstarrouter.so"
+          export STAR_LANG_SOURCE="$GITHUB_WORKSPACE/.embedded-deps/star-lang"
+          export STAR_ZMQ_LIBRARY="$(ldd "$STAR_ROUTER_LIBRARY" | awk '$1 == "libzmq.so.5" {print $3}')"
+          export STAR_ROUTER_E2E_EVIDENCE="$RUNNER_TEMP/embedded-application-diagnostics"
+          set +e
+          nix develop --command bash scripts/test-embedded-router.sh --application 2>&1 | tee "$RUNNER_TEMP/embedded-application.log"
+          application_status=$?
+          if [[ "$application_status" != 0 ]]; then
+            export STAR_ROUTER_E2E_EVIDENCE="$RUNNER_TEMP/embedded-rabbit-diagnostics"
+            nix develop --command bash scripts/test-embedded-router.sh --rabbit-only 2>&1 | tee "$RUNNER_TEMP/embedded-rabbit.log"
+            rabbit_status=$?
+            printf 'Independent Rabbit regression exit_status=%s\n' "$rabbit_status"
+          fi
+          # Independent Rabbit evidence cannot turn failed native E2E green.
+          exit "$application_status"
+      - name: Remove owned fixture containers and private credentials
+        if: always()
+        shell: bash
+        run: |
+          status=0
+          if [[ -n "${EMBEDDED_COUCH_NAME:-}" ]]; then docker rm --force --volumes "$EMBEDDED_COUCH_NAME" || status=1; fi
+          if [[ -n "${EMBEDDED_RABBIT_NAME:-}" ]]; then docker rm --force --volumes "$EMBEDDED_RABBIT_NAME" || status=1; fi
+          if [[ -n "${EMBEDDED_SERVICE_STATE:-}" ]]; then rm -rf -- "$EMBEDDED_SERVICE_STATE"; fi
+          exit "$status"
       - name: Retain native boundary evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: embedded-router-native-${{ github.sha }}
-          path: ${{ runner.temp }}/embedded-router.log
+          path: |
+            ${{ runner.temp }}/embedded-router.log
+            ${{ runner.temp }}/embedded-application.log
+            ${{ runner.temp }}/embedded-service-images.log
+            ${{ runner.temp }}/embedded-application-diagnostics/
+            ${{ runner.temp }}/embedded-rabbit.log
+            ${{ runner.temp }}/embedded-rabbit-diagnostics/
           retention-days: 3
           if-no-files-found: warn

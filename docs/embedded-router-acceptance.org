@@ -15,19 +15,24 @@ version. The server schema lock remains authoritative.
 | Native embedding | Shared library loaded by CFFI into the Lisp process; borrowed host context, real loopback DEALER roundtrip | Pending native execution |
 | Resource ownership | Same-thread I/O, caller-owned buffers, stale handles, repeated open/close, context teardown | Pending native execution |
 | Failure bounds | Malformed multipart, oversized input, unsupported profile, unknown route, receive timeout, bounded shutdown | Pending native execution |
-| Canonical actor wire | Existing StarLang encode/decode/profile selection; correlation, causation, cancellation/deadline and terminal outcomes | Pending integration |
-| Server dispatch | Authenticated Target accepted by existing durable acceptance path, routed to registered synthetic actor | Pending application harness |
-| Server ingest | Actor result uses existing validation/authorization and persistence; HTTP GET returns exact canonical content | Pending application harness |
-| Durability | Replay/dedupe, conflicting replay rejected, Server restart then authenticated readback | Pending application harness |
-| Isolation | Invalid auth, tenant/dataset mismatch, spoofed route identity rejected before effect | Pending application harness |
-| Compatibility | Explicit SC01 FediWatch fixture; incompatible profile fails without fallback | Pending legacy adapter |
-| Rabbit regression | Real ephemeral Rabbit target delivery and ingest/readback, plus existing unit/service suites | Pending broker harness |
+| Canonical actor wire | Existing StarLang encode/decode/profile selection; correlation, causation, cancellation/deadline and terminal outcomes | Executable application harness added; unrun |
+| Server dispatch | Authenticated Target accepted by existing durable acceptance path, routed to registered synthetic actor | Executable application harness added; unrun |
+| Server ingest | Actor result uses existing validation/authorization and persistence; HTTP GET returns exact canonical content | Executable application harness added; unrun |
+| Durability | Replay/dedupe, conflicting replay rejected, Server restart then authenticated readback | Fresh-process harness added; unrun |
+| Isolation | Invalid auth, tenant/dataset mismatch, spoofed route identity rejected before effect | CURVE + application denial harness added; unrun |
+| Compatibility | Explicit SC01 FediWatch fixture; incompatible profile fails without fallback | Separate SC01 Server/FediWatch E2E proof still required |
+| Rabbit regression | Real ephemeral Rabbit target delivery and ingest/readback, plus existing unit/service suites | Real broker harness added; unrun |
 | Packaging | Fresh installed library, optional ASDF system, pinned Nix closure and exact-head CI | Pending CI |
 
 No row is satisfied by task admission, source inspection, a mock, a skipped
 test, or successful transport send. Socket queue acceptance does not prove
 durable storage. A possibly committed operation with a lost reply remains an
 unknown outcome until the application idempotency path reconciles it.
+
+The application fixture covers Actor2Actor and Rabbit paths. It does not yet
+prove Server SC01 ingestion/dispatch, FediWatch interoperability, mid-commit
+crash recovery, credential revocation during active traffic, or sustained
+backpressure. Those remain separate acceptance gaps even if this fixture passes.
 
 * Native gate
 
@@ -56,7 +61,44 @@ Keep readback fixes owned by Server PR #331 and Target persistence/recovery
 owned by PRs #338/#339 as explicit dependencies; do not copy their changes or
 weaken exact canonical assertions to hide those failures.
 
-* Application harness seam still required
+* Application acceptance command
+
+Run =scripts/test-embedded-router.sh --application= inside the supported Server
+Nix development environment with =STAR_ROUTER_LIBRARY= and =STAR_LANG_SOURCE=
+set to the pinned installed library and StarLang checkout. This requires
+=STAR_ROUTER_E2E_ACK_DISPOSABLE=1=, real dedicated loopback CouchDB/RabbitMQ,
+and their synthetic fixture credentials. Missing requirements fail, not skip.
+
+=tests/embedded-router-application.py= launches the Lisp Server fixture twice
+as separate processes. It uses the generated minimal-operation fixture,
+supported authenticated HTTP targets/documents, a real Rabbit target queue,
+and real Server Rabbit ingestion. Rabbit duplicate processing waits for actual
+consumer acknowledgement counters, followed by independent revision/content
+readback. It does not equate broker routing with durable commit.
+
+=tests/embedded-router-application.lisp= starts =star.runtime=, uses the native
+CFFI host and a real loopback DEALER, and emits its synthetic message manifest
+through the pinned StarLang compiler. The existing StarLang dispatcher owns
+accepted/reply/completed/error/cancel/deadline/replay behavior. Trusted fixture
+configuration maps an allowlisted CURVE public key to a context authenticated
+through the real credential store. Routing identities never grant authority;
+the fixture attempts the same identity using an unlisted key. It reconnects
+under a different routing identity with the authenticated key.
+
+The workflow provisions only private disposable service containers, records
+their image digests and actual Rabbit server version, and removes the owned
+containers/credentials. The new fixture selects RabbitMQ =4.3.7-management=
+and CouchDB =3.5.3=; those selections are not claims that either image has run.
+No production image pin is changed. If full application acceptance fails,
+=--rabbit-only= runs the independent Rabbit subset in a fresh fixture database;
+that result cannot turn the failed native acceptance green.
+
+The exact minimal-operation fixture deliberately omits optional =extensions=.
+If the existing readback path adds that field, acceptance fails and records
+the separately owned PR #331 prerequisite. Do not normalize the expected
+fixture or copy that PR's fix into this transport change.
+
+* Required observed application sequence
 
 Provision a disposable loopback-only Server/CouchDB/Rabbit stack and synthetic
 dataset using the repository's existing startup/authentication mechanisms.
@@ -69,7 +111,7 @@ Replay exactly the same operation and compare durable content, reject a
 conflicting replay, restart the owned Server, and read again. Neither direct
 CouchDB inserts nor an HTTP POST echo substitute for this chain.
 
-The Rabbit sibling test must observe actual target delivery through the
+The Rabbit sibling test observes actual target delivery through the
 existing Rabbit route and actual document ingestion through
 =documents.ingest.<dtype>=. Preserve broker confirmation and application
 commit as separate assertions. Do not transplant the separately owned

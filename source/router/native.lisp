@@ -16,6 +16,11 @@
   (context :pointer) (endpoint :string) (profile :string)
   (max-payload :uint32) (high-water-mark :uint32) (timeout-ms :uint32)
   (handle :pointer))
+(cffi:defcfun ("sr_open_secure" %open-secure) :int
+  (context :pointer) (endpoint :string) (profile :string)
+  (max-payload :uint32) (high-water-mark :uint32) (timeout-ms :uint32)
+  (secret :pointer) (handle :pointer))
+(cffi:defcfun ("sr_peer_key" %peer-key) :int (handle :uint64) (key :pointer))
 (cffi:defcfun ("sr_receive" %receive) :int
   (handle :uint64) (route :pointer) (route-capacity :size) (route-length :pointer)
   (body :pointer) (body-capacity :size) (body-length :pointer))
@@ -35,7 +40,7 @@
 (defvar *library-lock* (bordeaux-threads:make-lock "StarRouter library"))
 (defvar *library* nil)
 (defstruct (router (:constructor %make-router))
-  (handle 0) context owner (max-payload 1048576) closed)
+  (handle 0) context owner (max-payload 1048576) closed secure)
 
 (defun checked (status operation)
   (unless (zerop status)
@@ -66,7 +71,8 @@
 
 (defun open-router (context endpoint &key (profile "star.actor2actor/1")
                                           (max-payload 1048576)
-                                          (high-water-mark 64) (timeout-ms 50))
+                                          (high-water-mark 64) (timeout-ms 50)
+                                          server-secret-key)
   "Borrow an existing STAR-ZMQ context; caller closes it after this router.
 Only the native ABI's explicit supported profile is accepted. This is a transport
 boundary, not an authenticated Server listener or durable ingestion endpoint."
@@ -78,6 +84,8 @@ boundary, not an authenticated Server listener or durable ingestion endpoint."
   (bounded-integer max-payload 1 1048576)
   (bounded-integer high-water-mark 1 65536)
   (bounded-integer timeout-ms 1 1000)
+  (when server-secret-key
+    (check-type server-secret-key (simple-array (unsigned-byte 8) (32))))
   (ensure-library)
   ;; Pinned StarLang context resource accounting: prevent termination while a
   ;; borrowed native socket is live. No second context or libzmq binding is made.
@@ -89,12 +97,21 @@ boundary, not an authenticated Server listener or durable ingestion endpoint."
       (error 'router-error :operation :context :status -1))
     (cffi:with-foreign-object (handle :uint64)
       (setf (cffi:mem-ref handle :uint64) 0)
-      (checked (%open (star-zmq::context-handle context) endpoint profile
-                      max-payload high-water-mark timeout-ms handle) :open)
+      (if server-secret-key
+          (cffi:with-foreign-object (secret :uint8 32)
+            (unwind-protect
+                 (progn
+                   (copy-to-foreign server-secret-key secret)
+                   (checked (%open-secure (star-zmq::context-handle context)
+                                          endpoint profile max-payload high-water-mark
+                                          timeout-ms secret handle) :open-secure))
+              (dotimes (i 32) (setf (cffi:mem-aref secret :uint8 i) 0))))
+          (checked (%open (star-zmq::context-handle context) endpoint profile
+                          max-payload high-water-mark timeout-ms handle) :open))
       (incf (star-zmq::context-sockets context))
       (%make-router :handle (cffi:mem-ref handle :uint64) :context context
                     :owner (bordeaux-threads:current-thread)
-                    :max-payload max-payload))))
+                    :max-payload max-payload :secure (not (null server-secret-key))))))
 
 (defun close-router (router)
   "Close on the owner thread. Repeated close is harmless; context remains owned by caller."
@@ -163,4 +180,8 @@ dispatch and execute lifecycle semantics in the canonical runtime."
           (values
            (star-actor-wire:decode-binding-message
             :zmq peer-profiles manifest (copy-from-foreign body bn))
-           (copy-from-foreign route rn) :received))))))
+           (copy-from-foreign route rn) :received
+           (when (router-secure router)
+             (cffi:with-foreign-object (key :uint8 32)
+               (checked (%peer-key handle key) :peer-key)
+               (copy-from-foreign key 32)))))))))

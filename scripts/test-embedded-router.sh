@@ -9,4 +9,12 @@ command -v timeout >/dev/null || fail 'timeout is required'
 [[ -n "${STAR_LANG_SOURCE:-}" && -f "$STAR_LANG_SOURCE/star-actor-wire/star-actor-wire.asd" ]] || fail 'STAR_LANG_SOURCE must name the pinned StarLang checkout'
 [[ -f "$repo_root/tests/embedded-router-native.lisp" ]] || fail 'native Lisp driver is required'
 export STAR_ROUTER_TEST_ROOT="$repo_root"
+if [[ "${1:-}" == "--application" || "${1:-}" == "--rabbit-only" ]]; then
+  command -v python3 >/dev/null || fail 'Python 3 is required for application acceptance'
+  mode=()
+  if [[ "$1" == "--rabbit-only" ]]; then mode=(--rabbit-only); fi
+  [[ $# == 1 ]] || fail 'one mode argument is allowed'
+  exec timeout --signal=TERM --kill-after=10s 300s python3 "$repo_root/tests/embedded-router-application.py" "${mode[@]}"
+fi
+[[ $# == 0 ]] || fail 'supported modes are native (no argument), --application and --rabbit-only'
 exec timeout --signal=TERM --kill-after=5s 90s sbcl --noinform --no-sysinit --no-userinit --script "$repo_root/tests/embedded-router-native.lisp"

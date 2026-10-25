@@ -5,6 +5,16 @@
 (defparameter *active-target-schedules* (make-hash-table :test #'equal)
   "Table of live target schedules keyed by schedule id.")
 
+(defvar *target-zmq-destination-resolver* nil
+  "Optional trusted deployment resolver. NIL preserves local/Rabbit selection.")
+
+(defgeneric send-zmq-target (component envelope)
+  (:documentation "Submit through an explicitly configured native transport component."))
+
+(defmethod send-zmq-target ((component t) envelope)
+  (declare (ignore component envelope))
+  (error 'target-destination-unavailable :reason "native target transport is unavailable"))
+
 (defstruct (target-destination-handle
              (:constructor make-target-destination-handle
                  (kind name &key component routing-key compatibility-routing-keys)))
@@ -179,10 +189,18 @@
   (format nil "documents.new.target.~a" (string-downcase actor-name)))
 
 (defun resolve-target-destination (actor-name &key (resolver #'get-dest-actor))
-  "Resolve ACTOR-NAME into an explicit local or Rabbit component handle."
+  "Resolve an explicit native binding, otherwise preserve local/Rabbit selection."
   (unless (valid-target-actor-name-p actor-name)
     (error 'invalid-target-dispatch
            :reason (format nil "invalid actor identity ~s" actor-name)))
+  (when *target-zmq-destination-resolver*
+    (let ((destination (funcall *target-zmq-destination-resolver* actor-name)))
+      (when destination
+        (unless (and (typep destination 'target-destination-handle)
+                     (eq (target-destination-handle-kind destination) :zmq)
+                     (equal (target-destination-handle-name destination) actor-name))
+          (error 'invalid-target-dispatch :reason "invalid native deployment binding"))
+        (return-from resolve-target-destination destination))))
   (let ((component (funcall resolver actor-name)))
     (if component
         (make-target-destination-handle
@@ -415,6 +433,8 @@
   (let ((destination (target-dispatch-envelope-destination envelope)))
     (handler-case
         (ecase (target-destination-handle-kind destination)
+          (:zmq
+           (send-zmq-target (target-destination-handle-component destination) envelope))
           (:local
            (unless (target-destination-handle-component destination)
              (error 'target-destination-unavailable

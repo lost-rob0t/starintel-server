@@ -14,6 +14,8 @@
 (defvar *bulk-pending-by-principal* (make-hash-table :test #'equal))
 (defvar *bulk-ingest-lock* (bt:make-lock "bulk-ingest-state"))
 (defvar *service-call-context* nil)
+(defvar *service-message-metadata* nil
+  "Trusted transport-owned lifecycle metadata; never populated from document fields.")
 
 (defstruct (bulk-ingest-job
             (:constructor make-bulk-ingest-job
@@ -99,6 +101,17 @@
             (append headers
                     (star.authorization:decision-rabbit-headers
                      star.authorization:*current-authorization-decision*))))
+    (when *service-message-metadata*
+      (dolist (key '(:message-id :causation-id :idempotency-key))
+        (let ((value (getf *service-message-metadata* key)))
+          (when value
+            (unless (and (stringp value) (<= 1 (length value) 1024))
+              (error "Invalid trusted lifecycle metadata"))
+            (if (eq key :message-id)
+                (push (cons :message-id value) properties)
+                (push (cons (ecase key (:causation-id "x-star-causation-id")
+                                       (:idempotency-key "x-star-idempotency-key")) value)
+                      headers))))))
     (when headers
       (push (cons :headers headers) properties))
     (nreverse properties)))

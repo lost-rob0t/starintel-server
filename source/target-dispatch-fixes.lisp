@@ -159,7 +159,7 @@ Do not check wall-clock expiry here: equality must not depend on retry time."
      "canonical target destination name disagrees with actor")
     (require-canonical-target-fingerprint
      (case destination-kind
-       (:rabbit (target-nonempty-string-p routing-key))
+       ((:rabbit :zmq) (target-nonempty-string-p routing-key))
        (:local (eq routing-key :null))
        (otherwise nil))
      "canonical target destination or routing key is invalid")
@@ -180,7 +180,7 @@ Do not check wall-clock expiry here: equality must not depend on retry time."
       ("deadline" (or (target-record-deadline parsed) :null))
       ("destination"
        (jsown:new-js
-         ("kind" (ecase destination-kind (:rabbit "rabbit") (:local "local")))
+         ("kind" (ecase destination-kind (:rabbit "rabbit") (:local "local") (:zmq "zmq")))
          ("name" destination-name) ("routingKey" routing-key)))
       ("tenantScope"
        (jsown:new-js ("present" (if tenant-present :true :false))
@@ -221,7 +221,8 @@ Do not check wall-clock expiry here: equality must not depend on retry time."
          (projection
            (canonical-target-semantic-projection
             record schedule-id
-            (cond ((equal kind "rabbit") :rabbit) ((equal kind "local") :local))
+            (cond ((equal kind "rabbit") :rabbit) ((equal kind "local") :local)
+                  ((equal kind "zmq") :zmq))
             (jsown:val acceptance "actor") (jsown:val acceptance "routing_key"))))
     (require-canonical-target-fingerprint
      (and (equal "_server_target_acceptance" (jsown:val acceptance "type"))
