@@ -88,7 +88,7 @@
       (error "Document extensions must be a JSON object"))
     extensions))
 
-(defun public-document-copy (document &key restore-extensions-presence)
+(defun public-document-copy (document &key restore-extensions-presence preserve-revision strip-tenant)
   "Copy public content, optionally restoring recorded stored extension presence."
   (let* ((source (clone-outbox-json document))
          (public (copy-json-object-excluding source '("_rev")))
@@ -103,10 +103,14 @@
          (recorded-absent
            (and latest
                 (eq :false (outbox-object-value latest "public_extensions_present")))))
+    (when strip-tenant
+      (jsown:remkey public "tenant_id"))
     (when (outbox-object-has-key-p source "extensions")
       (if (and recorded-absent (null (cdr extensions)))
           (jsown:remkey public "extensions")
           (setf (jsown:val public "extensions") extensions)))
+    (when (and preserve-revision (outbox-object-has-key-p source "_rev"))
+      (setf (jsown:val public "_rev") (jsown:val source "_rev")))
     public))
 
 (defun outbox-digest-string (text)
@@ -245,7 +249,7 @@
           :null
           (jsown:val entry "payload")
           (event-payload document mutation-id operation sequence))
-    (when (star.documents:canonical-document-p document)
+    (when (json-object-p document)
       (setf (jsown:val entry "public_extensions_present")
             (if (outbox-object-has-key-p document "extensions") :true :false)))
     entry))
@@ -312,8 +316,7 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
             (unless entry
               (error "Mutation ledger contains ~a without an outbox entry"
                      mutation-id))
-            (when (and (star.documents:canonical-document-p document)
-                       (outbox-object-has-key-p entry "public_extensions_present")
+            (when (and (outbox-object-has-key-p entry "public_extensions_present")
                        (not (eq (eq :true (jsown:val entry "public_extensions_present"))
                                 (not (null (outbox-object-has-key-p document "extensions"))))))
               (error 'mutation-conflict

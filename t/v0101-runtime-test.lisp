@@ -498,6 +498,103 @@
     (is-false (jsown:keyp wire "extensions"))
     (is (eq wire (star.documents:validate-document wire)))))
 
+(test legacy-readback-hides-server-outbox-and-preserves-public-values
+  (dolist (kind '(:absent :empty :populated :private-only))
+    (let* ((document (star.documents:ensure-document (v0101-person "legacy:readback")))
+           (extensions
+             (case kind
+               (:absent nil)
+               (:empty (jsown:empty-object))
+               (:private-only (jsown:new-js))
+               (otherwise
+                (jsown:new-js
+                 ("actor" (jsown:new-js ("false" :false) ("null" :null)
+                                         ("emptyArray" #()) ("emptyObject" (jsown:empty-object))
+                                         ("nested" (jsown:new-js ("_server_outbox" "user-data")))))))))
+           (before nil))
+      (when (jsown:keyp document "schemaVersion") (jsown:remkey document "schemaVersion"))
+      (setf (jsown:val document "_id") "legacy:readback"
+            (jsown:val document "_rev") "9-legacy"
+            (jsown:val document "tenant_id") "private-tenant")
+      (when extensions
+        (setf (jsown:val document "extensions") extensions))
+      (unless extensions (when (jsown:keyp document "extensions") (jsown:remkey document "extensions")))
+      (when (member kind '(:private-only :populated))
+        (setf (jsown:val (jsown:val document "extensions") "_server_outbox")
+              (vector (jsown:new-js ("payload" (jsown:empty-object))))
+              (jsown:val (jsown:val document "extensions") "_server_mutations")
+              (jsown:new-js ("private" t))))
+      (setf before (jsown:to-json document))
+      (dolist (input (list document before))
+        (let* ((wire (star.documents:parse-document-object
+                      (if (stringp input)
+                          (star.frontends.http-api:strip-server-tenant-fields input)
+                          (jsown:to-json (star.frontends.http-api:strip-server-tenant-fields input)))))
+               (actual (jsown:val wire "extensions")))
+          (is (string= "legacy:readback" (jsown:val wire "_id")))
+          (is (string= "9-legacy" (jsown:val wire "_rev")))
+          (is-false (jsown:keyp wire "tenant_id"))
+          (is (eql (not (null (member kind '(:empty :populated :private-only))))
+                   (not (null (jsown:keyp wire "extensions")))))
+          (when (jsown:keyp wire "extensions")
+            (is-false (jsown:keyp actual "_server_outbox"))
+            (is-false (jsown:keyp actual "_server_mutations")))
+          (when (eq kind :populated)
+            (let ((user (jsown:val actual "actor")))
+              (is (eq :false (jsown:val user "false")))
+              (is (eq :null (jsown:val user "null")))
+              (is (string= "[]" (star.actors::canonical-target-json (jsown:val user "emptyArray"))))
+              (is (string= "{}" (star.actors::canonical-target-json (jsown:val user "emptyObject"))))
+              (is (string= "user-data"
+                           (jsown:val (jsown:val user "nested") "_server_outbox")))))))
+      (is (string= before (jsown:to-json document)))))
+
+(test legacy-new-outbox-record-restores-only-recorded-extension-absence
+  (dolist (kind '(:absent :empty))
+    (let* ((incoming (star.documents:ensure-document (v0101-person "legacy:presence"))))
+      (when (jsown:keyp incoming "schemaVersion") (jsown:remkey incoming "schemaVersion"))
+      (setf (jsown:val incoming "_id") "legacy:presence")
+      (when (eq kind :empty) (setf (jsown:val incoming "extensions") (jsown:empty-object)))
+      (multiple-value-bind (stored entry disposition)
+          (star.databases.couchdb:prepare-outbox-mutation nil incoming :new)
+        (is (eq :created disposition))
+        (is (eq (eq kind :empty)
+                (eq :true (jsown:val entry "public_extensions_present"))))
+        (let ((wire (star.frontends.http-api:strip-server-tenant-fields stored)))
+          (is (eq (eq kind :empty) (jsown:keyp wire "extensions"))))))))
+
+(test legacy-historical-implicit-hash-and-unmarked-presence-remain-compatible
+  (let* ((incoming (star.documents:ensure-document (v0101-person "legacy:old")))
+         (public (star.databases.couchdb::clone-outbox-json incoming)))
+    (when (jsown:keyp incoming "schemaVersion") (jsown:remkey incoming "schemaVersion"))
+    (when (jsown:keyp public "schemaVersion") (jsown:remkey public "schemaVersion"))
+    (setf (jsown:val public "extensions") (jsown:empty-object))
+    (let ((historical
+            (star.databases.couchdb::outbox-digest-string
+             (format nil "new|~a" (jsown:to-json public)))))
+      (is (string= historical
+                   (star.databases.couchdb::mutation-content-hash :new incoming)))
+      (let* ((seed (star.documents:ensure-document (v0101-person "legacy:transition")))
+             (empty (star.documents:ensure-document (v0101-person "legacy:transition"))))
+        (dolist (document (list seed empty))
+          (when (jsown:keyp document "schemaVersion") (jsown:remkey document "schemaVersion")))
+        (setf (jsown:val empty "extensions") (jsown:empty-object))
+        (multiple-value-bind (stored entry) (star.databases.couchdb:prepare-outbox-mutation nil seed :new)
+          (declare (ignore entry))
+          ;; Historical legacy implicit IDs normalize absent and {} identically.
+          ;; A newly marked record detects the collision and fails closed rather
+          ;; than acknowledge a retry with different public content.
+          (signals star.databases.couchdb:mutation-conflict
+            (star.databases.couchdb:prepare-outbox-mutation stored empty :new))))
+      (let ((unmarked (jsown:new-js ("_id" "legacy:old") ("dtype" "person")
+                                    ("extensions" (jsown:new-js
+                                                   ("_server_outbox" #())
+                                                   ("_server_mutations" (jsown:empty-object)))))))
+        (let ((wire (star.frontends.http-api:strip-server-tenant-fields unmarked)))
+          (is (jsown:keyp wire "extensions"))
+          (is-false (jsown:keyp (jsown:val wire "extensions") "_server_outbox"))
+          (is-false (jsown:keyp (jsown:val wire "extensions") "_server_mutations")))))))
+
 (test historical-raw-readback-preserves-json-literals
   (let* ((raw "{\"_id\":\"legacy:values\",\"tenant_id\":\"private\",\"values\":{\"f\":false,\"n\":null,\"a\":[],\"o\":{}}}")
          (wire (star.documents:parse-document-object
