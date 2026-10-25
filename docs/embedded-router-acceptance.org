@@ -17,6 +17,8 @@ version. The server schema lock remains authoritative.
 | Failure bounds | Malformed multipart, oversized input, unsupported profile, unknown route, receive timeout, bounded shutdown | Pending native execution |
 | Canonical actor wire | Existing StarLang encode/decode/profile selection; correlation, causation, cancellation/deadline and terminal outcomes | Executable application harness added; unrun |
 | Server dispatch | Authenticated Target accepted by existing durable acceptance path, routed to registered synthetic actor | Executable application harness added; unrun |
+| Canonical events | Manifest-declared event, current authentication, existing authorized durable document commit; no command ACK | Adapter and focused tests authored; live event harness/execution pending |
+| Terminal retirement | Release process capacity only after durable terminal; retain replay journal; pending/unknown remain enrolled | Source and focused tests authored; unrun |
 | Server ingest | Actor result uses existing validation/authorization and persistence; HTTP GET returns exact canonical content | Executable application harness added; unrun |
 | Durability | Replay/dedupe, conflicting replay rejected, Server restart then authenticated readback | Fresh-process harness added; unrun |
 | Isolation | Invalid auth, tenant/dataset mismatch, spoofed route identity rejected before effect | CURVE + application denial harness added; unrun |
@@ -34,8 +36,9 @@ runtime scenarios remain unrun. FediWatch interoperability and sustained
 network backpressure remain separate gaps. Durable lifecycle and outbound
 client-outcome integration have reviewable source and focused tests, all Lisp
 execution still unrun. Native recurring execution, expired/missing-lease recovery,
-automatic pending recovery, cross-store atomic fencing and stream wire
-application semantics remain incomplete. Explicit terminal retirement and durable
+automatic pending recovery and cross-store atomic fencing remain incomplete.
+Streaming subscribe/resume/ACK is an undefined extension, not a missing released
+wire operation; current code must reject unsupported frames without fallback. Explicit terminal retirement and durable
 document-event ingestion now have source/tests, still unrun. Fixture source or a bounded replay
 cache alone does not establish their safety.
 
@@ -210,3 +213,20 @@ proof. For the actor's isolated readback-fix verification, pin the existing
 PR331 exact head; combined router acceptance additionally requires a reviewed
 composition incorporating subsequent router changes. No private actor source
 is copied into this repository.
+
+* Current contract gaps versus future extensions
+
+=embedded-router-decisions.org= records the unresolved choices and safe defaults.
+
+| Item | Classification | Acceptance consequence |
+|------+----------------+------------------------|
+| Commands, ACK/reply/error, cancel, deadlines, identity/replay, canonical events | Released actor2actor/1 contracts | Required now; all Lisp runtime execution remains unrun |
+| Native repeated/recurring Target scheduling and accepted-execution restart | Existing Server behavior required by this integration | Required now; occurrence/recovery authority remains incomplete |
+| Lease ownership/fencing and durable effect acknowledgement | Existing Server guarantees to preserve | Required now; cross-store commit race remains unresolved |
+| SC01 nine-frame API/six-frame PUB | Explicit compatibility profile | Required now; canonical cancellation/streaming is not assigned to SC01 |
+| Stream subscribe/resume/ACK operation payloads | Not a released canonical wire contract | Do not invent; explicit unsupported rejection required now; protocol extension requires canonical owner |
+| Stream-frame in-process projection and internal document-bus observer | Existing internal APIs, not subscriptions | Constructor/observer behavior does not establish wire delivery or durable stream semantics |
+
+This distinction does not clear any runtime, Rabbit, durability or compatibility
+gate. It prevents a proposed extension from being presented as an existing wire
+operation or from silently changing the released profile.
