@@ -1,14 +1,14 @@
 {
-  "checked_at": "2026-09-14T16:46:48Z",
-  "facts_sha256": "5c4d02de0705dacb9e6dc4f6bd6a54dba50140e75571a75792f5dbd771df114d",
-  "head": "51713d561b06a24f2954e8aa37a8339329c3a435",
-  "reason": "verification passed",
-  "run_file": "run-51713d561b06a24f2954e8aa37a8339329c3a435.pl",
-  "run_sha256": "c2aad4a8e88f5a79152fb6966b8d96c174fc54998a0e24f8ff5196fa2910cc4f",
-  "status": "pass",
-  "stderr_sha256": "a31921831b4af757a3fcf0c472fa0ffc4fb6eed40d0477af50d62f78c018057f",
+  "checked_at": "2026-10-30T23:21:36Z",
+  "facts_sha256": "504a568598c34e5810b987f2030727a2831939efdfdfd907e540e7ac0eaf1a35",
+  "head": "630e97898e7361ed2557212523789e1d050adafc",
+  "reason": "SWI-Prolog exited 1",
+  "run_file": "run-630e97898e7361ed2557212523789e1d050adafc.pl",
+  "run_sha256": "689d15b7577df463d1869b6c6fb4d1f058dd758a0a133c976aaca750b29bb547",
+  "status": "fail",
+  "stderr_sha256": "f6ca612a38a80de1f25af0e9d8b07c4b3d3a939f0eed31b324f49bc05c71d2f3",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "swipl_exit": 0,
+  "swipl_exit": 1,
   "verify_sha256": "1a5c3a6812202233e38320bd2c9aec404f185b1f74164ef21759f1c66e233edb",
-  "worktree_digest": "84b032da066dbe02c94c9db660e6d64a9dfc15dc61d46d1534e9c011cadb4cf8"
+  "worktree_digest": "111a2893cd142e727846a39071fcbd870025ee9945bd041cf316209465210e05"
 }

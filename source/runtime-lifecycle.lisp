@@ -53,66 +53,83 @@ incident 2026-10-30: documents.ingest/targets/update sat at 0 consumers for
 Non-transport failures keep the stop-for-redelivery contract."
   (let* ((stream (consumer-stream consumer))
          (policy (consumer-stream-reconnect-policy stream))
-         (stream-open-p nil))
-    (labels ((stopping-p ()
-               (eq (consumer-state consumer) :stopping))
-             (ensure-stream-open ()
-               (loop until (or stream-open-p (stopping-p))
-                     for attempt from 0
-                     do (handler-case
-                            (progn
-                              (open-stream stream)
-                              (setf stream-open-p t))
-                          (condition (condition)
-                            (log:warn
-                             "Consumer ~a (re)connect failed (~a); retrying (attempt ~d)"
-                             (consumer-name consumer) condition (1+ attempt))
-                            (funcall *retry-sleep-function*
-                                     (/ (retry-delay-ms policy (min attempt 20))
-                                        1000.0d0)))))))
+         (stream-open-p nil)
+         (reconnect-attempts 0))
+    (labels
+        ((stopping-p ()
+           (eq (consumer-state consumer) :stopping))
+         (ensure-stream-open ()
+           (loop until (or stream-open-p (stopping-p))
+                 for attempt from 0
+                 do (handler-case
+                        (progn
+                          (open-stream stream)
+                          (setf stream-open-p t))
+                      (condition (condition)
+                        (log:warn "Consumer ~a (re)connect failed (~a); retrying (attempt ~d)"
+                                  (consumer-name consumer) condition (1+ attempt))
+                        (funcall *retry-sleep-function*
+                                 (/ (retry-delay-ms policy (min attempt 20))
+                                    1000.0d0))))))
+         (read-delivery ()
+           "Read one delivery: nil on idle poll, :eof on graceful end, or
+signals consumer-transport-lost when the read path itself broke."
+           (handler-case
+               (consumer-read consumer)
+             (consumer-read-timeout () nil)
+             (end-of-file () :eof)
+             (error (cause)
+               (error 'consumer-transport-lost :cause cause)))))
       (unwind-protect
            (progn
-             (labels ((read-delivery ()
-                        "Read one delivery: nil on idle poll, :eof on graceful
-end, or signals consumer-transport-lost when the read path itself broke."
+             (loop named consumer-loop
+                   until (stopping-p)
+                   do (progn
+                        (ensure-stream-open)
+                        (when (and stream-open-p
+                                   (not (consumer-running-p consumer)))
+                          (setf (consumer-running-p consumer) t)
+                          (consumer-update-state consumer :running))
                         (handler-case
-                            (consumer-read consumer)
-                          (consumer-read-timeout () nil)
-                          (end-of-file () :eof)
-                          (error (cause)
-                            (error 'consumer-transport-lost :cause cause)))))
-               (loop named consumer-loop
-                     until (stopping-p)
-                     do (progn
-                          (ensure-stream-open)
-                          (when (and stream-open-p
-                                     (not (consumer-running-p consumer)))
-                            (setf (consumer-running-p consumer) t)
-                            (consumer-update-state consumer :running))
-                          (handler-case
-                              (loop until (stopping-p)
-                                    do (let ((delivery (read-delivery)))
-                                         (cond
-                                           ((eq delivery :eof)
-                                            (return-from consumer-loop))
-                                           (delivery
-                                            (handler-case
-                                                (consumer-process-delivery
-                                                 consumer delivery)
-                                              ;; A failed settlement leaves the
-                                              ;; delivery unsettled. Closing the
-                                              ;; Rabbit stream returns it for
-                                              ;; redelivery without letting the
-                                              ;; worker kill the HTTP listener.
-                                              (error (condition)
-                                                (log:error
-                                                 "Consumer ~a stopped after unsettled delivery: ~a"
-                                                 (consumer-name consumer) condition)
-                                                (return-from consumer-loop)))))
-                            (consumer-transport-lost (condition)
-                              (declare (ignore condition))
-                              (setf stream-open-p nil)
-                              (reset-consumer-stream stream))))))))
+                            (loop until (stopping-p)
+                                  do (let ((delivery (read-delivery)))
+                                       (cond
+                                         ((eq delivery :eof)
+                                          (return-from consumer-loop))
+                                         (delivery
+                                          (handler-case
+                                              (consumer-process-delivery
+                                               consumer delivery)
+                                            ;; A failed settlement leaves the
+                                            ;; delivery unsettled. Closing the
+                                            ;; Rabbit stream returns it for
+                                            ;; redelivery without letting the
+                                            ;; worker kill the HTTP listener.
+                                            (error (condition)
+                                              (log:error
+                                               "Consumer ~a stopped after unsettled delivery: ~a"
+                                               (consumer-name consumer) condition)
+                                              (return-from consumer-loop)))
+                                          ;; A settled delivery proves the
+                                          ;; session is stable again.
+                                          (setf reconnect-attempts 0)))))
+                          ;; Only read-path errors reconnect: nothing is in
+                          ;; hand to settle. Settlement errors above stay
+                          ;; terminal regardless of their condition names
+                          ;; (test-rabbitmq-server-error).
+                          (consumer-transport-lost ()
+                            (setf stream-open-p nil)
+                            (reset-consumer-stream stream)
+                            ;; Back off before the next open attempt so a
+                            ;; stop requested during the window is honored.
+                            (incf reconnect-attempts)
+                            (funcall *retry-sleep-function*
+                                     (/ (retry-delay-ms
+                                         policy
+                                         (min (1- reconnect-attempts) 20))
+                                        1000.0d0))
+                            (when (stopping-p)
+                              (return-from consumer-loop))))))
         (when (and stream-open-p (consumer-running-p consumer))
           (handler-case
               (close-stream (consumer-stream consumer))
