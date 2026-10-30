@@ -72,10 +72,6 @@ Non-transport failures keep the stop-for-redelivery contract."
                                         1000.0d0)))))))
       (unwind-protect
            (progn
-             (ensure-stream-open)
-             (when stream-open-p
-               (setf (consumer-running-p consumer) t)
-               (consumer-update-state consumer :running))
              (labels ((read-delivery ()
                         "Read one delivery: nil on idle poll, :eof on graceful
 end, or signals consumer-transport-lost when the read path itself broke."
@@ -87,30 +83,36 @@ end, or signals consumer-transport-lost when the read path itself broke."
                             (error 'consumer-transport-lost :cause cause)))))
                (loop named consumer-loop
                      until (stopping-p)
-                     do (handler-case
-                            (loop until (stopping-p)
-                                  do (let ((delivery (read-delivery)))
-                                       (cond
-                                         ((eq delivery :eof)
-                                          (return-from consumer-loop))
-                                         (delivery
-                                          (handler-case
-                                              (consumer-process-delivery
-                                               consumer delivery)
-                                            ;; A failed settlement leaves the
-                                            ;; delivery unsettled. Closing the
-                                            ;; Rabbit stream returns it for
-                                            ;; redelivery without letting the
-                                            ;; worker kill the HTTP listener.
-                                            (error (condition)
-                                              (log:error
-                                               "Consumer ~a stopped after unsettled delivery: ~a"
-                                               (consumer-name consumer) condition)
-                                              (return-from consumer-loop)))))))
-                          (consumer-transport-lost (condition)
-                            (declare (ignore condition))
-                            (setf stream-open-p nil)
-                            (reset-consumer-stream stream)))))))
+                     do (progn
+                          (ensure-stream-open)
+                          (when (and stream-open-p
+                                     (not (consumer-running-p consumer)))
+                            (setf (consumer-running-p consumer) t)
+                            (consumer-update-state consumer :running))
+                          (handler-case
+                              (loop until (stopping-p)
+                                    do (let ((delivery (read-delivery)))
+                                         (cond
+                                           ((eq delivery :eof)
+                                            (return-from consumer-loop))
+                                           (delivery
+                                            (handler-case
+                                                (consumer-process-delivery
+                                                 consumer delivery)
+                                              ;; A failed settlement leaves the
+                                              ;; delivery unsettled. Closing the
+                                              ;; Rabbit stream returns it for
+                                              ;; redelivery without letting the
+                                              ;; worker kill the HTTP listener.
+                                              (error (condition)
+                                                (log:error
+                                                 "Consumer ~a stopped after unsettled delivery: ~a"
+                                                 (consumer-name consumer) condition)
+                                                (return-from consumer-loop)))))
+                            (consumer-transport-lost (condition)
+                              (declare (ignore condition))
+                              (setf stream-open-p nil)
+                              (reset-consumer-stream stream))))))))
         (when (and stream-open-p (consumer-running-p consumer))
           (handler-case
               (close-stream (consumer-stream consumer))
@@ -120,7 +122,7 @@ end, or signals consumer-transport-lost when the read path itself broke."
                         condition))))
         (setf (consumer-running-p consumer) nil)
         (consumer-update-state consumer :stopped))
-      consumer))
+      consumer))))
 
 (defun join-consumer-owned-threads (consumer)
   "Join only threads explicitly retained by CONSUMER."
