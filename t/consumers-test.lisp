@@ -393,5 +393,92 @@
     (is (star.rabbit:transient-p transient))
     (is (not (star.rabbit:transient-p persistent)))))
 
+;;; Reconnect after broker-forced connection loss (issue #37 live incident
+;;; 2026-10-30: documents.ingest/targets/update sat at 0 consumers ~25 min
+;;; after a RabbitMQ restart because run-consumer returned permanently on
+;;; any transport error).
+
+(define-condition test-connection-lost-error (error) ())
+
+(defclass test-reconnect-stream ()
+  ((script
+    :initarg :script
+    :accessor test-stream-script)
+   (opens :initform 0 :accessor test-stream-opens)
+   (closes :initform 0 :accessor test-stream-closes)
+   (settled :initform 0 :accessor test-stream-settled)))
+
+(defmethod star.consumers:open-stream ((stream test-reconnect-stream))
+  (incf (test-stream-opens stream))
+  stream)
+
+(defmethod star.consumers:close-stream ((stream test-reconnect-stream))
+  (incf (test-stream-closes stream))
+  stream)
+
+(defmethod star.consumers:stream-read ((stream test-reconnect-stream))
+  (let ((next (pop (test-stream-script stream))))
+    (cond
+      ((null next) (signal 'end-of-file))
+      ((eq next :err) (error 'test-connection-lost-error))
+      (t next))))
+
+(defmethod star.consumers:stream-settle
+    ((stream test-reconnect-stream) delivery settlement)
+  (declare (ignore delivery))
+  (incf (test-stream-settled stream))
+  settlement)
+
+(defun make-reconnect-consumer (script)
+  (make-instance
+   'star.consumers:consumer
+   :name "reconnect-test"
+   :workers 1
+   :test-fn #'identity
+   :fn (lambda (consumer message)
+         (declare (ignore consumer message))
+         (star.consumers:settlement-ack))
+   :stream (make-instance 'test-reconnect-stream :script script)))
+
+(defparameter *reconnect-test-sleeps* 0)
+
+(defun nosleep-counting ()
+  (lambda (seconds)
+    (declare (ignore seconds))
+    (incf *reconnect-test-sleeps*)))
+
+(test transport-error-reconnects-and-resumes
+  (let* ((consumer (make-reconnect-consumer '(:err "d1" :err "d2" :eof)))
+         (stream (star.consumers:consumer-stream consumer)))
+    (let ((star.consumers::*retry-sleep-function* (nosleep-counting)))
+      (star.consumers:run-consumer consumer))
+    (is (= 3 (test-stream-opens stream))
+        "must reopen after each transport loss")
+    (is (= 2 (test-stream-settled stream))
+        "must keep consuming deliveries after reconnects")
+    (is (eq :stopped (star.consumers:consumer-state consumer)))))
+
+(test end-of-file-still-stops-gracefully
+  (let* ((consumer (make-reconnect-consumer '("d1" :eof)))
+         (stream (star.consumers:consumer-stream consumer)))
+    (star.consumers:run-consumer consumer)
+    (is (= 1 (test-stream-opens stream))
+        "end-of-file must not trigger a reopen")
+    (is (= 1 (test-stream-settled stream)))
+    (is (eq :stopped (star.consumers:consumer-state consumer)))))
+
+(test stopping-fences-reconnect
+  (let* ((consumer (make-reconnect-consumer '(:err "never" :eof)))
+         (stream (star.consumers:consumer-stream consumer))
+         (stop-during-backoff
+           (lambda (seconds)
+             (declare (ignore seconds))
+             (star.consumers:consumer-update-state consumer :stopping))))
+    (let ((star.consumers::*retry-sleep-function* stop-during-backoff))
+      (star.consumers:run-consumer consumer))
+    (is (= 1 (test-stream-opens stream))
+        "no reopen once the consumer is stopping")
+    (is (eq :stopped (star.consumers:consumer-state consumer)))))
+
 (defun run-consumer-tests ()
   (run! 'consumer-tests))

@@ -1,4 +1,4 @@
 % Ground task/control facts for this worktree. Machine observations live in runs/run-<HEAD>.pl.
-task('reconcile-master').
-repo_state('51713d561b06a24f2954e8aa37a8339329c3a435', '3aa15b5ed6188b12fbb023553073499af80f4359d845777bcea9409000e243db').
+task('issue-37-consumer-reconnect').
+repo_state('630e97898e7361ed2557212523789e1d050adafc', '111a2893cd142e727846a39071fcbd870025ee9945bd041cf316209465210e05').
 research_required(false).

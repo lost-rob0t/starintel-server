@@ -9,3 +9,5 @@
 :- ensure_loaded('actor-registry.pl').
 :- ensure_loaded('actor-credentials.pl').
 :- ensure_loaded('observability.pl').
+:- ensure_loaded('public-api-tenancy.pl').
+:- ensure_loaded('consumer-lifecycle.pl').

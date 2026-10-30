@@ -1,0 +1,31 @@
+#+TITLE: Anonymous read boundary
+
+The =/api/v1/search= and =/api/v1/stats= endpoints read only documents in
+the server-owned =public= tenant and explicitly approved datasets. Set
+=STAR_PUBLIC_SEARCH_DATASETS= to a comma-separated list of dataset names before
+enabling these routes. An unset, empty, or wildcard value returns 503.
+The Compose service passes this variable through from the host environment.
+
+For a new deployment with no reviewed public documents, use
+=STAR_PUBLIC_SEARCH_DATASETS=public=. Search then returns no documents and stats
+returns zero. This does not create an account or copy existing documents.
+
+Install the =data= design document from =source/views/data.json= when deploying
+this change. Public stats use its =count_by_tenant_dataset_dtype= reduce view;
+the older global =total= and =count_by_dtype= views must not back anonymous
+responses in a database with private tenants.
+
+Only server-side assignment of the =public= tenant gives a document that
+boundary. A schema =visibility= tag alone does not grant public API access.
+Before removing a reverse-proxy guard, verify both endpoints anonymously,
+including a matching private-tenant search document that remains absent.
+
+* Future authenticated user scope
+
+Each user should have an own tenant and shared read access to the =public=
+tenant. A user's read scope must exclude every other user's private tenant.
+This contract is not implemented by the anonymous route change above: user
+provisioning and authenticated query enforcement need their own design and
+regression tests. The public tenant must not be inferred from a document's
+=visibility= tag.
+This future work is tracked in [[https://git.starintel.actor/starintel-labs/starintel-server/issues/28][server issue #28]].
