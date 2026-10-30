@@ -103,6 +103,8 @@ let
         usr/local/bin/starintel-couchdb-entrypoint
       install -Dm644 ${../docker/couchdb-search.ini} \
         opt/couchdb/etc/local.d/starintel-search.ini
+      install -Dm644 ${../docker/couchdb-prometheus.ini} \
+        opt/couchdb/etc/local.d/starintel-prometheus.ini
     '';
 
     config = {
@@ -111,6 +113,7 @@ let
       ExposedPorts = {
         "4369/tcp" = { };
         "5984/tcp" = { };
+        "17986/tcp" = { };
         "9100/tcp" = { };
       };
       Volumes."/opt/couchdb/data" = { };

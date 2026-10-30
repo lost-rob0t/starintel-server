@@ -4,7 +4,6 @@ services:
   clouseau:
     image: starintel/clouseau:3.3.0
     hostname: clouseau
-    domainname: starintel.internal
     restart: unless-stopped
     environment:
       CLOUSEAU_COOKIE_FILE: /run/secrets/erlang_cookie
@@ -29,7 +28,6 @@ services:
   couchdb:
     image: starintel/couchdb:3.5.2
     hostname: couchdb
-    domainname: starintel.internal
     restart: unless-stopped
     environment:
       COUCHDB_USER: ${COUCHDB_USER:-admin}

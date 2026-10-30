@@ -25,6 +25,7 @@ receivers:
             - targets: ["rabbitmq:15692"]
         - job_name: couchdb
           scrape_interval: 30s
+          metrics_path: /_node/_local/_prometheus
           static_configs:
             - targets: ["couchdb:17986"]
 
