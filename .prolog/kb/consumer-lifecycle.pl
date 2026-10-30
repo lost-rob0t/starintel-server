@@ -28,6 +28,22 @@ assert-rabbit-stream-owner then passes on the same thread after open-stream
 re-runs. Test fakes that are not rabbit-queue-stream subclasses need
 reset-consumer-stream's close-stream fallback instead.").
 
+invariant(reconnect_classifies_by_origin_not_name,
+    "name-based transport classification (rabbit-startup-retryable-p)
+misclassifies settlement failures: the regression test signals
+test-rabbitmq-server-error from stream-settle, and its name matches
+RABBITMQ, producing an infinite reconnect loop (28-min hang, exit 124).
+Only read-path errors (no delivery in hand, nothing to settle) may
+trigger reconnect; wrap consumer-read in a consumer-transport-lost
+condition and keep settlement errors terminal").
+
+invariant(lisp_files_need_reader_balance_check_before_slow_gates,
+    "before paying the ~12-min unit-test gate, run a local reader check:
+sbcl --script with *read-suppress* t over the file catches unmatched
+parens instantly (docstrings contain parens; naive counting scripts
+false-positive). A paren slip otherwise surfaces only as 'compilation
+unit aborted' deep inside the runner").
+
 invariant(readiness_is_consumer_aware,
     "runtime-ready-p requires every runtime consumer :running AND
 consumer-running-p; /health and /ready return 503 otherwise. Honesty
