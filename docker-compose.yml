@@ -63,6 +63,7 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-starintel}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit consumer_timeout 14400000
     entrypoint: [/bin/bash, -ec]
     command:
       - |
