@@ -1,6 +1,7 @@
 (in-package :star-server-tests)
 
 (defun run-all-integration-tests ()
+  (run-required-suite 'retry-settlement-integration-tests)
   (run-required-suite 'valkey-lease-integration-tests)
   (run-required-suite
    'couchdb-view-integration-tests
