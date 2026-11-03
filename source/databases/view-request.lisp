@@ -61,7 +61,8 @@
 
 (defun validate-view-query-options
     (limit skip descending include-docs reduce group group-level
-     key keys start-key end-key)
+     key keys start-key end-key &optional start-key-doc-id)
+  (declare (ignore start-key-doc-id))
   (validate-nonnegative-integer "limit" limit)
   (validate-nonnegative-integer "skip" skip)
   (validate-view-boolean "descending" descending)
@@ -85,7 +86,7 @@
 
 (defun couchdb-view-query-parameters
     (limit skip descending include-docs reduce update
-     key start-key end-key group group-level)
+     key start-key end-key start-key-doc-id group group-level)
   (append
    `(("limit" . ,limit)
      ("skip" . ,skip)
@@ -97,6 +98,8 @@
      `(("key" . ,(couchdb-json-query-value key))))
    (when start-key
      `(("startkey" . ,(couchdb-json-query-value start-key))))
+   (when start-key-doc-id
+     `(("startkey_docid" . ,start-key-doc-id)))
    (when end-key
      `(("endkey" . ,(couchdb-json-query-value end-key))))
    (when group
@@ -127,17 +130,18 @@
        keys
        start-key
        end-key
+       start-key-doc-id
        (group nil)
        group-level)
   "Build one validated CouchDB view request without performing network I/O."
   (validate-view-query-options
    limit skip descending include-docs reduce group group-level
-   key keys start-key end-key)
+   key keys start-key end-key start-key-doc-id)
   (let* ((normalized-update (normalize-view-update update))
          (parameters
            (couchdb-view-query-parameters
             limit skip descending include-docs reduce normalized-update
-            key start-key end-key group group-level))
+            key start-key end-key start-key-doc-id group group-level))
          (uri
            (couchdb-view-uri
             client database design-document view-name parameters)))
@@ -175,6 +179,7 @@ swap this to fake the CouchDB round trip.")
        keys
        start-key
        end-key
+       start-key-doc-id
        (group nil)
        group-level
      &allow-other-keys)
@@ -186,7 +191,7 @@ ARGUMENTS are standard CouchDB query parameters (=:limit=, =:skip=,
 validated and built by =build-couchdb-view-request=, then executed via
 =*couchdb-view-transport*=.  Returns the decoded JSON response."
   (declare (ignore limit skip descending include-docs reduce update
-                   key keys start-key end-key group group-level))
+                   key keys start-key end-key start-key-doc-id group group-level))
   (let* ((request
            (apply #'build-couchdb-view-request
                   client database design-document view-name arguments))

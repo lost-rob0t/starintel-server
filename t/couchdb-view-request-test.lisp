@@ -237,6 +237,55 @@
                          (test-view-client) "records" "fixture" "by_key")
                         "rows")))))
 
+;; #360 follow-up: by_actor keys repeat (one key per actor, many rows per
+;; key), so page draining needs a (startkey, startkey_docid) cursor.
+(test view-cursor-carries-startkey-docid
+  (let ((request
+          (build-test-view-request
+           :include-docs t :reduce nil :limit 200
+           :start-key "reddit" :start-key-doc-id "target:abc")))
+    (is-true (request-uri-contains-p request "startkey_docid=target%3Aabc"))
+    (is-true (request-uri-contains-p request "startkey=%22reddit%22"))))
+
+;; #360 follow-up: recovery must drain every view page, not the first 50
+;; rows (query-view's default limit).
+(defun drains-test-row (id key)
+  (jsown:new-js
+    ("id" id)
+    ("key" key)
+    ("doc" (jsown:new-js ("_id" id) ("dtype" "target")))))
+
+(defun drains-test-response (rows)
+  (jsown:to-json (jsown:new-js ("rows" rows))))
+
+(test recovery-drains-all-by-actor-pages-with-key-cursor
+  (let* ((page-one
+           (list (drains-test-row "target:a" "reddit")
+                 (drains-test-row "target:b" "reddit")))
+         (page-two
+           (list (drains-test-row "target:c" "subfinder")))
+         (calls nil)
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request)
+             (declare (ignore client))
+             (push (star.databases.couchdb:couchdb-view-request-uri request)
+                   calls)
+             (drains-test-response
+              (if (cdr calls) page-two page-one)))))
+    (let ((documents
+            (star.actors::query-persisted-target-documents
+             (test-view-client) "records" :page-limit 2)))
+      (is (= 3 (length documents)))
+      (is (equal '("target:a" "target:b" "target:c")
+                 (mapcar (lambda (document)
+                           (jsown:val document "_id"))
+                         documents)))
+      ;; two pages fetched; the second continues from the first page's
+      ;; last (key, id) cursor instead of repeating it
+      (is (= 2 (length calls)))
+      (is-true (search "startkey_docid=target%3Ab" (first calls)))
+      (is-true (search "startkey=%22reddit%22" (first calls))))))
+
 ;; issue #360: unfiltered boot recovery must bound the by_actor query so
 ;; null-actor rows (which sort before every string key in CouchDB
 ;; collation) cannot reach parse-target-record and quarantine-storm boot.
