@@ -108,9 +108,8 @@
                (when (and value (plusp (length value)))
                  value)))
            (tenant (target-list-tenant params))
-           (limit (min (bounded-query-integer
-                        params "limit" :default 200 :minimum 1)
-                       1000))
+           (limit (bounded-query-integer
+                   params "limit" :default 200 :minimum 1 :maximum 1000))
            (principal (current-policy-principal))
            (metadata (route-policy-metadata +target-v1-path+ "GET")))
       (couchdb-handler (client *couchdb-pool*)

@@ -262,7 +262,7 @@
     (setf (jsown:val stored "_rev") "2-stored"
           (jsown:val stored "tenant_id") "private-tenant")
     (let* ((record (star.actors:parse-target-record stored))
-           (envelope (star.actors:make-target-dispatch-envelope
+           (envelope (star.actors::make-target-dispatch-envelope
                       record :destination
                       (star.actors::make-target-destination-handle
                        :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder"))))
@@ -318,7 +318,7 @@
                             ("submitted_by" (star.frontends.http-api::target-v1-digest principal))
                             ("schedule_id" schedule-id)))))
          (envelope
-           (star.actors:make-target-dispatch-envelope
+           (star.actors::make-target-dispatch-envelope
             (star.actors:parse-target-record document)
             :destination
             (star.actors::make-target-destination-handle
@@ -702,3 +702,55 @@
                  (star.http.contract:http-operation-path operation)))
     (is (equal '("targets:read")
                (star.http.contract:http-operation-scopes operation)))))
+
+;; #360 live follow-up: standalone persistence gives recovered target docs
+;; a CouchDB storage revision; the dispatch fingerprint must not treat that
+;; as content change, or every recovered recurring target conflicts with its
+;; own acceptance (252 INVALID observed on the 2026-11-03 reseed reboot).
+(test recovered-storage-revision-does-not-conflict-with-acceptance
+  (let* ((request (make-v1-target-request :delay 60 :recurring t
+                                          :idempotency-key "storage-rev"))
+         (principal "human:alice")
+         (document
+           (star.frontends.http-api::target-v1-document-from-request
+            request principal))
+         (recovered-document
+           (star.documents:clone-document-object document))
+         (destination
+           (star.actors::make-target-destination-handle
+            :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")))
+    ;; standalone persistence adds only storage metadata
+    (setf (jsown:val recovered-document "_id") (jsown:val document "id")
+          (jsown:val recovered-document "_rev") "1-storageonly")
+    (let ((accepted-fingerprint
+            (star.actors::target-dispatch-fingerprint
+             (star.actors::make-target-dispatch-envelope
+              (star.actors:parse-target-record document)
+              :destination destination)))
+          (recovered-fingerprint
+            (star.actors::target-dispatch-fingerprint
+             (star.actors::make-target-dispatch-envelope
+              (star.actors::strip-target-storage-revision
+               (star.actors:parse-target-record recovered-document))
+              :destination destination))))
+      (is (string= accepted-fingerprint recovered-fingerprint)
+          "storage revision must not manufacture a content conflict"))
+    ;; the recovery path submits stripped records to the durable acceptance
+    (let* ((submitted nil)
+           (original-submit (symbol-function 'star.actors:submit-target))
+           (star.actors::*recovered-target-fingerprints*
+             (make-hash-table :test #'equal)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'star.actors:submit-target)
+                   (lambda (record &rest arguments)
+                     (declare (ignore arguments))
+                     (setf submitted record)
+                     (star.actors::make-target-dispatch-outcome :accepted)))
+             (is (eq :recovered
+                     (star.actors::recover-target-record
+                      (star.actors:parse-target-record recovered-document))))
+             (is-false (star.actors:target-record-revision submitted)
+                       "recovery must submit the record without its storage revision"))
+        (setf (symbol-function 'star.actors:submit-target)
+              original-submit)))))

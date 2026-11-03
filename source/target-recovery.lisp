@@ -238,6 +238,20 @@
           (funcall quarantine-fn client database document condition))))
     (values (nreverse records) invalid-count)))
 
+(defun strip-target-storage-revision (record)
+  "Return an equivalent record without CouchDB storage revisions.
+
+Standalone persistence (#360) adds _rev to recovered target documents.
+The dispatch fingerprint must not treat that storage artifact as a
+content change, or every recovered recurring target conflicts with its
+own acceptance (252 INVALID observed on the 2026-11-03 reseed reboot)."
+  (let ((document
+          (star.documents:clone-document-object
+           (target-record-document record))))
+    (when (jsown:keyp document "_rev") (jsown:remkey document "_rev"))
+    (when (jsown:keyp document "rev") (jsown:remkey document "rev"))
+    (parse-target-record document)))
+
 (defun recover-target-record (record)
   "Recover one record once per persisted revision in this process.
 
@@ -256,7 +270,7 @@ transport-level failures still propagate."
        (handler-case
            (progn
              (submit-target
-              record
+              (strip-target-storage-revision record)
               :first-time-p (target-record-recurring-p record)
               :recovered-p t)
              :recovered)
