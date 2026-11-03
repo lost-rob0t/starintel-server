@@ -405,6 +405,12 @@ RabbitMQ properties carrying retry metadata across republish.
 (run-consumer (STAR.CONSUMERS:CONSUMER))
 #+end_src
 Run a consumer on its owner thread while periodically observing stop state.
+
+Broker-forced connection closure reconnects with the stream policy's capped
+backoff instead of silently leaving the queue unconsumed (issue #37 live
+incident 2026-10-30: documents.ingest/targets/update sat at 0 consumers for
+~25 minutes after a broker restart). Reconnect is fenced by :stopping.
+Non-transport failures keep the stop-for-redelivery contract.
 *** settlement-ack
 :PROPERTIES:
 :KIND: fn
