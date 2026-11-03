@@ -239,10 +239,17 @@
     (values (nreverse records) invalid-count)))
 
 (defun recover-target-record (record)
-  "Recover one record once per persisted revision in this process."
+  "Recover one record once per persisted revision in this process.
+
+Only recurring schedules rehydrate (#360): a one-shot target whose moment
+passed must never re-dispatch at boot.  A record that fails deterministic
+dispatch validation (expired deadline, transient policy, legacy delay 0)
+returns :INVALID so one bad persisted document cannot abort boot;
+transport-level failures still propagate."
   (let ((fingerprint (target-record-fingerprint record)))
     (cond
       ((target-active-lease-p record) :leased)
+      ((not (target-record-recurring-p record)) :skipped)
       ((gethash fingerprint *recovered-target-fingerprints*) :duplicate)
       (t
        (setf (gethash fingerprint *recovered-target-fingerprints*) t)
@@ -253,6 +260,12 @@
               :first-time-p (target-record-recurring-p record)
               :recovered-p t)
              :recovered)
+         (invalid-target-dispatch ()
+           ;; Deterministic bad persisted target: the same failure class as
+           ;; an unparseable document.  Undo the fingerprint ledger entry so
+           ;; a later corrected revision can still recover.
+           (remhash fingerprint *recovered-target-fingerprints*)
+           :invalid)
          (error (condition)
            (remhash fingerprint *recovered-target-fingerprints*)
            (error condition)))))))
@@ -266,17 +279,22 @@
         (load-persisted-target-records client database :actors actors)
       (let ((recovered 0)
             (duplicates 0)
-            (leased 0))
+            (leased 0)
+            (skipped 0)
+            (undispatchable 0))
         (dolist (record records)
           (ecase (recover-target-record record)
             (:recovered (incf recovered))
             (:duplicate (incf duplicates))
-            (:leased (incf leased))))
+            (:leased (incf leased))
+            (:skipped (incf skipped))
+            (:invalid (incf undispatchable))))
         (let ((summary
                 (list :loaded (length records)
                       :recovered recovered
                       :duplicates duplicates
                       :leased leased
-                      :invalid invalid-count)))
+                      :skipped skipped
+                      :invalid (+ invalid-count undispatchable))))
           (log:info "Recovered persisted targets: ~a" summary)
           summary)))))

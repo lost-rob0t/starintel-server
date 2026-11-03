@@ -601,6 +601,47 @@
   (setf star.actors::*active-target-schedules* (make-hash-table :test #'equal)
         star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal)))
 
+;; #360 production follow-up: legacy persisted documents (delay 0, expired
+;; deadline, one-shot) must not abort boot when recovery runs against real
+;; data; recovery rehydrates recurring schedules only and treats
+;; deterministic dispatch-validation failures as per-record invalids.
+;; (The healthy recurring recovery path is covered by the real-CouchDB
+;; integration test; validation here fires before any persistence I/O.)
+(test recovery-skips-one-shot-and-quarantines-undispatchable-without-error
+  (let ((star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal))
+        (star.actors::*active-target-schedules* (make-hash-table :test #'equal)))
+    (flet ((legacy-record (delay recurring deadline)
+             (star.actors::parse-target-record
+              (jsown:new-js
+                ("_id" (format nil "legacy-recovery-~a-~a" delay recurring))
+                ("dataset" "legacy") ("dtype" "target")
+                ("actor" "subfinder")
+                ("target" "legacy.example.invalid")
+                ("delay" delay)
+                ("recurring" (if recurring :true :false))
+                ("schedule_id" "legacy-schedule-recovery")
+                ("deadline" deadline)))))
+      ;; A legacy one-shot (delay 0) is skipped, never submitted.
+      (is (eq :skipped (star.actors::recover-target-record
+                        (legacy-record 0 nil :null))))
+      ;; A recurring record with an expired deadline is a per-record
+      ;; invalid, not a boot abort.
+      (is (eq :invalid (star.actors::recover-target-record
+                        (legacy-record 3600 t "2020-01-01T00:00:00Z"))))
+      ;; The failed record did not burn its fingerprint ledger entry.
+      (is-false (gethash
+                 (star.actors::target-record-fingerprint
+                  (star.actors::parse-target-record
+                   (jsown:new-js
+                     ("_id" "legacy-recovery-3600-t")
+                     ("dataset" "legacy") ("dtype" "target")
+                     ("actor" "subfinder")
+                     ("target" "legacy.example.invalid")
+                     ("delay" 3600) ("recurring" :true)
+                     ("schedule_id" "legacy-schedule-recovery")
+                     ("deadline" "2020-01-01T00:00:00Z"))))
+                 star.actors::*recovered-target-fingerprints*)))))
+
 (test recurring-acceptance-re-arms-schedule-after-simulated-restart
   (let* ((record (make-restart-simulation-record :recurring-p t))
          (schedule-id (star.actors::target-record-schedule-id record))
