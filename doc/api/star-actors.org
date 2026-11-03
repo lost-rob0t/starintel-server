@@ -723,6 +723,12 @@ Recover valid persisted targets after actor startup and before Rabbit ingest.
 (recover-target-record (STAR.ACTORS::RECORD))
 #+end_src
 Recover one record once per persisted revision in this process.
+
+Only recurring schedules rehydrate (#360): a one-shot target whose moment
+passed must never re-dispatch at boot.  A record that fails deterministic
+dispatch validation (expired deadline, transient policy, legacy delay 0)
+returns :INVALID so one bad persisted document cannot abort boot;
+transport-level failures still propagate.
 *** register-actor
 :PROPERTIES:
 :KIND: fn
