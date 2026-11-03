@@ -155,3 +155,14 @@ fix(recurring_duplicate_rearm, 'process-target-dispatch-envelope re-arms recurri
 fix(standalone_target_document, 'couchdb-persist-target-acceptance ensures the embedded canonical target doc exists standalone for view indexing').
 resolved(target_schedules_not_durable).
 resolved(targets_list_route_unmapped).
+
+%% --- #360 production rollout follow-up (2026-11-03) ---
+
+% First live deploy failed loud and by design: legacy persisted docs with
+% delay 0 / expired deadlines parse but fail dispatch validation, and
+% submit-target re-signals invalid-target-dispatch, which aborted startup.
+fix(recovery_scope, 'recover-target-record rehydrates recurring schedules only (one-shots skipped) and converts deterministic invalid-target-dispatch into per-record :invalid counts; transport failures still fail boot').
+deployment(server_image_360, 'PR #33 (92bc895) + PR #34 (c4e8c87) via forgejo; infra repin d988a09; image built from pinned rev c4e8c87, loaded on ingest CT114; rollback tag starintel/server:pre-360-20261103').
+verified_live(boot_rehydration_summary, '(LOADED 50 RECOVERED 0 DUPLICATES 0 LEASED 0 SKIPPED 50 INVALID 0) in star-server boot log; GET /api/v1/targets now returns 401 invalid_credential for anonymous callers instead of 403 unmapped:http-route').
+known_limitation(reddit_actor_pre_existing, 'starintel-pro-actors-reddit-1 restarts on STARINTEL_REDDIT_BACKEND=shreddit (invalid; expected arctic-shift|direct) - provider migration pending in pro-actors, pre-dates #360 deploy and blocks the deploy script actor gate, not the server').
+known_limitation(legacy_acceptance_only_targets, 'the 46 reddit recurring targets POSTed 2026-10-31 were acceptance-only (no standalone target doc) and still need the planned one-time reseed; targets POSTed after c4e8c87 are durable across restarts').
