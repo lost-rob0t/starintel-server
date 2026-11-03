@@ -1,4 +1,5 @@
-% Ground task/control facts for this worktree. Machine observations live in runs/run-<HEAD>.pl.
-task('issue-37-consumer-reconnect').
-repo_state('630e97898e7361ed2557212523789e1d050adafc', '111a2893cd142e727846a39071fcbd870025ee9945bd041cf316209465210e05').
+% Ground task/control facts. Evidence is isolated by task and run.
+task('360-target-rehydration').
+verification_context('360-target-rehydration', 'e834b9128d3947cfb8814accbc1ee556').
+repo_state('55deeee3aa6ff7141279562dabba071c2feeb025', '1c1c2a34c2c3d472d941497bd6f29778e2857630b86d1ed25dcb63fb8a5ecc84').
 research_required(false).

@@ -99,3 +99,30 @@
 
 (setf (ningle:route *app* +target-v1-path+ :method :post)
       #'handle-v1-target-create-route)
+
+(defun handle-v1-target-list-route (params)
+  "List persisted targets for the caller's tenant with an optional actor filter."
+  (with-http-boundary ()
+    (let* ((actor
+             (let ((value (query-value params "actor")))
+               (when (and value (plusp (length value)))
+                 value)))
+           (tenant (target-list-tenant params))
+           (principal (current-policy-principal))
+           (metadata (route-policy-metadata +target-v1-path+ "GET")))
+      (couchdb-handler (client *couchdb-pool*)
+        (let* ((documents
+                 (query-authorized-target-documents
+                  client star:*couchdb-default-database*
+                  actor tenant principal metadata))
+               (response (jsown:empty-object)))
+          (setf (jsown:val response "status") "ok"
+                (jsown:val response "data")
+                (let ((data (jsown:empty-object)))
+                  (setf (jsown:val data "targets") documents
+                        (jsown:val data "count") (length documents))
+                  data))
+          (jsown:to-json response))))))
+
+(setf (ningle:route *app* +target-v1-path+ :method :get)
+      #'handle-v1-target-list-route)

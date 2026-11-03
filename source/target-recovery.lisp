@@ -272,40 +272,11 @@
             (:recovered (incf recovered))
             (:duplicate (incf duplicates))
             (:leased (incf leased))))
-        (list :loaded (length records)
-              :recovered recovered
-              :duplicates duplicates
-              :leased leased
-              :invalid invalid-count)))))
-
-(defun start-target-loader ()
-  "Compatibility entry point for explicit recovery."
-  (recover-persisted-targets))
-
-(defun start-actors
-    (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port)
-  "Start persistence and registry actors, then recover targets before ingest."
-  (start-actor-system)
-  (setf *producer-agent*
-        (make-producer-agent
-         (star.producers:make-producer
-          :name "actor-producer"
-          :exchange-name "documents"
-          :host rabbit-host
-          :port rabbit-port
-          :user rabbit-user
-          :password rabbit-password
-          :vhost rabbit-vhost)
-         *sys*))
-  (let ((*gc-timer* (wt:make-wheel-timer)))
-    (wt:schedule-recurring
-     *gc-timer* 1 3600 (lambda () (sb-ext:gc :full t))))
-  (start-couchdb-agent *sys*)
-  (start-actor-index *sys*)
-  (start-couchdb-gets *sys*)
-  (start-couchdb-inserts *sys*)
-  (start-target-timer)
-  (start-target-actor *sys*)
-  ;; Actor hooks complete registry population before persisted work is replayed.
-  (nhooks:run-hook star:*actors-start-hook*)
-  (recover-persisted-targets))
+        (let ((summary
+                (list :loaded (length records)
+                      :recovered recovered
+                      :duplicates duplicates
+                      :leased leased
+                      :invalid invalid-count)))
+          (log:info "Recovered persisted targets: ~a" summary)
+          summary)))))

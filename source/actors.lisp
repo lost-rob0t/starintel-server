@@ -185,17 +185,6 @@ It is responsble for routing TARGET documents to actors. Actors can reside over 
   (when (jsown:val-safe target "transient")
     t))
 
-;;;;  Start the targets loader
-(defun start-target-loader ()
-  (log:info "Starting target loader")
-  (let (targets (get-targets (anypool:with-connection (client *couchdb-pool*)
-                               (get-targets client star:*couchdb-default-database*))))
-    (log:info "Loaded ~a targets from database" (length targets))
-    (loop for target in targets
-          do (submit-target target t))
-    (log:info "Target loader completed - all targets submitted")))
-
-
 ;;;; Start the target routing actor.
 (defun start-target-actor (system)
   (log:info "Starting target actor")
@@ -346,31 +335,4 @@ and normalize it to JSON. The current trace context rides in AMQP headers
 
 
 
-(defun start-actors (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port)
-  "Boot the actor system and every well-known actor.
-
-Creates the sento actor system, the Rabbit producer agent, the
-CouchDB agent, the actor index and the target timer, then starts
-consumers.  Connection parameters default to the =star:*rabbit-*=
-settings."
-  (start-actor-system)
-  (setf *producer-agent* (make-producer-agent (star.producers:make-producer :name "actor-producer"
-                                                                            :exchange-name "documents"
-                                                                            :host rabbit-host
-                                                                            :port rabbit-port
-                                                                            :user rabbit-user
-                                                                            :password rabbit-password
-                                                                            :vhost rabbit-vhost) *sys*))
-
-  ;; FIXME
-  (let ((*gc-timer* (wt:make-wheel-timer)))
-    (wt:schedule-recurring *gc-timer* 1 3600 (lambda ()
-                                               (sb-ext:gc :full t))))
-  (start-couchdb-agent *sys*)
-  (start-actor-index *sys*)
-  (start-couchdb-gets *sys*)
-  (start-couchdb-inserts *sys*)
-  (start-target-timer)
-  (start-target-actor *sys*)
-  (nhooks:run-hook star:*actors-start-hook*))
 ;; actor entry point:1 ends here

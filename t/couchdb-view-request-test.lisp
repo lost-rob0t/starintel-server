@@ -236,3 +236,34 @@
     (is (null (jsown:val (star.databases.couchdb:query-view
                          (test-view-client) "records" "fixture" "by_key")
                         "rows")))))
+
+;; issue #360: unfiltered boot recovery must bound the by_actor query so
+;; null-actor rows (which sort before every string key in CouchDB
+;; collation) cannot reach parse-target-record and quarantine-storm boot.
+(test recovery-view-query-excludes-null-actor-rows
+  (let* ((unfiltered-request nil)
+         (actor-scoped-request nil)
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request)
+             (declare (ignore client))
+             (cond ((null unfiltered-request)
+                    (setf unfiltered-request request))
+                   (t (setf actor-scoped-request request)))
+             "{\"rows\":[]}")))
+    (star.actors::query-persisted-target-documents
+     (test-view-client) "records")
+    (star.actors::query-persisted-target-documents
+     (test-view-client) "records" :actors '("subfinder"))
+    (is-true (request-uri-contains-p unfiltered-request "startkey=%22%22")
+             "unfiltered recovery must skip null-actor rows")
+    (is-false (request-uri-contains-p unfiltered-request "keys=")
+              "unfiltered recovery must remain a single range query")
+    (is-false (request-uri-contains-p actor-scoped-request "startkey=")
+              "actor-scoped recovery must use exact keys, not a range")
+    (is (eq :post
+            (star.databases.couchdb:couchdb-view-request-method
+             actor-scoped-request))
+        "actor-scoped recovery sends its key set in the POST body")
+    (is (search "keys" (star.databases.couchdb:couchdb-view-request-body
+                       actor-scoped-request)
+                :test #'char=))))

@@ -496,22 +496,34 @@
                :invalid envelope
                :reason "duplicate active schedule identity has different content")))
           (adopt-target-acceptance-metadata envelope acceptance)
-          (when (eq disposition :duplicate)
-            (return-from process-target-dispatch-envelope
-              (target-outcome :duplicate envelope)))
-          (let ((schedule-result
-                  (register-target-schedule
-                   envelope dispatch-fn schedule-once-fn
-                   schedule-recurring-fn)))
-            (funcall update-fn
-                     (jsown:val acceptance "_id")
-                     (lambda (document)
-                       (setf (jsown:val document "status") "scheduled"
-                             (jsown:val document "accepted_at") (star.documents:utc-now))
-                       document))
-            (target-outcome
-             (if (eq schedule-result :duplicate) :duplicate :accepted)
-             envelope))))
+          ;; A durable duplicate against a one-shot target is an idempotent
+          ;; retry: it must never re-dispatch completed work.  A recurring
+          ;; duplicate is the post-restart state (#360): the durable
+          ;; acceptance survives but the process-local wheel does not, so
+          ;; the schedule re-arms here; register-target-schedule keeps
+          ;; in-process retries idempotent via *active-target-schedules*.
+          (if (and (eq disposition :duplicate)
+                   (not (target-record-recurring-p
+                         (target-dispatch-envelope-record envelope))))
+              (return-from process-target-dispatch-envelope
+                (target-outcome :duplicate envelope))
+              (let ((schedule-result
+                      (register-target-schedule
+                       envelope dispatch-fn schedule-once-fn
+                       schedule-recurring-fn)))
+                (when (member disposition '(:created :resumed))
+                  (funcall update-fn
+                           (jsown:val acceptance "_id")
+                           (lambda (document)
+                             (setf (jsown:val document "status") "scheduled"
+                                   (jsown:val document "accepted_at") (star.documents:utc-now))
+                             document)))
+                (target-outcome
+                 (if (or (eq disposition :duplicate)
+                         (eq schedule-result :duplicate))
+                     :duplicate
+                     :accepted)
+                 envelope)))))
     (invalid-target-dispatch (condition)
       (target-outcome
        :invalid envelope

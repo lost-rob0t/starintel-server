@@ -203,7 +203,14 @@ signals consumer-transport-lost when the read path itself broke."
   (start-couchdb-inserts *sys*)
   (start-target-timer)
   (start-target-actor *sys*)
+  ;; Actor hooks complete registry population before persisted work is replayed.
   (nhooks:run-hook star:*actors-start-hook*)
+  ;; #360: durable recurring targets must survive restart.  Rehydrate the
+  ;; process-local schedule wheel from persisted target documents before
+  ;; ingest resumes; failing to rehydrate fails boot loudly instead of
+  ;; silently stopping all recurring collection.
+  (let ((summary (recover-persisted-targets)))
+    (log:info "Boot target rehydration: ~a" summary))
   *sys*)
 
 (defun stop-actors (&key (timeout-seconds 5))
