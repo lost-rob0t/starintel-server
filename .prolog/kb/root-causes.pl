@@ -166,3 +166,11 @@ deployment(server_image_360, 'PR #33 (92bc895) + PR #34 (c4e8c87) via forgejo; i
 verified_live(boot_rehydration_summary, '(LOADED 50 RECOVERED 0 DUPLICATES 0 LEASED 0 SKIPPED 50 INVALID 0) in star-server boot log; GET /api/v1/targets now returns 401 invalid_credential for anonymous callers instead of 403 unmapped:http-route').
 known_limitation(reddit_actor_pre_existing, 'starintel-pro-actors-reddit-1 restarts on STARINTEL_REDDIT_BACKEND=shreddit (invalid; expected arctic-shift|direct) - provider migration pending in pro-actors, pre-dates #360 deploy and blocks the deploy script actor gate, not the server').
 known_limitation(legacy_acceptance_only_targets, 'the 46 reddit recurring targets POSTed 2026-10-31 were acceptance-only (no standalone target doc) and still need the planned one-time reseed; targets POSTed after c4e8c87 are durable across restarts').
+
+%% --- steady-v2 reddit portfolio + paging/fingerprint follow-ups (2026-11-03) ---
+
+steady_portfolio(steady_v2, '251 recurring reddit targets via POST /api/v1/targets: r/all@300, 200 subs@1200, 50 profiles@7200; limit 100 rate 1; arctic-shift direct-only; idempotency steady-v2:*').
+fix(recovery_page_drain, 'query-persisted-target-documents drains all by_actor pages via (startkey, startkey_docid) cursor; query-view default limit 50 silently capped rehydration and listing (PR #35).').
+fix(storage_revision_fingerprint, 'recover-target-record strips _rev/rev before submit: standalone persistence added a storage revision the dispatch fingerprint treated as content change, conflicting every recovered recurring target with its own acceptance (252 INVALID live; PR #36).').
+verified_live(boot_rehydration_final, '(LOADED 3204 RECOVERED 251 DUPLICATES 1 LEASED 0 SKIPPED 2952 INVALID 0) at 467e1b8; GET /api/v1/targets?actor=reddit lists 251; 17 containers healthy').
+adhoc_live_lane, 'proxy (shreddit dsvc) reserved for ad hoc one-shot targets via options.backend=shreddit; documented in pro-actors docs/social-actors.org + .prolog/kb/reddit-backend-contract.pl (PR #165); blocked until dsvc egress provider migration lands'.
