@@ -73,7 +73,8 @@
    :query-parameters
    (list
     '(:name "actor" :required nil)
-    '(:name "tenant" :required nil))
+    '(:name "tenant" :required nil)
+    '(:name "limit" :required nil))
    :responses
    (append
     (list

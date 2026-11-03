@@ -222,7 +222,7 @@ legacy path parameter that must match the document dtype."
 
 (defun query-authorized-target-documents
     (client database actor tenant principal metadata
-     &key (query-fn #'query-view))
+     &key (query-fn #'query-view) (limit 1000))
   "Authorize and fetch target documents through a tenant+actor scoped view.
 
 Authorization runs before backend I/O.  Returned documents are checked against
@@ -246,6 +246,7 @@ otherwise the exact [tenant, actor] key is used."
                         "targets"
                         "by_tenant_actor"
                         :include-docs t
+                        :limit limit
                         :key (list tenant actor)
                         :reduce nil)
                (funcall query-fn
@@ -254,6 +255,7 @@ otherwise the exact [tenant, actor] key is used."
                         "targets"
                         "by_tenant_actor"
                         :include-docs t
+                        :limit limit
                         :reduce nil
                         :start-key (list tenant)
                         :end-key (list tenant (jsown:empty-object)))))
