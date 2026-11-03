@@ -1,5 +1,7 @@
 (in-package :star.frontends.http-api)
 
+(defparameter +authenticated-search-max-query-length+ 512)
+
 (defun route-policy-metadata (route method)
   (list :route route
         :method method
@@ -91,7 +93,13 @@ legacy path parameter that must match the document dtype."
 (defun handle-authorized-search-route
     (params &optional (route "/search"))
   (with-http-boundary ()
-    (let* ((q (require-query-string params "q"))
+    (let* ((q (let ((value (require-query-string params "q")))
+                (when (> (length value) +authenticated-search-max-query-length+)
+                  (signal-http-input-error
+                   400
+                   "search_query_too_long"
+                   "Search query exceeds the configured length limit"))
+                value))
            (limit (bounded-query-integer
                    params "limit" :default 25 :minimum 1))
            (dataset (query-value params "dataset"))
@@ -219,7 +227,9 @@ legacy path parameter that must match the document dtype."
 
 Authorization runs before backend I/O.  Returned documents are checked against
 TENANT again so a stale, poisoned, or incorrectly indexed backend response
-cannot widen the caller's requested tenant scope."
+cannot widen the caller's requested tenant scope.  A nil ACTOR lists the
+whole tenant through a bounded [tenant, <everything>] key range (#360);
+otherwise the exact [tenant, actor] key is used."
   (star.authorization:authorize!
    "targets:read"
    :principal principal
@@ -229,14 +239,24 @@ cannot widen the caller's requested tenant scope."
     :actor-name actor)
    :metadata metadata)
   (let* ((view
-           (funcall query-fn
-                    client
-                    database
-                    "targets"
-                    "by_tenant_actor"
-                    :include-docs t
-                    :key (list tenant actor)
-                    :reduce nil))
+           (if actor
+               (funcall query-fn
+                        client
+                        database
+                        "targets"
+                        "by_tenant_actor"
+                        :include-docs t
+                        :key (list tenant actor)
+                        :reduce nil)
+               (funcall query-fn
+                        client
+                        database
+                        "targets"
+                        "by_tenant_actor"
+                        :include-docs t
+                        :reduce nil
+                        :start-key (list tenant)
+                        :end-key (list tenant (jsown:empty-object)))))
          (rows (or (jsown:val-safe view "rows") nil))
          (documents
            (loop for row in rows

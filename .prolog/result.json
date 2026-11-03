@@ -1,14 +1,16 @@
 {
-  "checked_at": "2026-09-14T16:46:48Z",
-  "facts_sha256": "5c4d02de0705dacb9e6dc4f6bd6a54dba50140e75571a75792f5dbd771df114d",
-  "head": "51713d561b06a24f2954e8aa37a8339329c3a435",
+  "checked_at": "2026-11-03T00:15:19Z",
+  "facts_sha256": "348aaeec75ea1bed221996242579d5244f62ed942f6fbfa1968f6304f923d8f8",
+  "head": "55deeee3aa6ff7141279562dabba071c2feeb025",
   "reason": "verification passed",
-  "run_file": "run-51713d561b06a24f2954e8aa37a8339329c3a435.pl",
-  "run_sha256": "c2aad4a8e88f5a79152fb6966b8d96c174fc54998a0e24f8ff5196fa2910cc4f",
+  "run": "e834b9128d3947cfb8814accbc1ee556",
+  "run_file": "evidence.pl",
+  "run_sha256": "38cbeeaa2aeaffcc20f4c9c149313e414145c5772b1df49c323de362f722af63",
   "status": "pass",
-  "stderr_sha256": "a31921831b4af757a3fcf0c472fa0ffc4fb6eed40d0477af50d62f78c018057f",
+  "stderr_sha256": "3f58487f8b178faab8411ba0285a21d4387b34d17785b054fc75e9ddaa05d772",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "swipl_exit": 0,
-  "verify_sha256": "1a5c3a6812202233e38320bd2c9aec404f185b1f74164ef21759f1c66e233edb",
-  "worktree_digest": "84b032da066dbe02c94c9db660e6d64a9dfc15dc61d46d1534e9c011cadb4cf8"
+  "task": "360-target-rehydration",
+  "verify_sha256": "e78b5e80fcf0af76206366221d8471683f219d05c79fb6ae161b4e5f4d1414ab",
+  "worktree_digest": "1c1c2a34c2c3d472d941497bd6f29778e2857630b86d1ed25dcb63fb8a5ecc84"
 }

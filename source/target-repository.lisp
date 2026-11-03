@@ -14,8 +14,12 @@
            (if actors
                (funcall query-fn client database "targets" "by_actor"
                         :keys actors :include-docs t :reduce nil)
+               ;; Null-actor rows sort before every string key in CouchDB
+               ;; collation; bounding the scan at "" keeps boot recovery off
+               ;; actor-less documents (#360) instead of quarantining each
+               ;; one on every restart.
                (funcall query-fn client database "targets" "by_actor"
-                        :include-docs t :reduce nil)))
+                        :include-docs t :reduce nil :start-key "")))
          (rows
            (target-repository-sequence-list
             (jsown:val-safe response "rows"))))

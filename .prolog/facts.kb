@@ -1,4 +1,5 @@
-% Ground task/control facts for this worktree. Machine observations live in runs/run-<HEAD>.pl.
-task('reconcile-master').
-repo_state('51713d561b06a24f2954e8aa37a8339329c3a435', '3aa15b5ed6188b12fbb023553073499af80f4359d845777bcea9409000e243db').
+% Ground task/control facts. Evidence is isolated by task and run.
+task('360-target-rehydration').
+verification_context('360-target-rehydration', 'e834b9128d3947cfb8814accbc1ee556').
+repo_state('55deeee3aa6ff7141279562dabba071c2feeb025', '1c1c2a34c2c3d472d941497bd6f29778e2857630b86d1ed25dcb63fb8a5ecc84').
 research_required(false).

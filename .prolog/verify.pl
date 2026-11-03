@@ -2,14 +2,29 @@
 :- set_prolog_flag(unknown, error).
 :- use_module(library(plunit)).
 :- use_module(library(time)).
+:- use_module(library(lists)).
+:- dynamic machine_observation/8, machine_brave_search/7, requirement/2, claim/2.
+:- discontiguous machine_observation/8, machine_brave_search/7, requirement/2, claim/2.
 :- ensure_loaded('facts.kb').
 
 load_current_run :-
-    repo_state(Head, _),
-    atomic_list_concat(['runs/run-', Head, '.pl'], RunFile),
+    verification_context(_, Run),
+    atomic_list_concat(['runs/', Run, '/evidence.pl'], RunFile),
     ( exists_file(RunFile) -> ensure_loaded(RunFile) ; true ).
 
 :- load_current_run.
+
+% Compatibility views expose only the active task/run, never another journal.
+observation(Id, Command, Exit, Output, Head, Digest) :-
+    verification_context(Task, Run),
+    machine_observation(Task, Run, _, Command, _, _, Head, Digest),
+    findall(record(I, E, O),
+            machine_observation(Task, Run, I, Command, E, O, Head, Digest),
+            Records),
+    last(Records, record(Id, Exit, Output)).
+brave_search(Query, Result, Time, Head, Digest) :-
+    verification_context(Task, Run),
+    machine_brave_search(Task, Run, Query, Result, Time, Head, Digest).
 
 current_successful_observation :-
     repo_state(Head, Digest),
@@ -22,56 +37,55 @@ current_research_evidence :-
     repo_state(Head, Digest),
     brave_search(_, _, _, Head, Digest).
 
+% Closed executable bindings. Unsupported claims stay unknown.
+requirement_status(Id, Status, Evidence) :-
+    requirement_result(Id, Actual, Evidence), Status = Actual.
+
+requirement_result(Id, conflict, none) :-
+    requirement(Id, A), requirement(Id, B), A \== B, !.
+requirement_result(Id, Status, Evidence) :-
+    requirement(Id, command(Argv)),
+    !,
+    repo_state(Head, Digest),
+    ( observation(Observation, command(Argv), exit(Exit), Output, Head, Digest)
+    -> ( Exit =:= 0 -> Status = verified ; Status = failed ),
+       Evidence = evidence(Observation, Output, Head, Digest)
+    ; observation(_, command(Argv), _, _, _, _)
+    -> Status = stale, Evidence = none
+    ; Status = unknown, Evidence = none ).
+requirement_result(_, unknown, none).
+
+claim_status(Id, Status, Evidence) :-
+    claim_result(Id, Actual, Evidence), Status = Actual.
+
+claim_result(Id, conflict, none) :-
+    claim(Id, A), claim(Id, B), A \== B, !.
+claim_result(Id, Status, Evidence) :-
+    claim(Id, requirement(Requirement)),
+    !, requirement_status(Requirement, Status, Evidence).
+claim_result(_, unknown, none).
+
+current_failed_observation :-
+    repo_state(Head, Digest),
+    observation(_, _, exit(Exit), _, Head, Digest),
+    Exit =\= 0.
+
 base_complete :-
     task(_),
+    \+ current_failed_observation,
+    forall(requirement(Id, _), (requirement_status(Id, RequirementStatus, _), RequirementStatus == verified)),
+    forall(claim(Id, _), (claim_status(Id, ClaimStatus, _), ClaimStatus == verified)),
     current_successful_observation,
     current_research_evidence.
 
 % Extend this predicate with task-specific requirements and invariants.
-
-% RED evidence: verbatim machine fact copied from
-% runs/run-1599100ec1c9267d773573fdd9d679d00791106c.pl (observe id ce461618f6648445).
-% Defined here as a fact instead of ensure_loaded/1 because consulting that
-% file would REPLACE the observation/6 clauses of the current run file
-% (consult redefinition semantics) and wipe the current-head GREEN evidence.
-red_observation_fact(
-    observation('ce461618f6648445', command(['env', 'COUCHDB_USER=admin', 'COUCHDB_PASSWORD_FILE=/home/unseen/starintel/starintel-server/secrets/couchdb_password', 'nix', 'run', '.#star-integration-tests']),
-                exit(1), 'f66d58fe4c74e74b7683880fb7ade01cec8583c793851eb993215aab496664b2', '1599100ec1c9267d773573fdd9d679d00791106c', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')).
-
-red_recorded_at_merge_head :-
-    red_observation_fact(_).
-
-% GREEN: full integration suite passes at the fixed head.
-green_suite_at_fixed_head :-
-    repo_state(Head, Digest),
-    observation(_, command(['env',_,_,'nix','run','.#star-integration-tests']),
-                exit(0), _, Head, Digest).
-
-% Mirror master fast-forwarded to canonical (no force anywhere).
-mirror_master_fast_forwarded :-
-    observation(_, command(['git','push','github',
-                            'refs/remotes/origin/master:refs/heads/master']),
-                exit(0), _, _, _).
-
-% No recorded command performed any force push.
-no_forced_pushes :-
-    \+ ( observation(_, command(Args), _, _, _, _),
-         member(A, Args),
-         ( sub_atom(A, 0, 1, _, '+')
-         ; sub_atom(A, _, _, _, '--force')
-         ; sub_atom(A, _, _, _, 'force-with-lease') ) ).
-
 complete :-
-    base_complete,
-    red_recorded_at_merge_head,
-    green_suite_at_fixed_head,
-    mirror_master_fast_forwarded,
-    no_forced_pushes.
+    base_complete.
 
 :- begin_tests(workspace_verification).
 
 test(complete) :-
-    complete.
+    once(complete).
 
 :- end_tests(workspace_verification).
 

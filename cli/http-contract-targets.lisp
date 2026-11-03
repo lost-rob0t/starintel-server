@@ -31,7 +31,7 @@
   :client-name "target-create"
   :method :post
   :path "/api/v1/targets"
-  :summary "Create or safely retry a canonical StarIntel target"
+  :summary "Create or safely retry a canonical StarIntel target; non-transient targets are durable: the canonical target document and its acceptance are persisted so recurring collection survives a server restart"
   :tags '("targets")
   :authority :authenticated
   :scopes '("targets:dispatch")
@@ -44,3 +44,39 @@
     (response 200 "Equivalent target request already accepted."
               +target-create-receipt-schema+))
    (standard-errors))))
+(defparameter +target-list-response-schema+
+  (object-schema
+   (list
+    (cons "status" (string-schema))
+    (cons "data"
+          (object-schema
+           (list
+            (cons "targets" (array-schema (generic-object-schema)))
+            (cons "count" (integer-schema :minimum 0)))
+           :required '("targets" "count")
+           :additional-properties nil)))
+   :required '("status" "data")
+   :additional-properties nil
+   :description "Tenant-scoped list of persisted target documents."))
+
+;; #360: read-only listing of durable targets for authorized principals.
+(upsert-http-operation
+  (make-http-operation
+   :id "targets.list"
+   :client-name "target-list"
+   :method :get
+   :path "/api/v1/targets"
+   :summary "List persisted targets in the caller's tenant (optional actor filter)"
+   :tags '("targets")
+   :authority :authenticated
+   :scopes '("targets:read")
+   :query-parameters
+   (list
+    '(:name "actor" :required nil)
+    '(:name "tenant" :required nil))
+   :responses
+   (append
+    (list
+     (response 200 "Persisted targets for the authorized tenant."
+               +target-list-response-schema+))
+    (standard-errors))))

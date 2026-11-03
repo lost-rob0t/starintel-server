@@ -545,3 +545,119 @@
           (setf (symbol-function lookup-symbol) original-lookup
                 (symbol-function accept-symbol) original-accept
                 (symbol-function 'star.actors:publish) original-publish))))))
+
+;; issue #360: a durable acceptance must re-arm the process-local wheel for
+;; recurring targets after a restart; the durable :duplicate disposition is
+;; the post-restart state, not an in-process retry.
+(defstruct restart-simulation
+  (stored nil)
+  (creates 0)
+  (updates 0)
+  (recurring-calls 0)
+  (once-calls 0))
+
+(defun make-restart-simulation-record (&key recurring-p)
+  (let* ((request (make-v1-target-request :delay 60 :recurring recurring-p
+                                          :idempotency-key "restart-simulation"))
+         (principal "human:alice")
+         (document (star.frontends.http-api::target-v1-document-from-request
+                    request principal)))
+    (star.actors:parse-target-record document)))
+
+(defun accept-with-restart-simulation (record state)
+  (star.actors:accept-target-record
+   record
+   :destination
+   (star.actors::make-target-destination-handle
+    :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")
+   :persist-fn
+   (lambda (desired equivalent-p)
+     (with-accessors ((stored restart-simulation-stored)) state
+       (cond ((null stored)
+              (incf (restart-simulation-creates state))
+              (setf stored desired)
+              (values stored :created))
+             ((funcall equivalent-p stored desired)
+              (values stored :duplicate))
+             (t (values stored :conflict)))))
+   :update-fn
+   (lambda (id updater)
+     (declare (ignore id))
+     (incf (restart-simulation-updates state))
+     (setf (restart-simulation-stored state)
+           (funcall updater (restart-simulation-stored state))))
+   :dispatch-fn (lambda (envelope) (declare (ignore envelope)) t)
+   :schedule-once-fn
+   (lambda (&rest args)
+     (declare (ignore args))
+     (incf (restart-simulation-once-calls state)))
+   :schedule-recurring-fn
+   (lambda (&rest args)
+     (declare (ignore args))
+     (incf (restart-simulation-recurring-calls state)))))
+
+(defun simulate-target-process-restart ()
+  "Drop all process-local target schedule memory; durable state survives."
+  (setf star.actors::*active-target-schedules* (make-hash-table :test #'equal)
+        star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal)))
+
+(test recurring-acceptance-re-arms-schedule-after-simulated-restart
+  (let* ((record (make-restart-simulation-record :recurring-p t))
+         (schedule-id (star.actors::target-record-schedule-id record))
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+         (star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal))
+         (state (make-restart-simulation)))
+    ;; Initial acceptance: durable acceptance created, wheel armed once.
+    (is (eq :accepted
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 1 (restart-simulation-recurring-calls state)))
+    (is-true (gethash schedule-id star.actors::*active-target-schedules*))
+    (is (string= "scheduled"
+                 (jsown:val (restart-simulation-stored state) "status")))
+    ;; Simulated restart: process-local schedule memory is gone, the durable
+    ;; acceptance (status "scheduled") is all that survives.
+    (simulate-target-process-restart)
+    (is (eq :duplicate
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 2 (restart-simulation-recurring-calls state))
+        "recurring schedule must re-arm after restart")
+    (is-true (gethash schedule-id star.actors::*active-target-schedules*)
+             "re-armed schedule must be active again")
+    (is (= 1 (restart-simulation-creates state))
+        "durable acceptance must not be recreated")
+    (is (= 1 (restart-simulation-updates state))
+        "restart rehydration must not rewrite accepted_at")))
+
+(test one-shot-acceptance-duplicate-stays-no-op-after-restart
+  (let* ((record (make-restart-simulation-record :recurring-p nil))
+         (schedule-id (star.actors::target-record-schedule-id record))
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+         (star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal))
+         (state (make-restart-simulation)))
+    (is (eq :accepted
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 1 (restart-simulation-once-calls state)))
+    (simulate-target-process-restart)
+    (is (eq :duplicate
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 1 (restart-simulation-once-calls state))
+        "one-shot targets must not re-dispatch on restart")
+    (is-false (gethash schedule-id star.actors::*active-target-schedules*))))
+
+;; issue #360: GET /api/v1/targets must be a mapped read capability instead
+;; of an unmapped-route 403.
+(test v1-target-list-is-a-readonly-targets-read-capability
+  (is (string= "targets:read"
+               (star.frontends.http-api::route-action :get "/api/v1/targets")))
+  (is (string= "targets:dispatch"
+               (star.frontends.http-api::route-action :post "/api/v1/targets")))
+  (let ((operation (star.http.contract:find-http-operation "targets.list")))
+    (is (eq :get (star.http.contract:http-operation-method operation)))
+    (is (string= "/api/v1/targets"
+                 (star.http.contract:http-operation-path operation)))
+    (is (equal '("targets:read")
+               (star.http.contract:http-operation-scopes operation)))))

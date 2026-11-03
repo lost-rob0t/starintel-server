@@ -6,7 +6,9 @@
   (setf *target-v1-base-route-action* (symbol-function 'route-action)))
 
 (defun route-action (method path)
-  (if (and (eq method :post)
-           (string= path +target-v1-path+))
-      "targets:dispatch"
+  (if (string= path +target-v1-path+)
+      (case method
+        (:post "targets:dispatch")
+        (:get "targets:read")
+        (otherwise nil))
       (funcall *target-v1-base-route-action* method path)))

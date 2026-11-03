@@ -5,6 +5,50 @@
 
 (in-suite http-auth-tests)
 
+(test authenticated-search-query-length-is-bounded-before-query-work
+  ;; Exercise the mounted authenticated handlers without a database. Reaching
+  ;; the query scoper is the sentinel: the oversized request must stop earlier.
+  (let* ((symbol 'star.authorization:authorized-search-query)
+         (original (symbol-function symbol))
+         (calls 0))
+    (unwind-protect
+         (progn
+           (setf (symbol-function symbol)
+                 (lambda (&rest args)
+                   (declare (ignore args))
+                   (incf calls)
+                   (star.frontends.http-api::signal-http-input-error
+                    400 "probe_query_reached" "Test query sentinel")))
+           (dolist (path '("/search" "/api/v1/documents/search"))
+             (dolist (size '(512 513))
+               (setf calls 0)
+               (let* ((response
+                        (lack.component:call
+                         star.frontends.http-api:*app*
+                         (list :request-method :get
+                               :path-info path
+                               :url-scheme "http"
+                               :server-name "127.0.0.1"
+                               :server-port 5000
+                               :remote-addr "127.0.0.1"
+                               :headers (make-hash-table :test #'equal)
+                               :query-string
+                               (format nil "q=~a"
+                                       (make-string size :initial-element #\a)))))
+                      (body (third response))
+                      (parsed (jsown:parse
+                               (if (consp body)
+                                   (apply #'concatenate 'string body)
+                                   body))))
+                 (is (= 400 (first response)))
+                 (is (= (if (= size 512) 1 0) calls))
+                 (is (string=
+                      (if (= size 512)
+                          "probe_query_reached"
+                          "search_query_too_long")
+                      (jsown:val parsed "code")))))))
+      (setf (symbol-function symbol) original))))
+
 (defun captured-authentication-code (thunk)
   (handler-case
       (progn
