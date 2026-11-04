@@ -49,3 +49,44 @@ invariant(readiness_is_consumer_aware,
 consumer-running-p; /health and /ready return 503 otherwise. Honesty
 exists at the HTTP layer; recovery does not (Docker does not restart
 unhealthy containers) - that is why in-process reconnect is required.").
+
+% Live incident 2026-11-03/04 (issue #37 comment 6623886706): all four
+% documents-ingest workers terminally stopped after CouchDB I/O timeouts
+% on unsettled deliveries (settlement path). Post-#357 image; the stop is
+% per the approved contract. Queue sat at 0 consumers ~23h while the
+% watchlist actor published ~4.6GB; backlog reached 8,826,348.
+root_cause(settlement_stop_zero_consumers_23h, no_supervised_restart_after_terminal_stop,
+    "run-consumer correctly ends in :stopped for settlement-path failures
+(downstream store I/O timeout mid-delivery, stop-for-redelivery), and the
+#357 transport reconnect intentionally does not cover them. Nothing ever
+restarts a terminally-stopped worker: runtime-ready-p honestly reports
+503/unhealthy, but Docker never restarts an unhealthy container and the
+HTTP plane stays up, so ingest stays at 0 consumers until a manual
+container restart. A transient CouchDB stall therefore becomes a
+day-scale outage with an unbounded queue backlog.").
+
+invariant(terminal_stops_need_bounded_supervised_restart,
+    "A consumer worker that ends in :stopped after a settlement/downstream
+failure must be restarted by bounded supervised backoff (reusing the
+stream retry policy) unless the runtime itself is stopping; the
+stop-for-redelivery contract governs the DELIVERY, not the lifetime of
+the worker. Until that exists, the documented recovery op is:
+ssh starintel 'docker restart starintel-star-server-1' (operations.org).
+Supervised restart remains gated on issue #37 operator implementation
+approval; the 2026-10-30 approval covered only transport reconnect.").
+
+invariant(quarantine_grows_during_backlog_drain,
+    "When a multi-million-message documents.ingest backlog finally drains,
+starintel-quarantine grows as the poison fraction dead-letters
+(~19% of processed in the 2026-11-04 first window: 139,881 -> 145,362).
+Quarantine has 0 consumers by design, so large drains need a follow-up
+operator review/replay decision; a growing quarantine during drain is
+expected, not a new consumer outage.").
+
+method(monitor_backlog_drain,
+    "After restoring consumers, sample rabbitmqctl list_queues twice and
+compare messages_ready (observed net drain 1.3k-11.9k msgs/min with 4
+consumers, ~800 steady unacked). Watch docker logs for 'stopped after
+unsettled delivery' recurrences: a repeat of that line means the CouchDB
+stall returned and the drain will silently stall again until the
+supervised-restart slice ships.").
