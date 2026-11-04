@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "starintel-web-actor"
+version = "0.1.0"
+description = "Extensible Docker-first website actors for StarIntel"
+requires-python = ">=3.12"
+dependencies = [
+  "aio-pika>=9.5.5,<10",
+  "beautifulsoup4>=4.13,<5",
+  "httpx[brotli,http2]>=0.28,<1",
+  "playwright==1.62.0",
+  "typer>=0.16,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<9", "pytest-asyncio>=1.1,<2", "ruff>=0.12,<1", "mypy>=1.17,<2"]
+
+[project.scripts]
+starintel-web-actor = "starintel_web_actor.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/starintel_web_actor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["starintel_web_actor"]
