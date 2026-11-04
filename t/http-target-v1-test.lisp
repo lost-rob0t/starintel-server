@@ -897,6 +897,27 @@
     (is (string= "invalid_target_options"
                  (star.frontends.http-api:http-input-error-code condition)))))
 
+(test v1-target-authorized-save-authorizes-then-persists
+  ;; Regression: the authorization decision must be bound (dynamic LET),
+  ;; not called — the wiring once shipped as a bare function call to the
+  ;; special variable and 500'd on every live PATCH.
+  (let* ((candidate (make-v1-persisted-target))
+         (events nil)
+         (star.auth:*request-security-context*
+           (star.auth::%make-request-security-context
+            :principal
+            (star.auth::%make-request-principal
+             :id "operator" :type "administrator"
+             :scopes (list "admin" "tenant:*" "dataset:*" "actor:*" "target:*")
+             :credential-id "credential-operator"))))
+      (star.frontends.http-api::target-v1-authorized-save
+       "fake-client" "fake-db" candidate
+       :save-fn (lambda (client database document)
+                  (declare (ignore client database))
+                  (push :saved events)
+                  document))
+    (is (equal '(:saved) events))))
+
 (test v1-target-apply-options-update-conflict-budget-is-409
   (let ((condition
           (capture-http-input-error
