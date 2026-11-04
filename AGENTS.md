@@ -2,6 +2,28 @@
 
 This repository is worked **issue-first**. Do not invent a roadmap while an issue already owns the work.
 
+## Shared-rule ownership and Zara isolation
+
+The StarIntel server is product-independent. Reusable StarIntel domain and
+situation/SITREP decision rules (temporal/spatial inference, event correlation,
+source corroboration, contradictions, severity, priority and report eligibility)
+are owned exclusively by `starintel-labs/star-kb`. Consume their bounded,
+versioned interfaces; do not create duplicate server-side Lisp/Python/Prolog
+rule implementations. Server-local authorization, schema validation,
+transport, leases, scheduling, durable ingestion and projection mechanics remain
+server responsibilities.
+
+Zara is not a StarIntel runtime or build dependency. Never add native Zara
+modules, assistant/UI code, Zara-specific actors or direct Zara imports here.
+An optional Zara consumer integrates from a **Zara-scoped repository** through
+ordinary authorized StarIntel contracts; the dependency must never reverse.
+
+Canonical cross-repository guidance is the `star-kb` policy at
+`starintel-labs/star-kb/docs/situation-rule-ownership.md`
+(initial draft: https://github.com/starintel-labs/star-kb/pull/18).
+Refer to the shared rule contract rather than copying its implementation or
+maintaining a competing rule catalogue.
+
 ## Authority for an issue run
 
 For `/issue N`, task-specific authority is intentionally bounded to:
