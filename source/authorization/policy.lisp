@@ -12,6 +12,7 @@
     "actor-credentials:read"
     "targets:read"
     "targets:dispatch"
+    "targets:update"
     "targets:lease"
     "targets:force-release"
     "events:write"

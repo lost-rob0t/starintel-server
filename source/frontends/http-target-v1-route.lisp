@@ -126,5 +126,46 @@
                   data))
           (jsown:to-json response))))))
 
+(defun target-v1-authorized-save
+    (client database candidate &key (save-fn #'star.databases.couchdb:couchdb-save-target-document))
+  "Authorize one mutated target document, then persist it (#59).
+
+Mirrors the create route: the concrete mutated resource is authorized
+before the durable write, and the decision is recorded on
+=*CURRENT-AUTHORIZATION-DECISION*= for the response boundary."
+  (let ((star.authorization:*current-authorization-decision*
+          (star.authorization:authorize-document!
+           "targets:update" candidate
+           :principal (current-policy-principal)
+           :actor-name (jsown:val candidate "actor")
+           :metadata (route-policy-metadata "/api/v1/targets/:id" "PATCH"))))
+    (declare (ignorable star.authorization:*current-authorization-decision*))
+    (funcall save-fn client database candidate)))
+
+(defun handle-v1-target-update-route (params)
+  (with-http-boundary ()
+    (let* ((target-id (require-path-string params "id"))
+           (request (require-json-object (parse-json-request))))
+      (couchdb-handler (client *couchdb-pool*)
+        ;; Single JSON-string response body: the receipt object itself (or
+        ;; the second return value) would flow raw into the middleware and
+        ;; crash the response boundary.
+        (jsown:to-json
+         (star.frontends.http-api::target-v1-apply-options-update
+          target-id request
+          :load-fn (lambda (id)
+                     (handler-case
+                         (jsown:with-injective-reader
+                           (jsown:parse
+                            (cl-couch:get-document
+                             client star:*couchdb-default-database* id)))
+                       (dex:http-request-not-found () nil)))
+          :save-fn (lambda (candidate)
+                     (target-v1-authorized-save
+                     client star:*couchdb-default-database* candidate))))))))
+
+(setf (ningle:route *app* "/api/v1/targets/:id" :method :patch)
+      #'handle-v1-target-update-route)
+
 (setf (ningle:route *app* +target-v1-path+ :method :get)
       #'handle-v1-target-list-route)

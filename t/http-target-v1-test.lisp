@@ -1,7 +1,7 @@
 (in-package :star-server-tests)
 
 (def-suite http-target-v1-tests
-  :description "Versioned target creation, authorization and idempotency contract")
+  :description "Versioned target creation, update, authorization and idempotency contract")
 
 (in-suite http-target-v1-tests)
 
@@ -754,3 +754,184 @@
                        "recovery must submit the record without its storage revision"))
         (setf (symbol-function 'star.actors:submit-target)
               original-submit)))))
+
+;;; targets.update (#59 narrow slice): contracted whole-object options
+;;; replacement on one persisted target.  Schedule semantics stay with the
+;;; existing recovery authority: the persisted change is applied by boot
+;;; rehydration (#360); the live wheel keeps its captured record.
+
+(defun make-v1-persisted-target
+    (&key (id "target:0123456789abcdef")
+          (actor "reddit")
+          (subject "pics")
+          (dataset "reddit")
+          (delay 1200)
+          (recurring t)
+          (options
+            (jsown:new-js
+              ("target_type" "subreddit")
+              ("sort" "new")
+              ("limit" 100)
+              ("rate" 1))))
+  (jsown:new-js
+    ("_id" id)
+    ("_rev" "1-abc")
+    ("id" id)
+    ("dataset" dataset)
+    ("dtype" "target")
+    ("schemaVersion" (starintel.canonical:schema-version))
+    ("actor" actor)
+    ("target" subject)
+    ("delay" delay)
+    ("recurring" (if recurring :true :false))
+    ("options" options)
+    ("createdAt" 1793678270)
+    ("updatedAt" 1793678270)
+    ("extensions"
+      (jsown:new-js
+        ("idempotency_key" "deadbeef")
+        ("submitted_by" "cafe")
+        ("schedule_id" "target-request:deadbeef")))))
+
+(test v1-target-update-is-a-contracted-target-capability
+  (is (string= "targets:update"
+               (star.frontends.http-api::route-action
+                :patch "/api/v1/targets/target:0123456789abcdef")))
+  (is-false (star.frontends.http-api::route-action
+             :patch "/api/v1/targets"))
+  (let ((operation
+          (star.http.contract:find-http-operation "targets.update")))
+    (is (eq :patch (star.http.contract:http-operation-method operation)))
+    (is (string= "/api/v1/targets/:id"
+                 (star.http.contract:http-operation-path operation)))
+    (is (equal '("targets:update")
+               (star.http.contract:http-operation-scopes operation)))))
+
+(test v1-target-update-options-replaces-wholesale-and-preserves-identity
+  (let* ((existing (make-v1-persisted-target))
+         (replacement
+           (jsown:new-js
+             ("backend" "arctic-shift")
+             ("target_type" "subreddit")))
+         (updated
+           (star.frontends.http-api::target-v1-update-options
+            existing replacement)))
+    (is (string= "arctic-shift"
+                 (jsown:val (jsown:val updated "options") "backend")))
+    (is-false (jsown:keyp (jsown:val updated "options") "limit")
+              "options replacement is whole-object, not a merge")
+    (is (string= (jsown:val existing "_id") (jsown:val updated "_id")))
+    (is (string= (jsown:val existing "_rev") (jsown:val updated "_rev")))
+    (is (string= (jsown:val existing "id") (jsown:val updated "id")))
+    (is (string= (jsown:val existing "actor") (jsown:val updated "actor")))
+    (is (string= (jsown:val existing "target") (jsown:val updated "target")))
+    (is (= (jsown:val existing "delay") (jsown:val updated "delay")))
+    (is (eq (jsown:val existing "recurring") (jsown:val updated "recurring")))
+    (is (= (jsown:val existing "createdAt") (jsown:val updated "createdAt")))
+    (is (<= (jsown:val existing "updatedAt") (jsown:val updated "updatedAt"))
+        "updatedAt must advance")))
+
+(defun make-v1-update-request
+    (&key (options (jsown:new-js ("backend" "arctic-shift"))))
+  (jsown:new-js ("options" options)))
+
+(test v1-target-apply-options-update-persists-validated-replacement
+  (let* ((existing (make-v1-persisted-target))
+         (saved nil)
+         (result
+           (star.frontends.http-api::target-v1-apply-options-update
+            (jsown:val existing "_id")
+            (make-v1-update-request)
+            :load-fn (lambda (id)
+                       (is (string= (jsown:val existing "_id") id))
+                       existing)
+            :save-fn (lambda (candidate)
+                       (setf saved candidate)
+                       candidate))))
+    (is (string= "ok" (jsown:val result "status")))
+    (is (string= (jsown:val existing "_id") (jsown:val result "target_id")))
+    (is (stringp (jsown:val result "correlation_id")))
+    (is (string= "arctic-shift"
+                 (jsown:val (jsown:val saved "options") "backend")))))
+
+(test v1-target-apply-options-update-unknown-target-is-404
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "target:missing"
+              (make-v1-update-request)
+              :load-fn (lambda (id) (declare (ignore id)) nil)
+              :save-fn (lambda (candidate) (declare (ignore candidate)) nil))))))
+    (is (typep condition 'star.frontends.http-api:http-input-error))
+    (is (= 404 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "target_not_found"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+
+(test v1-target-apply-options-update-rejects-non-target-documents
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "person:abc"
+              (make-v1-update-request)
+              :load-fn (lambda (id)
+                         (jsown:new-js
+                           ("_id" id) ("dtype" "person")))
+              :save-fn (lambda (candidate) (declare (ignore candidate)) nil))))))
+    (is (= 409 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "target_not_a_target"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+
+(test v1-target-apply-options-update-requires-options-object
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "target:abc"
+              (jsown:new-js ("options" "arctic-shift"))
+              :load-fn (lambda (id)
+                         (make-v1-persisted-target :id id))
+              :save-fn (lambda (candidate) (declare (ignore candidate)) nil))))))
+    (is (= 422 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "invalid_target_options"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+
+(test v1-target-authorized-save-authorizes-then-persists
+  ;; Regression: the authorization decision must be bound (dynamic LET),
+  ;; not called — the wiring once shipped as a bare function call to the
+  ;; special variable and 500'd on every live PATCH.
+  (let* ((candidate (make-v1-persisted-target))
+         (events nil)
+         (star.auth:*request-security-context*
+           (star.auth::%make-request-security-context
+            :principal
+            (star.auth::%make-request-principal
+             :id "operator" :type "administrator"
+             :scopes (list "admin" "tenant:*" "dataset:*" "actor:*" "target:*")
+             :credential-id "credential-operator"))))
+      (star.frontends.http-api::target-v1-authorized-save
+       "fake-client" "fake-db" candidate
+       :save-fn (lambda (client database document)
+                  (declare (ignore client database))
+                  (push :saved events)
+                  document))
+    (is (equal '(:saved) events))))
+
+(test v1-target-apply-options-update-conflict-budget-is-409
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "target:abc"
+              (make-v1-update-request)
+              :load-fn (lambda (id)
+                         (make-v1-persisted-target :id id))
+              :save-fn (lambda (candidate)
+                         (declare (ignore candidate))
+                         (error 'star.databases.couchdb:outbox-store-conflict))
+              :max-attempts 2)))))
+    (is (= 409 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "target_update_conflict"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+

@@ -274,6 +274,29 @@
          :principal principal
          :resource resource)))))
 
+(test targets-update-is-a-grantable-capability
+  (let ((operator
+          (make-policy-principal
+           "target-operator"
+           '("targets:update"
+             "tenant:default"
+             "dataset:dataset-a"
+             "actor:reddit")
+           "operator"))
+        (resource
+          (policy-resource :dataset "dataset-a" :actor "reddit")))
+    (is-true
+     (star.authorization:authorize!
+      "targets:update" :principal operator :resource resource))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorize!
+       "targets:update"
+       :principal
+       (make-policy-principal
+        "reader"
+        '("targets:read" "tenant:default" "dataset:dataset-a"))
+       :resource resource))))
+
 (test ordinary-target-operator-cannot-force-release-or-administer-credentials
   (let ((principal
           (make-policy-principal
