@@ -67,12 +67,19 @@
   (incf (test-stream-settlement-attempts stream))
   (error 'test-rabbitmq-server-error))
 
-(defclass test-failed-settlement-consumer (star.consumers:consumer) ())
+(defclass test-failed-settlement-consumer (star.consumers:consumer)
+  ((read-once-p :initform nil :accessor test-consumer-read-once-p)))
 
 (defmethod star.consumers:consumer-read
     ((consumer test-failed-settlement-consumer))
-  (declare (ignore consumer))
-  "delivery")
+  ;; One delivery, then a graceful end: supervision must close the stream
+  ;; for redelivery of the failed settlement and exit on the quiet reader
+  ;; instead of dying permanently after the first failure.
+  (if (test-consumer-read-once-p consumer)
+      (signal 'end-of-file)
+      (progn
+        (setf (test-consumer-read-once-p consumer) t)
+        "delivery")))
 
 (test concurrent-server-ulids-remain-distinct
   ;; The pinned cms-ulid generator has one process-wide mutable LAST value.
@@ -156,7 +163,9 @@
                     :fn (lambda (self delivery)
                           (declare (ignore self delivery))
                           (star.consumers:settlement-reject)))))
-    (star.consumers:run-consumer consumer)
+    ;; Superved restart backoff must not sleep in tests (issue #38).
+    (let ((star.consumers::*retry-sleep-function* (nosleep-counting)))
+      (star.consumers:run-consumer consumer))
     (is (test-stream-closed-p stream))
     (is (= 1 (test-stream-settlement-attempts stream)))
     (is (= 1 (star.consumers:consumer-unsettled consumer)))

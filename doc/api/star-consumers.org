@@ -410,7 +410,13 @@ Broker-forced connection closure reconnects with the stream policy's capped
 backoff instead of silently leaving the queue unconsumed (issue #37 live
 incident 2026-10-30: documents.ingest/targets/update sat at 0 consumers for
 ~25 minutes after a broker restart). Reconnect is fenced by :stopping.
-Non-transport failures keep the stop-for-redelivery contract.
+Non-transport failures keep the stop-for-redelivery contract: the delivery
+stays unsettled for redelivery, and supervision restarts the worker with
+the same capped backoff instead of permanently zeroing the lane (issue #38
+live incident 2026-11-03/04: settlement-path stops left documents.ingest at
+0 consumers for ~23h while producers stacked 8.8M messages). Readiness
+honestly reports not-running while a stopped worker waits out its backoff.
+A worker exit on :eof is graceful and is never restarted.
 *** settlement-ack
 :PROPERTIES:
 :KIND: fn

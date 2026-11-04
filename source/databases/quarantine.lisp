@@ -1,15 +1,26 @@
 (in-package :star.databases.couchdb)
 
 (defun couchdb-save-quarantine-record (client database record)
-  "Persist one server-internal quarantine record before Rabbit settlement."
-  (let* ((response
-           (jsown:parse
-            (cl-couch:create-document
-             client database (jsown:to-json record))))
-         (saved (clone-outbox-json record)))
-    (when (outbox-object-has-key-p response "rev")
-      (setf (jsown:val saved "_rev") (jsown:val response "rev")))
-    saved))
+  "Persist one server-internal quarantine record before Rabbit settlement.
+
+A conflict means a record with this id already exists: a duplicate
+quarantine of a redelivered failure. Return the existing record so
+settlement stays idempotent instead of killing the consumer (issue #38:
+raw couch 409s escaping quarantine persistence stopped documents-ingest
+workers mid-drain)."
+  (handler-case
+      (let* ((response
+               (jsown:parse
+                (cl-couch:create-document
+                 client database (jsown:to-json record))))
+             (saved (clone-outbox-json record)))
+        (when (outbox-object-has-key-p response "rev")
+          (setf (jsown:val saved "_rev") (jsown:val response "rev")))
+        saved)
+    (dexador:http-request-conflict ()
+      (jsown:with-injective-reader
+        (jsown:parse
+         (cl-couch:get-document client database (jsown:val record "_id")))))))
 
 (defun couchdb-get-quarantine-record (client database quarantine-id)
   "Load one quarantine record by id."

@@ -256,11 +256,20 @@
 (defun prepare-outbox-mutation (existing incoming operation)
   "Prepare one atomic document revision containing document and pending event state.
 
-Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
+Returns STATE, ENTRY, and either :CREATED or :DUPLICATE.
+
+A :new mutation for a document that already exists is a re-observation from
+recurring collection, not a conflict (issue #38: 825k+ quarantined
+re-observations drained the ingest lane): it is applied as an :updated
+mutation publishing documents.updated.*, while its ledger key stays derived
+from the incoming :new content so identical redeliveries remain idempotent
+duplicates."
   (let* ((document (public-document-copy incoming))
          (document-id (jsown:val document "_id"))
          (mutation-id (document-mutation-id operation document))
-         (content-hash (mutation-content-hash operation document)))
+         (content-hash (mutation-content-hash operation document))
+         (event-operation
+           (if (and existing (eq operation :new)) :updated operation)))
     (when (and (eq operation :updated)
                (null existing))
       (error 'missing-document-for-update
@@ -281,12 +290,7 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
               (error "Mutation ledger contains ~a without an outbox entry"
                      mutation-id))
             (return-from prepare-outbox-mutation
-              (values existing entry :duplicate)))))
-      (when (eq operation :new)
-        (error 'mutation-conflict
-               :mutation-id mutation-id
-               :document-id document-id
-               :reason "new-document mutation conflicts with an existing document")))
+              (values existing entry :duplicate))))))
     (when existing
       (setf (jsown:val document "_rev")
             (jsown:val existing "_rev")))
@@ -296,7 +300,7 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
               document
               mutation-id
               content-hash
-              operation
+              event-operation
               sequence)))
       (values
        (merge-server-state

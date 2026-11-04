@@ -246,6 +246,12 @@ Apply one outbox mutation to the document store.
  STAR.DATABASES.COUCHDB::RECORD))
 #+end_src
 Persist one server-internal quarantine record before Rabbit settlement.
+
+A conflict means a record with this id already exists: a duplicate
+quarantine of a redelivered failure. Return the existing record so
+settlement stays idempotent instead of killing the consumer (issue #38:
+raw couch 409s escaping quarantine persistence stopped documents-ingest
+workers mid-drain).
 *** couchdb-save-target-acceptance
 :PROPERTIES:
 :KIND: fn
@@ -849,6 +855,13 @@ Return a new insert candidate with caller `_rev` removed.
 Prepare one atomic document revision containing document and pending event state.
 
 Returns STATE, ENTRY, and either :CREATED or :DUPLICATE.
+
+A :new mutation for a document that already exists is a re-observation from
+recurring collection, not a conflict (issue #38: 825k+ quarantined
+re-observations drained the ingest lane): it is applied as an :updated
+mutation publishing documents.updated.*, while its ledger key stays derived
+from the incoming :new content so identical redeliveries remain idempotent
+duplicates.
 *** process-outbox-mutation
 :PROPERTIES:
 :KIND: fn
