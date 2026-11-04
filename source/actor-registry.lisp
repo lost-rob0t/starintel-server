@@ -4,6 +4,8 @@
 (defparameter +actor-runtime-statuses+
   '("online" "declared-offline" "degraded" "unavailable"))
 (defparameter +actor-contract-keys+ '("targets" "documents" "messages"))
+(defparameter +actor-option-keys+ '("key" "description" "required" "schema"))
+(defparameter +actor-option-required-keys+ '("key" "description" "required"))
 (defparameter +actor-manifest-max-values+ 128)
 (defparameter +actor-manifest-max-string-length+ 512)
 
@@ -36,7 +38,7 @@
 (defstruct (actor-registry-entry
             (:constructor %make-actor-registry-entry))
   resource-uri resource-kind semantic-name semantic-version semantic-digest
-  accepts produces capabilities source-package operator-visible-p)
+  accepts produces capabilities options source-package operator-visible-p)
 
 (defstruct (actor-runtime-observation
             (:constructor %make-actor-runtime-observation))
@@ -124,11 +126,52 @@
                         (format nil "star://~a~a" host path)))))
     (error () nil)))
 
+(defun validate-actor-options (options context)
+  "Validate an optional per-actor target-option hint list.
+
+Each entry is a closed-key object with bounded non-empty =key= and
+=description= strings, an explicit boolean =required=, and an optional
+=schema= JSON shape hint carried verbatim (never evaluated). Duplicate keys
+are rejected. Returns fresh copies, or nil when no options are advertised."
+  (when (or (null options) (eq options :null))
+    (return-from validate-actor-options nil))
+  (unless (and (listp options)
+               (<= (length options) +actor-manifest-max-values+))
+    (invalid-actor-manifest "~a must be a bounded array" context))
+  (let ((seen '()))
+    (loop
+      for entry in options
+      for index from 0
+      for entry-context = (format nil "~a[~a]" context index)
+      collect
+      (progn
+        (validate-object-keys entry +actor-option-keys+
+                              +actor-option-required-keys+ entry-context)
+        (let ((key (required-manifest-string entry "key" entry-context)))
+          (when (member key seen :test #'string=)
+            (invalid-actor-manifest "~a contains duplicate option key ~a"
+                                    context key))
+          (push key seen))
+        (required-manifest-string entry "description" entry-context)
+        (unless (member (jsown:val entry "required") '(:true :false))
+          (invalid-actor-manifest "~a.required must be a boolean"
+                                  entry-context))
+        (let ((schema (jsown:val-safe entry "schema")))
+          (unless (or (null schema)
+                      (stringp schema)
+                      (integerp schema)
+                      (floatp schema)
+                      (consp schema)
+                      (member schema '(:true :false :null)))
+            (invalid-actor-manifest "~a.schema must be a JSON value or null"
+                                    entry-context)))
+        (copy-list entry)))))
+
 (defun actor-registry-entry-from-manifest (manifest)
   (validate-object-keys
    manifest
    '("resourceUri" "resourceKind" "semantic" "accepts" "produces"
-     "capabilities" "operatorVisible" "provenance")
+     "capabilities" "operatorVisible" "provenance" "options")
    '("resourceUri" "resourceKind" "semantic" "accepts" "produces"
      "capabilities" "operatorVisible" "provenance")
    "manifest")
@@ -159,6 +202,9 @@
      :capabilities
      (validate-string-list (jsown:val manifest "capabilities")
                            "manifest.capabilities")
+     :options
+     (validate-actor-options (jsown:val-safe manifest "options")
+                             "manifest.options")
      :source-package
      (required-manifest-string provenance "sourcePackage" "manifest.provenance")
      :operator-visible-p (eq visible :true))))
@@ -264,6 +310,9 @@
             ("status" (actor-runtime-observation-status observation))
             ("ready"
              (if (actor-runtime-observation-ready-p observation) :true :false)))))
+    (when (actor-registry-entry-options entry)
+      (setf (jsown:val object "options")
+            (mapcar #'copy-list (actor-registry-entry-options entry))))
     (when (actor-runtime-observation-observed-at observation)
       (setf (jsown:val object "observedAt")
             (actor-runtime-observation-observed-at observation)))
