@@ -203,6 +203,16 @@ Return quarantine documents through the checked-in status view.
  STAR.DATABASES.COUCHDB::ACCEPTANCE-ID))
 #+end_src
 Load the acceptance state for a target.
+*** couchdb-load-target-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-load-target-document (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::TARGET-ID))
+#+end_src
+Load one standalone persisted target document, or nil (#59).
 *** couchdb-pending-outbox-documents
 :PROPERTIES:
 :KIND: fn
@@ -256,6 +266,19 @@ Persist one server-internal quarantine record before Rabbit settlement.
  STAR.DATABASES.COUCHDB::DOCUMENT))
 #+end_src
 Create or update one durable target acceptance document.
+*** couchdb-save-target-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-save-target-document (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DOCUMENT))
+#+end_src
+Save one standalone target document under optimistic revision control.
+
+Signals OUTBOX-STORE-CONFLICT when the stored revision moved, so callers can
+retry under the fresh revision.
 *** couchdb-update-target-acceptance
 :PROPERTIES:
 :KIND: fn
