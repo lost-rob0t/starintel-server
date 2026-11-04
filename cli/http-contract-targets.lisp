@@ -44,6 +44,45 @@
     (response 200 "Equivalent target request already accepted."
               +target-create-receipt-schema+))
    (standard-errors))))
+(defparameter +target-update-request-schema+
+  (object-schema
+   (list
+    (cons "options" (generic-object-schema)))
+   :required '("options")
+   :additional-properties nil
+   :description "Whole-object replacement for one target's options."))
+
+(defparameter +target-update-receipt-schema+
+  (object-schema
+   (list
+    (cons "status" (string-schema))
+    (cons "target_id" (string-schema :min-length 1))
+    (cons "correlation_id" (string-schema :min-length 1)))
+   :required '("status" "target_id" "correlation_id")
+   :additional-properties nil
+   :description "Target options update receipt."))
+
+;; #59 narrow slice: pin per-target options (for example the reddit lane
+;; backend) on one persisted target.  The change is durable and applies to
+;; the live schedule through the existing #360 boot rehydration.
+(upsert-http-operation
+ (make-http-operation
+  :id "targets.update"
+  :client-name "target-update"
+  :method :patch
+  :path "/api/v1/targets/:id"
+  :summary "Replace the options object of one persisted target; the persisted change is applied to recurring schedules by boot rehydration"
+  :tags '("targets")
+  :authority :authenticated
+  :scopes '("targets:update")
+  :path-parameters '("id")
+  :request-schema +target-update-request-schema+
+  :responses
+  (append
+   (list
+    (response 200 "Target options replaced." +target-update-receipt-schema+))
+   (standard-errors))))
+
 (defparameter +target-list-response-schema+
   (object-schema
    (list

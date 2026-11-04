@@ -140,3 +140,58 @@
           (jsown:val receipt "request_id") (jsown:val ledger "_id")
           (jsown:val receipt "correlation_id") (current-correlation-id))
     receipt))
+
+(defun target-v1-update-options (document options)
+  "Whole-object replacement of one persisted target's OPTIONS (#59).
+
+Everything else — id, actor, subject, dataset, delay, recurrence, creation
+time — is operator-owned by the accepting request and stays untouched.  Only
+UPDATEDAT advances.  The result is validated as a canonical document before
+it may be persisted."
+  (let ((updated (star.documents:clone-document-object document))
+        (now (- (get-universal-time) 2208988800)))
+    (setf (jsown:val updated "options")
+          (star.documents:clone-document-object options)
+          (jsown:val updated "updatedAt") now)
+    ;; Validate the canonical projection: the stored document legitimately
+    ;; carries server-owned CouchDB envelope fields validate-document rejects.
+    (star.documents:validate-document
+     (star.documents:canonical-wire-document updated))
+    updated))
+
+(defun target-v1-apply-options-update
+    (target-id request &key load-fn save-fn (max-attempts 8))
+  "Load one persisted target, replace its options, and save (#59).
+
+LOAD-FN returns the stored document or nil; SAVE-FN persists the validated
+candidate and may signal a store conflict to retry under a fresh revision.
+Schedule semantics stay with the #360 recovery authority: the persisted
+change reaches recurring schedules through boot rehydration."
+  (unless (and (stringp target-id) (plusp (length target-id)))
+    (signal-http-input-error
+     400 "invalid_target_id" "target id must be a non-empty string"))
+  (let ((options (target-v1-options request)))
+    (loop for attempt from 1 to max-attempts
+          do (let* ((current (funcall load-fn target-id)))
+               (unless current
+                 (signal-http-input-error
+                  404 "target_not_found" "No persisted target with that id"))
+               (unless (string= "target"
+                                (or (jsown:val-safe current "dtype") ""))
+                 (signal-http-input-error
+                  409 "target_not_a_target"
+                  "The stored document is not a target"))
+               (let ((updated (target-v1-update-options current options)))
+                 (handler-case
+                     (let ((saved (funcall save-fn updated)))
+                       (let ((receipt (jsown:empty-object)))
+                         (setf (jsown:val receipt "status") "ok"
+                               (jsown:val receipt "target_id") target-id
+                               (jsown:val receipt "correlation_id")
+                               (current-correlation-id))
+                       (return (values receipt saved))))
+                   (star.databases.couchdb:outbox-store-conflict ()
+                     (when (= attempt max-attempts)
+                       (signal-http-input-error
+                        409 "target_update_conflict"
+                        "Target update conflict budget exhausted")))))))))
