@@ -1,5 +1,7 @@
 % Tooling and verification commands verified by machine evidence.
 
+:- discontiguous cmd/3, method/2, fact/2, invariant/2.
+
 % Local integration test runs. nix run .#star-integration-tests spawns its
 % OWN valkey (plain+TLS) on dynamic free ports with password
 % valkey-integration-secret (flake.nix ~400-560), so concurrent suite runs
@@ -49,3 +51,43 @@ cmd(prod_couchdb_count,
 % runs on a 32-core machine at load 15-22 and ~1/1 on 4-vCPU CI runners
 % also hosting CouchDB/RabbitMQ/Clouseau. Reproduce flakes by running the
 % suite under load, not by adding sleeps.
+%% --- 2026-11-04 deploy + gate lessons (issue #38 session) ---
+
+method(deploy_server_code_change,
+    "Full order for shipping a starintel-server code change: PR + green CI
+on exact head -> merge on forgejo -> starintel-infra: edit
+starintel-server-source.url rev in flake.nix + nix flake lock
+--update-input starintel-server-source + commit -> BUILD AND LOAD IMAGES:
+nix build .#star-server-image in a server checkout at the merge commit,
+then ssh starintel 'sudo docker load' < result -> STARINFRA_SSH_CONFIG=...
+nix run .#deploy-ingest-stack. deploy-ingest-stack ONLY rsyncs pinned
+compose/init/config and runs docker compose up: compose references the
+prebuilt tag starintel/server:0.1.0, so skipping the image build/load
+silently recreates the container on the STALE image (first #38 deploy
+attempt shipped old code; detected via fresh quarantine records carrying
+a raiser string removed in the fix - compressed SBCL cores make
+strings-grep useless for image verification, verify by BEHAVIOR).").
+
+cmd(integration_tests_local_locale,
+    "LC_ALL=C LANG=C COUCHDB_HOST=127.0.0.1 COUCHDB_PORT=15984 COUCHDB_USER=admin COUCHDB_PASSWORD=dbgpass ./result/bin/star-integration-tests",
+    "the runner-spawned valkey 9.0.1 fails boot ('Failed to configure
+LOCALE') under inherited desktop locales and never accepts connections;
+LC_ALL=C fixes it. dbg stack: docker start dbg-couch dbg-rabbit; clouseau
+needs recreating without the erlang_cookie bind-mount if /tmp was wiped
+(entrypoint sh writes the cookie in-container; cookie must match couch
+ERL_FLAGS -setcookie).").
+
+invariant(doc_coverage_requires_regen_api_docs,
+    "doc-coverage CI = nix run .#doc-coverage-test AND nix run
+.#gen-api-docs AND git diff --exit-code -- doc/api/: docstring edits
+require committing the regenerated doc/api/*.org files or the second
+step fails the PR.").
+
+invariant(multi_remote_push_hazard,
+    "starintel-server has origin (forgejo) + github remotes; plain `git
+push` can target the wrong one, leaving the forgejo PR head stale with
+no CI trigger (looks exactly like stalled runners). Always `git push
+origin <branch>` and verify with git ls-remote origin <branch>. tea
+config login is named `starintel` (not forgejo): extract the token from
+the login block; unauthenticated GETs on public repos succeed and mask a
+broken token until the first POST fails with 'token is required'").
