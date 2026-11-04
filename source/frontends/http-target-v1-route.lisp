@@ -126,5 +126,35 @@
                   data))
           (jsown:to-json response))))))
 
+(defun handle-v1-target-update-route (params)
+  (with-http-boundary ()
+    (let* ((target-id (require-path-string params "id"))
+           (request (require-json-object (parse-json-request))))
+      (couchdb-handler (client *couchdb-pool*)
+        (star.frontends.http-api::target-v1-apply-options-update
+         target-id request
+         :load-fn (lambda (id)
+                    (handler-case
+                        (jsown:with-injective-reader
+                          (jsown:parse
+                           (cl-couch:get-document
+                            client star:*couchdb-default-database* id)))
+                      (dex:http-request-not-found () nil)))
+         :save-fn (lambda (candidate)
+                    ;; Authorize the concrete mutated resource before the
+                    ;; durable write, mirroring the create route.
+                    (star.authorization:*current-authorization-decision*
+                      (star.authorization:authorize-document!
+                       "targets:update" candidate
+                       :principal (current-policy-principal)
+                       :actor-name (jsown:val candidate "actor")
+                       :metadata
+                       (route-policy-metadata "/api/v1/targets/:id" "PATCH")))
+                    (star.databases.couchdb:couchdb-save-target-document
+                     client star:*couchdb-default-database* candidate)))))))
+
+(setf (ningle:route *app* "/api/v1/targets/:id" :method :patch)
+      #'handle-v1-target-update-route)
+
 (setf (ningle:route *app* +target-v1-path+ :method :get)
       #'handle-v1-target-list-route)

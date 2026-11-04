@@ -11,6 +11,37 @@
          (cl-couch:get-document client database acceptance-id)))
     (dexador:http-request-not-found () nil)))
 
+(defun couchdb-load-target-document (client database target-id)
+  "Load one standalone persisted target document, or nil (#59)."
+  (handler-case
+      (jsown:with-injective-reader
+        (jsown:parse
+         (cl-couch:get-document client database target-id)))
+    (dexador:http-request-not-found () nil)))
+
+(defun couchdb-save-target-document (client database document)
+  "Save one standalone target document under optimistic revision control.
+
+Signals OUTBOX-STORE-CONFLICT when the stored revision moved, so callers can
+retry under the fresh revision."
+  (handler-case
+      (let* ((response
+               (jsown:parse
+                (cl-couch:create-document
+                 client database (jsown:to-json document))))
+             (saved (clone-outbox-json document)))
+        (when (outbox-object-has-key-p response "rev")
+          (setf (jsown:val saved "_rev") (jsown:val response "rev")))
+        saved)
+    (dexador:http-request-conflict ()
+      (error 'outbox-store-conflict))))
+
+(export
+ '(couchdb-load-target-document
+   couchdb-save-target-document
+   outbox-store-conflict)
+ :star.databases.couchdb)
+
 (defun couchdb-save-target-acceptance (client database document)
   "Create or update one durable target acceptance document."
   (handler-case

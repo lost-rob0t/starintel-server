@@ -101,6 +101,9 @@
        "targets_by_actor" "GET" "/targets/:actor"
        :legacy t :scopes '("targets:read"))
       (capability-endpoint
+       "target_update_v1" "PATCH" "/api/v1/targets/:id"
+       :scopes '("targets:update"))
+      (capability-endpoint
        "document_create_v1" "POST" "/api/v1/documents"
        :scopes '("documents:write"))
       (capability-endpoint
