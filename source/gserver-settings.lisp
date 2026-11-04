@@ -283,6 +283,9 @@ value itself is never read from the environment, only from this file
 (defparameter *slynk-port* 4009
   "Port for the SLY/Slynk REPL when =start-debugger= is invoked.")
 
+(defparameter *slynk-enabled* nil
+  "Start a loopback-only SLY/Slynk REPL with the server runtime when true.")
+
 ;;;; Actors and patterns
 (defparameter *actors-start-hook* (make-instance 'nhooks:hook-void)
   "Hook run after the actor system boots.
