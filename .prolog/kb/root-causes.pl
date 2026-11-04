@@ -3,6 +3,8 @@
 :- discontiguous root_cause/3.
 :- discontiguous method/2.
 :- discontiguous blocker/2.
+:- discontiguous verified_live/2.
+:- discontiguous fix/2.
 
 % Valkey lease concurrency flake (fixed 2026-09-11, PR #154 merged aeae5bf):
 % ONE-HUNDRED-CONCURRENT-ACQUIRES-HAVE-EXACTLY-ONE-OBSERVED-OWNER returned
@@ -173,4 +175,4 @@ steady_portfolio(steady_v2, '251 recurring reddit targets via POST /api/v1/targe
 fix(recovery_page_drain, 'query-persisted-target-documents drains all by_actor pages via (startkey, startkey_docid) cursor; query-view default limit 50 silently capped rehydration and listing (PR #35).').
 fix(storage_revision_fingerprint, 'recover-target-record strips _rev/rev before submit: standalone persistence added a storage revision the dispatch fingerprint treated as content change, conflicting every recovered recurring target with its own acceptance (252 INVALID live; PR #36).').
 verified_live(boot_rehydration_final, '(LOADED 3204 RECOVERED 251 DUPLICATES 1 LEASED 0 SKIPPED 2952 INVALID 0) at 467e1b8; GET /api/v1/targets?actor=reddit lists 251; 17 containers healthy').
-adhoc_live_lane, 'proxy (shreddit dsvc) reserved for ad hoc one-shot targets via options.backend=shreddit; documented in pro-actors docs/social-actors.org + .prolog/kb/reddit-backend-contract.pl (PR #165); blocked until dsvc egress provider migration lands'.
+fact(adhoc_live_lane, 'proxy (shreddit dsvc) reserved for ad hoc one-shot targets via options.backend=shreddit; documented in pro-actors docs/social-actors.org + .prolog/kb/reddit-backend-contract.pl (PR #165); blocked until dsvc egress provider migration lands').
