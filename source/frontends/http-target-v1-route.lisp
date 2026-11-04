@@ -147,18 +147,22 @@ before the durable write, and the decision is recorded on
     (let* ((target-id (require-path-string params "id"))
            (request (require-json-object (parse-json-request))))
       (couchdb-handler (client *couchdb-pool*)
-        (star.frontends.http-api::target-v1-apply-options-update
-         target-id request
-         :load-fn (lambda (id)
-                    (handler-case
-                        (jsown:with-injective-reader
-                          (jsown:parse
-                           (cl-couch:get-document
-                            client star:*couchdb-default-database* id)))
-                      (dex:http-request-not-found () nil)))
-         :save-fn (lambda (candidate)
-                    (target-v1-authorized-save
-                     client star:*couchdb-default-database* candidate)))))))
+        ;; Single JSON-string response body: the receipt object itself (or
+        ;; the second return value) would flow raw into the middleware and
+        ;; crash the response boundary.
+        (jsown:to-json
+         (star.frontends.http-api::target-v1-apply-options-update
+          target-id request
+          :load-fn (lambda (id)
+                     (handler-case
+                         (jsown:with-injective-reader
+                           (jsown:parse
+                            (cl-couch:get-document
+                             client star:*couchdb-default-database* id)))
+                       (dex:http-request-not-found () nil)))
+          :save-fn (lambda (candidate)
+                     (target-v1-authorized-save
+                     client star:*couchdb-default-database* candidate))))))))
 
 (setf (ningle:route *app* "/api/v1/targets/:id" :method :patch)
       #'handle-v1-target-update-route)
