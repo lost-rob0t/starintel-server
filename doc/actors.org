@@ -359,7 +359,12 @@ Run the repository test commands from [[file:testing.md][testing.md]].
 =GET /v1/actors= (=actors.list=, =actors:read=) projects persisted canonical
 =actor-manifest= documents from =starintel-system= through the same validator
 and emitter as trusted in-process manifests. The existing =data/count_by_dtype=
-CouchDB view supplies at most 128 declarations; overflow fails explicitly.
+CouchDB view is scanned in pages of 128 records plus one lookahead. Only
+distinct eligible declarations consume the 128-entry persisted catalog capacity;
+private, deleted, invalid, non-system and duplicate records do not consume it.
+Trusted local claims retain precedence and are excluded from that persisted
+capacity. A separate 128-page scan budget fails explicitly if exhausted,
+without returning a partial catalog or misreporting unrelated rows as overflow.
 Each request reads persisted state, so restart, updates and deletion require no
 second index or ingest callback. Storage failure fails the request rather than
 silently reporting a complete catalog. Explicitly non-public visibility is

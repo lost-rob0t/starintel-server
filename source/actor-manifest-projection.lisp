@@ -61,14 +61,49 @@ paths and arbitrary extensions never enter the catalog or imply readiness."
                          (babel:string-to-octets (jsown:to-json manifest) :encoding :utf-8)))))
     (actor-registry-entry-from-manifest manifest)))
 
-(defun query-actor-manifest-documents
-    (&key client database (query-fn #'star.databases.couchdb:query-view))
-  "Read a bounded persisted catalog from the maintained dtype view.
+(defun eligible-actor-manifest-entry (document)
+  "Validate one persisted declaration, omitting invalid or non-public input."
+  (handler-case (actor-registry-entry-from-document document)
+    (invalid-actor-manifest () nil)
+    (star.documents:document-schema-validation-error () nil)))
 
-Fail explicitly on overflow rather than silently advertise a partial fleet."
-  (let* ((response (funcall query-fn client database "data" "count_by_dtype"
-                            :key "actor-manifest" :include-docs t :reduce nil :limit 129))
-         (rows (jsown:val response "rows")))
-    (when (> (length rows) 128)
-      (error "Persisted actor catalog exceeds 128 manifests"))
-    (mapcar (lambda (row) (jsown:val row "doc")) rows)))
+(defun query-actor-manifest-documents
+    (&key client database (query-fn #'star.databases.couchdb:query-view)
+          (max-pages 128))
+  "Read eligible declarations in bounded pages from the maintained dtype view.
+
+The 128-entry capacity counts distinct eligible resources, excluding trusted
+local claims. An independent page budget fails explicitly rather than returning
+an incomplete catalog. The unprocessed lookahead row is the inclusive cursor,
+so deleting a cursor between requests cannot cause skip=1 to lose another row."
+  (unless (and (integerp max-pages) (<= 1 max-pages 128))
+    (error "Actor manifest scan page budget must be between 1 and 128"))
+  (let ((seen (make-hash-table :test #'equal)) (documents nil) (count 0) (cursor nil))
+    (bt:with-lock-held (*actor-registry-lock*)
+      (maphash (lambda (uri entry) (declare (ignore entry)) (setf (gethash uri seen) t))
+               *actor-registry*))
+    (loop for page from 1 to max-pages do
+      (let* ((response (funcall query-fn client database "data" "count_by_dtype"
+                                :start-key "actor-manifest" :end-key "actor-manifest"
+                                :start-key-doc-id cursor
+                                :include-docs t :reduce nil :limit 129))
+             (rows (coerce (jsown:val response "rows") 'list))
+             (lookahead (nth 128 rows)))
+        (when (> (length rows) 129)
+          (error "Actor manifest query exceeded the requested page size"))
+        (dolist (row (subseq rows 0 (min 128 (length rows))))
+          (let* ((document (jsown:val-safe row "doc"))
+                 (entry (eligible-actor-manifest-entry document))
+                 (uri (and entry (actor-registry-entry-resource-uri entry))))
+            (when (and uri (not (gethash uri seen)))
+              (setf (gethash uri seen) t)
+              (when (> (incf count) 128)
+                (error "Persisted actor catalog exceeds 128 eligible manifests"))
+              (push document documents))))
+        (unless lookahead (return-from query-actor-manifest-documents (nreverse documents)))
+        (let ((next (jsown:val lookahead "id")))
+          (unless (and (stringp next) (plusp (length next))
+                       (or (null cursor) (string< cursor next)))
+            (error "Actor manifest query cursor did not advance"))
+          (setf cursor next))))
+    (error "Persisted actor catalog scan budget exhausted after ~d pages" max-pages)))

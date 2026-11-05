@@ -93,18 +93,131 @@
             :client :client :database "db"
             :query-fn (lambda (&rest arguments)
                         (setf calls arguments)
-                        (jsown:new-js ("rows" (list (jsown:new-js ("doc" document)))))))))
+                        (jsown:new-js ("rows" (list (jsown:new-js ("id" "manifest:fixture") ("doc" document)))))))))
     (is (equal (list document) result))
     (is (equal '(:client "db" "data" "count_by_dtype") (subseq calls 0 4)))
-    (is (equal "actor-manifest" (getf (nthcdr 4 calls) :key)))
+    (is (equal "actor-manifest" (getf (nthcdr 4 calls) :start-key)))
+    (is (equal "actor-manifest" (getf (nthcdr 4 calls) :end-key)))
     (is (eq t (getf (nthcdr 4 calls) :include-docs)))
     (is (null (getf (nthcdr 4 calls) :reduce)))
-    (is (= 129 (getf (nthcdr 4 calls) :limit))))
-  (signals error
-    (star.actors::query-actor-manifest-documents
-     :query-fn (lambda (&rest arguments)
-                 (declare (ignore arguments))
-                 (jsown:new-js ("rows" (make-list 129)))))))
+    (is (= 129 (getf (nthcdr 4 calls) :limit)))))
+
+(defun manifest-test-rows (documents)
+  "Give synthetic persisted documents distinct, ordered CouchDB identities."
+  (loop for document in documents for index from 0
+        for id = (format nil "manifest-~6,'0d" index)
+        do (setf (jsown:val document "id") id)
+        collect (jsown:new-js ("id" id) ("key" "actor-manifest") ("doc" document))))
+
+(defun manifest-paged-query-fixture (rows calls)
+  "Model CouchDB's inclusive document-ID cursor and bounded result limit."
+  (lambda (&rest arguments)
+    (push arguments (car calls))
+    (let* ((options (nthcdr 4 arguments))
+           (cursor (getf options :start-key-doc-id))
+           (remaining (remove-if
+                       (lambda (row) (and cursor (string< (jsown:val row "id") cursor))) rows)))
+      (jsown:new-js
+        ("rows" (subseq remaining 0 (min (length remaining) (getf options :limit))))))))
+
+(test manifest-capacity-excludes-ineligible-records-across-pages
+  (let* ((documents
+           (loop for index below 260 for document = (projected-manifest-fixture)
+                 do (case (mod index 4)
+                      (0 (setf (jsown:val document "tenant_id") "private"))
+                      (1 (setf (jsown:val document "deleted") :true))
+                      (2 (setf (jsown:val document "dataset") "unrelated"))
+                      (3 (setf (jsown:val document "actor") "invalid/name")))
+                 collect document))
+         (calls (list nil))
+         (rows (manifest-test-rows (append documents (list (projected-manifest-fixture)))))
+         (star.actors::*actor-registry*
+           (star.actors::build-actor-registry
+            (list (actor-registry-test-manifest "star://local/actor/local"))))
+         (eligible (star.actors::query-actor-manifest-documents
+                    :query-fn (manifest-paged-query-fixture rows calls)))
+         (catalog (star.actors:actor-registry-document eligible)))
+    (is (= 1 (length eligible)))
+    (is (= 2 (jsown:val (jsown:val catalog "data") "count")))
+    (is (= 3 (length (car calls))))
+    (dolist (call (car calls))
+      (is (<= (getf (nthcdr 4 call) :limit) 129)))))
+
+(test manifest-capacity-counts-distinct-eligible-identities
+  (let ((star.actors::*actor-registry* (make-hash-table :test #'equal)))
+    (dolist (count '(128 129))
+      (let* ((calls (list nil))
+             (rows (manifest-test-rows
+                    (loop repeat count collect (projected-manifest-fixture)))))
+        (is (= 1 (length (star.actors::query-actor-manifest-documents
+                         :query-fn (manifest-paged-query-fixture rows calls)))))))
+    (dolist (count '(128 129))
+      (let* ((calls (list nil))
+             (rows (manifest-test-rows
+                    (loop for index below count for document = (projected-manifest-fixture)
+                          do (setf (jsown:val document "actor") (format nil "worker-~d" index))
+                          collect document)))
+             (query (manifest-paged-query-fixture rows calls)))
+        (if (= count 128)
+            (is (= 128 (length (star.actors::query-actor-manifest-documents :query-fn query))))
+            (let ((reason (handler-case
+                              (progn (star.actors::query-actor-manifest-documents :query-fn query) nil)
+                            (error (condition) (princ-to-string condition)))))
+              (is (not (null (search "exceeds 128 eligible" (or reason "")))))))))))
+
+(test manifest-scan-exhaustion-is-distinct-from-catalog-overflow
+  (let* ((calls (list nil))
+         (rows (manifest-test-rows
+                (loop repeat 260 for document = (projected-manifest-fixture)
+                      do (setf (jsown:val document "deleted") :true) collect document)))
+         (reason
+           (handler-case
+               (progn
+                 (star.actors::query-actor-manifest-documents
+                  :query-fn (manifest-paged-query-fixture rows calls) :max-pages 1)
+                 nil)
+             (error (condition) (princ-to-string condition)))))
+    (is (not (null (search "scan budget" (or reason "")))))))
+
+(test manifest-pagination-does-not-skip-after-cursor-deletion
+  (let* ((calls (list nil))
+         (star.actors::*actor-registry* (make-hash-table :test #'equal))
+         (rows (manifest-test-rows
+                (append
+                 (loop repeat 129 for document = (projected-manifest-fixture)
+                       do (setf (jsown:val document "deleted") :true) collect document)
+                 (loop for actor in '("first-worker" "second-worker")
+                       for document = (projected-manifest-fixture)
+                       do (setf (jsown:val document "actor") actor) collect document))))
+         (documents
+           (star.actors::query-actor-manifest-documents
+            :query-fn
+            (lambda (&rest arguments)
+              (let ((cursor (getf (nthcdr 4 arguments) :start-key-doc-id)))
+                (when cursor
+                  (setf rows (remove cursor rows :key (lambda (row) (jsown:val row "id"))
+                                     :test #'equal)))
+                (apply (manifest-paged-query-fixture rows calls) arguments))))))
+    (is (= 2 (length documents)))
+    (is (equal '("first-worker" "second-worker")
+               (mapcar (lambda (document) (jsown:val document "actor")) documents)))
+    (is (equal "manifest-000128"
+               (getf (nthcdr 4 (first (car calls))) :start-key-doc-id)))))
+
+(test manifest-capacity-preserves-trusted-local-precedence
+  (let* ((calls (list nil))
+         (star.actors::*actor-registry*
+           (star.actors::build-actor-registry
+            (list (actor-registry-test-manifest
+                   "star://document-manifests/actor/fixture-worker" :name "trusted-local"))))
+         (rows (manifest-test-rows
+                (loop repeat 129 collect (projected-manifest-fixture))))
+         (documents (star.actors::query-actor-manifest-documents
+                     :query-fn (manifest-paged-query-fixture rows calls)))
+         (actors (jsown:val (jsown:val (star.actors:actor-registry-document documents) "data") "actors")))
+    (is (null documents))
+    (is (= 1 (length actors)))
+    (is (equal "trusted-local" (jsown:val (jsown:val (first actors) "semantic") "name")))))
 
 (test persisted-manifest-snapshot-follows-updates-and-deletions
   (let ((document (projected-manifest-fixture))

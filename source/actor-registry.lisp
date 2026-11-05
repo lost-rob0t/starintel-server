@@ -380,14 +380,13 @@ are rejected. Returns fresh copies, or nil when no options are advertised."
                (maphash (lambda (key value) (setf (gethash key registry) value))
                         *actor-registry*)
                (dolist (document documents)
-                 (handler-case
-                     (add-actor-registry-entry
-                      registry (actor-registry-entry-from-document document))
-                   ;; One invalid or conflicting persisted claim cannot break
-                   ;; discovery or override a trusted in-process registration.
-                   (invalid-actor-manifest () nil)
-                   (actor-registry-conflict () nil)
-                   (star.documents:document-schema-validation-error () nil)))
+                 (let ((entry (eligible-actor-manifest-entry document)))
+                   (when entry
+                     (handler-case
+                         (add-actor-registry-entry registry entry)
+                       ;; One conflicting persisted claim cannot override a
+                       ;; trusted in-process registration or break discovery.
+                       (actor-registry-conflict () nil)))))
                (actor-registry-public-entries registry))))
       (jsown:new-js
         ("status" "ok")
