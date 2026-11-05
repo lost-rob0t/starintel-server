@@ -265,6 +265,15 @@
         (local (star::main/command)))
     (is (member "auth" (sub-command-names remote) :test #'string=))
     (is (member "admin" (sub-command-names remote) :test #'string=))
+    (let* ((auth (find "auth" (clingon:command-sub-commands remote)
+                       :key #'clingon:command-name :test #'string=))
+           (auth-commands (sub-command-names auth))
+           (profiles (find "profile" (clingon:command-sub-commands auth)
+                           :key #'clingon:command-name :test #'string=)))
+      (is (member "profile" auth-commands :test #'string=))
+      (is (member "token" auth-commands :test #'string=))
+      (is (equal '("path" "list" "add" "use")
+                 (sub-command-names profiles))))
     (is (member "start" (sub-command-names local) :test #'string=))
     (is (member "admin" (sub-command-names local) :test #'string=))
     (let ((local-admin
@@ -342,3 +351,194 @@
       (is-false generated-p)))
   (signals error
     (star::resolve-admin-password :password "one" :random-password t)))
+
+(test credential-secret-output-does-not-disclose-api-key
+  (let* ((secret "star_sk_v1_wallet-redaction-test")
+         (result
+           (star.api.client::make-credential-secret-result
+            :api-key secret
+            :credential (jsown:new-js ("id" "cred-test")
+                                     ("owner" "wallet-test")
+                                     ("principal_type" "service")
+                                     ("scopes" '("documents:read"))
+                                     ("status" "active"))
+            :correlation-id "corr-test"))
+         (stored nil)
+         (star-cli::*secret-service-runner*
+           (lambda (arguments input)
+             (if (string= (first arguments) "store")
+                 (setf stored input)
+                 (error "unexpected wallet operation"))
+             ""))
+         (output (with-output-to-string (stream)
+                   (let ((*standard-output* stream))
+                       (star-cli::auth/store-secret "wallet-profile" secret)
+                       (star-cli::remote-admin/print-credential-summary
+                        result "wallet-profile")))))
+    (is (string= (format nil "~a~%" secret) stored))
+    (is (null (search secret output)))
+    (is (search "cred-test" output))
+    (is (search "wallet-profile" output))))
+
+(test login-summary-stores-key-and-never-prints-it
+  (let* ((secret "star_sk_v1_login-summary-test")
+         (stored nil)
+         (star-cli::*secret-service-runner*
+           (lambda (arguments input)
+             (declare (ignore arguments))
+             (setf stored input)
+             ""))
+         (result
+           (star.api.client::make-login-result
+            :api-key secret
+            :credential (jsown:new-js ("id" "login-credential"))
+             :user (jsown:new-js ("username" "operator") ("api_key" secret))
+            :correlation-id "corr-login"))
+         (output (with-output-to-string (stream)
+                   (let ((*standard-output* stream))
+                     (star-cli::auth/store-login-key result "prod")
+                     (star-cli::auth/print-login-summary result "prod")))))
+    (is (string= (format nil "~a~%" secret) stored))
+    (is (null (search secret output)))
+    (is (search "login-credential" output))
+    (is (search "prod" output))))
+
+(test secret-service-receives-secrets-only-through-stdin
+  (let* ((stored nil)
+         (calls nil)
+         (secret "star_sk_v1_secret-service-test")
+         (star-cli::*secret-service-runner*
+           (lambda (arguments input)
+             (push (list arguments input) calls)
+             (cond
+               ((string= (first arguments) "store")
+                (setf stored input)
+                "")
+               ((string= (first arguments) "lookup") stored)
+               (t (error "unexpected wallet operation"))))))
+    (star-cli::auth/store-secret "prod" secret)
+    (is (equal secret (star-cli::auth/lookup-secret "prod")))
+    (is (= 2 (length calls)))
+    (let* ((store-call
+             (find "store" calls :key (lambda (call) (first (first call)))
+                                      :test #'string=))
+           (arguments (first store-call)))
+      (is-true store-call)
+      (is (null (search secret (prin1-to-string arguments))))
+      (is (search secret (second store-call))))))
+
+(test secret-service-failure-does-not-echo-secret
+  (let* ((secret "star_sk_v1_wallet-error-test")
+         (star-cli::*secret-service-runner*
+           (lambda (arguments input)
+             (declare (ignore arguments input))
+             (error "backend included ~a" secret)))
+         (message
+           (handler-case
+               (progn (star-cli::auth/store-secret "prod" secret) "no error")
+             (error (condition) (princ-to-string condition)))))
+    (is (null (search secret message)))
+    (is (search "Secret Service unavailable" message))))
+
+(test unrestricted-admin-credential-needs-explicit-confirmation
+  (let ((command
+          (clingon:make-command
+           :name "credential-create"
+           :options
+           (list (clingon:make-option :boolean
+                                      :description "Confirm admin scope"
+                                      :long-name "confirm-admin"
+                                      :initial-value nil
+                                      :key :confirm-admin)))))
+    (signals error
+      (star-cli::remote-admin/confirm-admin-scope command '("admin")))
+    (is (null (star-cli::remote-admin/confirm-admin-scope
+               command '("documents:read"))))))
+
+(test credential-metadata-view-never-echoes-extra-secret-fields
+  (let* ((secret "star_sk_v1_metadata-list-test")
+         (metadata (jsown:parse
+                    (format nil
+                            "{\"id\":\"cred-safe\",\"owner\":\"operator\",\"status\":\"active\",\"api_key\":\"~a\"}"
+                            secret)))
+         (output (jsown:to-json
+                  (star-cli::auth/safe-credential-metadata metadata))))
+    (is (search "cred-safe" output))
+    (is (null (search secret output)))
+    (is (null (search "api_key" output)))))
+
+(test credential-wallet-failure-attempts-server-revocation
+  (let* ((captured nil)
+         (star-cli::*secret-service-runner*
+           (lambda (arguments input)
+             (declare (ignore arguments input))
+             (error "wallet is locked")))
+         (client
+           (star.api.client:make-star-client
+            :base-url "http://example.test"
+            :transport
+            (star.api.client:make-function-transport
+             (lambda (request)
+               (setf captured request)
+               (fake-json-response
+                200
+                "{\"status\":\"revoked\",\"msg\":\"ok\",\"credential\":{\"id\":\"cred-test\",\"owner\":\"operator\",\"principal_type\":\"service\",\"scopes\":[],\"status\":\"revoked\"},\"correlation_id\":\"corr-test\"}")))))
+         (result
+           (star.api.client::make-credential-secret-result
+            :api-key "star_sk_v1_revocation-test"
+            :credential (jsown:new-js ("id" "cred-test"))
+            :correlation-id "corr-test")))
+    (signals error
+      (star-cli::remote-admin/store-issued-credential client result "prod"))
+    (is-true captured)
+    (is (search "/auth/credentials/cred-test/revoke"
+                (star.api.client:client-request-uri captured)))))
+
+(test auth-config-selects-multiple-server-and-general-profiles
+  (let* ((config
+           (jsown:parse
+            "{\"version\":1,\"default_profile\":\"prod\",\"profiles\":[{\"name\":\"prod\",\"server_url\":\"https://starintel.example\"},{\"name\":\"general\",\"server_url\":\"https://api.example\"}]}"))
+         (prod (star-cli::auth/profile-entry config "prod"))
+         (general (star-cli::auth/profile-entry config "general")))
+    (is (string= "https://starintel.example"
+                 (jsown:val prod "server_url")))
+    (is (string= "https://api.example"
+                 (jsown:val general "server_url")))
+    (is (null (star-cli::auth/profile-entry config "missing")))))
+
+(test auth-profile-url-rejects-embedded-credentials-and-query-secrets
+  (is (star-cli::auth/safe-server-url-p "https://server.example"))
+  (is (star-cli::auth/safe-server-url-p "http://127.0.0.1:5000"))
+  (is (null (star-cli::auth/safe-server-url-p "https://user:pass@server.example")))
+  (is (null (star-cli::auth/safe-server-url-p "https://server.example?api_key=x")))
+  (is (null (star-cli::auth/safe-server-url-p "file:///tmp/api"))))
+
+(test auth-config-write-roundtrips-profile-metadata
+  (let ((path (merge-pathnames "star-cli-auth-roundtrip-test.json"
+                               (uiop:temporary-directory))))
+    (unwind-protect
+         (let ((config (star-cli::auth/empty-config)))
+           (setf (jsown:val config "profiles")
+                 (list (jsown:new-js ("name" "prod")
+                                     ("server_url" "https://starintel.example"))))
+           (setf (jsown:val config "default_profile") "prod")
+           (star-cli::auth/write-config path config)
+           (let* ((roundtrip (star-cli::auth/read-config path))
+                  (profile (star-cli::auth/profile-entry roundtrip "prod")))
+             (is (string= "prod" (jsown:val roundtrip "default_profile")))
+             (is (string= "https://starintel.example"
+                          (jsown:val profile "server_url"))))
+           (is (probe-file path))
+       (when (probe-file path) (delete-file path))))))
+
+(test auth-config-rejects-plaintext-secret-fields
+  (let ((path (merge-pathnames "star-cli-auth-plaintext-test.json"
+                               (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path :direction :output :if-exists :supersede)
+             (write-string
+              "{\"version\":1,\"profiles\":[{\"name\":\"prod\",\"api_key\":\"not-allowed\"}]}"
+              stream))
+           (signals error (star-cli::auth/read-config path)))
+      (when (probe-file path) (delete-file path)))))

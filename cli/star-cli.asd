@@ -8,6 +8,7 @@
   :build-pathname "star-cli"
   :entry-point "star-cli::main"
   :components   ((:file "star-cli")
+                 (:file "auth-profile")
                  (:file "star-cli-management"))
   :depends-on   (#:starintel-gserver-client
                  #:starintel-legacy
