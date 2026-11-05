@@ -354,3 +354,30 @@ tests should verify:
 8. recurring target behavior.
 
 Run the repository test commands from [[file:testing.md][testing.md]].
+* Persisted manifest catalog
+
+=GET /v1/actors= (=actors.list=, =actors:read=) projects persisted canonical
+=actor-manifest= documents from =starintel-system= through the same validator
+and emitter as trusted in-process manifests. The existing =data/count_by_dtype=
+CouchDB view supplies at most 128 declarations; overflow fails explicitly.
+Each request reads persisted state, so restart, updates and deletion require no
+second index or ingest callback. Storage failure fails the request rather than
+silently reporting a complete catalog. Explicitly non-public visibility is
+excluded; absent visibility retains the system manifest catalog convention.
+
+Document actor names map to =star://document-manifests/actor/<actor>=; operators
+may configure =star.actors::*actor-manifest-authority*= as a stable catalog
+namespace before serving requests. This is declaration identity, not transport
+routing. =actorVersion= supplies semantic version, and SHA-256 of the normalized
+descriptor supplies its semantic digest. =accepts= and =produces= classify the
+=target= dtype as targets and other dtypes as documents. Capabilities and keyed
+=targetOptions= become validated capability and option arrays. A redundant
+option =key= must agree with the map key. Runtime paths, endpoints and arbitrary
+extensions are excluded; declaration alone never establishes readiness.
+
+Invalid declarations are omitted independently. Existing in-process claims win
+conflicts, and trusted registration still rejects duplicate resource claims.
+Option schemas are bounded, recursively JSON-validated and deeply copied on
+registration and emission, preventing malformed Lisp values or caller mutation
+from poisoning catalog serialization. Legacy manifest envelopes remain outside
+this canonical projection; producers must migrate through their own schema lock.
