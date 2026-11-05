@@ -126,6 +126,52 @@
                         (format nil "star://~a~a" host path)))))
     (error () nil)))
 
+(defun copy-manifest-json (value)
+  "Validate and detach a bounded JSON tree, rejecting cycles and Lisp values."
+  (let ((active (make-hash-table :test #'eq)) (remaining 10000))
+    (labels ((walk (value depth)
+               (when (or (> depth 64) (minusp (decf remaining)))
+                 (invalid-actor-manifest "JSON hint exceeds structural limits"))
+               (cond
+                 ((stringp value) (copy-seq value))
+                 ((or (null value) (integerp value)
+                      (member value '(:true :false :null :empty-list))) value)
+                 ((floatp value)
+                  (unless (handler-case
+                              (and (= value value)
+                                   (<= (- most-positive-double-float) value
+                                       most-positive-double-float))
+                            (arithmetic-error () nil))
+                    (invalid-actor-manifest "JSON hint contains a non-finite number"))
+                  value)
+                 ((or (consp value) (vectorp value))
+                  (when (gethash value active)
+                    (invalid-actor-manifest "JSON hint contains a cycle"))
+                  (setf (gethash value active) t)
+                  (unwind-protect
+                       (cond
+                         ((vectorp value)
+                          (map 'vector (lambda (item) (walk item (1+ depth))) value))
+                         (t
+                          (unless (handler-case (list-length value) (type-error () nil))
+                            (invalid-actor-manifest "JSON hint contains an improper list"))
+                          (if (eq (car value) :obj)
+                              (let ((keys nil))
+                                (cons :obj
+                                      (loop for pair in (cdr value)
+                                            collect
+                                            (progn
+                                              (unless (and (consp pair) (stringp (car pair))
+                                                           (not (member (car pair) keys :test #'string=)))
+                                                (invalid-actor-manifest "JSON hint contains an invalid object member"))
+                                              (push (car pair) keys)
+                                              (cons (copy-seq (car pair))
+                                                    (walk (cdr pair) (1+ depth)))))))
+                              (mapcar (lambda (item) (walk item (1+ depth))) value))))
+                    (remhash value active)))
+                 (t (invalid-actor-manifest "JSON hint contains an unsupported value")))))
+      (walk value 0))))
+
 (defun validate-actor-options (options context)
   "Validate an optional per-actor target-option hint list.
 
@@ -135,6 +181,7 @@ Each entry is a closed-key object with bounded non-empty =key= and
 are rejected. Returns fresh copies, or nil when no options are advertised."
   (when (or (null options) (eq options :null))
     (return-from validate-actor-options nil))
+  (setf options (copy-manifest-json options))
   (unless (and (listp options)
                (<= (length options) +actor-manifest-max-values+))
     (invalid-actor-manifest "~a must be a bounded array" context))
@@ -156,18 +203,10 @@ are rejected. Returns fresh copies, or nil when no options are advertised."
         (unless (member (jsown:val entry "required") '(:true :false))
           (invalid-actor-manifest "~a.required must be a boolean"
                                   entry-context))
-        (let ((schema (jsown:val-safe entry "schema")))
-          (unless (or (null schema)
-                      (stringp schema)
-                      (integerp schema)
-                      (floatp schema)
-                      (consp schema)
-                      (member schema '(:true :false :null)))
-            (invalid-actor-manifest "~a.schema must be a JSON value or null"
-                                    entry-context)))
         (copy-list entry)))))
 
 (defun actor-registry-entry-from-manifest (manifest)
+  (setf manifest (copy-manifest-json manifest))
   (validate-object-keys
    manifest
    '("resourceUri" "resourceKind" "semantic" "accepts" "produces"
@@ -312,7 +351,7 @@ are rejected. Returns fresh copies, or nil when no options are advertised."
              (if (actor-runtime-observation-ready-p observation) :true :false)))))
     (when (actor-registry-entry-options entry)
       (setf (jsown:val object "options")
-            (mapcar #'copy-list (actor-registry-entry-options entry))))
+            (copy-manifest-json (actor-registry-entry-options entry))))
     (when (actor-runtime-observation-observed-at observation)
       (setf (jsown:val object "observedAt")
             (actor-runtime-observation-observed-at observation)))
@@ -332,10 +371,23 @@ are rejected. Returns fresh copies, or nil when no options are advertised."
              (actor-registry-entry-resource-uri entry) observations)))
    #'string< :key (lambda (object) (jsown:val object "resourceUri"))))
 
-(defun actor-registry-document ()
+(defun actor-registry-document (&optional documents)
   "Return the safe actor/service catalog envelope consumed by =GET /v1/actors=."
   (bt:with-lock-held (*actor-registry-lock*)
-    (let ((actors (actor-registry-public-entries)))
+    (let* ((registry (make-hash-table :test #'equal))
+           (actors
+             (progn
+               (maphash (lambda (key value) (setf (gethash key registry) value))
+                        *actor-registry*)
+               (dolist (document documents)
+                 (let ((entry (eligible-actor-manifest-entry document)))
+                   (when entry
+                     (handler-case
+                         (add-actor-registry-entry registry entry)
+                       ;; One conflicting persisted claim cannot override a
+                       ;; trusted in-process registration or break discovery.
+                       (actor-registry-conflict () nil)))))
+               (actor-registry-public-entries registry))))
       (jsown:new-js
         ("status" "ok")
         ("data"

@@ -281,7 +281,15 @@
                               (star.auth:*credential-store* store)
                               (star.actors::*actor-registry* registry)
                               (star.actors::*actor-runtime-observations* observations)
-                              (star.actors::*actor-runtime-bindings* bindings))
+                              (star.actors::*actor-runtime-bindings* bindings)
+                              (star:*tenant-dataset-map* '(("starintel-system" . "private-team")))
+                              (star:*tenant-fallback* nil)
+                              (star.frontends.http-api::*actor-manifest-document-loader*
+                                (lambda ()
+                                  (let ((private (projected-manifest-fixture)))
+                                    (jsown:remkey private "tenant_id")
+                                    (setf (jsown:val private "actor") "private-adapted-worker")
+                                    (list private (projected-manifest-fixture))))))
                           (lack.component:call star.frontends.http-api::*server* env)))
                       :server :hunchentoot :address "127.0.0.1"
                       :port 18537 :silent t :debug nil))
@@ -307,7 +315,11 @@
                        (is (string= "no-store" (gethash "cache-control" headers)))
                        (is (string= "starintel-actor-registry-v1"
                                     (jsown:val (jsown:val (jsown:parse catalog) "data")
-                                               "schema"))))
+                                               "schema")))
+                       (is (= 1 (jsown:val (jsown:val (jsown:parse catalog) "data") "count")))
+                       (is (search "fixture-worker" catalog))
+                       (is (null (search "private-adapted-worker" catalog)))
+                       (is (search "Result limit" catalog)))
                      (is (= 403 (nth-value 1
                                   (request "/new/target/test" :key key :method :post)))))))
                (multiple-value-bind (body status) (issue "actors:unknown")

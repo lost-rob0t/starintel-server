@@ -10,7 +10,8 @@
     :components
     ((:file "package")
      (:file "test-runner")
-     (:file "actor-registry-test"))))
+     (:file "actor-registry-test")
+     (:file "actor-manifest-projection-test"))))
   :perform
   (test-op (operation component)
     (declare (ignore operation component))
