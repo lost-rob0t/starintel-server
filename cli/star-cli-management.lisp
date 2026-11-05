@@ -5,23 +5,12 @@
 ;;; no endpoint paths, JSON protocol parsing, Authorization header construction,
 ;;; or Dexador calls.
 
-(defun management/global-options ()
-  (append
-   (global-options)
-   (list
-    (clingon:make-option
-     :string
-     :description "StarIntel API key for authenticated commands"
-     :long-name "token"
-     :env-vars '("STAR_SERVER_TOKEN" "STAR_SERVER_API_KEY")
-     :key :api-key))))
-
 (defun make-client (cmd)
   "Create a StarIntel client from inherited command options."
   (let* ((client (make-star-client
-                  :base-url (clingon:getopt cmd :base-url)
+                  :base-url (auth/selected-base-url cmd)
                   :user-agent "star-cli/0.2"))
-         (api-key (clingon:getopt cmd :api-key)))
+         (api-key (auth/selected-api-key cmd)))
     (if (and api-key (plusp (length api-key)))
         (client-with-api-key client api-key)
         client)))
@@ -125,25 +114,47 @@
 (defun auth/login-handler (command)
   (management/run
    (lambda ()
-     (let ((password
-             (management/resolve-secret
-              command
-              :password-key :password-value
-              :file-key :password-file
-              :stdin-key :password-stdin)))
+     (let* ((profile (auth/require-profile-name command))
+            (password
+              (management/resolve-secret
+               command
+               :password-key :password-value
+               :file-key :password-file
+               :stdin-key :password-stdin)))
        (multiple-value-bind (result response)
            (login (make-star-client
-                   :base-url (clingon:getopt command :base-url)
+                   :base-url (auth/selected-base-url command)
                    :user-agent "star-cli/0.2")
                   (clingon:getopt command :auth-username)
                   password)
          (declare (ignore response))
-         (management/print-json
-          (jsown:new-js
-            ("api_key" (login-result-api-key result))
-            ("credential" (login-result-credential result))
-            ("user" (login-result-user result))
-            ("correlation_id" (or (login-result-correlation-id result) :null)))))))))
+         (handler-case
+             (auth/store-login-key result profile)
+           (error ()
+             (let ((credential-id
+                     (or (jsown:val-safe (login-result-credential result) "id")
+                         (jsown:val-safe (login-result-credential result) "credential_id"))))
+               (when credential-id
+                 (ignore-errors
+                   (revoke-credential
+                    (client-with-api-key
+                     (make-star-client :base-url (auth/selected-base-url command))
+                     (login-result-api-key result))
+                    credential-id)))
+               (error "Login succeeded but the API key could not be stored in the wallet; no key was printed"))))
+          (auth/print-login-summary result profile))))))
+
+(defun auth/print-login-summary (result profile)
+  (management/print-json
+   (jsown:new-js
+     ("credential" (auth/safe-credential-metadata
+                    (login-result-credential result)))
+     ("user" (auth/safe-user-metadata (login-result-user result)))
+     ("stored_as" profile)
+     ("correlation_id" (or (login-result-correlation-id result) :null)))))
+
+(defun auth/store-login-key (result profile)
+  (auth/store-secret profile (login-result-api-key result)))
 
 (defun auth/context-handler (command)
   (management/run
@@ -183,9 +194,53 @@
    :name "auth"
    :description "Authenticate and inspect the remote StarIntel session"
    :handler #'management/group-handler
-   :sub-commands
-   (list
-    (clingon:make-command
+    :sub-commands
+    (list
+     (clingon:make-command
+      :name "profile"
+      :description "Manage named server and general bearer-auth profiles"
+      :handler #'management/group-handler
+      :sub-commands
+      (list
+       (clingon:make-command
+        :name "path"
+        :description "Print the active auth.json path"
+        :handler #'auth/profile-path-handler)
+       (clingon:make-command
+        :name "list"
+        :description "List configured auth profile metadata"
+        :handler #'auth/profile-list-handler)
+       (clingon:make-command
+        :name "add"
+        :description "Add a profile without storing a secret in auth.json"
+        :options
+        (list
+         (auth/profile-name-option)
+         (clingon:make-option :string :description "Server/API base URL"
+                              :long-name "server-url" :key :profile-server-url))
+        :handler #'auth/profile-add-handler)
+       (clingon:make-command
+        :name "use"
+        :description "Set the default auth profile"
+        :options (list (auth/profile-name-option))
+        :handler #'auth/profile-use-handler)))
+     (clingon:make-command
+      :name "token"
+      :description "Store or clear a bearer token in the host wallet"
+      :handler #'management/group-handler
+      :sub-commands
+      (list
+       (clingon:make-command
+        :name "set"
+        :description "Read a token from stdin and store it in the wallet"
+        :options (list (auth/profile-name-option))
+        :handler #'auth/token-set-handler)
+       (clingon:make-command
+        :name "clear"
+        :description "Remove a profile token from the wallet"
+        :options (list (auth/profile-name-option))
+        :handler #'auth/token-clear-handler)))
+     (clingon:make-command
      :name "login"
      :description "Log in with a human username and password"
      :options (auth/login-options)
@@ -341,39 +396,78 @@
     :required t
     :key :remote-scopes)
    (clingon:make-option
+    :string
+    :description "Wallet profile name for the one-time API key"
+    :long-name "store-as"
+    :required t
+    :key :credential-store-profile)
+   (clingon:make-option
+    :boolean
+    :description "Confirm creation of an unrestricted admin credential"
+    :long-name "confirm-admin"
+    :initial-value nil
+    :key :confirm-admin)
+   (clingon:make-option
     :integer
     :description "Optional credential lifetime in seconds"
     :long-name "expires-in-seconds"
     :key :remote-expires-in-seconds)))
 
-(defun remote-admin/print-credential-secret (result)
+(defun remote-admin/print-credential-summary (result store-profile)
   (management/print-json
    (jsown:new-js
-     ("api_key" (credential-secret-result-api-key result))
-     ("credential" (credential-secret-result-credential result))
-     ("correlation_id"
-      (or (credential-secret-result-correlation-id result) :null)))))
+    ("credential" (auth/safe-credential-metadata
+                   (credential-secret-result-credential result)))
+    ("stored_as" store-profile)
+    ("correlation_id"
+     (or (credential-secret-result-correlation-id result) :null)))))
+
+(defun remote-admin/confirm-admin-scope (command scopes)
+  (when (member "admin" scopes :test #'string=)
+    (unless (clingon:getopt command :confirm-admin)
+      (error "Refusing unrestricted admin scope without --confirm-admin"))
+    (format *error-output*
+            "WARNING: this credential grants the complete administrator capability set and wildcard resource access.~%")))
+
+(defun remote-admin/store-issued-credential (client result profile)
+  (handler-case
+      (auth/store-secret profile (credential-secret-result-api-key result))
+    (error ()
+      (let* ((credential (credential-secret-result-credential result))
+             (credential-id (or (jsown:val-safe credential "id")
+                                (jsown:val-safe credential "credential_id"))))
+        (when credential-id
+          (ignore-errors (revoke-credential client credential-id)))
+        (error "Credential was issued but wallet storage failed; revocation was attempted. Inspect server metadata before retrying."))))
+  (remote-admin/print-credential-summary result profile))
 
 (defun remote-admin/credential-create-handler (command)
   (management/run
    (lambda ()
-     (multiple-value-bind (result response)
-         (create-credential
-          (make-client command)
-          (clingon:getopt command :remote-owner)
-          (clingon:getopt command :remote-principal-type)
-          (management/parse-scopes (clingon:getopt command :remote-scopes))
-          :expires-in-seconds (clingon:getopt command :remote-expires-in-seconds))
-       (declare (ignore response))
-       (remote-admin/print-credential-secret result)))))
+      (let* ((scopes (management/parse-scopes (clingon:getopt command :remote-scopes)))
+             (store-profile (clingon:getopt command :credential-store-profile)))
+        (auth/require-configured-profile command store-profile)
+        (remote-admin/confirm-admin-scope command scopes)
+        (let ((client (make-client command)))
+          (multiple-value-bind (result response)
+            (create-credential
+             client
+             (clingon:getopt command :remote-owner)
+             (clingon:getopt command :remote-principal-type)
+             scopes
+             :expires-in-seconds (clingon:getopt command :remote-expires-in-seconds))
+          (declare (ignore response))
+          (remote-admin/store-issued-credential
+             client result store-profile)))))))
 
 (defun remote-admin/credential-list-handler (command)
   (management/run
    (lambda ()
      (multiple-value-bind (value response)
          (list-credentials (make-client command))
-       (declare (ignore response))
-       (management/print-json value)))))
+        (declare (ignore response))
+        (management/print-json
+         (mapcar #'auth/safe-credential-metadata value))))))
 
 (defun remote-admin/credential-id-option ()
   (clingon:make-option
@@ -386,13 +480,18 @@
 (defun remote-admin/credential-rotate-handler (command)
   (management/run
    (lambda ()
-     (multiple-value-bind (result response)
-         (rotate-credential
-          (make-client command)
-          (clingon:getopt command :remote-credential-id)
-          :overlap-seconds (or (clingon:getopt command :remote-overlap-seconds) 0))
-       (declare (ignore response))
-       (remote-admin/print-credential-secret result)))))
+      (let ((store-profile (clingon:getopt command :credential-store-profile)))
+        (auth/require-configured-profile command store-profile)
+        (let ((client (make-client command)))
+        (multiple-value-bind (result response)
+           (rotate-credential
+            client
+            (clingon:getopt command :remote-credential-id)
+            :overlap-seconds (or (clingon:getopt command :remote-overlap-seconds) 0))
+          (declare (ignore response))
+          (remote-admin/store-issued-credential
+           client result
+            store-profile)))))))
 
 (defun remote-admin/credential-revoke-handler (command)
   (management/run
@@ -434,9 +533,15 @@
      :name "rotate"
      :description "Rotate an API credential"
      :options
-     (list
-      (remote-admin/credential-id-option)
-      (clingon:make-option
+      (list
+       (remote-admin/credential-id-option)
+       (clingon:make-option
+        :string
+        :description "Wallet profile name for the one-time API key"
+        :long-name "store-as"
+        :required t
+        :key :credential-store-profile)
+       (clingon:make-option
        :integer
        :description "Old/new overlap in seconds"
        :long-name "overlap-seconds"
@@ -470,7 +575,7 @@
    :description "Command-line client for StarIntel Gserver API"
    :authors '("nsaspy <nsaspy@airmail.cc>")
    :license "GPL v3"
-   :options (management/global-options)
+   :options (global-options)
    :handler #'main/handler
    :sub-commands (list
                   (auth/command)
