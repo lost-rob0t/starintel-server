@@ -119,8 +119,13 @@
 
 (test persisted-manifest-projection-excludes-private-and-legacy-documents
   (dolist (change '(("visibility" . "private") ("dataset" . "tenant-data")
+                    ("tenant_id" . "private-tenant") ("tenant" . "private-tenant")
                     ("schemaVersion" . "0.9.0")))
     (let ((document (projected-manifest-fixture))
           (star.actors::*actor-registry* (make-hash-table :test #'equal)))
       (setf (jsown:val document (car change)) (cdr change))
-      (is (= 0 (jsown:val (jsown:val (star.actors:actor-registry-document (list document)) "data") "count"))))))
+      (is (= 0 (jsown:val (jsown:val (star.actors:actor-registry-document (list document)) "data") "count")))))
+  (let ((document (projected-manifest-fixture))
+        (star.actors::*actor-registry* (make-hash-table :test #'equal)))
+    (setf (jsown:val document "tenant_id") "public")
+    (is (= 1 (jsown:val (jsown:val (star.actors:actor-registry-document (list document)) "data") "count")))))

@@ -363,7 +363,10 @@ CouchDB view supplies at most 128 declarations; overflow fails explicitly.
 Each request reads persisted state, so restart, updates and deletion require no
 second index or ingest callback. Storage failure fails the request rather than
 silently reporting a complete catalog. Explicitly non-public visibility is
-excluded; absent visibility retains the system manifest catalog convention.
+excluded; explicit =tenant_id= or =tenant= must be =public=. Absent tenant and
+visibility retain the unscoped system manifest catalog convention. Private
+tenant declarations never enter this global projection, even when they omit
+visibility or claim public visibility.
 
 Document actor names map to =star://document-manifests/actor/<actor>=; operators
 may configure =star.actors::*actor-manifest-authority*= as a stable catalog
