@@ -21,17 +21,20 @@
             (merge-pathnames ".config/" (user-homedir-pathname)))))))
 
 (defun auth/secret-tool-run (arguments input)
-  (multiple-value-bind (output error-output exit-code)
-      (uiop:run-program (cons "secret-tool" arguments)
-                        :directory (auth/runtime-directory)
-                        :input (or input "")
-                        :output :string
-                        :error-output :string
-                        :ignore-error-status t)
-    (declare (ignore error-output))
-    (unless (eql exit-code 0)
-      (error "Secret Service request failed"))
-    output))
+  ;; UIOP treats strings as filenames. Keep credential contents in a stream,
+  ;; and use NIL (empty stdin) for lookup/clear, which have no input.
+  (with-input-from-string (input-stream (or input ""))
+    (multiple-value-bind (output error-output exit-code)
+        (uiop:run-program (cons "secret-tool" arguments)
+                          :directory (auth/runtime-directory)
+                          :input (and input input-stream)
+                          :output :string
+                          :error-output :string
+                          :ignore-error-status t)
+      (declare (ignore error-output))
+      (unless (eql exit-code 0)
+        (error "Secret Service request failed"))
+      output)))
 
 (defvar *secret-service-runner* #'auth/secret-tool-run)
 

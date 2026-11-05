@@ -427,6 +427,66 @@
       (is (null (search secret (prin1-to-string arguments))))
       (is (search secret (second store-call))))))
 
+(test secret-service-real-subprocess-stdin-boundary
+  ;; Exercise UIOP itself: the higher-level injected runner cannot catch a
+  ;; string being interpreted as a pathname instead of credential contents.
+  (require :sb-posix)
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (string-trim '(#\Newline)
+                                  (uiop:run-program '("mktemp" "-d") :output :string))))
+         (program (merge-pathnames "secret-tool" directory))
+         (old-path (uiop:getenv "PATH"))
+         (secret "star_sk_v1_subprocess-only-test")
+         (star-cli::*secret-service-runner* #'star-cli::auth/secret-tool-run))
+    (unwind-protect
+         (progn
+           (with-open-file (stream program :direction :output :if-exists :error)
+             (write-string "#!/bin/sh
+set -eu
+case \"$1\" in
+  store)
+    IFS= read -r value
+    test \"$value\" = star_sk_v1_subprocess-only-test
+    test -z \"$(cat)\"
+    printf '%s\\n' \"$@\"
+    ;;
+  lookup|clear)
+    if IFS= read -r value; then exit 8; fi
+    printf '%s\\n' \"$1\"
+    ;;
+  fail)
+    cat >&2
+    exit 9
+    ;;
+esac
+" stream))
+           (uiop:run-program (list "chmod" "700" (namestring program)))
+           (uiop:symbol-call :sb-posix :setenv "PATH"
+                             (format nil "~a:~a" (namestring directory) old-path) 1)
+           ;; Prove the fixture works independently of the production runner.
+           (is (string= (format nil "lookup~%")
+                        (uiop:run-program (list (namestring program) "lookup")
+                                          :input nil :output :string)))
+           (let ((output (star-cli::auth/secret-tool-run
+                          '("store" "application" "star-cli" "profile" "test")
+                          (format nil "~a~%" secret))))
+             (is (string= (format nil "store~%application~%star-cli~%profile~%test~%")
+                          output))
+             (is (null (search secret output))))
+           (is (string= "lookup" (star-cli::auth/lookup-secret "test")))
+           (is-true (star-cli::auth/clear-secret "test"))
+           (let ((message
+                   (handler-case
+                       (progn (star-cli::auth/secret-service-call '("fail") secret)
+                              "no error")
+                     (error (condition) (princ-to-string condition)))))
+             (is (search "Secret Service unavailable" message))
+             (is (null (search secret message)))))
+      (if old-path
+          (uiop:symbol-call :sb-posix :setenv "PATH" old-path 1)
+          (uiop:symbol-call :sb-posix :unsetenv "PATH"))
+      (uiop:delete-directory-tree directory :validate t))))
+
 (test secret-service-failure-does-not-echo-secret
   (let* ((secret "star_sk_v1_wallet-error-test")
          (star-cli::*secret-service-runner*
