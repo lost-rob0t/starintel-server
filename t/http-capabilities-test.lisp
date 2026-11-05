@@ -166,6 +166,71 @@
                               ("key" '("private" "public-a" "person"))
                               ("value" 1))))))))))
 
+(test api-v1-public-stats-does-not-wait-for-index-catch-up
+  (let* ((datasets '("stats-public-a" "stats-public-b"))
+         (requests nil)
+         (star.frontends.http-api::*public-search-datasets* datasets)
+         (star.frontends.http-api::*response* (lack.response:make-response 200))
+         (star.frontends.http-api::*couchdb-pool*
+           (anypool:make-pool
+            :name "stats-request-test"
+            :connector #'test-view-client
+            :disconnector (lambda (client) (declare (ignore client)))
+            :max-open-count 1 :max-idle-count 1))
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request)
+             (declare (ignore client))
+             (push request requests)
+             (let* ((uri (quri:uri (star.databases.couchdb:couchdb-view-request-uri request)))
+                    (parameters (quri:url-decode-params (quri:uri-query uri)))
+                    (start (jsown:parse (cdr (assoc "startkey" parameters :test #'string=))))
+                    (dataset (second start)))
+               (jsown:to-json
+                (jsown:new-js
+                  ("rows" (list (jsown:new-js
+                                  ("key" (list "public" dataset "target"))
+                                  ("value" (if (string= dataset (first datasets)) 3 7))))))))))
+         (body (star.frontends.http-api::handle-public-stats-route nil)))
+    (is (= 200 (lack.response:response-status star.frontends.http-api::*response*)))
+    (is (= 2 (length requests)))
+    (loop for request in (reverse requests)
+          for dataset in datasets do
+      (let* ((uri (quri:uri (star.databases.couchdb:couchdb-view-request-uri request)))
+             (parameters (quri:url-decode-params (quri:uri-query uri))))
+        (is (eq :get (star.databases.couchdb:couchdb-view-request-method request)))
+        (is (search "/_design/data/_view/count_by_tenant_dataset_dtype" (quri:uri-path uri)))
+        (is (string= "lazy" (cdr (assoc "update" parameters :test #'string=))))
+        (is (string= (jsown:to-json (list "public" dataset))
+                     (cdr (assoc "startkey" parameters :test #'string=))))
+        (is (string= (jsown:to-json (list "public" dataset (jsown:new-js)))
+                     (cdr (assoc "endkey" parameters :test #'string=))))
+        (dolist (expected '(("limit" . "1000") ("include_docs" . "false")
+                            ("reduce" . "true") ("group" . "true")))
+          (is (string= (cdr expected)
+                       (cdr (assoc (car expected) parameters :test #'string=)))))))
+    (let* ((document (jsown:parse body))
+           (data (jsown:val document "data")))
+      (is (string= "ok" (jsown:val document "status")))
+      (is (= 10 (jsown:val (jsown:val data "documents") "total")))
+      (is (= 10 (jsown:val (jsown:val data "targets") "total")))
+      (is (null (search "stats-public-" body)))
+      (is (null (search "_id" body))))))
+
+(test api-v1-public-stats-rejects-unconfigured-scope-before-transport
+  (dolist (datasets '(nil ("*")))
+    (let* ((calls 0)
+           (star.frontends.http-api::*public-search-datasets* datasets)
+           (star.frontends.http-api::*response* (lack.response:make-response 200))
+           (star.databases.couchdb:*couchdb-view-transport*
+             (lambda (client request)
+               (declare (ignore client request))
+               (incf calls)
+               (error "Unconfigured scope must not reach CouchDB")))
+           (body (star.frontends.http-api::handle-public-stats-route nil)))
+      (is (= 503 (lack.response:response-status star.frontends.http-api::*response*)))
+      (is (search "public_scope_unconfigured" body))
+      (is (zerop calls)))))
+
 (test api-v1-capabilities-is-public-discovery
   (is (member "/api/v1/capabilities"
               star:*auth-public-paths*

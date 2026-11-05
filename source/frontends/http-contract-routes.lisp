@@ -195,7 +195,7 @@ server-owned public scopes. No caller principal or caller scope enters here."
                   "data" "count_by_tenant_dataset_dtype"
                   :start-key (list +public-tenant+ dataset)
                   :end-key (list +public-tenant+ dataset (jsown:new-js))
-                  :limit 1000 :include-docs nil :reduce t :group t))
+                  :limit 1000 :include-docs nil :reduce t :group t :update :lazy))
                *public-search-datasets*)))
         (set-cache-control
          (format nil "public, max-age=~d" +public-stats-cache-seconds+))
