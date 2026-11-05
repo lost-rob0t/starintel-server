@@ -227,6 +227,9 @@ Synchronously durably accept a target and return a structured outcome.
 :KIND: fn
 :PACKAGE: STAR.ACTORS
 :END:
+#+begin_src lisp
+(actor-registry-document (&OPTIONAL STAR.ACTORS::DOCUMENTS))
+#+end_src
 Return the safe actor/service catalog envelope consumed by =GET /v1/actors=.
 *** actor-registry-public-entries
 :PROPERTIES:
