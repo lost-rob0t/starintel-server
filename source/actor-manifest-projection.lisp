@@ -18,6 +18,13 @@ paths and arbitrary extensions never enter the catalog or imply readiness."
                (member (jsown:val-safe document "visibility") '(nil "public") :test #'equal)
                (not (eq (jsown:val-safe document "deleted") :true)))
     (invalid-actor-manifest "expected a canonical system actor-manifest"))
+  (unless (equal "public"
+                 (star.authorization:authorization-resource-tenant-id
+                  (star.authorization:resource-from-document document)))
+    (invalid-actor-manifest "actor-manifest effective tenant must be public"))
+  (when (and (jsown:keyp document "_id")
+             (not (equal (jsown:val-safe document "id") (jsown:val document "_id"))))
+    (invalid-actor-manifest "canonical manifest id disagrees with stored identity"))
   (star.documents:validate-stored-document document)
   (let* ((actor (required-manifest-string document "actor" "document"))
          (version (required-manifest-string document "actorVersion" "document"))

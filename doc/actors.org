@@ -368,10 +368,14 @@ without returning a partial catalog or misreporting unrelated rows as overflow.
 Each request reads persisted state, so restart, updates and deletion require no
 second index or ingest callback. Storage failure fails the request rather than
 silently reporting a complete catalog. Explicitly non-public visibility is
-excluded; explicit =tenant_id= or =tenant= must be =public=. Absent tenant and
-visibility retain the unscoped system manifest catalog convention. Private
-tenant declarations never enter this global projection, even when they omit
-visibility or claim public visibility.
+excluded; explicit =tenant_id= or =tenant= must be =public=. Effective tenancy
+is resolved by the existing authorization authority, including configured
+dataset adaptation and tenant fallback. An unstamped manifest is eligible only
+when that resolution is =public=; the historical =default= tenant is not public.
+Private declarations never enter this global projection, even when they omit
+visibility or claim public visibility. Inconsistent canonical =id= and stored
+=_id= values are rejected as invalid declarations without aborting discovery;
+storage query failures still propagate.
 
 Document actor names map to =star://document-manifests/actor/<actor>=; operators
 may configure =star.actors::*actor-manifest-authority*= as a stable catalog

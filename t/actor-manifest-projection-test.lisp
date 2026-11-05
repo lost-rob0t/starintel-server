@@ -6,7 +6,7 @@
   ;; Synthetic public wire fixture; no collector implementation or credentials.
   (jsown:new-js
     ("id" "manifest:fixture") ("dataset" "starintel-system")
-    ("dtype" "actor-manifest") ("schemaVersion" "0.10.1")
+    ("dtype" "actor-manifest") ("schemaVersion" "0.10.1") ("tenant_id" "public")
     ("actor" "fixture-worker") ("actorVersion" "1.0.0") ("runtime" "python")
     ("accepts" (list "target")) ("produces" (list "account"))
     ("capabilities" (list "collect"))
@@ -242,3 +242,50 @@
         (star.actors::*actor-registry* (make-hash-table :test #'equal)))
     (setf (jsown:val document "tenant_id") "public")
     (is (= 1 (jsown:val (jsown:val (star.actors:actor-registry-document (list document)) "data") "count")))))
+
+(test unstamped-manifests-use-effective-authorization-tenancy
+  (dolist (scenario '((nil nil 0)
+                      (nil "private-team" 0)
+                      (nil "public" 1)
+                      ((("starintel-system" . "private-team")) nil 0)
+                      ((("starintel-system" . "private-team")) "public" 0)
+                      ((("starintel-system" . "public")) "private-team" 1)))
+    (let ((star:*tenant-dataset-map* (first scenario))
+          (star:*tenant-fallback* (second scenario))
+          (document (projected-manifest-fixture))
+          (star.actors::*actor-registry* (make-hash-table :test #'equal)))
+      (jsown:remkey document "tenant_id")
+      (is (= (third scenario)
+             (jsown:val (jsown:val (star.actors:actor-registry-document (list document)) "data") "count")))
+      (let ((calls (list nil)))
+        (is (= (third scenario)
+               (length (star.actors::query-actor-manifest-documents
+                        :query-fn (manifest-paged-query-fixture
+                                   (manifest-test-rows (list document)) calls)))))))))
+
+(test invalid-stored-manifest-identity-does-not-poison-discovery
+  (let* ((bad (projected-manifest-fixture))
+         (good (projected-manifest-fixture))
+         (calls (list nil))
+         (star.actors::*actor-registry*
+           (star.actors::build-actor-registry
+            (list (actor-registry-test-manifest "star://local/actor/local")))))
+    (setf (jsown:val bad "_id") "other-stored-identity")
+    (is (null (star.actors::eligible-actor-manifest-entry bad)))
+    (let* ((documents (star.actors::query-actor-manifest-documents
+                       :query-fn (manifest-paged-query-fixture
+                                  (manifest-test-rows (list bad good)) calls)))
+           (catalog (star.actors:actor-registry-document documents)))
+      (is (= 1 (length documents)))
+      (is (= 2 (jsown:val (jsown:val catalog "data") "count"))))))
+
+(test manifest-storage-failures-remain-visible
+  (let* ((failure (make-condition 'simple-error :format-control "Storage unavailable"))
+         (caught (handler-case
+                     (progn
+                       (star.actors::query-actor-manifest-documents
+                        :query-fn (lambda (&rest arguments)
+                                    (declare (ignore arguments)) (error failure)))
+                       nil)
+                   (error (condition) condition))))
+    (is (eq failure caught))))
