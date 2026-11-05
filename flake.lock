@@ -59,7 +59,8 @@
       "inputs": {
         "nixpkgs": "nixpkgs",
         "org-doc": "org-doc",
-        "star-cl": "star-cl"
+        "star-cl": "star-cl",
+        "starintel-pro-actors": "starintel-pro-actors"
       }
     },
     "star-cl": {
@@ -81,6 +82,23 @@
         "repo": "star-cl",
         "rev": "33935f1e6739b0015926a2a163ba55cf203fbc9d",
         "type": "github"
+      }
+    },
+    "starintel-pro-actors": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793858547,
+        "narHash": "sha256-pC0Vzx9gK1Qpju9K0wAOG0GEl+lPAZJXJZgmrALQxUg=",
+        "ref": "refs/heads/main",
+        "rev": "994a1fd2446ba5dec646c82e780e2966d21b0f81",
+        "revCount": 504,
+        "type": "git",
+        "url": "ssh://forgejo@git.starintel.actor/starintel-labs/starintel-pro-actors.git"
+      },
+      "original": {
+        "rev": "994a1fd2446ba5dec646c82e780e2966d21b0f81",
+        "type": "git",
+        "url": "ssh://forgejo@git.starintel.actor/starintel-labs/starintel-pro-actors.git"
       }
     },
     "systems": {

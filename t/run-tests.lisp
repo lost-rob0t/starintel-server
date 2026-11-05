@@ -4,6 +4,7 @@
   '(runner-tests
     consumer-tests
     init-loader-tests
+    pro-actors-plugin-tests
     target-routing-tests
     system-load-tests
     couchdb-actor-tests

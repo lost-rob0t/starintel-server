@@ -57,3 +57,9 @@
       (environment-integer
        "STAR_AUTH_MAX_REQUEST_TIMEOUT_MS"
        *auth-max-request-timeout-ms*))
+
+;;; Optional starintel-pro-actors plugin actors (domain-hunt and the other
+;;; server-hosted families). The plugin is baked into the server image;
+;;; STAR_SERVER_PRO_ACTORS gates whether its actors are attached to the
+;;; actors-start hook for this deployment.
+(maybe-start-pro-actors)
