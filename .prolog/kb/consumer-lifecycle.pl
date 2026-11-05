@@ -90,3 +90,41 @@ consumers, ~800 steady unacked). Watch docker logs for 'stopped after
 unsettled delivery' recurrences: a repeat of that line means the CouchDB
 stall returned and the drain will silently stall again until the
 supervised-restart slice ships.").
+
+%% --- 2026-11-04 drain resilience deployment (forgejo issue #38, PR #39 bb8f61e) ---
+
+invariant(new_observation_of_existing_document_upserts,
+    "prepare-outbox-mutation applies a :new mutation for an EXISTING _id as
+an :updated mutation publishing documents.updated.<dtype>; the mutation
+ledger key stays derived from the incoming :new content hash so identical
+redeliveries remain :duplicate acks. Explicit idempotency keys reused for
+different content still raise mutation-conflict. Before this, recurring
+collection (steady-v2) re-observations were permanently dead-lettered:
+825k+ couch quarantine records + 500k+ rabbit starintel-quarantine
+messages, with re-observation dead-lettering at up to 14/sec during
+drains. Post-deploy: quarantine count frozen, _changes show rev-2+ upserts.").
+
+invariant(quarantine_save_is_idempotent,
+    "couchdb-save-quarantine-record catches dexador:http-request-conflict
+and returns the existing record by _id: a duplicate quarantine of a
+redelivered failure is ack-able bookkeeping. Previously a raw couch 409
+escaped delivery settlement and terminally stopped workers (production
+2026-11-04 10:07Z/13:13Z same-second pairs).").
+
+invariant(supervised_worker_restart_complements_reconnect,
+    "run-consumer (runtime-lifecycle.lisp) keeps the #357 contract per
+delivery (settlement failure = stop-for-redelivery) but supervision
+restarts the worker with the reconnect policy's capped backoff; honest
+readiness (consumer-running-p nil during backoff), :stopping-fenced,
+:eof exits gracefully without restart. Transport-read errors still
+reconnect in-loop. failed-settlement-closes-worker-without-acknowledging
+keeps its four original assertions on a finite-delivery fixture.").
+
+fact(ingest_worker_scaling_20261104,
+    "biz init sets star:*ingest-workers* 12 (was 4): at 4 workers the
+steady-v2 publish rate (~310/s) exceeded consumption (~200/s, queue
++113/s); 12 workers reached ~265-300/s consumption (queue growth slowed
+to ~+45/s, still not net-drain). Single-node CouchDB write throughput,
+not worker count, is the next ceiling. Quarantine stayed frozen at
+639444 through the scaling change; zero worker stops across the
+post-fix observation windows").
