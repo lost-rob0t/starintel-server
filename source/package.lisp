@@ -3,7 +3,6 @@
   (:use :cl)
   (:export
    #:*observability-active*
-   #:maybe-start-pro-actors
    #:observability-active-p
    #:observability-wrapped-server
    #:observability-route-template

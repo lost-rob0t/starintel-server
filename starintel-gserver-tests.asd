@@ -26,7 +26,6 @@
      (:file "test-runner-test")
      (:file "consumers-test")
      (:file "init-loader-test")
-     (:file "pro-actors-plugin-test")
      (:file "target-routing-test")
      (:file "system-load-test")
      (:file "couchdb-actor-test")

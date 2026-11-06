@@ -11,15 +11,9 @@
       url = "git+https://github.com/lost-rob0t/org-doc";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Common Lisp plugin actors hosted inside the server image
-    # (domain-hunt and the other server-hosted families).
-    starintel-pro-actors = {
-      url = "git+ssh://forgejo@git.starintel.actor/starintel-labs/starintel-pro-actors.git?rev=994a1fd2446ba5dec646c82e780e2966d21b0f81";
-      flake = false;
-    };
   };
 
-  outputs = { self, nixpkgs, star-cl, org-doc, starintel-pro-actors }:
+  outputs = { self, nixpkgs, star-cl, org-doc }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
@@ -201,29 +195,6 @@ EOF
         dontStrip = true;
       };
 
-      pro-actors-lib = sbcl'.buildASDFSystem {
-        pname = "starintel-pro-actors";
-        version = "0.2.0";
-        src = starintel-pro-actors + "/lisp";
-
-        lispLibs = with sbcl'.pkgs; [
-          starintel-gserver
-          dexador
-          jsown
-          cl-ppcre
-          ironclad
-          babel
-          bordeaux-threads
-          alexandria
-          serapeum
-          lparallel
-        ];
-
-        systems = [ "starintel-pro-actors" ];
-        asdFilesToKeep = [ "starintel-pro-actors.asd" ];
-        dontStrip = true;
-      };
-
       starintel-actor-credentials = sbcl'.buildASDFSystem {
         pname = "starintel-actor-credentials";
         version = "0.1.0";
@@ -364,7 +335,7 @@ EOF
       };
 
       sbcl-wrapped = sbcl'.withPackages
-        (ps: with ps; [ starintel-gserver starintel-bixby pro-actors-lib ]);
+        (ps: with ps; [ starintel-gserver starintel-bixby ]);
       sbcl-test-wrapped = sbcl'.withPackages (ps: with ps; [ starintel-gserver-tests ]);
       sbcl-actor-registry-test-wrapped = sbcl'.withPackages
         (ps: with ps; [ starintel-actor-registry-tests ]);
@@ -624,7 +595,6 @@ PY
           ${sbcl-wrapped}/bin/sbcl --non-interactive --no-userinit --no-sysinit \
             --eval "(require :asdf)" \
             --eval "(asdf:load-system :starintel-gserver)" \
-            --eval "(asdf:load-system :starintel-pro-actors)" \
             --eval "(sb-ext:save-lisp-and-die \"star-server\" :toplevel 'star::main :executable t :compression t)"
         '';
 

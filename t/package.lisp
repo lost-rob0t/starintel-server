@@ -62,7 +62,6 @@
            #:run-consumer-tests
            #:run-http-api-tests
            #:run-init-loader-tests
-           #:run-pro-actors-plugin-tests
            #:run-target-routing-tests
            #:runner-tests
            #:system-load-tests

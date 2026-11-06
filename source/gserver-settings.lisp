@@ -23,25 +23,6 @@
         (parse-integer value :junk-allowed nil)
         default)))
 
-(defun maybe-start-pro-actors ()
-  "Start the starintel-pro-actors plugin actors when STAR_SERVER_PRO_ACTORS is on.
-
-The plugin must already be present in the server image (star-server-bin loads
-:starintel-pro-actors at image build time).  START only registers the plugin
-families on star:*actors-start-hook*; the runtime fires that hook later inside
-START-ACTORS, so this init-time call is the documented plugin contract.  Returns
-T when the plugin was started, NIL when the gate is off."
-  (when (environment-boolean "STAR_SERVER_PRO_ACTORS")
-    (let ((package (find-package :starintel-pro-actors)))
-      (unless package
-        (error "STAR_SERVER_PRO_ACTORS is set but :starintel-pro-actors is not loaded in this image"))
-      (let ((start (find-symbol "START" package)))
-        (unless (and start (fboundp start))
-          (error "starintel-pro-actors does not provide START"))
-        (log:info "Starting starintel-pro-actors plugin actors")
-        (funcall start)
-        t))))
-
 (defun split-comma-setting (value)
   (when value
     (loop with start = 0
