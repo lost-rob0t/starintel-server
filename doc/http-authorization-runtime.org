@@ -23,8 +23,9 @@ Capabilities:
 - =identity:read=
 - =documents:read=, =documents:write=, =documents:delete=, =documents:bulk=
 - =search:read=, =views:read=
-- =targets:read=, =targets:dispatch=, =targets:lease=,
-  =targets:force-release=
+- =actors:read=, =actor-credentials:read=
+- =targets:read=, =targets:dispatch=, =targets:update=, =targets:lease=,
+  =targets:force-release=, =targets:own=
 - =events:write=, =events:replay=
 - =credentials:read=, =credentials:create=, =credentials:rotate=,
   =credentials:revoke=, =credentials:disable=
@@ -46,6 +47,14 @@ A scope value may be an explicit identifier or =*=. Empty resource scope means
 no matching resources, not unrestricted access. =admin= grants the closed
 capability set and wildcard resource dimensions, but it does not authorize an
 unmapped route.
+
+=targets:own= is a modifier capability, not an action: it never authorizes an
+action by itself. When the requesting principal also created the target —
+matched through the =submitted_by= creator digest stamped at creation, never a
+raw principal identifier — the owner match satisfies the =target:= dimension
+only. The action capability and the tenant, dataset, actor, namespace, and
+program dimensions still apply, and targets created before the stamp keep
+scope-only semantics.
 
 Example read-only credential for one dataset:
 

@@ -523,6 +523,146 @@
                      '("documents:write" "tenant:default" "dataset:dataset-a"))
          :resource resource)))))
 
+;;; Creator/owner dimension (issue #401): a principal holding targets:own may
+;;; act on targets it created without a per-target scope. The match key is the
+;;; existing extensions.submitted_by digest stamped at creation, never a raw
+;;; principal identifier. Targets without the stamp keep legacy scope-only
+;;; semantics, and the owner match waives only the target dimension.
+
+(defun owned-policy-target (&key (id "target-owned-1") (creator "owner-1")
+                              (dataset "dataset-a") (tenant "default")
+                              (actor "subfinder"))
+  (let ((document
+          (jsown:new-js
+            ("_id" id)
+            ("dataset" dataset)
+            ("tenant_id" tenant)
+            ("dtype" "target")
+            ("actor" actor)
+            ("version" starintel.legacy:+starintel-doc-version+)))
+        (extensions (jsown:empty-object)))
+    (when creator
+      (setf (jsown:val extensions "submitted_by")
+            (star.frontends.http-api::target-v1-digest creator)))
+    (setf (jsown:val document "extensions") extensions)
+    document))
+
+(test owner-dimension-grants-target-actions-without-target-scope
+  (let* ((principal
+           (make-policy-principal
+            "owner-1"
+            '("targets:read" "targets:dispatch" "targets:lease" "targets:own"
+              "tenant:default" "dataset:dataset-a" "actor:subfinder")))
+         (resource
+           (star.authorization:resource-from-document
+            (owned-policy-target))))
+    (dolist (action '("targets:read" "targets:dispatch" "targets:lease"))
+      (is-true
+       (star.authorization:authorize!
+        action :principal principal :resource resource)))))
+
+(test targets-own-is-an-issuable-capability
+  (is (equal '("targets:own")
+             (star.authorization:validate-grant-scopes '("targets:own")))))
+
+(test owner-dimension-does-not-grant-other-principals-targets
+  (let* ((principal
+           (make-policy-principal
+            "owner-2"
+            '("targets:read" "targets:dispatch" "targets:lease" "targets:own"
+              "tenant:default" "dataset:dataset-a" "actor:subfinder")))
+         (resource
+           (star.authorization:resource-from-document
+            (owned-policy-target :creator "owner-1"))))
+    (dolist (action '("targets:read" "targets:dispatch" "targets:lease"))
+      (signals star.authorization:authorization-error
+        (star.authorization:authorize!
+         action :principal principal :resource resource)))))
+
+(test owner-dimension-waives-only-the-target-dimension
+  (let ((resource
+          (star.authorization:resource-from-document
+           (owned-policy-target))))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorize!
+       "targets:read"
+       :principal (make-policy-principal
+                   "owner-1"
+                   '("targets:read" "targets:own" "tenant:default"))
+       :resource resource))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorize!
+       "targets:read"
+       :principal (make-policy-principal
+                   "owner-1"
+                   '("targets:read" "targets:own" "tenant:default"
+                     "dataset:dataset-a"))
+       :resource resource))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorize!
+       "targets:read"
+       :principal (make-policy-principal
+                   "owner-1"
+                   '("targets:read" "targets:own" "tenant:default"
+                     "actor:subfinder"))
+       :resource resource))))
+
+(test owner-grant-requires-the-action-capability
+  (signals star.authorization:authorization-error
+    (star.authorization:authorize!
+     "targets:read"
+     :principal (make-policy-principal
+                 "owner-1"
+                 '("targets:own" "tenant:default" "dataset:dataset-a"
+                   "actor:subfinder"))
+     :resource (star.authorization:resource-from-document
+                (owned-policy-target)))))
+
+(test owner-dimension-leaves-legacy-targets-and-tenant-boundary-unchanged
+  (let ((legacy (owned-policy-target :creator nil)))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorize!
+       "targets:read"
+       :principal (make-policy-principal
+                   "owner-1"
+                   '("targets:read" "targets:own" "tenant:default"
+                     "dataset:dataset-a" "actor:subfinder"))
+       :resource (star.authorization:resource-from-document legacy)))
+    (is-true
+     (star.authorization:authorize!
+      "targets:read"
+      :principal (make-policy-principal
+                  "scoped-operator"
+                  '("targets:read" "target:target-owned-1" "tenant:default"
+                    "dataset:dataset-a" "actor:subfinder"))
+      :resource (star.authorization:resource-from-document legacy)))
+    (signals star.authorization:authorization-error
+      (star.authorization:authorize!
+       "targets:read"
+       :principal (make-policy-principal
+                   "owner-1"
+                   '("targets:read" "targets:own" "tenant:other"
+                     "dataset:dataset-a" "actor:subfinder"))
+       :resource (star.authorization:resource-from-document
+                  (owned-policy-target))))))
+
+(test owner-dimension-restores-own-targets-in-restricted-target-list
+  (let* ((principal
+           (make-policy-principal
+            "owner-1"
+            '("targets:read" "targets:own" "target:target-other-9"
+              "tenant:default")))
+         (visible
+           (star.authorization:authorized-target-documents
+            (list (owned-policy-target :id "target-owned-1" :creator "owner-1")
+                  (owned-policy-target :id "target-stranger-2"
+                                       :creator "owner-2"))
+            nil
+            "targets:read"
+            :principal principal)))
+    (is (= 1 (length visible)))
+    (is (string= "target-owned-1" (jsown:val (first visible) "_id")))))
+
 (test tenantless-document-dataset-map-takes-precedence-over-fallback
   (let ((star:*tenant-fallback* "ci")
         (star:*tenant-dataset-map* '(("dataset-a" . "llm"))))

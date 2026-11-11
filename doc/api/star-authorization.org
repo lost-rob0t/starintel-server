@@ -73,7 +73,7 @@ One authorization question: principal, action, resource.
 :PACKAGE: STAR.AUTHORIZATION
 :END:
 The resource side of an authorization request.
-- Slots: =tenant-id=, =dataset-id=, =actor-name=, =account-id=, =credential-type=, =target-id=, =target-namespace=, =program-id=, =resource-id=, =dtype=
+- Slots: =tenant-id=, =dataset-id=, =actor-name=, =account-id=, =credential-type=, =target-id=, =target-namespace=, =program-id=, =creator-digest=, =resource-id=, =dtype=
 *** trusted-authorization-context
 :PROPERTIES:
 :KIND: struct
@@ -209,6 +209,15 @@ The =resource= slot of =authorization-request=.
 (authorization-resource-actor-name (SB-KERNEL:INSTANCE))
 #+end_src
 The =actor-name= slot of =authorization-resource=.
+*** authorization-resource-creator-digest
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTHORIZATION
+:END:
+#+begin_src lisp
+(authorization-resource-creator-digest (SB-KERNEL:INSTANCE))
+#+end_src
+The =creator-digest= slot of =authorization-resource=.
 *** authorization-resource-dataset-id
 :PROPERTIES:
 :KIND: fn
@@ -402,7 +411,7 @@ RabbitMQ headers encoding an authorization decision.
 :END:
 #+begin_src lisp
 (make-authorization-resource (&KEY TENANT-ID DATASET-ID ACTOR-NAME ACCOUNT-ID CREDENTIAL-TYPE TARGET-ID
- TARGET-NAMESPACE PROGRAM-ID RESOURCE-ID DTYPE))
+ TARGET-NAMESPACE PROGRAM-ID CREATOR-DIGEST RESOURCE-ID DTYPE))
 #+end_src
 Build an authorization resource with the requested tenant, actor, account, credential type, and other scope dimensions.
 *** make-trusted-authorization-context
@@ -414,6 +423,19 @@ Build an authorization resource with the requested tenant, actor, account, crede
 (make-trusted-authorization-context (&KEY ID PRINCIPAL-TYPE SCOPES))
 #+end_src
 Build a trusted context for internal service calls by PRINCIPAL-ID and TYPE.
+*** principal-creator-digest
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.AUTHORIZATION
+:END:
+#+begin_src lisp
+(principal-creator-digest (PRINCIPAL-ID))
+#+end_src
+SHA-256 digest of PRINCIPAL-ID used only for creator matching.
+
+Must stay byte-identical to the =submitted_by= stamp written by
+=target-v1-document-from-request=; cross-layer equality is pinned by
+=authorization-policy-tests=.
 *** principal-has-capability-p
 :PROPERTIES:
 :KIND: fn

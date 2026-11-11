@@ -1,16 +1,16 @@
 {
-  "checked_at": "2026-11-03T01:54:14Z",
-  "facts_sha256": "4382888df63f05af3463bba8d17e4e60f3b844e551d76289382f2e30303adce4",
-  "head": "c5b474b4b1e63b72b00f168cd9cc66603b2b563f",
+  "checked_at": "2026-11-11T01:12:38Z",
+  "facts_sha256": "1fcd50487bcab5e543ed1e10f03009dd6814cb52fe3f081abfd4fd8f3d74e608",
+  "head": "427bcb7c865672fe289c43e55a6204dccbabb74e",
   "reason": "verification passed",
-  "run": "e834b9128d3947cfb8814accbc1ee556",
+  "run": "d66e1529a43546219f8289c96e0f8141",
   "run_file": "evidence.pl",
-  "run_sha256": "79e15ffb6aed9124d80c2720a7a0dd47751f2f94a8335fb99e82c7252676aaad",
+  "run_sha256": "6b10f7f817afb2c9c15139e47cd33047b2dd0ef00f52eff047f34ad760313663",
   "status": "pass",
   "stderr_sha256": "3f58487f8b178faab8411ba0285a21d4387b34d17785b054fc75e9ddaa05d772",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "swipl_exit": 0,
-  "task": "360-target-rehydration",
+  "task": "issue-401-owner-dimension",
   "verify_sha256": "e78b5e80fcf0af76206366221d8471683f219d05c79fb6ae161b4e5f4d1414ab",
-  "worktree_digest": "3be4bbd6156191c7ed23aeb3a7bc228e5292b2b071e42629ac8f20400a6f7a03"
+  "worktree_digest": "258944123bcb1fb18bd348dc6e7a009a3028e8e40f06af5f382ca6ac4f43cf33"
 }
