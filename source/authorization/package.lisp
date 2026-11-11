@@ -14,6 +14,7 @@
    #:authorization-resource-target-id
    #:authorization-resource-target-namespace
    #:authorization-resource-program-id
+   #:authorization-resource-creator-digest
    #:authorization-resource-resource-id
    #:authorization-resource-dtype
    #:authorization-request
@@ -42,6 +43,7 @@
    #:*current-authorization-decision*
    #:*authorization-audit-sink*
    #:validate-grant-scopes
+   #:principal-creator-digest
    #:capability-granted-p
    #:scope-values
    #:resource-from-document
