@@ -1,16 +1,16 @@
 {
-  "checked_at": "2026-11-11T01:12:38Z",
-  "facts_sha256": "1fcd50487bcab5e543ed1e10f03009dd6814cb52fe3f081abfd4fd8f3d74e608",
-  "head": "427bcb7c865672fe289c43e55a6204dccbabb74e",
+  "checked_at": "2026-11-11T04:07:11Z",
+  "facts_sha256": "15cd28cc8bd8bc782193fdd0a9530121e8eb1bed298fd78238676fa30721794a",
+  "head": "1fd793fcd010bf08627bd1b25f5ec2091208ad59",
   "reason": "verification passed",
-  "run": "d66e1529a43546219f8289c96e0f8141",
+  "run": "87a7e13392314050a10402f95fc2ffa9",
   "run_file": "evidence.pl",
-  "run_sha256": "6b10f7f817afb2c9c15139e47cd33047b2dd0ef00f52eff047f34ad760313663",
+  "run_sha256": "62a1df6c61cc2a032ef4d711942d13e0ec344524bb063780b003d72a4422983f",
   "status": "pass",
   "stderr_sha256": "3f58487f8b178faab8411ba0285a21d4387b34d17785b054fc75e9ddaa05d772",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "swipl_exit": 0,
-  "task": "issue-401-owner-dimension",
+  "task": "issue-385-queue-topology",
   "verify_sha256": "e78b5e80fcf0af76206366221d8471683f219d05c79fb6ae161b4e5f4d1414ab",
-  "worktree_digest": "258944123bcb1fb18bd348dc6e7a009a3028e8e40f06af5f382ca6ac4f43cf33"
+  "worktree_digest": "e8c5145417f849d82da90bee9f5ca94d90ae47826ebdb6a16911be2836597545"
 }

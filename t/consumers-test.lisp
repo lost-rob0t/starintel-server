@@ -491,3 +491,305 @@
 
 (defun run-consumer-tests ()
   (run! 'consumer-tests))
+
+;;; Queue topology ownership (issue #385) --------------------------------
+
+(test create-rabbit-consumer-accepts-queue-topology-arguments
+  (let ((arguments-accessor
+          (find-symbol "RABBIT-STREAM-QUEUE-ARGUMENTS" :star.consumers))
+        (dead-letter-exchange-accessor
+          (find-symbol "RETRY-STREAM-DEAD-LETTER-EXCHANGE" :star.consumers))
+        (dead-letter-queue-accessor
+          (find-symbol "RETRY-STREAM-DEAD-LETTER-QUEUE" :star.consumers))
+        (consumer
+          (ignore-errors
+            (star.consumers:create-rabbit-consumer
+             :name "topology-arguments-red"
+             :queue-name "events"
+             :exchange-name "events"
+             :routing-key "event.#"
+             :handler-fn #'identity
+             :queue-arguments
+             (list (cons "x-dead-letter-exchange" "events.dead-letter"))
+             :dead-letter-exchange "events.dead-letter"
+             :dead-letter-routing-key "events.invalid"
+             :dead-letter-queue "events.quarantine"))))
+    (is-true arguments-accessor
+             "rabbit-stream-queue-arguments accessor must exist")
+    (is-true dead-letter-exchange-accessor
+             "retry-stream-dead-letter-exchange accessor must exist")
+    (is-true dead-letter-queue-accessor
+             "retry-stream-dead-letter-queue accessor must exist")
+    (is-true consumer
+             "create-rabbit-consumer must accept queue topology arguments")
+    (when (and consumer arguments-accessor)
+      (is (equal '(("x-dead-letter-exchange" . "events.dead-letter"))
+                 (funcall arguments-accessor
+                          (star.consumers:consumer-stream consumer)))
+          "supported queue arguments must reach the stream"))
+    (when (and consumer dead-letter-exchange-accessor)
+      (is (string= "events.dead-letter"
+                   (funcall dead-letter-exchange-accessor
+                            (star.consumers:consumer-stream consumer)))
+          "dead-letter exchange must reach the stream"))
+    (when (and consumer dead-letter-queue-accessor)
+      (is (string= "events.quarantine"
+                   (funcall dead-letter-queue-accessor
+                            (star.consumers:consumer-stream consumer)))
+          "dead-letter queue must reach the stream"))))
+
+;;; Queue topology reconciliation (issue #385) --------------------------
+;;;
+;;; The scripted cl-rabbit stubs record into a shared log cell (the CAR of
+;;; LOG) so closures created inside and outside the installer see the same
+;;; entries.
+
+(defun install-cl-rabbit-open-stubs (log on-declare on-delete)
+  "Script the cl-rabbit surface used by open-stream; return a restore thunk.
+LOG is a cons cell whose CAR accumulates the recorded calls."
+  (let ((saved nil))
+    (flet ((stub (symbol function)
+             (push (cons symbol (symbol-function symbol)) saved)
+             (sb-ext:without-package-locks
+               (setf (symbol-function symbol) function)))
+           (record (entry)
+             (push entry (car log))))
+      (stub 'cl-rabbit:new-connection (constantly :test-connection))
+      (stub 'cl-rabbit:tcp-socket-new (constantly :test-socket))
+      (stub 'cl-rabbit:socket-open
+            (lambda (&rest args) (declare (ignore args))))
+      (stub 'cl-rabbit:login-sasl-plain
+            (lambda (&rest args) (declare (ignore args))))
+      (stub 'cl-rabbit:channel-open
+            (lambda (connection channel)
+              (declare (ignore connection))
+              (record (list :channel-open channel))))
+      (stub 'cl-rabbit:basic-qos
+            (lambda (&rest args) (declare (ignore args))))
+      (stub 'cl-rabbit:exchange-declare
+            (lambda (connection channel exchange type &key durable)
+              (declare (ignore connection channel type durable))
+              (record (list :exchange-declare exchange))))
+      (stub 'cl-rabbit:queue-declare on-declare)
+      (stub 'cl-rabbit:queue-delete on-delete)
+      (stub 'cl-rabbit:queue-bind
+            (lambda (connection channel &key queue exchange routing-key)
+              (declare (ignore connection channel))
+              (record (list :queue-bind queue exchange routing-key))))
+      (stub 'cl-rabbit:basic-consume
+            (lambda (&rest args) (declare (ignore args))))
+      (stub 'cl-rabbit:destroy-connection
+            (lambda (&rest args) (declare (ignore args)))))
+    (lambda ()
+      (dolist (binding saved)
+        (sb-ext:without-package-locks
+          (setf (symbol-function (car binding)) (cdr binding)))))))
+
+(defun topology-probe-stream ()
+  (make-instance
+   'star.consumers:retrying-rabbit-queue-stream
+   :host "localhost"
+   :port 5672
+   :queue-name "events"
+   :exchange-name "events"
+   :routing-key "event.#"
+   :queue-arguments
+   (list (cons "x-dead-letter-exchange" "events.dead-letter")
+         (cons "x-dead-letter-routing-key" "events.invalid"))
+   :dead-letter-exchange "events.dead-letter"
+   :dead-letter-routing-key "events.invalid"
+   :dead-letter-queue "events.quarantine"))
+
+(defun topology-declare-recorder (log)
+  "Record queue declarations into LOG; signal 406 on the first EVENTS declare."
+  (let ((declares 0))
+    (lambda (connection channel &key queue durable arguments)
+      (declare (ignore connection channel durable))
+      (incf declares)
+      (push (list :queue-declare queue arguments) (car log))
+      (when (and (string= queue "events") (= declares 1))
+        (error (make-condition
+                'cl-rabbit:rabbitmq-server-error
+                :reply-code cl-rabbit:+amqp-precondition-failed+
+                :message "inequivalent arg 'x-dead-letter-exchange'"))))))
+
+(defun recorded-declare-for (log queue-name)
+  (find queue-name (car log)
+        :test #'string=
+        :key (lambda (entry)
+               (and (eq (first entry) :queue-declare)
+                    (second entry)))))
+
+(test create-rabbit-consumer-accepts-queue-topology-arguments
+  (let ((arguments-accessor
+          (find-symbol "RABBIT-STREAM-QUEUE-ARGUMENTS" :star.consumers))
+        (dead-letter-exchange-accessor
+          (find-symbol "RETRY-STREAM-DEAD-LETTER-EXCHANGE" :star.consumers))
+        (dead-letter-queue-accessor
+          (find-symbol "RETRY-STREAM-DEAD-LETTER-QUEUE" :star.consumers))
+        (consumer
+          (ignore-errors
+            (star.consumers:create-rabbit-consumer
+             :name "topology-arguments-red"
+             :queue-name "events"
+             :exchange-name "events"
+             :routing-key "event.#"
+             :handler-fn #'identity
+             :queue-arguments
+             (list (cons "x-dead-letter-exchange" "events.dead-letter"))
+             :dead-letter-exchange "events.dead-letter"
+             :dead-letter-routing-key "events.invalid"
+             :dead-letter-queue "events.quarantine"))))
+    (is-true arguments-accessor
+             "rabbit-stream-queue-arguments accessor must exist")
+    (is-true dead-letter-exchange-accessor
+             "retry-stream-dead-letter-exchange accessor must exist")
+    (is-true dead-letter-queue-accessor
+             "retry-stream-dead-letter-queue accessor must exist")
+    (is-true consumer
+             "create-rabbit-consumer must accept queue topology arguments")
+    (when (and consumer arguments-accessor)
+      (is (equal '(("x-dead-letter-exchange" . "events.dead-letter")
+                  ("x-dead-letter-routing-key" . "events.invalid"))
+                 (funcall arguments-accessor
+                          (star.consumers:consumer-stream consumer)))
+          "supported queue arguments must reach the stream"))
+    (when (and consumer dead-letter-exchange-accessor)
+      (is (string= "events.dead-letter"
+                   (funcall dead-letter-exchange-accessor
+                            (star.consumers:consumer-stream consumer)))
+          "dead-letter exchange must reach the stream"))
+    (when (and consumer dead-letter-queue-accessor)
+      (is (string= "events.quarantine"
+                   (funcall dead-letter-queue-accessor
+                            (star.consumers:consumer-stream consumer)))
+          "dead-letter queue must reach the stream"))))
+
+(test active-open-stream-declares-supported-topology
+  (let ((log (list nil)))
+    (let ((restore
+            (install-cl-rabbit-open-stubs
+             log
+             (lambda (connection channel &key queue durable arguments)
+               (declare (ignore connection channel durable))
+               (push (list :queue-declare queue arguments) (car log)))
+             (lambda (&rest args) (declare (ignore args)))))
+          (stream (topology-probe-stream)))
+      (unwind-protect
+           (star.consumers:open-stream stream)
+        (funcall restore)))
+    (let ((declaration (recorded-declare-for log "events")))
+      (is-true declaration "the events queue must be declared")
+      (is (equal '(("x-dead-letter-exchange" . "events.dead-letter")
+                  ("x-dead-letter-routing-key" . "events.invalid"))
+                (third declaration))
+          "the active declaration path must carry the supported arguments"))
+    (is (member '(:exchange-declare "events.dead-letter") (car log)
+                :test #'equal)
+        "the dead-letter exchange must be declared")
+    (is (recorded-declare-for log "events.quarantine")
+        "the dead-letter queue must be declared")
+    (is (member '(:queue-bind "events.quarantine" "events.dead-letter"
+                  "events.invalid")
+                (car log) :test #'equal)
+        "the dead-letter queue must be bound to the dead-letter routing key")))
+
+(test incompatible-empty-queue-is-recreated-non-destructively
+  (let ((log (list nil)))
+    (let ((on-declare (topology-declare-recorder log)))
+      (let ((restore
+              (install-cl-rabbit-open-stubs
+               log
+               on-declare
+               (lambda (connection channel queue &key if-empty if-unused)
+                 (declare (ignore connection channel))
+                 (push (list :queue-delete queue if-empty if-unused)
+                       (car log))
+                 nil)))
+            (stream (topology-probe-stream)))
+        (unwind-protect
+             (is-true (star.consumers:open-stream stream)
+                      "an empty incompatible queue must be recreated")
+          (funcall restore)))
+      (is (= 2 (count "events" (car log)
+                      :test #'string=
+                      :key (lambda (entry)
+                             (and (eq (first entry) :queue-declare)
+                                  (second entry)))))
+          "the events queue must be declared again after recreation")
+      (is (member '(:queue-delete "events" t t) (car log) :test #'equal)
+          "the stale queue must be deleted only when empty and unused")
+      (is (equal 2 (count-if (lambda (entry)
+                               (eq (first entry) :channel-open))
+                             (car log)))
+          "the closed channel must be reopened before the retry")
+      (is (equal '(("x-dead-letter-exchange" . "events.dead-letter")
+                  ("x-dead-letter-routing-key" . "events.invalid"))
+                 (third (recorded-declare-for log "events")))
+          "the recreated queue must carry the supported arguments"))))
+
+(test incompatible-non-empty-queue-is-actionable-not-destructive
+  (let ((log (list nil))
+        (deleted nil))
+    (let ((restore
+            (install-cl-rabbit-open-stubs
+             log
+             (lambda (connection channel &key queue durable arguments)
+               (declare (ignore connection channel durable arguments))
+               (push (list :queue-declare queue) (car log))
+               (error (make-condition
+                       'cl-rabbit:rabbitmq-server-error
+                       :reply-code cl-rabbit:+amqp-precondition-failed+
+                       :message "inequivalent arg 'x-dead-letter-exchange'")))
+             (lambda (connection channel queue &key if-empty if-unused)
+               (declare (ignore connection channel if-empty if-unused))
+               (push queue deleted)
+               (error (make-condition
+                       'cl-rabbit:rabbitmq-server-error
+                       :reply-code 406
+                       :message "queue must be empty")))))
+          (stream (topology-probe-stream)))
+      (unwind-protect
+           (let ((signalled
+                   (handler-case (star.consumers:open-stream stream)
+                     (star.consumers:queue-topology-mismatch (c) c))))
+             (is-true (typep signalled
+                             'star.consumers:queue-topology-mismatch)
+                      "a non-empty incompatible queue must signal an actionable mismatch")
+             (is (string= "events"
+                          (star.consumers:queue-topology-mismatch-queue-name
+                           signalled))))
+        (funcall restore)))
+    (is-true (member "events" deleted :test #'string=)
+              "recreation must have been attempted non-destructively")))
+
+(test topology-mismatch-is-terminal-not-startup-retryable
+  (let ((condition
+          (make-condition 'star.consumers:queue-topology-mismatch
+                          :queue-name "events"
+                          :server-message "queue must be empty")))
+    (is-false (star.consumers:rabbit-startup-retryable-p condition)
+              "a topology mismatch must never be retried as transient")))
+
+(test worker-stream-clones-carry-queue-topology
+  (let* ((consumer
+           (star.consumers:create-rabbit-consumer
+            :name "topology-clone-test"
+            :queue-name "events"
+            :exchange-name "events"
+            :routing-key "event.#"
+            :handler-fn #'identity
+            :dead-letter-exchange "events.dead-letter"
+            :dead-letter-routing-key "events.invalid"
+            :dead-letter-queue "events.quarantine"))
+         (parent-stream (star.consumers:consumer-stream consumer))
+         (worker
+           (star.consumers:make-rabbit-worker-consumer consumer 1))
+         (worker-stream (star.consumers:consumer-stream worker)))
+    (is (equal (star.consumers:rabbit-stream-queue-arguments parent-stream)
+               (star.consumers:rabbit-stream-queue-arguments worker-stream))
+        "worker streams must declare the same supported arguments")
+    (is (string= "events.dead-letter"
+                 (star.consumers:retry-stream-dead-letter-exchange
+                  worker-stream))
+        "worker streams must carry the dead-letter topology")))

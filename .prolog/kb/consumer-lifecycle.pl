@@ -128,3 +128,16 @@ to ~+45/s, still not net-drain). Single-node CouchDB write throughput,
 not worker count, is the next ceiling. Quarantine stayed frozen at
 639444 through the scaling change; zero worker stops across the
 post-fix observation windows").
+
+%% --- Queue topology ownership (issue #385, verified by unit gate 2026-11-11) ---
+
+invariant(queue_topology_single_declaration,
+          'Exactly one open-stream method for rabbit-queue-stream (owner-fixes.lisp) declares queues through declare-queue-with-reconciliation; the shadowed duplicate in consumers.lisp and the dead rabbit-settlement.lisp second implementation were deleted. A new duplicate declaration path reintroduces the PRECONDITION_FAILED class of permanent startup failure.').
+invariant(queue_topology_non_destructive_reconcile,
+          'On 406 PRECONDITION_FAILED the canonical declare deletes the stale queue ONLY with :if-empty t :if-unused t, reopens the channel, and redeclares with the supported arguments; a non-empty incompatible queue signals queue-topology-mismatch and is never dropped (issue forbids volume deletion / quarantine disabling).').
+invariant(queue_topology_terminal_containment,
+          'queue-topology-mismatch is never startup-retryable and never reconnected: ensure-stream-open records terminal-failure-p, the worker loop exits without supervised restart, the consumer lands :stopped, and consumer-aware readiness (/health, /ready) reports 503 with an actionable drain-or-delete log. Supervised restart machinery stays gated on issue #37.').
+invariant(worker_stream_topology_propagation,
+          'make-rabbit-worker-consumer clones must forward queue-arguments and the dead-letter triple; a clone that drops them makes WORKERS redeclare bare queues and reintroduces the mismatch (regression: worker-stream-clones-carry-queue-topology).').
+method(event_lane_dlq_topology,
+       'The events queue is declared with x-dead-letter-exchange=events.dead-letter and x-dead-letter-routing-key=events.invalid; the DLX exchange, events.quarantine queue, and binding are declared in the retrying open-stream when the triple is set (start-event-consumer via make-event-consumer).').

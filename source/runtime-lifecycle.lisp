@@ -62,7 +62,8 @@ A worker exit on :eof is graceful and is never restarted."
          (stream-open-p nil)
          (reconnect-attempts 0)
          (restart-attempts 0)
-         (graceful-exit-p nil))
+         (graceful-exit-p nil)
+         (terminal-failure-p nil))
     (labels
         ((stopping-p ()
            (eq (consumer-state consumer) :stopping))
@@ -73,6 +74,12 @@ A worker exit on :eof is graceful and is never restarted."
                         (progn
                           (open-stream stream)
                           (setf stream-open-p t))
+                      (queue-topology-mismatch (condition)
+                        (log:error
+                         "Consumer ~a cannot start: terminal queue topology mismatch — ~a"
+                         (consumer-name consumer) condition)
+                        (setf terminal-failure-p t)
+                        (return-from ensure-stream-open))
                       (condition (condition)
                         (log:warn "Consumer ~a (re)connect failed (~a); retrying (attempt ~d)"
                                   (consumer-name consumer) condition (1+ attempt))
@@ -97,6 +104,8 @@ signals consumer-transport-lost when the read path itself broke."
                                  (not (consumer-running-p consumer)))
                         (setf (consumer-running-p consumer) t)
                         (consumer-update-state consumer :running))
+                      (when terminal-failure-p
+                        (return-from consumer-loop))
                       (handler-case
                           (loop until (stopping-p)
                                 do (let ((delivery (read-delivery)))
@@ -153,7 +162,7 @@ signals consumer-transport-lost when the read path itself broke."
                                        (consumer-name consumer)
                                        condition)))
                         (cond
-                          ((or graceful-exit-p (stopping-p))
+                          ((or graceful-exit-p terminal-failure-p (stopping-p))
                            (return-from supervision-loop))
                           (t
                            ;; The worker exited without a graceful end: an

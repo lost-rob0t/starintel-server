@@ -207,3 +207,32 @@ supervised worker restart for backlog drains (issue #38).")
 
 (defun run-drain-resilience-tests ()
   (run! 'drain-resilience-tests))
+
+;;; Terminal queue-topology containment (issue #385) --------------------
+
+(defclass test-terminal-topology-stream (test-supervised-stream) ())
+
+(defmethod star.consumers:open-stream ((stream test-terminal-topology-stream))
+  (incf (test-supervised-opens stream))
+  (error (make-condition 'star.consumers:queue-topology-mismatch
+                         :queue-name "events"
+                         :server-message "queue must be empty")))
+
+(test terminal-topology-failure-is-bounded-honest-and-contained
+  (let* ((stream (make-instance 'test-terminal-topology-stream
+                                :script '(:eof)))
+         (consumer (make-supervised-consumer stream))
+         (backoffs 0))
+    (let ((star.consumers::*retry-sleep-function*
+            (lambda (seconds)
+              (declare (ignore seconds))
+              (incf backoffs))))
+      (star.consumers:run-consumer consumer))
+    (is (= 1 (test-supervised-opens stream))
+        "a terminal topology mismatch must not be retried")
+    (is (= 0 backoffs)
+        "a terminal topology mismatch must not backoff-spin")
+    (is (eq :stopped (star.consumers:consumer-state consumer))
+        "the consumer must land in a contained stopped state")
+    (is-false (star.consumers::consumer-ready-p consumer)
+              "readiness must honestly report not-ready")))
