@@ -49,6 +49,11 @@
    #:wrong-stream-owner
    #:wrong-stream-owner-expected
    #:wrong-stream-owner-actual
+   #:queue-topology-mismatch
+   #:queue-topology-mismatch-queue-name
+   #:queue-topology-mismatch-server-message
+   #:declare-queue-with-reconciliation
+   #:rabbit-startup-retryable-p
    #:rabbit-queue-stream
    #:rabbit-stream-exchange
    #:rabbit-exchange-type
@@ -61,6 +66,10 @@
    #:rabbit-stream-host
    #:rabbit-stream-queue-durable-p
    #:rabbit-stream-queue-name
+   #:rabbit-stream-queue-arguments
+   #:retry-stream-dead-letter-exchange
+   #:retry-stream-dead-letter-routing-key
+   #:retry-stream-dead-letter-queue
    #:rabbit-stream-connection
    #:rabbit-stream-channel
    #:rabbit-stream-owner-thread

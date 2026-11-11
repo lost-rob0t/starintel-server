@@ -82,6 +82,29 @@ NIL and non-settlement success values remain backward-compatible ACK results."
 (setf (documentation 'WRONG-STREAM-OWNER-EXPECTED 'function)
 "The =expected= slot of =wrong-stream-owner=.")
 
+(define-condition queue-topology-mismatch (error)
+  ((queue-name
+    :initarg :queue-name
+    :reader queue-topology-mismatch-queue-name)
+   (server-message
+    :initarg :server-message
+    :initform nil
+    :reader queue-topology-mismatch-server-message))
+  (:report
+   (lambda (condition stream)
+     (format stream
+             "Queue ~a has inequivalent durable arguments and is not empty. ~
+              Drain or delete the stale queue (and its bindings) before restarting.~@[ Server: ~a~]"
+             (queue-topology-mismatch-queue-name condition)
+             (queue-topology-mismatch-server-message condition))))
+  (:documentation "Signalled when a durable queue cannot be reconciled with the supported declaration arguments without destroying messages."))
+
+;; Accessor documentation for queue-topology-mismatch
+(setf (documentation 'QUEUE-TOPOLOGY-MISMATCH-QUEUE-NAME 'function)
+"The =queue-name= slot of =queue-topology-mismatch=.")
+(setf (documentation 'QUEUE-TOPOLOGY-MISMATCH-SERVER-MESSAGE 'function)
+"The =server-message= slot of =queue-topology-mismatch=.")
+
 
 
 (defclass consumer ()
@@ -435,6 +458,11 @@ NIL and non-settlement success values remain backward-compatible ACK results."
    (queue-name
     :initarg :queue-name
     :accessor rabbit-stream-queue-name)
+   (queue-arguments
+    :initform nil
+    :initarg :queue-arguments
+    :accessor rabbit-stream-queue-arguments
+    :documentation "AMQP queue declaration arguments (for example dead-letter policy) owned by this stream.")
    (prefetch-count
     :initarg :prefetch-count
     :initform 200
@@ -484,6 +512,8 @@ NIL and non-settlement success values remain backward-compatible ACK results."
 "The =queue-durable-p= slot of =rabbit-queue-stream=.")
 (setf (documentation 'RABBIT-STREAM-QUEUE-NAME 'function)
 "The =queue-name= slot of =rabbit-queue-stream=.")
+(setf (documentation 'RABBIT-STREAM-QUEUE-ARGUMENTS 'function)
+"The =queue-arguments= slot of =rabbit-queue-stream=.")
 (setf (documentation 'RABBIT-STREAM-ROUTING-KEY 'function)
 "The =routing-key= slot of =rabbit-queue-stream=.")
 (setf (documentation 'RABBIT-STREAM-USER 'function)
@@ -501,58 +531,49 @@ NIL and non-settlement success values remain backward-compatible ACK results."
              :expected expected
              :actual actual))))
 
-(defmethod open-stream ((stream rabbit-queue-stream))
-  (when (rabbit-stream-open-p stream)
-    (error "Rabbit stream is already open"))
-  (setf (rabbit-stream-owner-thread stream) (bt:current-thread))
-  (handler-case
-      (let* ((connection (cl-rabbit:new-connection))
-             (socket (cl-rabbit:tcp-socket-new connection))
-             (channel (rabbit-stream-channel stream)))
-        (setf (rabbit-stream-connection stream) connection)
-        (cl-rabbit:socket-open
-         socket
-         (rabbit-stream-host stream)
-         (rabbit-stream-port stream))
-        (when (and (rabbit-stream-user stream)
-                   (rabbit-stream-password stream))
-          (cl-rabbit:login-sasl-plain
-           connection
-           (rabbit-stream-vhost stream)
-           (rabbit-stream-user stream)
-           (rabbit-stream-password stream)))
-        (cl-rabbit:channel-open connection channel)
-        (cl-rabbit:basic-qos
-         connection
-         channel
-         :prefetch-count (rabbit-stream-prefetch-count stream))
-        (cl-rabbit:exchange-declare
-         connection
-         channel
-         (rabbit-stream-exchange stream)
-         (rabbit-exchange-type stream)
-         :durable (rabbit-exchange-durable-p stream))
-        (cl-rabbit:queue-declare
-         connection
-         channel
-         :queue (rabbit-stream-queue-name stream)
-         :durable (rabbit-stream-queue-durable-p stream))
-        (cl-rabbit:queue-bind
-         connection
-         channel
-         :queue (rabbit-stream-queue-name stream)
-         :exchange (rabbit-stream-exchange stream)
-         :routing-key (rabbit-stream-routing-key stream))
-        (cl-rabbit:basic-consume
-         connection
-         channel
+(defun declare-queue-with-reconciliation (stream connection channel)
+  "Declare the stream queue with its supported arguments, non-destructively.
+
+RabbitMQ rejects =queue-declare= with PRECONDITION_FAILED when an existing
+durable queue has inequivalent arguments (for example a queue created without
+dead-letter policy that the code now declares with one). When the stale queue
+is empty and unused it is deleted and redeclared with the supported
+arguments. A non-empty incompatible queue is never dropped: the mismatch is
+signalled as =queue-topology-mismatch= so startup lands in an actionable
+not-ready state instead of destroying messages."
+  (flet ((declare-queue ()
+           (cl-rabbit:queue-declare
+            connection
+            channel
+            :queue (rabbit-stream-queue-name stream)
+            :durable (rabbit-stream-queue-durable-p stream)
+            :arguments (rabbit-stream-queue-arguments stream))))
+    (handler-case
+        (declare-queue)
+      (cl-rabbit:rabbitmq-server-error (condition)
+        (unless (= cl-rabbit:+amqp-precondition-failed+
+                   (cl-rabbit:rabbitmq-server-error/reply-code condition))
+          (error condition))
+        (log:warn
+         "Queue ~a has inequivalent arguments (PRECONDITION_FAILED); attempting to recreate empty queue"
          (rabbit-stream-queue-name stream))
-        (setf (rabbit-stream-open-p stream) t)
-        stream)
-    (condition (error)
-      (setf (rabbit-stream-owner-thread stream) nil
-            (rabbit-stream-connection stream) nil)
-      (signal error))))
+        ;; The failed declare closes the channel; reopen it before retrying.
+        (cl-rabbit:channel-open connection channel)
+        (handler-case
+            (cl-rabbit:queue-delete
+             connection
+             channel
+             (rabbit-stream-queue-name stream)
+             :if-empty t
+             :if-unused t)
+          (cl-rabbit:rabbitmq-server-error (delete-condition)
+            (error 'queue-topology-mismatch
+                   :queue-name (rabbit-stream-queue-name stream)
+                   :server-message
+                   (cl-rabbit:rabbitmq-server-error/message delete-condition))))
+        (log:info "Recreated queue ~a with supported declaration arguments"
+                  (rabbit-stream-queue-name stream))
+        (declare-queue)))))
 
 (defmethod close-stream ((stream rabbit-queue-stream))
   (assert-rabbit-stream-owner stream)

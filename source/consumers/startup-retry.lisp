@@ -2,10 +2,11 @@
 
 (defun rabbit-startup-retryable-p (condition)
   "Return true only for transport/server conditions safe to retry at stream open."
-  (or (condition-name-contains-p condition "RABBITMQ")
-      (condition-name-contains-p condition "CONNECTION")
-      (condition-name-contains-p condition "SOCKET")
-      (condition-name-contains-p condition "TIMEOUT")))
+  (and (not (typep condition 'queue-topology-mismatch))
+       (or (condition-name-contains-p condition "RABBITMQ")
+           (condition-name-contains-p condition "CONNECTION")
+           (condition-name-contains-p condition "SOCKET")
+           (condition-name-contains-p condition "TIMEOUT"))))
 
 (defun reset-rabbit-stream-after-open-failure (stream)
   "Best-effort cleanup of STREAM after an interrupted open attempt."
