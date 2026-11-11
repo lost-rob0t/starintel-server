@@ -68,6 +68,36 @@
           (star.runtime::*rabbit-readiness-probe* (constantly nil)))
       (is (not (star.runtime:runtime-ready-p runtime))))))
 
+;; issue #416: auth-required CouchDB fronts answer anonymous /_up with
+;; 401 while the authed write path is healthy, so the default probe must
+;; send the configured credential or readiness wedges at unavailable.
+(test default-couchdb-readiness-probe-authenticates
+  (let* ((expected (cons "probe-admin" "probe-secret"))
+         (captured nil)
+         (original-dex-get (and (fboundp 'dex:get)
+                                (symbol-function 'dex:get))))
+    (flet ((stubbed-dex-get (uri &rest args &key basic-auth &allow-other-keys)
+             (declare (ignore uri args))
+             (setf captured basic-auth)
+             ;; auth-required front: authenticated -> 200, else -> 401
+             (values nil (if (equal basic-auth expected) 200 401))))
+      (unwind-protect
+           (progn
+             (sb-ext:without-package-locks
+               (setf (symbol-function 'dex:get) #'stubbed-dex-get))
+             (let ((star:*couchdb-user* "probe-admin")
+                   (star:*couchdb-password* "probe-secret"))
+               (is (star.runtime::default-couchdb-readiness-probe)
+                   "authenticated /_up 200 must read as ready")
+               (is (equal expected captured)
+                   "probe must send the configured admin credential"))
+             (let ((star:*couchdb-user* "wrong")
+                   (star:*couchdb-password* "wrong"))
+               (is (not (star.runtime::default-couchdb-readiness-probe))
+                   "wrong credentials must stay unready (fail closed)")))
+        (sb-ext:without-package-locks
+          (setf (symbol-function 'dex:get) original-dex-get))))))
+
 (test runtime-liveness-tracks-lifecycle-state
   (let ((runtime
           (star.runtime::%make-star-runtime

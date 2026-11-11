@@ -394,6 +394,10 @@ signals consumer-transport-lost when the read path itself broke."
   lock)
 
 (defun default-couchdb-readiness-probe ()
+  ;; Auth-required fronts (issue #416): a locked-down CouchDB answers
+  ;; anonymous /_up with 401, so the probe must carry the configured
+  ;; admin credential or readiness reports unavailable while the real
+  ;; write path is healthy.  dexador takes basic-auth as a cons.
   (handler-case
       (multiple-value-bind (body status)
           (dex:get
@@ -401,6 +405,7 @@ signals consumer-transport-lost when the read path itself broke."
                    star:*couchdb-scheme*
                    star:*couchdb-host*
                    star:*couchdb-port*)
+           :basic-auth (cons star:*couchdb-user* star:*couchdb-password*)
            :connect-timeout 1
            :read-timeout 1
            :use-connection-pool nil)
