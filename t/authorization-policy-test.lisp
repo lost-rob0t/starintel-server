@@ -425,6 +425,40 @@
         (star.frontends.http-api::route-action
          :post "/not/a/registered/route"))))
 
+(test admin-user-routes-map-to-principals-manage
+  (flet ((action (method path)
+           (star.frontends.http-api::route-action method path)))
+    (is (string= "principals:manage" (action :get "/auth/users")))
+    (is (string= "principals:manage" (action :post "/auth/users")))
+    (is (string= "principals:manage"
+                 (action :post "/auth/users/alice/password")))
+    ;; Unmounted methods and shapes stay unmapped: fail closed.
+    (is-false (action :delete "/auth/users"))
+    (is-false (action :get "/auth/users/alice/password"))
+    (is-false (action :post "/auth/users/alice/password/extra"))))
+
+(test self-password-change-is-an-explicit-authenticated-action
+  (let ((context
+          (star.auth::%make-request-security-context
+           :principal (make-policy-principal "alice" '("documents:read"))
+           :correlation-id "corr-386-self"
+           :deadline (+ (get-universal-time) 30)
+           :authenticated-at (get-universal-time))))
+    (is (eq :authenticated
+            (star.frontends.http-api::route-action :post "/auth/password")))
+    (is-false (star.frontends.http-api::route-action :get "/auth/password"))
+    ;; Any authenticated principal clears the middleware; the handler still
+    ;; enforces the current-password proof.
+    (let ((star.auth:*request-security-context* context))
+      (finishes
+        (star.frontends.http-api::authorize-http-route!
+         :post "/auth/password" "corr-386-self")))
+    ;; Anonymous requests keep failing closed at the boundary.
+    (let ((star.auth:*request-security-context* nil))
+      (signals star.authorization:authorization-error
+        (star.frontends.http-api::authorize-http-route!
+         :post "/auth/password" "corr-386-self")))))
+
 (test document-update-route-requires-write-capability
   (is (string= "documents:write"
                (star.frontends.http-api::route-action
