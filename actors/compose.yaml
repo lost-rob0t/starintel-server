@@ -1,0 +1,51 @@
+name: starintel-actors
+
+x-web-actor: &web-actor
+  build:
+    context: ./website
+    dockerfile: Dockerfile
+  init: true
+  ipc: host
+  restart: unless-stopped
+  environment:
+    RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+    RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+    RABBITMQ_USER: ${RABBITMQ_USER:-starintel}
+    RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+    STARINTEL_PREFETCH: ${STARINTEL_PREFETCH:-1}
+    STARINTEL_MAX_PAGES: ${STARINTEL_MAX_PAGES:-100}
+    STARINTEL_MAX_DEPTH: ${STARINTEL_MAX_DEPTH:-2}
+  secrets:
+    - rabbitmq_password
+  networks:
+    - starintel
+  healthcheck:
+    test: ["CMD", "starintel-web-actor", "health"]
+    interval: 30s
+    timeout: 8s
+    retries: 3
+    start_period: 15s
+
+services:
+  wef-ygl:
+    <<: *web-actor
+    image: ${WEF_YGL_IMAGE:-starintel/actor-wef-ygl:0.1.0}
+    command: ["worker", "wef-ygl"]
+    environment:
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-starintel}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      STARINTEL_ACTOR_NAME: wef-ygl
+      STARINTEL_PREFETCH: ${STARINTEL_PREFETCH:-1}
+      STARINTEL_MAX_PAGES: ${STARINTEL_MAX_PAGES:-100}
+      STARINTEL_MAX_DEPTH: ${STARINTEL_MAX_DEPTH:-2}
+
+secrets:
+  rabbitmq_password:
+    file: ${STARINTEL_SECRETS_DIR:-../secrets}/rabbitmq_password
+
+networks:
+  starintel:
+    external: true
+    name: ${STARINTEL_DOCKER_NETWORK:-starintel_backend}
