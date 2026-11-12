@@ -55,13 +55,20 @@ server-owned authorization scope before the backend query executes."
                  (jsown:val private-document "tenant_id") "private")
            (insert-test-document public-document)
            (insert-test-document private-document)
-           (sleep 2)
-           (multiple-value-bind (status body)
-               (perform-request
-                (lambda ()
-                  (dex:get
-                   (make-test-url "/api/v1/search?q=public-search-needle&limit=5")
-                   :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+            (multiple-value-bind (status body)
+                (loop with deadline = (+ (get-internal-real-time)
+                                         (* 60 internal-time-units-per-second))
+                      do (multiple-value-bind (status body)
+                             (perform-request
+                              (lambda ()
+                                (dex:get
+                                 (make-test-url "/api/v1/search?q=public-search-needle&limit=5")
+                                 :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
+                           (when (or (/= status 200)
+                                     (search "public-search-test-user" body)
+                                     (>= (get-internal-real-time) deadline))
+                             (return (values status body))))
+                         (sleep 0.5))
              (report-public-api-response "public-search" status body)
              (is (= 200 status))
              (is (search "public-search-test-user" body))

@@ -424,7 +424,7 @@ instead of being mistaken for an expected broker failure."
       (when matches
         (let ((entry (first matches)))
           (is (string= "unavailable" (jsown:val entry "status")))
-          (is (eq :false (jsown:val entry "ready")))
+          (is (null (jsown:val entry "ready")))
           (is (string= "backend" (jsown:val (first (jsown:val entry "options")) "key")))))
       (is (not (search "must-not-leak" body))))))
 
