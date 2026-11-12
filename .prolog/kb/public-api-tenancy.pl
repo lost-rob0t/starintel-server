@@ -7,6 +7,10 @@ invariant(public_read_tenant_scope,
           'Anonymous search uses the server-owned public tenant and an explicit dataset allowlist; missing or wildcard configuration fails closed.').
 invariant(public_search_query_grouping,
           'Escape caller Lucene syntax before wrapping it with server-owned tenant and dataset clauses, so caller parentheses cannot escape the scope.').
+invariant(public_search_tenant_alias_agreement,
+          'Canonical public search documents with both tenant_id and tenant must agree; contradictory non-null values fail the request before disclosure.').
+root_cause(public_search_conflicting_tenants, first_alias_wins,
+           'Selecting (or tenant_id tenant) silently accepted contradictory public/private declarations; PR422 regression demonstrated public content disclosure from that ambiguous canonical record.').
 invariant(public_stats_tenant_scope,
           'Anonymous stats use only tenant and dataset keyed aggregate view rows; global data views are not public-safe in a mixed-tenant database.').
 method(public_read_activation,
