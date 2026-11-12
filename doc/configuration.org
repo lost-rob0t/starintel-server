@@ -301,12 +301,14 @@ The server schedules a full SBCL garbage collection once per hour.
 #+begin_src lisp
 (in-package :star)
 
-(setf *slynk-port* 4009)
-(start-debugger)
+(setf *slynk-enabled* t
+      *slynk-port* 4009)
 #+end_src
 
-SLYNK is remote code execution. Bind it through SSH/Unix forwarding or a
-loopback-only environment. The helper does not implement authentication.
+The =start= command opens SLYNK after runtime startup; =admin= commands load
+the same init file without opening a second listener. The listener binds to
+container loopback only. SLYNK is remote code execution and does not implement
+authentication. Reach it through a local operator relay into the container.
 
 ** Custom CouchDB view
 
