@@ -1,0 +1,50 @@
+#+title: Stored Python actor declarations in discovery
+
+=actors.list= retains the trusted in-process registry and can add request-scoped
+canonical =actor-manifest= declarations. This is a read projection, not runtime
+registration, worker startup, target dispatch or another durable registry.
+
+* Authorization and query scope
+
+The route still requires =actors:read=. Stored declarations additionally require
+=documents:read= with matching tenant/dataset grants. Optional =tenant= and
+=dataset= query parameters select exactly one slice, defaulting to =default=
+and =starintel-system=. An ungranted slice adds no stored declarations and does
+not perform storage I/O; native discovery remains available. The existing
+=data/count_by_tenant_dataset_dtype= view is queried with an exact composite key,
+=reduce=false= and =include_docs=true=. Returned records are authorized again.
+More than 128 stored records fails closed with 413 rather than silently truncating.
+
+* Opt-in and output
+
+Canonical fleet manifests must explicitly set =metadata.operatorVisible=true=.
+The projector validates the stored canonical document, translates its
+=targetOptions= map into the registry's validated =options= array, and exposes
+only semantic identity, accepts/produces, capabilities and the existing safe
+registry fields. Endpoints, mailbox settings, credentials and arbitrary metadata
+are not copied. HTTP response schemas advertise =options= as well as runtime output.
+
+Declarations use =star://python/actor/<actor-name>= within this registry's
+existing resource-URI grammar. Dispatch actor names are not renamed. Duplicate
+resource claims—including collisions with trusted native entries—fail through
+the existing conflict validator. No manifest may replace another silently.
+
+Stored declarations remain =unavailable= and =ready=false= without independent
+server-owned runtime evidence. Manifest-supplied readiness flags are ignored.
+Each request reads current persisted state; there is no second cache to
+rehydrate, invalidate or maintain across document updates/deletions/restarts.
+
+* Verification
+
+=nix run .#star-actor-registry-tests= covers schema hints, projection, explicit
+visibility, conflicts, safe output and lack of global/liveness mutation.
+=nix run .#star-integration-tests= contains an HTTP/CouchDB persisted-manifest case.
+=bash scripts/stack-test.sh= sources the focused discovery stage and exercises
+real contracted ingest, durable readback, scoped discovery, tenant isolation and
+actors-read-only compatibility in its disposable stack. It never uses the shared
+production deployment.
+
+For the full native service-backed suite against those same disposable services,
+run =STAR_STACK_RUN_INTEGRATION=1 bash scripts/stack-test.sh=. The fixture server
+is stopped before the native test process takes consumer ownership; backend
+services remain available until the per-run cleanup.

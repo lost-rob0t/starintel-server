@@ -138,6 +138,9 @@ api_key="$(jq --exit-status --raw-output '.api_key' <<<"$bootstrap_response")"
 [[ "$api_key" == star_sk_v1_* ]]
 auth_header="Authorization: Bearer ${api_key}"
 
+# shellcheck source=scripts/test-actor-manifest-discovery.sh
+source "$repo_root/scripts/test-actor-manifest-discovery.sh"
+
 set_stage "verify-admin-cli-file-secrets"
 docker compose exec -T star-server /bin/star-server admin user list >/dev/null
 
@@ -356,5 +359,24 @@ curl --fail --silent --show-error \
 set_stage "verify-search-after-restart"
 wait_for_search_id "$auth_header" "$fixture_term" "$fixture_id"
 wait_for_search_id "$reader_header" "$authz_term" "$authz_doc_a"
+
+set_stage "verify-actor-manifest-discovery-after-restart"
+curl --fail --silent --show-error --header "$auth_header" \
+  "${server_url}${actors_path}" | jq -e '
+  [.data.actors[] | select(.semantic.name == "search-stack-fixture")] as $found |
+  ($found | length) == 1 and $found[0].options[0].key == "backend" and
+  $found[0].ready == false' >/dev/null
+
+if [[ "${STAR_STACK_RUN_INTEGRATION:-0}" == "1" ]]; then
+  set_stage "native-service-backed-integration-suite"
+  # The native test process owns its consumers; avoid competing with this
+  # disposable server while retaining its isolated backend services.
+  docker compose stop star-server
+  env COUCHDB_HOST=127.0.0.1 COUCHDB_PORT="$COUCHDB_PORT" \
+    COUCHDB_USER="${COUCHDB_USER:-admin}" COUCHDB_PASSWORD="$couchdb_password" \
+    RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT="$RABBITMQ_PORT" \
+    RABBITMQ_USER="${RABBITMQ_USER:-starintel}" RABBITMQ_PASSWORD="$rabbitmq_password" \
+    nix run .#star-integration-tests > "$artifact_dir/integration.log" 2>&1
+fi
 
 printf 'Authenticated and authorized Nix-built stack passed scoped denial, FTS, and restart persistence checks.\n'

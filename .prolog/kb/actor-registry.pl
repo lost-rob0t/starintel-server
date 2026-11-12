@@ -16,3 +16,8 @@ invariant(actor_registry_read_scope_issuance,
 
 method(actor_registry_focused_gate,
        'Run nix run .#star-actor-registry-tests for the isolated actor registry, liveness, authorization, and HTTP contract suite.').
+
+invariant(stored_manifest_projection_is_request_scoped,
+          'Canonical actor-manifest records require metadata.operatorVisible=true and authorized exact tenant/dataset docs:read; they never enter the global runtime registry').
+method(actor_manifest_discovery,
+       'Reuse data/count_by_tenant_dataset_dtype with reduce=false/include_docs and an exact [tenant,dataset,actor-manifest] key; translate targetOptions through existing options validation').

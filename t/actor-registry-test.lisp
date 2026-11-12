@@ -226,6 +226,61 @@
     (is (string= "/v1/actors" (jsown:val endpoint "path")))
     (is (equal '("actors:read") (jsown:val endpoint "scopes")))))
 
+(test actor-list-contract-advertises-option-hints
+  (let ((properties
+          (jsown:val star.http.contract::+actor-registry-entry-schema+ "properties")))
+    (is (jsown:keyp properties "options"))
+    (let* ((items (jsown:val (jsown:val properties "options") "items"))
+           (fields (jsown:val items "properties")))
+      (is (equal '("description" "key" "required" "schema")
+                 (sort (copy-list (jsown:keywords fields)) #'string<)))
+      (is (string= "boolean" (jsown:val (jsown:val fields "required") "type"))))))
+
+(defun stored-search-test-manifest (&key (visible :true))
+  (jsown:new-js
+    ("id" "actor-manifest:search-test") ("schemaVersion" "0.10.1")
+    ("dtype" "actor-manifest") ("dataset" "starintel-system")
+    ("actor" "search") ("actorVersion" "0.3.0")
+    ("accepts" (list "target")) ("produces" (list "url" "observation"))
+    ("capabilities" (list "native-yacy-json-api"))
+    ("metadata" (jsown:new-js ("operatorVisible" visible)
+                               ("endpoint" "secret-endpoint") ("ready" :true)))
+    ("targetOptions"
+     (jsown:new-js
+       ("backend" (jsown:new-js ("description" "Backend selector") ("required" :false)
+                                 ("schema" (jsown:new-js ("type" "string")))))))))
+
+(test stored-manifests-project-options-without-global-registration-or-liveness
+  (let* ((star.actors::*actor-registry* (make-hash-table :test #'equal))
+         (star.actors::*actor-runtime-observations* (make-hash-table :test #'equal))
+         (star.actors::*actor-runtime-bindings* (make-hash-table :test #'equal))
+         (document (stored-search-test-manifest))
+         (catalog (star.actors:actor-registry-document :documents (list document)))
+         (entry (first (jsown:val (jsown:val catalog "data") "actors"))))
+    (is (string= "star://python/actor/search" (jsown:val entry "resourceUri")))
+    (is (string= "backend" (jsown:val (first (jsown:val entry "options")) "key")))
+    (is (string= "unavailable" (jsown:val entry "status")))
+    (is (eq :false (jsown:val entry "ready")))
+    (is (zerop (hash-table-count star.actors::*actor-registry*)))
+    (is (not (search "secret-endpoint" (jsown:to-json catalog))))
+    (is (zerop (jsown:val (jsown:val (star.actors:actor-registry-document) "data") "count")))
+    (is (= 1 (jsown:val (jsown:val (star.actors:actor-registry-document :documents (list document)) "data") "count")))))
+
+(test stored-manifests-require-explicit-visibility-and-reject-conflicts
+  (is (null (star.actors::stored-actor-manifest-entry (stored-search-test-manifest :visible :false))))
+  (let ((document (stored-search-test-manifest)))
+    (setf (jsown:val document "deleted") :true)
+    (is (null (star.actors::stored-actor-manifest-entry document))))
+  (let ((star.actors::*actor-registry* (make-hash-table :test #'equal))
+        (document (stored-search-test-manifest)))
+    (signals star.actors:actor-registry-conflict
+      (star.actors:actor-registry-document :documents (list document document))))
+  (let* ((document (stored-search-test-manifest))
+         (hint (jsown:val (jsown:val document "targetOptions") "backend")))
+    (setf (jsown:val hint "key") "not-backend")
+    (signals star.actors:invalid-actor-manifest
+      (star.actors::stored-actor-manifest-entry document))))
+
 (test actor-list-scope-can-be-issued
   (is (equal '("actors:read")
              (star.authorization:validate-grant-scopes '("actors:read"))))
