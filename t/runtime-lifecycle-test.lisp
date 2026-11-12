@@ -5,6 +5,53 @@
 
 (in-suite runtime-lifecycle-tests)
 
+(test boot-rabbit-recovers-before-constructing-or-starting-intake
+  (dolist (recovery-fails-p '(nil t))
+    (let ((events nil)
+          (saved nil)
+          (names '("documents-ingest" "documents-update" "documents-targets"))
+          (handles (loop for name in '("documents-ingest" "documents-update" "documents-targets")
+                         collect (cons name (gensym "CONSUMER"))))
+          (failure (make-condition 'simple-error :format-control "simulated recovery failure")))
+      (flet ((stub (symbol function)
+               (push (cons symbol (symbol-function symbol)) saved)
+               (sb-ext:without-package-locks
+                 (setf (symbol-function symbol) function))))
+        (unwind-protect
+             (progn
+               (stub 'star.rabbit::recover-pending-publications
+                     (lambda ()
+                       (push :recover events)
+                       (when recovery-fails-p
+                         (error failure))))
+               (stub 'star.rabbit::make-document-consumer
+                     (lambda (&key name &allow-other-keys)
+                       (push (list :construct name) events)
+                       (cdr (assoc name handles :test #'equal))))
+               (stub 'star.rabbit::start-consumer
+                     (lambda (consumer)
+                       (push (list :start (car (rassoc consumer handles))) events)
+                       :ignored-start-result))
+               (if recovery-fails-p
+                   (progn
+                     (is (eq failure
+                             (handler-case
+                                 (progn (star.rabbit:start-consumers) nil)
+                               (error (condition) condition))))
+                     (is (equal '(:recover) (reverse events))
+                         "Failed recovery must construct/start no intake"))
+                   (progn
+                     (is (equal (mapcar #'cdr handles) (star.rabbit:start-consumers))
+                         "Retain the three original consumer handles")
+                     (is (equal (append '(:recover)
+                                        (mapcar (lambda (name) (list :construct name)) names)
+                                        (mapcar (lambda (name) (list :start name)) names))
+                                (reverse events))
+                         "Recovery must precede construction and original start order"))))
+          (dolist (entry saved)
+            (sb-ext:without-package-locks
+              (setf (symbol-function (car entry)) (cdr entry)))))))))
+
 (defun make-running-test-consumer (&optional (name "runtime-test-consumer"))
   (let ((consumer
           (make-instance

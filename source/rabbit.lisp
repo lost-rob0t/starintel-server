@@ -267,7 +267,8 @@ is re-published exactly once per entry sequence."
    (consumer-retry-options)))
 
 (defun start-consumers ()
-  "Start owner-thread Rabbit consumers and recover pending outbox events."
+  "Recover pending outbox events before starting owner-thread Rabbit intake."
+  (recover-pending-publications)
   (let ((ingest
           (make-document-consumer
            :name "documents-ingest"
@@ -289,5 +290,4 @@ is re-published exactly once per entry sequence."
     (start-consumer ingest)
     (start-consumer updates)
     (start-consumer targets)
-    (recover-pending-publications)
     (list ingest updates targets)))

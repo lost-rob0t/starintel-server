@@ -5,3 +5,7 @@ invariant(outbox_ingest_request_budget,
     'An uncontended new mutation requires one load, two durable saves and one publication. Saved-state reuse removes only a GET, never a durability boundary.').
 method(outbox_ingest_regressions,
     't/couchdb-outbox-recovery-test.lisp covers request counts, saved revisions, intervening mutations and ledger preservation, bounded conflicts, duplicate suppression, failed saves/publication and replay with stable event IDs. Run nix run .#star-unit-tests.').
+invariant(outbox_recovery_before_rabbit_intake,
+    'start-consumers completes mandatory pending-publication recovery before constructing or starting new consumers. Recovery failure propagates without new intake; successful startup retains ingest/update/targets handle and start order. Forgejo #429.').
+method(outbox_boot_order_regression,
+    't/runtime-lifecycle-test.lisp stubs the existing recovery, constructor and starter functions; asserts exact ordering and handle identity, plus zero construction/start and identical propagated condition on recovery failure. This proves sequencing, not a measured throughput gain or the sole cause of live CouchDB timeouts.').
