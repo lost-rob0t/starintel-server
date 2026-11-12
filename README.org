@@ -135,23 +135,24 @@ expands through messages rather than recursive function calls.
 
 ** Quick start: Nix-built Compose stack
 
-Requirements: Nix with flakes, Docker Engine, Docker Compose v2, =curl=, =jq=,
-and =openssl=.
+Requirements: Linux, Nix with flakes, Docker Engine, Docker Compose v2,
+and Python 3.9 or later. Run from the repository root:
 
 #+begin_src sh
-cp .env.example .env
-install -d -m 0700 secrets
-openssl rand -base64 32 > secrets/couchdb_password
-openssl rand -base64 48 > secrets/couchdb_secret
-openssl rand -hex 24 | tr '[:lower:]' '[:upper:]' > secrets/erlang_cookie
-openssl rand -base64 32 > secrets/rabbitmq_password
-openssl rand -base64 32 > secrets/valkey_password
-chmod 0600 secrets/*
-
-nix run .#load-images
-docker compose up --detach --wait
-curl --fail http://127.0.0.1:5000/health
+python3 scripts/stack-up.py
 #+end_src
+
+This builds and loads the locked Nix images, creates all seven runtime secrets
+under =~/.local/state/starintel/credentials=, starts the existing Compose stack,
+and checks =/ready=. Existing credentials and persistent volumes are retained.
+The credential directory must be outside the checkout and Nix store, owned by
+you with mode =0700=; existing secret files must have mode =0600=. Symlinks and
+unsafe existing files are rejected. No credentials are printed.
+
+For custom paths, timeouts, =init.lisp= configuration, and manual Compose
+commands, see [[file:doc/production-startup.md][the startup runbook]]. This startup check does not establish ingestion,
+crash recovery, backup correctness, or production capacity; run the milestone
+integration gates separately.
 
 Default local endpoints:
 
