@@ -10,6 +10,19 @@ invariant(terminal_bulk_jobs_are_pollable_without_request_payload,
 original total, status, success count, failure count, and error code after
 completion. Its documents and service context are released on terminal paths.").
 
+invariant(terminal_bulk_registry_is_count_bounded,
+    "Issue #378: retain only the newest 256 registered terminal summaries in
+completion order under the existing bulk lock; queued/running jobs do not
+participate. This is a count window, not a time-based polling guarantee.
+Evicted IDs use the existing bulk_job_not_found 404; retained-job ownership
+checks stay unchanged. The registry is not a durable idempotency authority.").
+
+invariant(bulk_completion_bookkeeping_is_idempotent,
+    "execute-bulk-job claims only queued jobs under the bulk lock, publishes
+outside it, and does not re-execute active or terminal jobs. Retention ignores
+unregistered jobs and duplicate completion IDs; repeats cannot refresh or
+corrupt the completion-order eviction window.").
+
 method(backlog_bulk_ambiguity_audit,
     "Compare exact canonical source-commit document IDs and payloads against
 CouchDB after an accepted bulk POST loses status polling. Run 35100690881

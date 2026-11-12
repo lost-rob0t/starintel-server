@@ -1,16 +1,16 @@
 {
-  "checked_at": "2026-11-03T01:54:14Z",
-  "facts_sha256": "4382888df63f05af3463bba8d17e4e60f3b844e551d76289382f2e30303adce4",
-  "head": "c5b474b4b1e63b72b00f168cd9cc66603b2b563f",
+  "checked_at": "2026-11-11T18:37:59Z",
+  "facts_sha256": "507b485e5a76f0cf4faebcc31545dee8c64ad87708f31814a38f52d10f288807",
+  "head": "1e012fbee835aa59285c4fedff230a007344fd60",
   "reason": "verification passed",
-  "run": "e834b9128d3947cfb8814accbc1ee556",
+  "run": "7445b65ee221489380324179619fb217",
   "run_file": "evidence.pl",
-  "run_sha256": "79e15ffb6aed9124d80c2720a7a0dd47751f2f94a8335fb99e82c7252676aaad",
+  "run_sha256": "07bc0208c7d00c664a05a08098b37bc6774564c45abbb988ec2dc2681af0930f",
   "status": "pass",
   "stderr_sha256": "3f58487f8b178faab8411ba0285a21d4387b34d17785b054fc75e9ddaa05d772",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "swipl_exit": 0,
-  "task": "360-target-rehydration",
+  "task": "issue-386-admin-user-route-mapping",
   "verify_sha256": "e78b5e80fcf0af76206366221d8471683f219d05c79fb6ae161b4e5f4d1414ab",
-  "worktree_digest": "3be4bbd6156191c7ed23aeb3a7bc228e5292b2b071e42629ac8f20400a6f7a03"
+  "worktree_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }

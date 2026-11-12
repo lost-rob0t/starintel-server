@@ -251,6 +251,18 @@ by tests and must be between zero and one."
     :initarg :quarantine-queue
     :accessor retry-stream-quarantine-queue
     :initform "starintel-quarantine")
+   (dead-letter-exchange
+    :initarg :dead-letter-exchange
+    :accessor retry-stream-dead-letter-exchange
+    :initform nil)
+   (dead-letter-routing-key
+    :initarg :dead-letter-routing-key
+    :accessor retry-stream-dead-letter-routing-key
+    :initform nil)
+   (dead-letter-queue
+    :initarg :dead-letter-queue
+    :accessor retry-stream-dead-letter-queue
+    :initform nil)
    (current-body
     :accessor retry-stream-current-body
     :initform nil)
@@ -307,6 +319,22 @@ by tests and must be between zero and one."
 (setf (documentation 'RETRY-CONSUMER-POLICY 'function)
 "The =retry-policy= slot of =retrying-rabbit-consumer=.")
 
+;; Accessor documentation for the dead-letter topology of retrying streams
+(setf (documentation 'RETRY-STREAM-DEAD-LETTER-EXCHANGE 'function)
+"The =dead-letter-exchange= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-DEAD-LETTER-ROUTING-KEY 'function)
+"The =dead-letter-routing-key= slot of =retrying-rabbit-queue-stream=.")
+(setf (documentation 'RETRY-STREAM-DEAD-LETTER-QUEUE 'function)
+"The =dead-letter-queue= slot of =retrying-rabbit-queue-stream=.")
+
+(defun dead-letter-queue-arguments (exchange routing-key)
+  "AMQP queue arguments routing dead-lettered messages to EXCHANGE."
+  (append
+   (when exchange
+     (list (cons "x-dead-letter-exchange" exchange)))
+   (when routing-key
+     (list (cons "x-dead-letter-routing-key" routing-key)))))
+
 
 
 (defmethod open-stream ((stream retrying-rabbit-queue-stream))
@@ -323,7 +351,23 @@ by tests and must be between zero and one."
      connection channel
      :queue queue
      :exchange exchange
-     :routing-key "quarantine.#"))
+     :routing-key "quarantine.#")
+    (let ((dead-letter-exchange (retry-stream-dead-letter-exchange stream))
+          (dead-letter-queue (retry-stream-dead-letter-queue stream))
+          (dead-letter-routing-key
+            (retry-stream-dead-letter-routing-key stream)))
+      (when dead-letter-exchange
+        (cl-rabbit:exchange-declare
+         connection channel dead-letter-exchange "topic" :durable t)
+        (when dead-letter-queue
+          (cl-rabbit:queue-declare
+           connection channel :queue dead-letter-queue :durable t)
+          (cl-rabbit:queue-bind
+           connection channel
+           :queue dead-letter-queue
+           :exchange dead-letter-exchange
+           :routing-key (or dead-letter-routing-key
+                           dead-letter-queue))))))
   stream)
 
 (defmethod consumer-read ((consumer retrying-rabbit-consumer))
@@ -518,7 +562,11 @@ by tests and must be between zero and one."
       :retry-policy (retry-consumer-policy consumer)
       :quarantine-fn (retry-consumer-quarantine-fn consumer)
       :quarantine-exchange (retry-consumer-quarantine-exchange consumer)
-      :quarantine-queue (retry-consumer-quarantine-queue consumer))
+      :quarantine-queue (retry-consumer-quarantine-queue consumer)
+      :queue-arguments (rabbit-stream-queue-arguments stream)
+      :dead-letter-exchange (retry-stream-dead-letter-exchange stream)
+      :dead-letter-routing-key (retry-stream-dead-letter-routing-key stream)
+      :dead-letter-queue (retry-stream-dead-letter-queue stream))
      :fn (consumer-fn consumer)
      :test-fn (consumer-filter consumer)
      :on-error (consumer-failure-action consumer)
@@ -553,6 +601,10 @@ by tests and must be between zero and one."
        quarantine-fn
        (quarantine-exchange "starintel.quarantine")
        (quarantine-queue "starintel-quarantine")
+       queue-arguments
+       dead-letter-exchange
+       dead-letter-routing-key
+       dead-letter-queue
        (test-fn #'identity)
        (handler-fn (error "Handler function is required")))
   "Create and register a RabbitMQ backed consumer."
@@ -585,7 +637,16 @@ by tests and must be between zero and one."
       :retry-policy policy
       :quarantine-fn quarantine-fn
       :quarantine-exchange quarantine-exchange
-      :quarantine-queue quarantine-queue)
+      :quarantine-queue quarantine-queue
+      :queue-arguments
+      (remove-duplicates
+       (append queue-arguments
+               (dead-letter-queue-arguments
+                dead-letter-exchange dead-letter-routing-key))
+       :key #'car :test #'string= :from-end t)
+      :dead-letter-exchange dead-letter-exchange
+      :dead-letter-routing-key dead-letter-routing-key
+      :dead-letter-queue dead-letter-queue)
      :workers n
      :fn handler-fn
      :test-fn test-fn

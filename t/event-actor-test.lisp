@@ -157,3 +157,18 @@
                         (star.actors:event-timestamp direct)))
       (is (integerp value))
       (is (<= before value after)))))
+
+(test event-consumer-builds-dead-letter-topology
+  (let* ((consumer (star.actors::make-event-consumer 2))
+         (stream (star.consumers:consumer-stream consumer)))
+    (is (string= "events" (star.consumers:rabbit-stream-queue-name stream)))
+    (is (equal '(("x-dead-letter-exchange" . "events.dead-letter")
+                ("x-dead-letter-routing-key" . "events.invalid"))
+               (star.consumers:rabbit-stream-queue-arguments stream))
+        "the event queue must be declared with its dead-letter policy")
+    (is (string= "events.dead-letter"
+                 (star.consumers:retry-stream-dead-letter-exchange stream)))
+    (is (string= "events.invalid"
+                 (star.consumers:retry-stream-dead-letter-routing-key stream)))
+    (is (string= "events.quarantine"
+                 (star.consumers:retry-stream-dead-letter-queue stream)))))

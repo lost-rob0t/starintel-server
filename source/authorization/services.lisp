@@ -163,7 +163,8 @@ receives PATCH only after the resource decision has been made."
                    :target-id (and target-scoped-p target-id)
                    :target-namespace
                    (and namespace-scoped-p target-namespace)
-                   :program-id (and program-scoped-p program-id))
+                   :program-id (and program-scoped-p program-id)
+                   :creator-digest (document-creator-digest document))
                   :metadata metadata))
           when (and (stringp tenant)
                     (or (null actor-name)

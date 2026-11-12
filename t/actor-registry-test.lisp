@@ -134,6 +134,52 @@
       (is-false (jsown:keyp alpha "queue"))
       (is-false (jsown:keyp alpha "routingKey")))))
 
+(test manifest-options-validate-strictly-and-emit-publicly
+  ;; absent options: backward compatible, no "options" key emitted
+  (let* ((registry (star.actors::build-actor-registry
+                    (list (actor-registry-test-manifest
+                           "star://local/actor/optless"))))
+         (entry (first (star.actors::actor-registry-public-entries registry))))
+    (is-false (jsown:keyp entry "options")))
+  ;; valid options: validated and emitted verbatim in the public object
+  (let* ((manifest (actor-registry-test-manifest "star://local/actor/optful")))
+    (setf (jsown:val manifest "options")
+          (list (jsown:new-js
+                  ("key" "backend")
+                  ("description" "Egress backend selector")
+                  ("required" :false)
+                  ("schema" (jsown:new-js ("type" "string"))))))
+    (let* ((registry (star.actors::build-actor-registry (list manifest)))
+           (entry (first (star.actors::actor-registry-public-entries registry))))
+      (is (jsown:keyp entry "options"))
+      (is (string= "backend"
+                   (jsown:val (first (jsown:val entry "options")) "key")))))
+  ;; invalid options fail closed
+  (flet ((options-manifest (options)
+           (let ((m (actor-registry-test-manifest "star://local/actor/badopt")))
+             (setf (jsown:val m "options") options)
+             m)))
+    (dolist (bad (list
+                  ;; empty key
+                  (list (jsown:new-js ("key" "") ("description" "d")
+                                      ("required" :true)))
+                  ;; empty description
+                  (list (jsown:new-js ("key" "k") ("description" "")
+                                      ("required" :true)))
+                  ;; non-boolean required
+                  (list (jsown:new-js ("key" "k") ("description" "d")
+                                      ("required" "yes")))
+                  ;; unknown field inside an option
+                  (list (jsown:new-js ("key" "k") ("description" "d")
+                                      ("required" :true) ("bogus" 1)))
+                  ;; duplicate keys
+                  (list (jsown:new-js ("key" "k") ("description" "d")
+                                      ("required" :true))
+                        (jsown:new-js ("key" "k") ("description" "d2")
+                                      ("required" :false)))))
+      (signals star.actors::invalid-actor-manifest
+        (star.actors::build-actor-registry (list (options-manifest bad)))))))
+
 (test local-runtime-binding-reports-a-live-sento-actor
   (let* ((manifest
            (actor-registry-test-manifest
