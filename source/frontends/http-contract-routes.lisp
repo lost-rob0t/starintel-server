@@ -128,14 +128,16 @@ server-owned public scopes. No caller principal or caller scope enters here."
             (unless (member (jsown:val-safe document "_deleted") '(t :true))
               (let ((stored-id (jsown:val-safe document "_id"))
                     (canonical-id (jsown:val-safe document "id"))
-                    (tenant (or (jsown:val-safe document "tenant_id")
-                                (jsown:val-safe document "tenant")))
+                    (tenant-id (jsown:val-safe document "tenant_id"))
+                    (tenant (jsown:val-safe document "tenant"))
                     (dataset (star.documents:document-dataset document)))
                 (unless (and (or stored-id canonical-id)
                              (or (null stored-id) (equal id stored-id))
                              (or (null canonical-id) (equal id canonical-id)))
                   (error "Current search document identity mismatch"))
-                (when (and (equal tenant +public-tenant+)
+                (when (and tenant-id tenant (not (equal tenant-id tenant)))
+                  (error "Current search document tenant mismatch"))
+                (when (and (equal (or tenant-id tenant) +public-tenant+)
                            (stringp dataset)
                            (member dataset datasets :test #'string=))
                   (push (jsown:new-js ("id" id) ("doc" document)) accepted))))))))
@@ -167,7 +169,7 @@ server-owned public scopes. No caller principal or caller scope enters here."
         (couchdb-handler (client *couchdb-pool*)
           (let* ((bookmark (query-value params "bookmark"))
                  (query (jsown:new-js
-                          ("q" scoped-query)
+                           ("q" scoped-query)
                            ("limit" limit)
                            ("stale" "ok"))))
             (when bookmark
@@ -176,10 +178,10 @@ server-owned public scopes. No caller principal or caller scope enters here."
              (current-public-search-response
               client
               (cl-couch:fts-search
-              client
-              (jsown:to-json query)
-              star:*couchdb-default-database*
-              "search"
+               client
+               (jsown:to-json query)
+               star:*couchdb-default-database*
+               "search"
                "fts")
               limit)))))))
 

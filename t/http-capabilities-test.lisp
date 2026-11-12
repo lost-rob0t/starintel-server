@@ -217,6 +217,36 @@
     (is (equal '("good") (mapcar (lambda (row) (jsown:val row "id")) (jsown:val body "rows"))))
     (is (null (search "INDEX-SECRET" (jsown:to-json body))))))
 
+(test public-search-rejects-conflicting-current-tenant-aliases
+  (dolist (tenants '(("public" "private") ("private" "public")))
+    (multiple-value-bind (body query fetched status)
+        (call-public-search-test
+         (list (public-search-test-row "one"))
+         (lambda (id)
+           (let ((document (public-search-test-document
+                            id (first tenants) "public-a" "CONFLICT-SECRET")))
+             (setf (jsown:val document "tenant") (second tenants))
+             document)))
+      (declare (ignore query fetched))
+      (is (= 500 status))
+      (is (null (search "CONFLICT-SECRET" (jsown:to-json body)))))))
+
+(test public-search-accepts-consistent-current-tenant-aliases
+  (dolist (tenants '(("tenant_id") ("tenant") ("tenant_id" "tenant")))
+    (multiple-value-bind (body query fetched status)
+        (call-public-search-test
+         (list (public-search-test-row "one"))
+         (lambda (id)
+           (let ((document (jsown:new-js ("_id" id) ("id" id)
+                                         ("dataset" "public-a") ("title" "CURRENT-TEXT"))))
+             (dolist (key tenants)
+               (setf (jsown:val document key) "public"))
+             document)))
+      (declare (ignore query fetched))
+      (is (= 200 status))
+      (is (= 1 (jsown:val body "total_rows")))
+      (is (search "CURRENT-TEXT" (jsown:to-json body))))))
+
 (test public-search-canonical-failure-is-not-an-empty-success
   (multiple-value-bind (body query fetched status)
       (call-public-search-test (list (public-search-test-row "one"))
