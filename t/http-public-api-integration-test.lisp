@@ -43,16 +43,17 @@
 server-owned authorization scope before the backend query executes."
   (let* ((original star.frontends.http-api::*public-search-datasets*)
          (public-document
-           (make-test-user :id "public-search-test-user"
-                           :name "public-search-needle" :platform "github"))
+            (make-test-url-doc :id "public-search-test-user"))
          (private-document
-           (make-test-user :id "private-search-test-user"
-                           :name "public-search-needle" :platform "github")))
+            (make-test-url-doc :id "private-search-test-user")))
     (unwind-protect
          (progn
            (setf star.frontends.http-api::*public-search-datasets* '("testing")
                  (jsown:val public-document "tenant_id") "public"
-                 (jsown:val private-document "tenant_id") "private")
+                  (jsown:val private-document "tenant_id") "private")
+            (dolist (document (list public-document private-document))
+              (setf (jsown:val (star.documents:document-data document) "content")
+                    "publicsearchneedle"))
            (insert-test-document public-document)
            (insert-test-document private-document)
             (multiple-value-bind (status body)
@@ -62,7 +63,7 @@ server-owned authorization scope before the backend query executes."
                              (perform-request
                               (lambda ()
                                 (dex:get
-                                 (make-test-url "/api/v1/search?q=public-search-needle&limit=5")
+                                 (make-test-url "/api/v1/search?q=publicsearchneedle&limit=5")
                                  :headers '(("X-Test-Auth-Mode" . "unauthenticated")))))
                            (when (or (/= status 200)
                                      (search "public-search-test-user" body)
