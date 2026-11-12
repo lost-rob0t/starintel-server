@@ -5,11 +5,15 @@
 (defparameter +bulk-max-pending-jobs+ 32)
 (defparameter +bulk-max-pending-per-principal+ 4)
 (defparameter +bulk-worker-count+ 4)
+(defparameter +bulk-terminal-job-retention+ 256
+  "Number of terminal job summaries retained for polling, not a time guarantee.")
 
 (defvar *bulk-ingest-workers* nil)
 (defvar *bulk-ingest-worker-system* nil)
 (defvar *bulk-ingest-worker-index* 0)
 (defvar *bulk-ingest-jobs* (make-hash-table :test #'equal))
+(defvar *bulk-terminal-job-ids* nil
+  "Retained terminal job IDs in newest-completion-first order.")
 (defvar *bulk-pending-jobs* 0)
 (defvar *bulk-pending-by-principal* (make-hash-table :test #'equal))
 (defvar *bulk-ingest-lock* (bt:make-lock "bulk-ingest-state"))
@@ -67,6 +71,22 @@
           (setf (gethash principal *bulk-pending-by-principal*)
                 (1- count))
           (remhash principal *bulk-pending-by-principal*)))))
+
+(defun retain-terminal-job (job)
+  "Bound registered terminal summaries without evicting active jobs."
+  (bt:with-lock-held (*bulk-ingest-lock*)
+    (let ((id (bulk-ingest-job-id job)))
+      (when (and (eq job (gethash id *bulk-ingest-jobs*))
+                 (member (bulk-ingest-job-status job)
+                         '(:completed :completed-with-errors :failed))
+                 (not (member id *bulk-terminal-job-ids* :test #'equal)))
+        (push id *bulk-terminal-job-ids*)
+        (let ((cut (nthcdr (1- +bulk-terminal-job-retention+)
+                           *bulk-terminal-job-ids*)))
+          (dolist (old-id (cdr cut))
+            (remhash old-id *bulk-ingest-jobs*))
+          (when cut
+            (setf (cdr cut) nil)))))))
 
 (defun comma-separated-scopes (scopes)
   (format nil "~{~a~^,~}" scopes))
@@ -150,7 +170,10 @@
 
 (defun execute-bulk-job (job &key (publish-fn #'publish-document))
   "Apply every document of a bulk job; returns per-document outcomes."
-  (setf (bulk-ingest-job-status job) :running)
+  (bt:with-lock-held (*bulk-ingest-lock*)
+    (unless (eq (bulk-ingest-job-status job) :queued)
+      (return-from execute-bulk-job job))
+    (setf (bulk-ingest-job-status job) :running))
   (unwind-protect
        (let ((*service-call-context* (bulk-ingest-job-service-context job)))
          (handler-case
@@ -181,8 +204,9 @@
     (when (eq (bulk-ingest-job-status job) :running)
       (setf (bulk-ingest-job-status job) :failed
             (bulk-ingest-job-error-code job) "bulk_job_failed"))
-    (setf (bulk-ingest-job-documents job) nil
-          (bulk-ingest-job-service-context job) nil))
+     (setf (bulk-ingest-job-documents job) nil
+           (bulk-ingest-job-service-context job) nil)
+     (retain-terminal-job job))
   job)
 
 (defun bulk-worker-handler (job)
