@@ -68,8 +68,20 @@
     :short-name #\u
     :long-name "url"
     :env-vars '("STAR_SERVER_URL")
-    :initial-value "http://127.0.0.1:5000"
+    :initial-value nil
     :key :base-url)
+   (clingon:make-option
+    :string
+    :description "Named auth profile"
+    :long-name "profile"
+    :env-vars '("STAR_SERVER_PROFILE")
+    :key :auth-profile)
+   (clingon:make-option
+    :string
+    :description "Auth profile JSON path"
+    :long-name "auth-config"
+    :env-vars '("STAR_AUTH_CONFIG")
+    :key :auth-config)
    (clingon:make-option
     :boolean
     :description "Pretty print JSON output"
@@ -80,7 +92,7 @@
 (defun make-client (cmd)
   "Create a star-client from command options."
   (make-instance 'star-client
-                 :base-url (clingon:getopt cmd :base-url)))
+                 :base-url (auth/selected-base-url cmd)))
 
 ;;; ============================================================================
 ;;; Document Commands
