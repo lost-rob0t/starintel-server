@@ -52,8 +52,8 @@ server-owned authorization scope before the backend query executes."
                  (jsown:val public-document "tenant_id") "public"
                   (jsown:val private-document "tenant_id") "private")
             (dolist (document (list public-document private-document))
-              (setf (jsown:val (star.documents:document-data document) "content")
-                    "publicsearchneedle"))
+              (let ((data (star.documents:document-data document)))
+                (setf (jsown:val data "content") "publicsearchneedle")))
            (insert-test-document public-document)
            (insert-test-document private-document)
             (multiple-value-bind (status body)
