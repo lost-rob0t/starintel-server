@@ -1,0 +1,8 @@
+enabled: true
+auto: true
+tasks: false
+questions: true
+question_mentions: mara,star
+question_mode: explicit
+question_context: issues,prs
+question_access: writers
