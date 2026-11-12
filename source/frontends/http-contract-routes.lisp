@@ -99,6 +99,54 @@ server-owned public scopes. No caller principal or caller scope enters here."
      "public_scope_is_server_owned"
      "Public search dataset and tenant scope cannot be overridden")))
 
+(defun current-public-search-response (client body limit)
+  "Treat the bounded FTS page as IDs only; disclose current public documents."
+  (let* ((response (if (stringp body)
+                       (jsown:with-injective-reader (jsown:parse body))
+                       body))
+         (rows (and (json-object-p response) (jsown:val response "rows")))
+         (datasets (require-public-datasets))
+         (accepted nil))
+    (unless (and (json-object-p response)
+                 (or (json-array-p rows)
+                     (and (vectorp rows) (not (stringp rows))))
+                 (<= (length rows) limit))
+      (error "Invalid public search candidate page"))
+    (dolist (row (coerce rows 'list))
+      (let ((id (and (json-object-p row) (jsown:val-safe row "id"))))
+        (unless (and (stringp id) (plusp (length id)))
+          (error "Invalid public search candidate identity"))
+        (let* ((raw (handler-case
+                        (cl-couch:get-document client star:*couchdb-default-database* id)
+                      (dex:http-request-not-found () nil)))
+               (document (if (stringp raw)
+                             (jsown:with-injective-reader (jsown:parse raw))
+                             raw)))
+          (when document
+            (unless (json-object-p document)
+              (error "Invalid current public search document"))
+            (unless (member (jsown:val-safe document "_deleted") '(t :true))
+              (let ((stored-id (jsown:val-safe document "_id"))
+                    (canonical-id (jsown:val-safe document "id"))
+                    (tenant (or (jsown:val-safe document "tenant_id")
+                                (jsown:val-safe document "tenant")))
+                    (dataset (star.documents:document-dataset document)))
+                (unless (and (or stored-id canonical-id)
+                             (or (null stored-id) (equal id stored-id))
+                             (or (null canonical-id) (equal id canonical-id)))
+                  (error "Current search document identity mismatch"))
+                (when (and (equal tenant +public-tenant+)
+                           (stringp dataset)
+                           (member dataset datasets :test #'string=))
+                  (push (jsown:new-js ("id" id) ("doc" document)) accepted))))))))
+    (let ((result (jsown:new-js ("rows" (reverse accepted))
+                                ("total_rows" (length accepted))))
+          (bookmark (jsown:val-safe response "bookmark")))
+      (when bookmark
+        (unless (stringp bookmark) (error "Invalid public search bookmark"))
+        (setf (jsown:val result "bookmark") bookmark))
+      (jsown:to-json (strip-server-tenant-from-rows result)))))
+
 (defun handle-public-search-route (params)
   (with-http-boundary ()
     (reject-public-scope-overrides params)
@@ -120,18 +168,20 @@ server-owned public scopes. No caller principal or caller scope enters here."
           (let* ((bookmark (query-value params "bookmark"))
                  (query (jsown:new-js
                           ("q" scoped-query)
-                          ("limit" limit)
-                          ("include_docs" t))))
+                           ("limit" limit)
+                           ("stale" "ok"))))
             (when bookmark
               (setf (jsown:val query "bookmark") bookmark))
             (set-cache-control "no-store")
-            (strip-server-tenant-from-search-body
-             (cl-couch:fts-search
+             (current-public-search-response
+              client
+              (cl-couch:fts-search
               client
               (jsown:to-json query)
               star:*couchdb-default-database*
               "search"
-              "fts"))))))))
+               "fts")
+              limit)))))))
 
 (defun public-dtype-counts (responses)
   (let ((counts (list :obj))

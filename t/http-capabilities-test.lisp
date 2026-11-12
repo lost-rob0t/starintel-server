@@ -131,6 +131,121 @@
       (is (search "tenant_id:\"public\"" query))
       (is (null (search "(alice) OR" query))))))
 
+(defun public-search-test-document (id tenant dataset &optional (title "CURRENT-TEXT"))
+  (jsown:new-js ("_id" id) ("id" id) ("dtype" "message")
+                ("tenant_id" tenant) ("dataset" dataset) ("title" title)))
+
+(defun public-search-test-row (id)
+  (jsown:new-js ("id" id)
+                ("doc" (public-search-test-document id "public" "public-a" "INDEX-SECRET"))
+                ("fields" (jsown:new-js ("title" "INDEX-SECRET")))))
+
+(defun call-public-search-test (rows fetch-document &key (limit 5))
+  (let ((old-search (symbol-function 'cl-couch:fts-search))
+        (old-get (symbol-function 'cl-couch:get-document))
+        (query nil)
+        (fetched nil)
+        (star:*couchdb-default-database* "canonical-test-database")
+        (star.frontends.http-api::*public-search-datasets* '("public-a"))
+        (star.frontends.http-api::*response* (lack.response:make-response 200))
+        (star.frontends.http-api::*couchdb-pool*
+          (star.databases.couchdb::make-session-aware-couchdb-pool
+           :name "public-search-test" :connector (constantly :fake-client)
+           :authenticator (constantly t) :session-valid-p (constantly t)
+           :disconnector (constantly nil) :max-open-count 1 :max-idle-count 1)))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'cl-couch:fts-search)
+                 (lambda (client body database design index)
+                   (declare (ignore client))
+                   (is (string= "canonical-test-database" database))
+                   (is (string= "search" design))
+                   (is (string= "fts" index))
+                   (setf query (jsown:parse body))
+                   (jsown:to-json
+                    (jsown:new-js ("rows" rows) ("total_rows" 999)
+                                  ("bookmark" "next-cursor"))))
+                 (symbol-function 'cl-couch:get-document)
+                 (lambda (client database id &rest options)
+                   (declare (ignore client options))
+                   (is (string= "canonical-test-database" database))
+                   (push id fetched)
+                   (funcall fetch-document id)))
+           (let ((body
+                   (star.frontends.http-api::handle-public-search-route
+                    `(("q" . "alice") ("limit" . ,(write-to-string limit))
+                      ("bookmark" . "input-cursor")))))
+             (values (if (stringp body) (jsown:parse body) body)
+                     query (nreverse fetched)
+                     (lack.response:response-status star.frontends.http-api::*response*))))
+      (setf (symbol-function 'cl-couch:fts-search) old-search
+            (symbol-function 'cl-couch:get-document) old-get))))
+
+(test public-search-does-not-wait-for-index-catchup
+  (multiple-value-bind (body query fetched status)
+      (call-public-search-test
+       (list (public-search-test-row "one"))
+       (lambda (id) (public-search-test-document id "public" "public-a")))
+    (is (= 200 status))
+    (is (equal "ok" (jsown:val-safe query "stale")))
+    (is (null (jsown:val-safe query "include_docs")))
+    (is (= 5 (jsown:val query "limit")))
+    (is (string= "input-cursor" (jsown:val query "bookmark")))
+    (is (search "tenant_id:\"public\"" (jsown:val query "q")))
+    (is (search "dataset:\"public-a\"" (jsown:val query "q")))
+    (is (equal '("one") fetched))
+    (is (string= "next-cursor" (jsown:val body "bookmark")))
+    (is (= 1 (jsown:val body "total_rows")))
+    (is (search "CURRENT-TEXT" (jsown:to-json body)))
+    (is (null (search "INDEX-SECRET" (jsown:to-json body))))
+    (is (null (search "tenant_id" (jsown:to-json body))))))
+
+(test public-search-rechecks-canonical-scope-before-disclosure
+  (multiple-value-bind (body query fetched status)
+      (call-public-search-test
+       (mapcar #'public-search-test-row '("good" "private" "moved" "missing" "deleted"))
+       (lambda (id)
+         (cond
+           ((string= id "private") (public-search-test-document id "private" "public-a"))
+           ((string= id "moved") (public-search-test-document id "public" "private-dataset"))
+           ((string= id "missing") nil)
+           ((string= id "deleted") (jsown:new-js ("_id" id) ("_deleted" :true)))
+           (t (public-search-test-document id "public" "public-a")))))
+    (declare (ignore query))
+    (is (= 200 status))
+    (is (= 5 (length fetched)))
+    (is (equal '("good") (mapcar (lambda (row) (jsown:val row "id")) (jsown:val body "rows"))))
+    (is (null (search "INDEX-SECRET" (jsown:to-json body))))))
+
+(test public-search-canonical-failure-is-not-an-empty-success
+  (multiple-value-bind (body query fetched status)
+      (call-public-search-test (list (public-search-test-row "one"))
+                               (lambda (id) (declare (ignore id)) (error "Backend unavailable")))
+    (declare (ignore body query))
+    (is (= 500 status))
+    (is (equal '("one") fetched))))
+
+(test public-search-rejects-malformed-or-substituted-current-documents
+  (dolist (current (list "not-json" '("not-an-object")
+                         (public-search-test-document "other-id" "public" "public-a")))
+    (multiple-value-bind (body query fetched status)
+        (call-public-search-test (list (public-search-test-row "one"))
+                                 (lambda (id) (declare (ignore id)) current))
+      (declare (ignore query fetched))
+      (is (= 500 status))
+      (is (null (search "INDEX-SECRET" (jsown:to-json body)))))))
+
+(test public-search-bounds-canonical-work-and-rejects-malformed-candidates
+  (dolist (rows (list (list (public-search-test-row "one") (public-search-test-row "two"))
+                      (list (jsown:new-js ("id" 42)))))
+    (multiple-value-bind (body query fetched status)
+        (call-public-search-test rows
+                                 (lambda (id) (public-search-test-document id "public" "public-a"))
+                                 :limit 1)
+      (declare (ignore body query))
+      (is (= 500 status))
+      (is (null fetched)))))
+
 (test api-v1-public-stats-are-aggregate-only
   (let* ((star.frontends.http-api::*public-search-datasets* '("public-a"))
          (response
