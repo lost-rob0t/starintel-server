@@ -359,11 +359,13 @@ duplicates."
     copy))
 
 (defun mark-outbox-published (load-fn save-fn document-id mutation-id
-                              &key (max-attempts 8))
+                              &key (max-attempts 8) initial-state)
+  "Mark publication with INITIAL-STATE's saved revision, reloading after a conflict."
   (loop for attempt from 1 to max-attempts
         do
            (let* ((current
-                    (or (funcall load-fn document-id)
+                    (or (and (= attempt 1) initial-state)
+                        (funcall load-fn document-id)
                         (error
                          "Document ~a disappeared while marking outbox"
                          document-id)))
@@ -410,7 +412,8 @@ If publication fails, the durable pending entry remains recoverable."
              load-fn
              save-fn
              (jsown:val state "_id")
-             (outbox-entry-mutation-id entry))))
+             (outbox-entry-mutation-id entry)
+             :initial-state state)))
     state))
 
 (defun pending-outbox-tuples (documents)
