@@ -1,16 +1,16 @@
 {
-  "checked_at": "2026-11-11T18:37:59Z",
-  "facts_sha256": "507b485e5a76f0cf4faebcc31545dee8c64ad87708f31814a38f52d10f288807",
-  "head": "1e012fbee835aa59285c4fedff230a007344fd60",
+  "checked_at": "2026-11-13T03:37:29Z",
+  "facts_sha256": "656a0585e691af83cef30f797513a848219b624554eff26817323705a882c18e",
+  "head": "f50a441e1fcaad73277932195e05f2578eb972bf",
   "reason": "verification passed",
-  "run": "7445b65ee221489380324179619fb217",
+  "run": "32e52b2a5a614148b8746b18af6b2f2f",
   "run_file": "evidence.pl",
-  "run_sha256": "07bc0208c7d00c664a05a08098b37bc6774564c45abbb988ec2dc2681af0930f",
+  "run_sha256": "44d9a78603c3703aa89623e73a730736b45671dc5c5f52900e31b981c4635941",
   "status": "pass",
   "stderr_sha256": "3f58487f8b178faab8411ba0285a21d4387b34d17785b054fc75e9ddaa05d772",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "swipl_exit": 0,
-  "task": "issue-386-admin-user-route-mapping",
+  "task": "433-pool-probe-lock",
   "verify_sha256": "e78b5e80fcf0af76206366221d8471683f219d05c79fb6ae161b4e5f4d1414ab",
-  "worktree_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  "worktree_digest": "867e6f2db8296cd6edac6cb4066fa327b023feb3f9a4ed0c7972b0953b4cee3d"
 }

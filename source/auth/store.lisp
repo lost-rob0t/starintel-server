@@ -79,23 +79,9 @@
   (:documentation "Credential store backed by the CouchDB auth database."))
 
 (defun make-auth-couchdb-pool ()
-  (anypool:make-pool
+  "Authorization-store pool sharing the canonical checkout boundary."
+  (star.databases.couchdb:make-star-couchdb-pool
    :name "starintel-auth-couchdb-connections"
-   :connector
-   (lambda ()
-     (let ((client
-             (cl-couch:new-couchdb
-              star:*couchdb-host*
-              star:*couchdb-port*
-              :scheme star:*couchdb-scheme*)))
-       (cl-couch:password-auth
-        client
-        star:*couchdb-user*
-        star:*couchdb-password*)
-       client))
-   :disconnector
-   (lambda (client)
-     (setf (cl-couch:couchdb-headers client) nil))
    :max-open-count 10
    :max-idle-count 5))
 
@@ -180,7 +166,7 @@
   record)
 
 (defmethod credential-store-get ((store couchdb-credential-store) credential-id)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (json-to-api-key-record
          (cl-couch:get-document
@@ -190,7 +176,7 @@
       (dex:http-request-not-found () nil))))
 
 (defmethod credential-store-put ((store couchdb-credential-store) record)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (update-record-revision-from-response
          record
@@ -213,7 +199,7 @@
          "Credential was not found"))
       (setf (api-key-record-revision record)
             (api-key-record-revision current))))
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (update-record-revision-from-response
          record
@@ -227,7 +213,7 @@
          "Credential update conflicted")))))
 
 (defmethod credential-store-list ((store couchdb-credential-store))
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (let* ((view
              (star.databases.couchdb:query-view
               client
@@ -260,14 +246,14 @@
            "function(doc){if(doc.kind==='user'){emit(doc.username,null);}}")))))))
 
 (defun ensure-auth-database (store)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (cl-couch:get-database client (couchdb-store-database store))
       (dex:http-request-not-found ()
         (cl-couch:create-database client (couchdb-store-database store))))))
 
 (defun ensure-auth-design-document (store)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (let* ((database (couchdb-store-database store))
            (document (auth-design-document)))
       (handler-case

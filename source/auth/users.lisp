@@ -319,7 +319,7 @@ By default forces a change at next login via =:must-change-password=."
   record)
 
 (defmethod user-store-get ((store couchdb-credential-store) username)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (json-to-user-record
          (cl-couch:get-document
@@ -329,7 +329,7 @@ By default forces a change at next login via =:must-change-password=."
       (dex:http-request-not-found () nil))))
 
 (defmethod user-store-put ((store couchdb-credential-store) record)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (update-user-revision-from-response
          record
@@ -347,7 +347,7 @@ By default forces a change at next login via =:must-change-password=."
       (unless current
         (signal-lifecycle-error "user_not_found" "User was not found"))
       (setf (user-record-revision record) (user-record-revision current))))
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (update-user-revision-from-response
          record
@@ -359,7 +359,7 @@ By default forces a change at next login via =:must-change-password=."
         (signal-lifecycle-error "user_conflict" "User update conflicted")))))
 
 (defmethod user-store-list ((store couchdb-credential-store))
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (let* ((view
              (star.databases.couchdb:query-view
               client

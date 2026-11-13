@@ -12,7 +12,7 @@
   (target-v1-digest (format nil "~a|~a" principal idempotency-key)))
 
 (defun target-v1-load-historical-acceptance (acceptance-id)
-  (anypool:with-connection (client star.databases.couchdb:*couchdb-pool*)
+  (star.databases.couchdb:with-couchdb-client (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb::couchdb-load-target-acceptance
      client star:*couchdb-default-database* acceptance-id)))
 

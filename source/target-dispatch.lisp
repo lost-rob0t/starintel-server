@@ -564,7 +564,7 @@
              (or schedule-once-fn #'wheel-schedule-target-once)
              :schedule-recurring-fn
              (or schedule-recurring-fn #'wheel-schedule-target-recurring))
-            (anypool:with-connection
+            (star.databases.couchdb:with-couchdb-client
                 (client star.databases.couchdb:*couchdb-pool*)
               (process-target-dispatch-envelope
                envelope

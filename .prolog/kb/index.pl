@@ -12,4 +12,5 @@
 :- ensure_loaded('public-api-tenancy.pl').
 :- ensure_loaded('authorization-scope-dimensions.pl').
 :- ensure_loaded('consumer-lifecycle.pl').
+:- ensure_loaded('couchdb-checkout-boundary.pl').
 :- ensure_loaded('outbox-ingest.pl').

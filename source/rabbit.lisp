@@ -125,7 +125,7 @@ persistence keeps tenancy while the client contract stays v0.9.0."
 
 (defun persist-quarantine-record (record)
   "Persist RECORD before its original Rabbit delivery is acknowledged."
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:couchdb-save-quarantine-record
      client
@@ -134,7 +134,7 @@ persistence keeps tenancy while the client contract stays v0.9.0."
 
 (defun inspect-quarantine (&key (status "quarantined") (limit 100))
   "List or show quarantined messages for operator inspection."
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:couchdb-list-quarantine-records
      client
@@ -144,7 +144,7 @@ persistence keeps tenancy while the client contract stays v0.9.0."
 
 (defun replay-quarantined-message (quarantine-id &key corrected-body)
   "Replay one quarantined message through its original route."
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:replay-quarantine-record
      client
@@ -154,7 +154,7 @@ persistence keeps tenancy while the client contract stays v0.9.0."
      :corrected-body corrected-body)))
 
 (defun persist-rabbit-document-mutation (document operation)
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:couchdb-process-outbox-mutation
      client
@@ -189,7 +189,7 @@ persistence keeps tenancy while the client contract stays v0.9.0."
 
 Runs at startup and after failures: every unpublished outbox mutation
 is re-published exactly once per entry sequence."
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (star.databases.couchdb:recover-couchdb-outbox
      client

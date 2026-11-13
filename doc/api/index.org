@@ -7,7 +7,7 @@
 - [[file:star-auth.org][STAR.AUTH]] — 132 symbols
 - [[file:star-authorization.org][STAR.AUTHORIZATION]] — 62 symbols
 - [[file:star-consumers.org][STAR.CONSUMERS]] — 116 symbols
-- [[file:star-databases-couchdb.org][STAR.DATABASES.COUCHDB]] — 129 symbols
+- [[file:star-databases-couchdb.org][STAR.DATABASES.COUCHDB]] — 131 symbols
 - [[file:star-documents.org][STAR.DOCUMENTS]] — 25 symbols
 - [[file:star-http-contract.org][STAR.HTTP.CONTRACT]] — 28 symbols
 - [[file:star-ids.org][STAR.IDS]] — 1 symbol

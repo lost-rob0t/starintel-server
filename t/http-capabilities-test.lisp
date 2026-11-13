@@ -146,12 +146,13 @@
         (query nil)
         (fetched nil)
         (star:*couchdb-default-database* "canonical-test-database")
+        (star.databases.couchdb::*couchdb-session-validator* (constantly t))
+        (star.databases.couchdb::*couchdb-session-reauth* (constantly t))
         (star.frontends.http-api::*public-search-datasets* '("public-a"))
         (star.frontends.http-api::*response* (lack.response:make-response 200))
         (star.frontends.http-api::*couchdb-pool*
-          (star.databases.couchdb::make-session-aware-couchdb-pool
+          (star.databases.couchdb::make-star-couchdb-pool
            :name "public-search-test" :connector (constantly :fake-client)
-           :authenticator (constantly t) :session-valid-p (constantly t)
            :disconnector (constantly nil) :max-open-count 1 :max-idle-count 1)))
     (unwind-protect
          (progn

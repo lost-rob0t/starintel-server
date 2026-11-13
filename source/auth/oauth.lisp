@@ -330,7 +330,7 @@
      :revision (jsown:val-safe document "_rev"))))
 
 (defun couch-auth-get-record (store document-id parser)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (funcall parser
                  (cl-couch:get-document
@@ -338,7 +338,7 @@
       (dex:http-request-not-found () nil))))
 
 (defun couch-auth-put-record (store record serializer conflict-code conflict-message)
-  (anypool:with-connection (client (couchdb-store-pool store))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-store-pool store))
     (handler-case
         (let* ((response
                  (jsown:parse

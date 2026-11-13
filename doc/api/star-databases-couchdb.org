@@ -680,6 +680,29 @@ Create or update all view documents in DATABASE.
 Documents come from =star:*couchdb-views*= (the =views/= directory).
 Existing views are updated in place using their current =_rev=;
 missing views are created.  Conflicts are logged and re-signalled.
+*** make-star-couchdb-pool
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(make-star-couchdb-pool (&KEY STAR.DATABASES.COUCHDB::NAME STAR.DATABASES.COUCHDB::MAX-OPEN-COUNT
+ STAR.DATABASES.COUCHDB::MAX-IDLE-COUNT
+ (STAR.DATABASES.COUCHDB::CONNECTOR
+  (LAMBDA ()
+    (CL-COUCH:NEW-COUCHDB STARINTEL-GSERVER:*COUCHDB-HOST*
+                          STARINTEL-GSERVER:*COUCHDB-PORT* :SCHEME
+                          STARINTEL-GSERVER:*COUCHDB-SCHEME*)))
+ (STAR.DATABASES.COUCHDB::DISCONNECTOR
+  (LAMBDA (STAR.DATABASES.COUCHDB::CLIENT)
+    (CL-COUCH:REMOVE-AUTH STAR.DATABASES.COUCHDB::CLIENT)))))
+#+end_src
+Create a StarIntel CouchDB client pool.
+
+The connector must be a pure constructor: the pool lock is held while
+it runs, so it must not perform network I/O.  Authentication and
+session validation happen at with-couchdb-client, outside the pool
+lock; the pool itself never probes sessions (#433).
 *** map-view-results
 :PROPERTIES:
 :KIND: fn
@@ -1368,3 +1391,24 @@ The =reason= slot of =view-query-error=.
 (view-registry-error-reason (CONDITION))
 #+end_src
 The =view-registry-error-reason= slot of =view-registry-error=.
+
+* Macros
+*** with-couchdb-client
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(with-couchdb-client ((STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::POOL &KEY
+  STAR.DATABASES.COUCHDB::SESSION-VALID-P
+  STAR.DATABASES.COUCHDB::AUTHENTICATOR)
+ &BODY STAR.DATABASES.COUCHDB::BODY))
+#+end_src
+Check out CLIENT from CouchDB POOL for the duration of BODY.
+
+Single canonical CouchDB checkout boundary (#433): the pool lock is held
+only for queue operations.  Session validation and re-authentication
+run here, outside the pool lock, so a slow or parked session probe on
+one client cannot block unrelated checkouts or returns.  An expired
+session is renewed before BODY runs (#221); if renewal fails the client
+is still returned to the pool and the error is propagated.

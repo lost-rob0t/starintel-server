@@ -71,7 +71,6 @@
    (:file "actor-systems/matcher-actor")
    (:file "rabbit")
    (:file "frontends/http-api")
-   (:file "couchdb-session-hardening")
    (:file "frontends/http-boundary-core")
    (:file "frontends/http-document-update")
    (:file "frontends/http-view-registry")

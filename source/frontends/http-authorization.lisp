@@ -170,7 +170,7 @@
 
 (defmacro couchdb-handler ((client pool) &body body)
   `(handler-case
-       (anypool:with-connection (,client ,pool)
+       (star.databases.couchdb:with-couchdb-client (,client ,pool)
          (handler-case
              (progn ,@body)
            (dex:http-request-not-found (condition)
