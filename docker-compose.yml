@@ -128,6 +128,7 @@ services:
       STAR_AUTH_DATABASE: ${STAR_AUTH_DATABASE:-starintel-gserver-auth}
       STAR_AUTH_PEPPER_FILE: /run/secrets/auth_pepper
       STAR_AUTH_BOOTSTRAP_SECRET_FILE: /run/secrets/auth_bootstrap_secret
+      STAR_ZITADEL_TOKEN_FILE: /run/secrets/zitadel_token
       STAR_AUTH_ALLOWED_ORIGINS: ${STAR_AUTH_ALLOWED_ORIGINS:-}
       STAR_TENANT_FALLBACK: ${STAR_TENANT_FALLBACK:-}
       STAR_TENANT_DATASET_MAP: ${STAR_TENANT_DATASET_MAP:-}
@@ -148,6 +149,7 @@ services:
       - valkey_password
       - auth_pepper
       - auth_bootstrap_secret
+      - zitadel_token
     volumes:
       - type: bind
         source: ${STAR_SERVER_INIT_HOST_FILE:-./docker/star-server-init.lisp}

@@ -55,6 +55,9 @@
     ((and (eq method :post)
           (string= path "/api/v1/actor-credentials/resolve"))
      "actor-credentials:read")
+    ((and (eq method :post)
+          (path-prefix-p "/api/v1/biz-auth/users" path))
+     "biz-auth:admin")
     ((path-prefix-p "/api/v1/documents/" path)
      (case method
        (:get "documents:read")
