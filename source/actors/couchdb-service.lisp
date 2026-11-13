@@ -116,7 +116,7 @@
   (setf *couchdb-agent* (make-couchdb-agent system pool)))
 
 (defun couchdb-agent-get (agent database document-id &optional revision)
-  (anypool:with-connection (client (couchdb-agent-client agent))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-agent-client agent))
     (if revision
         (cl-couch:get-document client database document-id revision)
         (cl-couch:get-document client database document-id))))
@@ -145,7 +145,7 @@
             resolved-revision)))
 
 (defun couchdb-agent-delete (agent database document-id &optional revision)
-  (anypool:with-connection (client (couchdb-agent-client agent))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-agent-client agent))
     (delete-couchdb-document client database document-id revision)))
 
 (defun normalize-couchdb-get-request (message)

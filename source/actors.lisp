@@ -80,7 +80,7 @@ messages; the target router resolves destinations through
 ;;;; Preform a insert operation into couchdb.
 (defun couchdb-agent-insert (agent database document)
   "Preform a insert operation into couchdb."
-  (anypool:with-connection (client (couchdb-agent-client agent))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-agent-client agent))
     ;; IMPORTANT: Never print/force-output here.
     ;; This function runs on the actor dispatcher; writing to stdout can block
     ;; (e.g. when stdout is a pipe), which can deadlock the whole system.
@@ -90,17 +90,17 @@ messages; the target router resolves destinations through
 ;;;; Couchdb uses the _rev tag. you can learn more about docment revisions here
 ;;;; https://dba.stackexchange.com/a/299078
 (defun couchdb-agent-update (agent database document revision)
-  (anypool:with-connection (client (couchdb-agent-client agent))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-agent-client agent))
     (cl-couch:create-document client database (jsown:to-json
                                                (jsown:extend-js (jsown:parse document)
                                                                 ("_rev" revision))))))
 ;;;; Preform a delete operation on couchdb.
 (defun couchdb-agent-delete (agent database document-id)
-  (anypool:with-connection (client (couchdb-agent-client agent))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-agent-client agent))
     (cl-couch:delete-document client database document-id)))
 
 (defun couchdb-document-exists-p (agent database id)
-  (anypool:with-connection (client (couchdb-agent-client agent))
+  (star.databases.couchdb:with-couchdb-client (client (couchdb-agent-client agent))
     (cl-couch:document-exists-p client database id)))
 
 ;;;; Start the couchdb agent.
@@ -133,7 +133,7 @@ messages; the target router resolves destinations through
                                                       (let ((pool *couchdb-pool*)
                                                             (db (uiop:getenv "COUCHDB_DATABASE")))
                                                         (with-context (*sys*)
-                                                          (anypool:with-connection (client pool)
+                                                          (star.databases.couchdb:with-couchdb-client (client pool)
                                                             (task-async (lambda ()
                                                                           (handler-case
                                                                               (cl-couch:get-document client db doc-id rev)

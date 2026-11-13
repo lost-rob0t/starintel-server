@@ -108,7 +108,7 @@
   "Destroy the test database."
   (dbg "Destroying test database: ~a" *test-database*)
   (handler-case
-      (anypool:with-connection (client star.databases.couchdb::*couchdb-pool*)
+      (star.databases.couchdb:with-couchdb-client (client star.databases.couchdb::*couchdb-pool*)
         (handler-case
             (cl-couch:delete-database client *test-database*)
           (dexador:http-request-not-found ()
@@ -383,7 +383,7 @@ instead of being mistaken for an expected broker failure."
   "Insert a test document directly into CouchDB."
   (dbg "Inserting test document: ~a" (jsown:val doc "_id"))
   (handler-case
-      (anypool:with-connection (client star.databases.couchdb::*couchdb-pool*)
+      (star.databases.couchdb:with-couchdb-client (client star.databases.couchdb::*couchdb-pool*)
         (cl-couch:create-document client *test-database*
                                   (jsown:to-json doc)))
     (error (e)

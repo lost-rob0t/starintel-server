@@ -287,7 +287,7 @@ transport-level failures still propagate."
 (defun recover-persisted-targets
     (&key (database star:*couchdb-default-database*) actors)
   "Recover valid persisted targets after actor startup and before Rabbit ingest."
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (multiple-value-bind (records invalid-count)
         (load-persisted-target-records client database :actors actors)
