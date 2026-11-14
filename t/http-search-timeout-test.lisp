@@ -19,13 +19,13 @@
 
 #+sbcl
 (test search-timeout-propagates-after-retry
-  (let ((attempts 0))
+  (let ((thunk-calls 0))
     (signals sb-sys:io-timeout
       (star.frontends.http-api::call-couchdb-search
        (lambda ()
-         (incf attempts)
+         (incf thunk-calls)
          (error 'sb-sys:io-timeout :direction :input :seconds 1))))
-    (is (= 2 attempts))))
+    (is (= 2 thunk-calls))))
 
 (test search-returns-first-success-without-retry
   (let ((attempts 0))
