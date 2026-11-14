@@ -177,7 +177,16 @@
              (setf (lack.response:response-status *response*) 400)
              (status-msg "Bad Request"
                          'error
-                         :traceback (format nil "~a" condition)))))
+                         :traceback (format nil "~a" condition)))
+           #+sbcl
+           (sb-sys:io-timeout (condition)
+             (log:error "CouchDB I/O timeout correlation=~a: ~a"
+                        (current-correlation-id)
+                        condition)
+             (setf (lack.response:response-status *response*) 503)
+             (status-msg "Search backend timed out"
+                         'error
+                         :code "search_backend_timeout"))))
      (star.authorization:authorization-error (condition)
        (error condition))
      (usocket:timeout-error (condition)

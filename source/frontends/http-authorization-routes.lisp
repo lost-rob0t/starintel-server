@@ -88,6 +88,24 @@ legacy path parameter that must match the document dtype."
                         (bulk-ingest-job-id job)))
                ("correlation_id" (current-correlation-id)))))))))
 
+(defun call-couchdb-search (search-thunk)
+  "Run SEARCH-THUNK (one idempotent CouchDB FTS search attempt) under
+*couchdb-read-timeout-seconds*, retrying exactly once when the
+backend read times out under load."
+  (flet ((attempt ()
+           (let ((dexador:*default-read-timeout*
+                   star:*couchdb-read-timeout-seconds*))
+             (funcall search-thunk))))
+    #+sbcl
+    (handler-case (attempt)
+      (sb-sys:io-timeout (condition)
+        (log:warn "CouchDB search read timed out after ~as (~a); retrying once correlation=~a"
+                  star:*couchdb-read-timeout-seconds*
+                  (type-of condition)
+                  (current-correlation-id))
+        (attempt)))
+    #-sbcl (attempt)))
+
 (defun handle-authorized-search-route
     (params &optional (route "/search"))
   (with-http-boundary ()
@@ -116,12 +134,14 @@ legacy path parameter that must match the document dtype."
           (when bookmark
             (setf (jsown:val query "bookmark") bookmark))
           (strip-server-tenant-from-search-body
-           (cl-couch:fts-search
-            client
-            (jsown:to-json query)
-            db
-            "search"
-            "fts")))))))
+           (call-couchdb-search
+            (lambda ()
+              (cl-couch:fts-search
+               client
+               (jsown:to-json query)
+               db
+               "search"
+               "fts")))))))))
 
 
 

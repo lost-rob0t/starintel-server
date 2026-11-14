@@ -97,6 +97,16 @@ entry lapses.
 - env: =STAR_COUCHDB_SESSION_CACHE_SECONDS=
 - default: =60=")
 
+(defparameter *couchdb-read-timeout-seconds*
+  (environment-integer "STAR_COUCHDB_READ_TIMEOUT_SECONDS" 10)
+  "Per-read I/O timeout in seconds for CouchDB requests such as FTS search.
+
+Matches dexador's default read timeout of 10 seconds. Raise it when heavy
+ingest load makes legitimate searches slower than the default.
+
+- env: =STAR_COUCHDB_READ_TIMEOUT_SECONDS=
+- default: =10=")
+perf/search-responsiveness
 (defparameter *couchdb-views*
   (let ((files
           (uiop:directory-files

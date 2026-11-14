@@ -493,5 +493,6 @@ object."
             stamp-server-tenant!
             strip-server-tenant-fields
             strip-server-tenant-from-rows
-            strip-server-tenant-from-search-body)
+            strip-server-tenant-from-search-body
+            call-couchdb-search)
           :star.frontends.http-api))
