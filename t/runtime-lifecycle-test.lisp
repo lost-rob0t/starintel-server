@@ -68,6 +68,36 @@
           (star.runtime::*rabbit-readiness-probe* (constantly nil)))
       (is (not (star.runtime:runtime-ready-p runtime))))))
 
+;; issue #416: auth-required CouchDB fronts answer anonymous /_up with
+;; 401 while the authed write path is healthy, so the default probe must
+;; send the configured credential or readiness wedges at unavailable.
+(test default-couchdb-readiness-probe-authenticates
+  (let* ((expected (cons "probe-admin" "probe-secret"))
+         (captured nil)
+         (original-dex-get (and (fboundp 'dex:get)
+                                (symbol-function 'dex:get))))
+    (flet ((stubbed-dex-get (uri &rest args &key basic-auth &allow-other-keys)
+             (declare (ignore uri args))
+             (setf captured basic-auth)
+             ;; auth-required front: authenticated -> 200, else -> 401
+             (values nil (if (equal basic-auth expected) 200 401))))
+      (unwind-protect
+           (progn
+             (sb-ext:without-package-locks
+               (setf (symbol-function 'dex:get) #'stubbed-dex-get))
+             (let ((star:*couchdb-user* "probe-admin")
+                   (star:*couchdb-password* "probe-secret"))
+               (is (star.runtime::default-couchdb-readiness-probe)
+                   "authenticated /_up 200 must read as ready")
+               (is (equal expected captured)
+                   "probe must send the configured admin credential"))
+             (let ((star:*couchdb-user* "wrong")
+                   (star:*couchdb-password* "wrong"))
+               (is (not (star.runtime::default-couchdb-readiness-probe))
+                   "wrong credentials must stay unready (fail closed)")))
+        (sb-ext:without-package-locks
+          (setf (symbol-function 'dex:get) original-dex-get))))))
+
 (test runtime-liveness-tracks-lifecycle-state
   (let ((runtime
           (star.runtime::%make-star-runtime
@@ -84,3 +114,75 @@
   (is (member "/health" star:*auth-public-paths* :test #'string=))
   (is (member "/live" star:*auth-public-paths* :test #'string=))
   (is (member "/ready" star:*auth-public-paths* :test #'string=)))
+
+(defun stub-star-actors-boot (recover-spy)
+  "Install read-only stubs over every infrastructure start function.
+
+No real actor system, producer, CouchDB actor, timer, or hook side effect
+can occur under the stubs.  RECOVER-SPY substitutes for
+recover-persisted-targets.  Restore with RESTORE-STAR-ACTORS-BOOT."
+  (setf *boot-stub-saved-functions* nil)
+  (flet ((stub (symbol function)
+           ;; Wheel-timer symbols can be unbound in the unit-test image;
+           ;; stub them anyway and restore by fmakunbound.
+           (push (cons symbol
+                       (and (fboundp symbol) (symbol-function symbol)))
+                 *boot-stub-saved-functions*)
+           (sb-ext:without-package-locks
+             (setf (symbol-function symbol) function))))
+    (dolist (replacement
+              (list
+               (cons 'star.actors::start-actor-system (constantly nil))
+               (cons 'star.actors::make-producer-agent (constantly nil))
+               (cons 'star.actors::start-couchdb-agent (constantly nil))
+               (cons 'star.actors::start-actor-index (constantly nil))
+               (cons 'star.actors::start-couchdb-gets (constantly nil))
+               (cons 'star.actors::start-couchdb-inserts (constantly nil))
+               (cons 'star.actors::start-target-timer (constantly nil))
+               (cons 'star.actors::start-target-actor (constantly nil))
+               (cons 'nhooks:run-hook
+                     (lambda (&rest args) (declare (ignore args)) nil))
+               (cons 'star.actors::recover-persisted-targets recover-spy)))
+      (stub (car replacement) (cdr replacement)))
+    (let ((wt-package (find-package :wt)))
+      (dolist (name '("MAKE-WHEEL-TIMER" "SCHEDULE-RECURRING"))
+        (let ((symbol (and wt-package (find-symbol name wt-package))))
+          (when symbol
+            (stub symbol
+                  (lambda (&rest args)
+                    (declare (ignore args))
+                    nil))))))))
+
+(defparameter *boot-stub-saved-functions* nil)
+
+(defun restore-star-actors-boot ()
+  (dolist (saved *boot-stub-saved-functions*)
+    (sb-ext:without-package-locks
+      (let ((symbol (car saved))
+            (original (cdr saved)))
+        (cond
+          (original (setf (symbol-function symbol) original))
+          ;; The symbol had no definition before stubbing.
+          ((fboundp symbol) (fmakunbound symbol))))))
+  (setf *boot-stub-saved-functions* nil))
+
+;; issue #360: the operative start-actors (runtime-lifecycle) must rehydrate
+;; durable recurring target schedules at boot; a restart without recovery
+;; silently stops all recurring collection.
+(test boot-start-actors-rehydrates-persisted-targets
+  (let ((recover-calls 0)
+        (original-producer star.actors::*producer-agent*)
+        (original-gc-timer star.actors::*gc-timer*))
+    (unwind-protect
+         (progn
+           (stub-star-actors-boot
+            (lambda (&rest arguments)
+              (declare (ignore arguments))
+              (incf recover-calls)
+              '(:boot-recovery-stubbed)))
+           (is (eq star.actors::*sys* (star.actors:start-actors)))
+           (is (= 1 recover-calls)
+               "boot must run recover-persisted-targets exactly once"))
+      (restore-star-actors-boot)
+      (setf star.actors::*producer-agent* original-producer
+            star.actors::*gc-timer* original-gc-timer))))

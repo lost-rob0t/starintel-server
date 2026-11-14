@@ -45,7 +45,7 @@ A Rabbit consumer configuration or channel-owning worker.
 :PACKAGE: STAR.CONSUMERS
 :END:
 A Rabbit queue/channel owned by exactly one thread.
-- Slots: =exchange=, =exchange-type=, =exchange-durable=, =routing-key=, =user=, =password=, =vhost=, =port=, =host=, =queue-durable-p=, =queue-name=, =prefetch-count=, =current-properties=, =conn=, =chan=, =owner-thread=, =open=
+- Slots: =exchange=, =exchange-type=, =exchange-durable=, =routing-key=, =user=, =password=, =vhost=, =port=, =host=, =queue-durable-p=, =queue-name=, =queue-arguments=, =prefetch-count=, =current-properties=, =conn=, =chan=, =owner-thread=, =open=
 *** retrying-rabbit-consumer
 :PROPERTIES:
 :KIND: class
@@ -59,7 +59,7 @@ RabbitMQ consumer with bounded retry and quarantine.
 :PACKAGE: STAR.CONSUMERS
 :END:
 Queue stream abstraction the retrying consumer reads from.
-- Slots: =retry-policy=, =quarantine-fn=, =quarantine-exchange=, =quarantine-queue=, =current-body=, =current-properties=, =current-routing-key=, =current-exchange=, =current-received-at=
+- Slots: =retry-policy=, =quarantine-fn=, =quarantine-exchange=, =quarantine-queue=, =dead-letter-exchange=, =dead-letter-routing-key=, =dead-letter-queue=, =current-body=, =current-properties=, =current-routing-key=, =current-exchange=, =current-received-at=
 
 * Conditions
 *** conflict-delivery-error
@@ -87,6 +87,13 @@ Signalled when the consumer itself fails (retryable).
 :PACKAGE: STAR.CONSUMERS
 :END:
 Signalled for deliveries that must never be retried.
+*** queue-topology-mismatch
+:PROPERTIES:
+:KIND: condition
+:PACKAGE: STAR.CONSUMERS
+:END:
+Signalled when a durable queue cannot be reconciled with the supported declaration arguments without destroying messages.
+- Slots: =queue-name=, =server-message=
 *** schema-invalid-delivery-error
 :PROPERTIES:
 :KIND: condition
@@ -199,10 +206,29 @@ The =reason= slot of =consumer-settlement=.
  (STAR.CONSUMERS::RETRY-JITTER-RATIO 0.2d0) STAR.CONSUMERS::QUARANTINE-FN
  (STAR.CONSUMERS::QUARANTINE-EXCHANGE "starintel.quarantine")
  (STAR.CONSUMERS::QUARANTINE-QUEUE "starintel-quarantine")
+ STAR.CONSUMERS::QUEUE-ARGUMENTS STAR.CONSUMERS::DEAD-LETTER-EXCHANGE
+ STAR.CONSUMERS::DEAD-LETTER-ROUTING-KEY STAR.CONSUMERS::DEAD-LETTER-QUEUE
  (STAR.CONSUMERS::TEST-FN #'IDENTITY)
  (STAR.CONSUMERS::HANDLER-FN (ERROR "Handler function is required"))))
 #+end_src
 Create and register a RabbitMQ backed consumer.
+*** declare-queue-with-reconciliation
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(declare-queue-with-reconciliation (STREAM STAR.CONSUMERS::CONNECTION STAR.CONSUMERS::CHANNEL))
+#+end_src
+Declare the stream queue with its supported arguments, non-destructively.
+
+RabbitMQ rejects =queue-declare= with PRECONDITION_FAILED when an existing
+durable queue has inequivalent arguments (for example a queue created without
+dead-letter policy that the code now declares with one). When the stale queue
+is empty and unused it is deleted and redeclared with the supported
+arguments. A non-empty incompatible queue is never dropped: the mismatch is
+signalled as =queue-topology-mismatch= so startup lands in an actionable
+not-ready state instead of destroying messages.
 *** delivery-attempt
 :PROPERTIES:
 :KIND: fn
@@ -328,6 +354,15 @@ RabbitMQ message header accessor.
  STAR.CONSUMERS::DEFAULT))
 #+end_src
 RabbitMQ message property accessor.
+*** rabbit-startup-retryable-p
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-startup-retryable-p (CONDITION))
+#+end_src
+Return true only for transport/server conditions safe to retry at stream open.
 *** retry-action-for
 :PROPERTIES:
 :KIND: fn
@@ -405,6 +440,18 @@ RabbitMQ properties carrying retry metadata across republish.
 (run-consumer (STAR.CONSUMERS:CONSUMER))
 #+end_src
 Run a consumer on its owner thread while periodically observing stop state.
+
+Broker-forced connection closure reconnects with the stream policy's capped
+backoff instead of silently leaving the queue unconsumed (issue #37 live
+incident 2026-10-30: documents.ingest/targets/update sat at 0 consumers for
+~25 minutes after a broker restart). Reconnect is fenced by :stopping.
+Non-transport failures keep the stop-for-redelivery contract: the delivery
+stays unsettled for redelivery, and supervision restarts the worker with
+the same capped backoff instead of permanently zeroing the lane (issue #38
+live incident 2026-11-03/04: settlement-path stops left documents.ingest at
+0 consumers for ~23h while producers stacked 8.8M messages). Readiness
+honestly reports not-running while a stopped worker waits out its backoff.
+A worker exit on :eof is graceful and is never restarted.
 *** settlement-ack
 :PROPERTIES:
 :KIND: fn
@@ -695,6 +742,24 @@ Create one worker consumer instance for a multi-worker consumer.
 (open-stream (STREAM))
 #+end_src
 Protocol: acquire the transport resources of STREAM.
+*** queue-topology-mismatch-queue-name
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(queue-topology-mismatch-queue-name (CONDITION))
+#+end_src
+The =queue-name= slot of =queue-topology-mismatch=.
+*** queue-topology-mismatch-server-message
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(queue-topology-mismatch-server-message (CONDITION))
+#+end_src
+The =server-message= slot of =queue-topology-mismatch=.
 *** rabbit-exchange-durable-p
 :PROPERTIES:
 :KIND: fn
@@ -794,6 +859,15 @@ The =port= slot of =rabbit-queue-stream=.
 (rabbit-stream-prefetch-count (SB-PCL::OBJECT))
 #+end_src
 The =prefetch-count= slot of =rabbit-queue-stream=.
+*** rabbit-stream-queue-arguments
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(rabbit-stream-queue-arguments (SB-PCL::OBJECT))
+#+end_src
+The =queue-arguments= slot of =rabbit-queue-stream=.
 *** rabbit-stream-queue-durable-p
 :PROPERTIES:
 :KIND: fn
@@ -893,6 +967,33 @@ The =current-received-at= slot of =retrying-rabbit-queue-stream=.
 (retry-stream-current-routing-key (SB-PCL::OBJECT))
 #+end_src
 The =current-routing-key= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-dead-letter-exchange
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-dead-letter-exchange (SB-PCL::OBJECT))
+#+end_src
+The =dead-letter-exchange= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-dead-letter-queue
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-dead-letter-queue (SB-PCL::OBJECT))
+#+end_src
+The =dead-letter-queue= slot of =retrying-rabbit-queue-stream=.
+*** retry-stream-dead-letter-routing-key
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.CONSUMERS
+:END:
+#+begin_src lisp
+(retry-stream-dead-letter-routing-key (SB-PCL::OBJECT))
+#+end_src
+The =dead-letter-routing-key= slot of =retrying-rabbit-queue-stream=.
 *** retry-stream-policy
 :PROPERTIES:
 :KIND: fn

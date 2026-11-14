@@ -256,11 +256,20 @@
 (defun prepare-outbox-mutation (existing incoming operation)
   "Prepare one atomic document revision containing document and pending event state.
 
-Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
+Returns STATE, ENTRY, and either :CREATED or :DUPLICATE.
+
+A :new mutation for a document that already exists is a re-observation from
+recurring collection, not a conflict (issue #38: 825k+ quarantined
+re-observations drained the ingest lane): it is applied as an :updated
+mutation publishing documents.updated.*, while its ledger key stays derived
+from the incoming :new content so identical redeliveries remain idempotent
+duplicates."
   (let* ((document (public-document-copy incoming))
          (document-id (jsown:val document "_id"))
          (mutation-id (document-mutation-id operation document))
-         (content-hash (mutation-content-hash operation document)))
+         (content-hash (mutation-content-hash operation document))
+         (event-operation
+           (if (and existing (eq operation :new)) :updated operation)))
     (when (and (eq operation :updated)
                (null existing))
       (error 'missing-document-for-update
@@ -281,12 +290,7 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
               (error "Mutation ledger contains ~a without an outbox entry"
                      mutation-id))
             (return-from prepare-outbox-mutation
-              (values existing entry :duplicate)))))
-      (when (eq operation :new)
-        (error 'mutation-conflict
-               :mutation-id mutation-id
-               :document-id document-id
-               :reason "new-document mutation conflicts with an existing document")))
+              (values existing entry :duplicate))))))
     (when existing
       (setf (jsown:val document "_rev")
             (jsown:val existing "_rev")))
@@ -296,7 +300,7 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
               document
               mutation-id
               content-hash
-              operation
+              event-operation
               sequence)))
       (values
        (merge-server-state
@@ -366,11 +370,13 @@ mutation conflicts keep their exact semantics."
     copy))
 
 (defun mark-outbox-published (load-fn save-fn document-id mutation-id
-                              &key (max-attempts 8))
+                              &key (max-attempts 8) initial-state)
+  "Mark publication with INITIAL-STATE's saved revision, reloading after a conflict."
   (loop for attempt from 1 to max-attempts
         do
            (let* ((current
-                    (or (funcall load-fn document-id)
+                    (or (and (= attempt 1) initial-state)
+                        (funcall load-fn document-id)
                         (error
                          "Document ~a disappeared while marking outbox"
                          document-id)))
@@ -397,32 +403,6 @@ mutation conflicts keep their exact semantics."
                       "Outbox publication marker retry budget exhausted for ~a"
                       mutation-id))))))))
 
-(defun mark-outbox-published-with-state (load-fn save-fn state mutation-id
-                                         &key (max-attempts 8))
-  "Mark STATE's outbox entry published using its own revision, no reload.
-
-STATE is the document revision this process just saved, so the reload
-inside MARK-OUTBOX-PUBLISHED is a redundant point lookup on the hot
-ingest path.  A conflicting save falls back to the load-based loop."
-  (handler-case
-      (funcall save-fn
-               (update-outbox-entry
-                state
-                mutation-id
-                (lambda (outbox-entry)
-                  (setf (jsown:val outbox-entry "status")
-                        "published"
-                        (jsown:val outbox-entry "published_at")
-                        (star.documents:utc-now))
-                  outbox-entry)))
-    (outbox-store-conflict ()
-      (mark-outbox-published
-       load-fn
-       save-fn
-       (jsown:val state "_id")
-       mutation-id
-       :max-attempts max-attempts))))
-
 (defun publish-outbox-entry (publish-fn entry)
   (funcall publish-fn
            (jsown:val entry "routing_key")
@@ -441,14 +421,14 @@ point GET per ingested document."
       (persist-outbox-mutation load-fn save-fn incoming operation)
     (unless (outbox-entry-published-p entry)
       (publish-outbox-entry publish-fn entry)
-      (let ((mutation-id (outbox-entry-mutation-id entry)))
-        (setf state
-              (if (eq disposition :created)
-                  (mark-outbox-published-with-state
-                   load-fn save-fn state mutation-id)
-                  (mark-outbox-published
-                   load-fn save-fn (jsown:val state "_id") mutation-id)))))
-    state))
+      (setf state
+            (mark-outbox-published
+             load-fn
+             save-fn
+             (jsown:val state "_id")
+             (outbox-entry-mutation-id entry)
+             :initial-state state))
+    state)))
 
 (defun pending-outbox-tuples (documents)
   (sort

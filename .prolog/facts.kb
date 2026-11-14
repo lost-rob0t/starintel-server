@@ -1,4 +1,5 @@
-% Ground task/control facts for this worktree. Machine observations live in runs/run-<HEAD>.pl.
-task('reconcile-master').
-repo_state('51713d561b06a24f2954e8aa37a8339329c3a435', '3aa15b5ed6188b12fbb023553073499af80f4359d845777bcea9409000e243db').
+% Ground task/control facts. Evidence is isolated by task and run.
+task('433-pool-probe-lock').
+verification_context('433-pool-probe-lock', '32e52b2a5a614148b8746b18af6b2f2f').
+repo_state('f50a441e1fcaad73277932195e05f2578eb972bf', '867e6f2db8296cd6edac6cb4066fa327b023feb3f9a4ed0c7972b0953b4cee3d').
 research_required(false).

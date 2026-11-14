@@ -238,21 +238,48 @@
           (funcall quarantine-fn client database document condition))))
     (values (nreverse records) invalid-count)))
 
+(defun strip-target-storage-revision (record)
+  "Return an equivalent record without CouchDB storage revisions.
+
+Standalone persistence (#360) adds _rev to recovered target documents.
+The dispatch fingerprint must not treat that storage artifact as a
+content change, or every recovered recurring target conflicts with its
+own acceptance (252 INVALID observed on the 2026-11-03 reseed reboot)."
+  (let ((document
+          (star.documents:clone-document-object
+           (target-record-document record))))
+    (when (jsown:keyp document "_rev") (jsown:remkey document "_rev"))
+    (when (jsown:keyp document "rev") (jsown:remkey document "rev"))
+    (parse-target-record document)))
+
 (defun recover-target-record (record)
-  "Recover one record once per persisted revision in this process."
+  "Recover one record once per persisted revision in this process.
+
+Only recurring schedules rehydrate (#360): a one-shot target whose moment
+passed must never re-dispatch at boot.  A record that fails deterministic
+dispatch validation (expired deadline, transient policy, legacy delay 0)
+returns :INVALID so one bad persisted document cannot abort boot;
+transport-level failures still propagate."
   (let ((fingerprint (target-record-fingerprint record)))
     (cond
       ((target-active-lease-p record) :leased)
+      ((not (target-record-recurring-p record)) :skipped)
       ((gethash fingerprint *recovered-target-fingerprints*) :duplicate)
       (t
        (setf (gethash fingerprint *recovered-target-fingerprints*) t)
        (handler-case
            (progn
              (submit-target
-              record
+              (strip-target-storage-revision record)
               :first-time-p (target-record-recurring-p record)
               :recovered-p t)
              :recovered)
+         (invalid-target-dispatch ()
+           ;; Deterministic bad persisted target: the same failure class as
+           ;; an unparseable document.  Undo the fingerprint ledger entry so
+           ;; a later corrected revision can still recover.
+           (remhash fingerprint *recovered-target-fingerprints*)
+           :invalid)
          (error (condition)
            (remhash fingerprint *recovered-target-fingerprints*)
            (error condition)))))))
@@ -260,52 +287,28 @@
 (defun recover-persisted-targets
     (&key (database star:*couchdb-default-database*) actors)
   "Recover valid persisted targets after actor startup and before Rabbit ingest."
-  (anypool:with-connection
+  (star.databases.couchdb:with-couchdb-client
       (client star.databases.couchdb:*couchdb-pool*)
     (multiple-value-bind (records invalid-count)
         (load-persisted-target-records client database :actors actors)
       (let ((recovered 0)
             (duplicates 0)
-            (leased 0))
+            (leased 0)
+            (skipped 0)
+            (undispatchable 0))
         (dolist (record records)
           (ecase (recover-target-record record)
             (:recovered (incf recovered))
             (:duplicate (incf duplicates))
-            (:leased (incf leased))))
-        (list :loaded (length records)
-              :recovered recovered
-              :duplicates duplicates
-              :leased leased
-              :invalid invalid-count)))))
-
-(defun start-target-loader ()
-  "Compatibility entry point for explicit recovery."
-  (recover-persisted-targets))
-
-(defun start-actors
-    (&key rabbit-user rabbit-host rabbit-password rabbit-vhost rabbit-port)
-  "Start persistence and registry actors, then recover targets before ingest."
-  (start-actor-system)
-  (setf *producer-agent*
-        (make-producer-agent
-         (star.producers:make-producer
-          :name "actor-producer"
-          :exchange-name "documents"
-          :host rabbit-host
-          :port rabbit-port
-          :user rabbit-user
-          :password rabbit-password
-          :vhost rabbit-vhost)
-         *sys*))
-  (let ((*gc-timer* (wt:make-wheel-timer)))
-    (wt:schedule-recurring
-     *gc-timer* 1 3600 (lambda () (sb-ext:gc :full t))))
-  (start-couchdb-agent *sys*)
-  (start-actor-index *sys*)
-  (start-couchdb-gets *sys*)
-  (start-couchdb-inserts *sys*)
-  (start-target-timer)
-  (start-target-actor *sys*)
-  ;; Actor hooks complete registry population before persisted work is replayed.
-  (nhooks:run-hook star:*actors-start-hook*)
-  (recover-persisted-targets))
+            (:leased (incf leased))
+            (:skipped (incf skipped))
+            (:invalid (incf undispatchable))))
+        (let ((summary
+                (list :loaded (length records)
+                      :recovered recovered
+                      :duplicates duplicates
+                      :leased leased
+                      :skipped skipped
+                      :invalid (+ invalid-count undispatchable))))
+          (log:info "Recovered persisted targets: ~a" summary)
+          summary)))))

@@ -31,7 +31,7 @@
   :client-name "target-create"
   :method :post
   :path "/api/v1/targets"
-  :summary "Create or safely retry a canonical StarIntel target"
+  :summary "Create or safely retry a canonical StarIntel target; non-transient targets are durable: the canonical target document and its acceptance are persisted so recurring collection survives a server restart"
   :tags '("targets")
   :authority :authenticated
   :scopes '("targets:dispatch")
@@ -44,3 +44,79 @@
     (response 200 "Equivalent target request already accepted."
               +target-create-receipt-schema+))
    (standard-errors))))
+(defparameter +target-update-request-schema+
+  (object-schema
+   (list
+    (cons "options" (generic-object-schema)))
+   :required '("options")
+   :additional-properties nil
+   :description "Whole-object replacement for one target's options."))
+
+(defparameter +target-update-receipt-schema+
+  (object-schema
+   (list
+    (cons "status" (string-schema))
+    (cons "target_id" (string-schema :min-length 1))
+    (cons "correlation_id" (string-schema :min-length 1)))
+   :required '("status" "target_id" "correlation_id")
+   :additional-properties nil
+   :description "Target options update receipt."))
+
+;; #59 narrow slice: pin per-target options (for example the reddit lane
+;; backend) on one persisted target.  The change is durable and applies to
+;; the live schedule through the existing #360 boot rehydration.
+(upsert-http-operation
+ (make-http-operation
+  :id "targets.update"
+  :client-name "target-update"
+  :method :patch
+  :path "/api/v1/targets/:id"
+  :summary "Replace the options object of one persisted target; the persisted change is applied to recurring schedules by boot rehydration"
+  :tags '("targets")
+  :authority :authenticated
+  :scopes '("targets:update")
+  :path-parameters '("id")
+  :request-schema +target-update-request-schema+
+  :responses
+  (append
+   (list
+    (response 200 "Target options replaced." +target-update-receipt-schema+))
+   (standard-errors))))
+
+(defparameter +target-list-response-schema+
+  (object-schema
+   (list
+    (cons "status" (string-schema))
+    (cons "data"
+          (object-schema
+           (list
+            (cons "targets" (array-schema (generic-object-schema)))
+            (cons "count" (integer-schema :minimum 0)))
+           :required '("targets" "count")
+           :additional-properties nil)))
+   :required '("status" "data")
+   :additional-properties nil
+   :description "Tenant-scoped list of persisted target documents."))
+
+;; #360: read-only listing of durable targets for authorized principals.
+(upsert-http-operation
+  (make-http-operation
+   :id "targets.list"
+   :client-name "target-list"
+   :method :get
+   :path "/api/v1/targets"
+   :summary "List persisted targets in the caller's tenant (optional actor filter)"
+   :tags '("targets")
+   :authority :authenticated
+   :scopes '("targets:read")
+   :query-parameters
+   (list
+    '(:name "actor" :required nil)
+    '(:name "tenant" :required nil)
+    '(:name "limit" :required nil))
+   :responses
+   (append
+    (list
+     (response 200 "Persisted targets for the authorized tenant."
+               +target-list-response-schema+))
+    (standard-errors))))

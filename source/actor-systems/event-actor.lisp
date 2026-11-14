@@ -237,34 +237,39 @@
   (declare (ignore consumer))
   (process-event-delivery (car message)))
 
+(defun make-event-consumer (n)
+  "Build the durable event consumer with its dead-letter topology."
+  (star.consumers:create-rabbit-consumer
+   :name "event-consumers"
+   :n n
+   :host star:*rabbit-address*
+   :port star:*rabbit-port*
+   :username star:*rabbit-user*
+   :password star:*rabbit-password*
+   :queue-name +event-queue+
+   :queue-durable t
+   :exchange-name +event-exchange+
+   :exchange-type "topic"
+   :exchange-durable t
+   :routing-key +event-routing-key+
+   :dead-letter-exchange +event-dead-letter-exchange+
+   :dead-letter-routing-key +event-dead-letter-routing-key+
+   :dead-letter-queue +event-dead-letter-queue+
+   :test-fn #'identity
+   :handler-fn #'handle-event-message
+   :on-error :retry
+   :on-filter :filtered-ack
+   :max-retries star:*rabbit-max-retries*
+   :retry-base-delay-ms star:*rabbit-retry-base-delay-ms*
+   :retry-max-delay-ms star:*rabbit-retry-max-delay-ms*
+   :retry-jitter-ratio star:*rabbit-retry-jitter-ratio*
+   :quarantine-fn #'star.rabbit:persist-quarantine-record
+   :quarantine-exchange star:*rabbit-quarantine-exchange*
+   :quarantine-queue star:*rabbit-quarantine-queue*))
+
 (defun start-event-consumer (n)
   "Start durable owner-thread event consumers with bounded retry and quarantine."
-  (let ((consumer
-          (star.consumers:create-rabbit-consumer
-           :name "event-consumers"
-           :n n
-           :host star:*rabbit-address*
-           :port star:*rabbit-port*
-           :username star:*rabbit-user*
-           :password star:*rabbit-password*
-           :queue-name +event-queue+
-           :queue-durable t
-           :exchange-name +event-exchange+
-           :exchange-type "topic"
-           :exchange-durable t
-           :routing-key +event-routing-key+
-           :test-fn #'identity
-           :handler-fn #'handle-event-message
-           :on-error :retry
-           :on-filter :filtered-ack
-           :max-retries star:*rabbit-max-retries*
-           :retry-base-delay-ms star:*rabbit-retry-base-delay-ms*
-           :retry-max-delay-ms star:*rabbit-retry-max-delay-ms*
-           :retry-jitter-ratio star:*rabbit-retry-jitter-ratio*
-           :quarantine-fn #'star.rabbit:persist-quarantine-record
-           :quarantine-exchange star:*rabbit-quarantine-exchange*
-           :quarantine-queue star:*rabbit-quarantine-queue*)))
-    (star.consumers:start-consumer consumer)))
+  (star.consumers:start-consumer (make-event-consumer n)))
 
 (defun log-actor-event (actor-name &key event-type details source-id trace-id
                                      component (generation 0))

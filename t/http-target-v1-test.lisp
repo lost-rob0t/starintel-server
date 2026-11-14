@@ -1,7 +1,7 @@
 (in-package :star-server-tests)
 
 (def-suite http-target-v1-tests
-  :description "Versioned target creation, authorization and idempotency contract")
+  :description "Versioned target creation, update, authorization and idempotency contract")
 
 (in-suite http-target-v1-tests)
 
@@ -262,7 +262,7 @@
     (setf (jsown:val stored "_rev") "2-stored"
           (jsown:val stored "tenant_id") "private-tenant")
     (let* ((record (star.actors:parse-target-record stored))
-           (envelope (star.actors:make-target-dispatch-envelope
+           (envelope (star.actors::make-target-dispatch-envelope
                       record :destination
                       (star.actors::make-target-destination-handle
                        :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder"))))
@@ -318,7 +318,7 @@
                             ("submitted_by" (star.frontends.http-api::target-v1-digest principal))
                             ("schedule_id" schedule-id)))))
          (envelope
-           (star.actors:make-target-dispatch-envelope
+           (star.actors::make-target-dispatch-envelope
             (star.actors:parse-target-record document)
             :destination
             (star.actors::make-target-destination-handle
@@ -545,3 +545,393 @@
           (setf (symbol-function lookup-symbol) original-lookup
                 (symbol-function accept-symbol) original-accept
                 (symbol-function 'star.actors:publish) original-publish))))))
+
+;; issue #360: a durable acceptance must re-arm the process-local wheel for
+;; recurring targets after a restart; the durable :duplicate disposition is
+;; the post-restart state, not an in-process retry.
+(defstruct restart-simulation
+  (stored nil)
+  (creates 0)
+  (updates 0)
+  (recurring-calls 0)
+  (once-calls 0))
+
+(defun make-restart-simulation-record (&key recurring-p)
+  (let* ((request (make-v1-target-request :delay 60 :recurring recurring-p
+                                          :idempotency-key "restart-simulation"))
+         (principal "human:alice")
+         (document (star.frontends.http-api::target-v1-document-from-request
+                    request principal)))
+    (star.actors:parse-target-record document)))
+
+(defun accept-with-restart-simulation (record state)
+  (star.actors:accept-target-record
+   record
+   :destination
+   (star.actors::make-target-destination-handle
+    :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")
+   :persist-fn
+   (lambda (desired equivalent-p)
+     (with-accessors ((stored restart-simulation-stored)) state
+       (cond ((null stored)
+              (incf (restart-simulation-creates state))
+              (setf stored desired)
+              (values stored :created))
+             ((funcall equivalent-p stored desired)
+              (values stored :duplicate))
+             (t (values stored :conflict)))))
+   :update-fn
+   (lambda (id updater)
+     (declare (ignore id))
+     (incf (restart-simulation-updates state))
+     (setf (restart-simulation-stored state)
+           (funcall updater (restart-simulation-stored state))))
+   :dispatch-fn (lambda (envelope) (declare (ignore envelope)) t)
+   :schedule-once-fn
+   (lambda (&rest args)
+     (declare (ignore args))
+     (incf (restart-simulation-once-calls state)))
+   :schedule-recurring-fn
+   (lambda (&rest args)
+     (declare (ignore args))
+     (incf (restart-simulation-recurring-calls state)))))
+
+(defun simulate-target-process-restart ()
+  "Drop all process-local target schedule memory; durable state survives."
+  (setf star.actors::*active-target-schedules* (make-hash-table :test #'equal)
+        star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal)))
+
+;; #360 production follow-up: legacy persisted documents (delay 0, expired
+;; deadline, one-shot) must not abort boot when recovery runs against real
+;; data; recovery rehydrates recurring schedules only and treats
+;; deterministic dispatch-validation failures as per-record invalids.
+;; (The healthy recurring recovery path is covered by the real-CouchDB
+;; integration test; validation here fires before any persistence I/O.)
+(test recovery-skips-one-shot-and-quarantines-undispatchable-without-error
+  (let ((star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal))
+        (star.actors::*active-target-schedules* (make-hash-table :test #'equal)))
+    (flet ((legacy-record (delay recurring deadline)
+             (star.actors::parse-target-record
+              (jsown:new-js
+                ("_id" (format nil "legacy-recovery-~a-~a" delay recurring))
+                ("dataset" "legacy") ("dtype" "target")
+                ("actor" "subfinder")
+                ("target" "legacy.example.invalid")
+                ("delay" delay)
+                ("recurring" (if recurring :true :false))
+                ("schedule_id" "legacy-schedule-recovery")
+                ("deadline" deadline)))))
+      ;; A legacy one-shot (delay 0) is skipped, never submitted.
+      (is (eq :skipped (star.actors::recover-target-record
+                        (legacy-record 0 nil :null))))
+      ;; A recurring record with an expired deadline is a per-record
+      ;; invalid, not a boot abort.
+      (is (eq :invalid (star.actors::recover-target-record
+                        (legacy-record 3600 t "2020-01-01T00:00:00Z"))))
+      ;; The failed record did not burn its fingerprint ledger entry.
+      (is-false (gethash
+                 (star.actors::target-record-fingerprint
+                  (star.actors::parse-target-record
+                   (jsown:new-js
+                     ("_id" "legacy-recovery-3600-t")
+                     ("dataset" "legacy") ("dtype" "target")
+                     ("actor" "subfinder")
+                     ("target" "legacy.example.invalid")
+                     ("delay" 3600) ("recurring" :true)
+                     ("schedule_id" "legacy-schedule-recovery")
+                     ("deadline" "2020-01-01T00:00:00Z"))))
+                 star.actors::*recovered-target-fingerprints*)))))
+
+(test recurring-acceptance-re-arms-schedule-after-simulated-restart
+  (let* ((record (make-restart-simulation-record :recurring-p t))
+         (schedule-id (star.actors::target-record-schedule-id record))
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+         (star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal))
+         (state (make-restart-simulation)))
+    ;; Initial acceptance: durable acceptance created, wheel armed once.
+    (is (eq :accepted
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 1 (restart-simulation-recurring-calls state)))
+    (is-true (gethash schedule-id star.actors::*active-target-schedules*))
+    (is (string= "scheduled"
+                 (jsown:val (restart-simulation-stored state) "status")))
+    ;; Simulated restart: process-local schedule memory is gone, the durable
+    ;; acceptance (status "scheduled") is all that survives.
+    (simulate-target-process-restart)
+    (is (eq :duplicate
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 2 (restart-simulation-recurring-calls state))
+        "recurring schedule must re-arm after restart")
+    (is-true (gethash schedule-id star.actors::*active-target-schedules*)
+             "re-armed schedule must be active again")
+    (is (= 1 (restart-simulation-creates state))
+        "durable acceptance must not be recreated")
+    (is (= 1 (restart-simulation-updates state))
+        "restart rehydration must not rewrite accepted_at")))
+
+(test one-shot-acceptance-duplicate-stays-no-op-after-restart
+  (let* ((record (make-restart-simulation-record :recurring-p nil))
+         (schedule-id (star.actors::target-record-schedule-id record))
+         (star.actors::*active-target-schedules* (make-hash-table :test #'equal))
+         (star.actors::*recovered-target-fingerprints* (make-hash-table :test #'equal))
+         (state (make-restart-simulation)))
+    (is (eq :accepted
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 1 (restart-simulation-once-calls state)))
+    (simulate-target-process-restart)
+    (is (eq :duplicate
+            (star.actors:target-dispatch-outcome-status
+             (accept-with-restart-simulation record state))))
+    (is (= 1 (restart-simulation-once-calls state))
+        "one-shot targets must not re-dispatch on restart")
+    (is-false (gethash schedule-id star.actors::*active-target-schedules*))))
+
+;; issue #360: GET /api/v1/targets must be a mapped read capability instead
+;; of an unmapped-route 403.
+(test v1-target-list-is-a-readonly-targets-read-capability
+  (is (string= "targets:read"
+               (star.frontends.http-api::route-action :get "/api/v1/targets")))
+  (is (string= "targets:dispatch"
+               (star.frontends.http-api::route-action :post "/api/v1/targets")))
+  (let ((operation (star.http.contract:find-http-operation "targets.list")))
+    (is (eq :get (star.http.contract:http-operation-method operation)))
+    (is (string= "/api/v1/targets"
+                 (star.http.contract:http-operation-path operation)))
+    (is (equal '("targets:read")
+               (star.http.contract:http-operation-scopes operation)))))
+
+;; #360 live follow-up: standalone persistence gives recovered target docs
+;; a CouchDB storage revision; the dispatch fingerprint must not treat that
+;; as content change, or every recovered recurring target conflicts with its
+;; own acceptance (252 INVALID observed on the 2026-11-03 reseed reboot).
+(test recovered-storage-revision-does-not-conflict-with-acceptance
+  (let* ((request (make-v1-target-request :delay 60 :recurring t
+                                          :idempotency-key "storage-rev"))
+         (principal "human:alice")
+         (document
+           (star.frontends.http-api::target-v1-document-from-request
+            request principal))
+         (recovered-document
+           (star.documents:clone-document-object document))
+         (destination
+           (star.actors::make-target-destination-handle
+            :rabbit "subfinder" :routing-key "documents.target.dispatch.subfinder")))
+    ;; standalone persistence adds only storage metadata
+    (setf (jsown:val recovered-document "_id") (jsown:val document "id")
+          (jsown:val recovered-document "_rev") "1-storageonly")
+    (let ((accepted-fingerprint
+            (star.actors::target-dispatch-fingerprint
+             (star.actors::make-target-dispatch-envelope
+              (star.actors:parse-target-record document)
+              :destination destination)))
+          (recovered-fingerprint
+            (star.actors::target-dispatch-fingerprint
+             (star.actors::make-target-dispatch-envelope
+              (star.actors::strip-target-storage-revision
+               (star.actors:parse-target-record recovered-document))
+              :destination destination))))
+      (is (string= accepted-fingerprint recovered-fingerprint)
+          "storage revision must not manufacture a content conflict"))
+    ;; the recovery path submits stripped records to the durable acceptance
+    (let* ((submitted nil)
+           (original-submit (symbol-function 'star.actors:submit-target))
+           (star.actors::*recovered-target-fingerprints*
+             (make-hash-table :test #'equal)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'star.actors:submit-target)
+                   (lambda (record &rest arguments)
+                     (declare (ignore arguments))
+                     (setf submitted record)
+                     (star.actors::make-target-dispatch-outcome :accepted)))
+             (is (eq :recovered
+                     (star.actors::recover-target-record
+                      (star.actors:parse-target-record recovered-document))))
+             (is-false (star.actors:target-record-revision submitted)
+                       "recovery must submit the record without its storage revision"))
+        (setf (symbol-function 'star.actors:submit-target)
+              original-submit)))))
+
+;;; targets.update (#59 narrow slice): contracted whole-object options
+;;; replacement on one persisted target.  Schedule semantics stay with the
+;;; existing recovery authority: the persisted change is applied by boot
+;;; rehydration (#360); the live wheel keeps its captured record.
+
+(defun make-v1-persisted-target
+    (&key (id "target:0123456789abcdef")
+          (actor "reddit")
+          (subject "pics")
+          (dataset "reddit")
+          (delay 1200)
+          (recurring t)
+          (options
+            (jsown:new-js
+              ("target_type" "subreddit")
+              ("sort" "new")
+              ("limit" 100)
+              ("rate" 1))))
+  (jsown:new-js
+    ("_id" id)
+    ("_rev" "1-abc")
+    ("id" id)
+    ("dataset" dataset)
+    ("dtype" "target")
+    ("schemaVersion" (starintel.canonical:schema-version))
+    ("actor" actor)
+    ("target" subject)
+    ("delay" delay)
+    ("recurring" (if recurring :true :false))
+    ("options" options)
+    ("createdAt" 1793678270)
+    ("updatedAt" 1793678270)
+    ("extensions"
+      (jsown:new-js
+        ("idempotency_key" "deadbeef")
+        ("submitted_by" "cafe")
+        ("schedule_id" "target-request:deadbeef")))))
+
+(test v1-target-update-is-a-contracted-target-capability
+  (is (string= "targets:update"
+               (star.frontends.http-api::route-action
+                :patch "/api/v1/targets/target:0123456789abcdef")))
+  (is-false (star.frontends.http-api::route-action
+             :patch "/api/v1/targets"))
+  (let ((operation
+          (star.http.contract:find-http-operation "targets.update")))
+    (is (eq :patch (star.http.contract:http-operation-method operation)))
+    (is (string= "/api/v1/targets/:id"
+                 (star.http.contract:http-operation-path operation)))
+    (is (equal '("targets:update")
+               (star.http.contract:http-operation-scopes operation)))))
+
+(test v1-target-update-options-replaces-wholesale-and-preserves-identity
+  (let* ((existing (make-v1-persisted-target))
+         (replacement
+           (jsown:new-js
+             ("backend" "arctic-shift")
+             ("target_type" "subreddit")))
+         (updated
+           (star.frontends.http-api::target-v1-update-options
+            existing replacement)))
+    (is (string= "arctic-shift"
+                 (jsown:val (jsown:val updated "options") "backend")))
+    (is-false (jsown:keyp (jsown:val updated "options") "limit")
+              "options replacement is whole-object, not a merge")
+    (is (string= (jsown:val existing "_id") (jsown:val updated "_id")))
+    (is (string= (jsown:val existing "_rev") (jsown:val updated "_rev")))
+    (is (string= (jsown:val existing "id") (jsown:val updated "id")))
+    (is (string= (jsown:val existing "actor") (jsown:val updated "actor")))
+    (is (string= (jsown:val existing "target") (jsown:val updated "target")))
+    (is (= (jsown:val existing "delay") (jsown:val updated "delay")))
+    (is (eq (jsown:val existing "recurring") (jsown:val updated "recurring")))
+    (is (= (jsown:val existing "createdAt") (jsown:val updated "createdAt")))
+    (is (<= (jsown:val existing "updatedAt") (jsown:val updated "updatedAt"))
+        "updatedAt must advance")))
+
+(defun make-v1-update-request
+    (&key (options (jsown:new-js ("backend" "arctic-shift"))))
+  (jsown:new-js ("options" options)))
+
+(test v1-target-apply-options-update-persists-validated-replacement
+  (let* ((existing (make-v1-persisted-target))
+         (saved nil)
+         (result
+           (star.frontends.http-api::target-v1-apply-options-update
+            (jsown:val existing "_id")
+            (make-v1-update-request)
+            :load-fn (lambda (id)
+                       (is (string= (jsown:val existing "_id") id))
+                       existing)
+            :save-fn (lambda (candidate)
+                       (setf saved candidate)
+                       candidate))))
+    (is (string= "ok" (jsown:val result "status")))
+    (is (string= (jsown:val existing "_id") (jsown:val result "target_id")))
+    (is (stringp (jsown:val result "correlation_id")))
+    (is (string= "arctic-shift"
+                 (jsown:val (jsown:val saved "options") "backend")))))
+
+(test v1-target-apply-options-update-unknown-target-is-404
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "target:missing"
+              (make-v1-update-request)
+              :load-fn (lambda (id) (declare (ignore id)) nil)
+              :save-fn (lambda (candidate) (declare (ignore candidate)) nil))))))
+    (is (typep condition 'star.frontends.http-api:http-input-error))
+    (is (= 404 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "target_not_found"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+
+(test v1-target-apply-options-update-rejects-non-target-documents
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "person:abc"
+              (make-v1-update-request)
+              :load-fn (lambda (id)
+                         (jsown:new-js
+                           ("_id" id) ("dtype" "person")))
+              :save-fn (lambda (candidate) (declare (ignore candidate)) nil))))))
+    (is (= 409 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "target_not_a_target"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+
+(test v1-target-apply-options-update-requires-options-object
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "target:abc"
+              (jsown:new-js ("options" "arctic-shift"))
+              :load-fn (lambda (id)
+                         (make-v1-persisted-target :id id))
+              :save-fn (lambda (candidate) (declare (ignore candidate)) nil))))))
+    (is (= 422 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "invalid_target_options"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+
+(test v1-target-authorized-save-authorizes-then-persists
+  ;; Regression: the authorization decision must be bound (dynamic LET),
+  ;; not called — the wiring once shipped as a bare function call to the
+  ;; special variable and 500'd on every live PATCH.
+  (let* ((candidate (make-v1-persisted-target))
+         (events nil)
+         (star.auth:*request-security-context*
+           (star.auth::%make-request-security-context
+            :principal
+            (star.auth::%make-request-principal
+             :id "operator" :type "administrator"
+             :scopes (list "admin" "tenant:*" "dataset:*" "actor:*" "target:*")
+             :credential-id "credential-operator"))))
+      (star.frontends.http-api::target-v1-authorized-save
+       "fake-client" "fake-db" candidate
+       :save-fn (lambda (client database document)
+                  (declare (ignore client database))
+                  (push :saved events)
+                  document))
+    (is (equal '(:saved) events))))
+
+(test v1-target-apply-options-update-conflict-budget-is-409
+  (let ((condition
+          (capture-http-input-error
+           (lambda ()
+             (star.frontends.http-api::target-v1-apply-options-update
+              "target:abc"
+              (make-v1-update-request)
+              :load-fn (lambda (id)
+                         (make-v1-persisted-target :id id))
+              :save-fn (lambda (candidate)
+                         (declare (ignore candidate))
+                         (error 'star.databases.couchdb:outbox-store-conflict))
+              :max-attempts 2)))))
+    (is (= 409 (star.frontends.http-api:http-input-error-status condition)))
+    (is (string= "target_update_conflict"
+                 (star.frontends.http-api:http-input-error-code condition)))))
+

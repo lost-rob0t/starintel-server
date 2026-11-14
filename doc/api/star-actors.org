@@ -690,9 +690,17 @@ and normalize it to JSON. The current trace context rides in AMQP headers
 :END:
 #+begin_src lisp
 (query-persisted-target-documents (STAR.ACTORS::CLIENT STAR.ACTORS::DATABASE &KEY STAR.ACTORS::ACTORS
- (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)))
+ (STAR.ACTORS::QUERY-FN #'STAR.DATABASES.COUCHDB:QUERY-VIEW)
+ (STAR.ACTORS::PAGE-LIMIT STAR.ACTORS::*TARGET-RECOVERY-VIEW-PAGE-LIMIT*)))
 #+end_src
-Query DATABASE through targets/by_actor and accept either JSOWN array form.
+Drain every targets/by_actor page (#360).
+
+Unfiltered recovery walks the whole key space with a (startkey,
+startkey_docid) cursor — by_actor keys repeat once per actor, so the row id
+must advance the cursor — starting after the null-actor rows, which sort
+before every string key and would otherwise quarantine-storm boot. The
+actor-filtered path pages with :keys + :skip. Both stop on the first short
+page.
 *** record-actor-runtime-status
 :PROPERTIES:
 :KIND: fn
@@ -723,6 +731,12 @@ Recover valid persisted targets after actor startup and before Rabbit ingest.
 (recover-target-record (STAR.ACTORS::RECORD))
 #+end_src
 Recover one record once per persisted revision in this process.
+
+Only recurring schedules rehydrate (#360): a one-shot target whose moment
+passed must never re-dispatch at boot.  A record that fails deterministic
+dispatch validation (expired deadline, transient policy, legacy delay 0)
+returns :INVALID so one bad persisted document cannot abort boot;
+transport-level failures still propagate.
 *** register-actor
 :PROPERTIES:
 :KIND: fn

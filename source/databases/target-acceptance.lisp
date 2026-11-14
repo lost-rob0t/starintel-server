@@ -11,6 +11,37 @@
          (cl-couch:get-document client database acceptance-id)))
     (dexador:http-request-not-found () nil)))
 
+(defun couchdb-load-target-document (client database target-id)
+  "Load one standalone persisted target document, or nil (#59)."
+  (handler-case
+      (jsown:with-injective-reader
+        (jsown:parse
+         (cl-couch:get-document client database target-id)))
+    (dexador:http-request-not-found () nil)))
+
+(defun couchdb-save-target-document (client database document)
+  "Save one standalone target document under optimistic revision control.
+
+Signals OUTBOX-STORE-CONFLICT when the stored revision moved, so callers can
+retry under the fresh revision."
+  (handler-case
+      (let* ((response
+               (jsown:parse
+                (cl-couch:create-document
+                 client database (jsown:to-json document))))
+             (saved (clone-outbox-json document)))
+        (when (outbox-object-has-key-p response "rev")
+          (setf (jsown:val saved "_rev") (jsown:val response "rev")))
+        saved)
+    (dexador:http-request-conflict ()
+      (error 'outbox-store-conflict))))
+
+(export
+ '(couchdb-load-target-document
+   couchdb-save-target-document
+   outbox-store-conflict)
+ :star.databases.couchdb)
+
 (defun couchdb-save-target-acceptance (client database document)
   "Create or update one durable target acceptance document."
   (handler-case
@@ -44,12 +75,41 @@
                    (error "Target acceptance update conflict budget exhausted for ~a"
                           acceptance-id)))))))
 
+(defun couchdb-ensure-target-document (client database target-document)
+  "Ensure TARGET-DOCUMENT exists standalone so the targets views index it.
+
+The durable acceptance embeds the target document, but the targets views
+only index standalone dtype=target documents (#360): without this ensure,
+accepted targets are invisible to operators and to boot rehydration.  An
+existing standalone document always wins; the ensure is idempotent."
+  (unless (star.documents:document-transient-p target-document)
+    (let* ((stored
+             (star.documents:ensure-document
+              (clone-outbox-json target-document)))
+           (id (jsown:val stored "_id")))
+      (handler-case
+          (jsown:with-injective-reader
+            (jsown:parse (cl-couch:get-document client database id)))
+        (dexador:http-request-not-found ()
+          (handler-case
+              (progn
+                (cl-couch:create-document
+                 client database (jsown:to-json stored))
+                stored)
+            ;; A racing writer created the same standalone document.
+            (dexador:http-request-conflict () stored)))))))
+
 (defun couchdb-persist-target-acceptance
     (client database desired duplicate-predicate
      &key (max-attempts 8))
   "Persist DESIRED or return the existing equivalent record.
 
 Returns DOCUMENT and one of :CREATED, :RESUMED, :DUPLICATE, or :CONFLICT."
+  ;; Durable acceptance includes the standalone canonical target document so
+  ;; the acceptance never outlives its queryable target (#360).
+  (let ((embedded-target (jsown:val-safe desired "target_document")))
+    (when embedded-target
+      (couchdb-ensure-target-document client database embedded-target)))
   (let ((acceptance-id (jsown:val desired "_id")))
     (loop for attempt from 1 to max-attempts
           do

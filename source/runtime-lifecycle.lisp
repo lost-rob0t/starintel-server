@@ -5,6 +5,14 @@
 
 (define-condition consumer-read-timeout (condition) ())
 
+(define-condition consumer-transport-lost (error)
+  ((cause :initarg :cause :reader consumer-transport-lost-cause))
+  (:documentation
+   "The consumer read path lost its transport; safe to reconnect because
+no delivery is in hand. Settlement failures must NOT signal this: they
+keep the stop-for-redelivery contract regardless of condition names
+(test-rabbitmq-server-error proved name matching misclassifies them)."))
+
 (defmethod stream-read ((stream rabbit-queue-stream))
   "Read one Rabbit delivery with a finite wait so shutdown can be observed."
   (assert-rabbit-stream-owner stream)
@@ -18,38 +26,172 @@
           (signal 'consumer-read-timeout)
           (error condition)))))
 
+(defun consumer-stream-reconnect-policy (stream)
+  "Return the stream's retry policy for reconnect backoff."
+  (if (typep stream 'retrying-rabbit-queue-stream)
+      (or (retry-stream-policy stream) (make-retry-policy))
+      (make-retry-policy)))
+
+(defun reset-consumer-stream (stream)
+  "Best-effort stream reset after connection loss; safe for test streams."
+  (handler-case
+      (if (typep stream 'rabbit-queue-stream)
+          (reset-rabbit-stream-after-open-failure stream)
+          (close-stream stream))
+    (condition ()
+      ;; Even cleanup can fail on a broken transport; the reopen path
+      ;; allocates a fresh connection either way.
+      nil)))
+
 (defun run-consumer (consumer)
-  "Run a consumer on its owner thread while periodically observing stop state."
-  (unwind-protect
-       (progn
-         (open-stream (consumer-stream consumer))
-         (setf (consumer-running-p consumer) t)
-         (consumer-update-state consumer :running)
-         (loop until (eq (consumer-state consumer) :stopping)
-               do (handler-case
-                      (consumer-process-delivery
-                       consumer
-                       (consumer-read consumer))
-                    (consumer-read-timeout () nil)
-                    (end-of-file ()
-                      (return))
-                    (error (condition)
-                      ;; A failed settlement leaves the delivery unsettled.
-                      ;; Closing the Rabbit stream returns it for redelivery
-                      ;; without letting the worker kill the HTTP listener.
-                      (log:error "Consumer ~a stopped after unsettled delivery: ~a"
-                                 (consumer-name consumer) condition)
-                      (return)))))
-    (when (consumer-running-p consumer)
-      (handler-case
-          (close-stream (consumer-stream consumer))
-        (error (condition)
-          (log:warn "Consumer ~a stream close failed during shutdown: ~a"
-                    (consumer-name consumer)
-                    condition))))
-    (setf (consumer-running-p consumer) nil)
-    (consumer-update-state consumer :stopped))
-  consumer)
+  "Run a consumer on its owner thread while periodically observing stop state.
+
+Broker-forced connection closure reconnects with the stream policy's capped
+backoff instead of silently leaving the queue unconsumed (issue #37 live
+incident 2026-10-30: documents.ingest/targets/update sat at 0 consumers for
+~25 minutes after a broker restart). Reconnect is fenced by :stopping.
+Non-transport failures keep the stop-for-redelivery contract: the delivery
+stays unsettled for redelivery, and supervision restarts the worker with
+the same capped backoff instead of permanently zeroing the lane (issue #38
+live incident 2026-11-03/04: settlement-path stops left documents.ingest at
+0 consumers for ~23h while producers stacked 8.8M messages). Readiness
+honestly reports not-running while a stopped worker waits out its backoff.
+A worker exit on :eof is graceful and is never restarted."
+  (let* ((stream (consumer-stream consumer))
+         (policy (consumer-stream-reconnect-policy stream))
+         (stream-open-p nil)
+         (reconnect-attempts 0)
+         (restart-attempts 0)
+         (graceful-exit-p nil)
+         (terminal-failure-p nil))
+    (labels
+        ((stopping-p ()
+           (eq (consumer-state consumer) :stopping))
+         (ensure-stream-open ()
+           (loop until (or stream-open-p (stopping-p))
+                 for attempt from 0
+                 do (handler-case
+                        (progn
+                          (open-stream stream)
+                          (setf stream-open-p t))
+                      (queue-topology-mismatch (condition)
+                        (log:error
+                         "Consumer ~a cannot start: terminal queue topology mismatch — ~a"
+                         (consumer-name consumer) condition)
+                        (setf terminal-failure-p t)
+                        (return-from ensure-stream-open))
+                      (condition (condition)
+                        (log:warn "Consumer ~a (re)connect failed (~a); retrying (attempt ~d)"
+                                  (consumer-name consumer) condition (1+ attempt))
+                        (funcall *retry-sleep-function*
+                                 (/ (retry-delay-ms policy (min attempt 20))
+                                    1000.0d0))))))
+         (read-delivery ()
+           "Read one delivery: nil on idle poll, :eof on graceful end, or
+signals consumer-transport-lost when the read path itself broke."
+           (handler-case
+               (consumer-read consumer)
+             (consumer-read-timeout () nil)
+             (end-of-file () :eof)
+             (error (cause)
+               (error 'consumer-transport-lost :cause cause))))
+         (run-worker-loop ()
+           (loop named consumer-loop
+                 until (stopping-p)
+                 do (progn
+                      (ensure-stream-open)
+                      (when (and stream-open-p
+                                 (not (consumer-running-p consumer)))
+                        (setf (consumer-running-p consumer) t)
+                        (consumer-update-state consumer :running))
+                      (when terminal-failure-p
+                        (return-from consumer-loop))
+                      (handler-case
+                          (loop until (stopping-p)
+                                do (let ((delivery (read-delivery)))
+                                     (cond
+                                       ((eq delivery :eof)
+                                        (setf graceful-exit-p t)
+                                        (return-from consumer-loop))
+                                       (delivery
+                                        (handler-case
+                                            (consumer-process-delivery
+                                             consumer delivery)
+                                          ;; A failed settlement leaves the
+                                          ;; delivery unsettled. Closing the
+                                          ;; Rabbit stream returns it for
+                                          ;; redelivery without letting the
+                                          ;; worker kill the HTTP listener;
+                                          ;; supervision below restarts us.
+                                          (error (condition)
+                                            (log:error
+                                             "Consumer ~a stopped after unsettled delivery: ~a"
+                                             (consumer-name consumer) condition)
+                                            (return-from consumer-loop)))
+                                        ;; A settled delivery proves the
+                                        ;; session is stable again.
+                                        (setf reconnect-attempts 0
+                                              restart-attempts 0)))))
+                        ;; Only read-path errors reconnect: nothing is in
+                        ;; hand to settle. Settlement errors above stay
+                        ;; terminal regardless of their condition names
+                        ;; (test-rabbitmq-server-error).
+                        (consumer-transport-lost ()
+                          (setf stream-open-p nil)
+                          (reset-consumer-stream stream)
+                          ;; Back off before the next open attempt so a
+                          ;; stop requested during the window is honored.
+                          (incf reconnect-attempts)
+                          (funcall *retry-sleep-function*
+                                   (/ (retry-delay-ms
+                                       policy
+                                       (min (1- reconnect-attempts) 20))
+                                      1000.0d0))
+                          (when (stopping-p)
+                            (return-from consumer-loop))))))))
+      (unwind-protect
+           (progn
+             (loop named supervision-loop
+                   until (stopping-p)
+                   do (progn
+                        (setf graceful-exit-p nil)
+                        (handler-case
+                            (run-worker-loop)
+                          (error (condition)
+                            (log:error "Consumer ~a worker failed: ~a"
+                                       (consumer-name consumer)
+                                       condition)))
+                        (cond
+                          ((or graceful-exit-p terminal-failure-p (stopping-p))
+                           (return-from supervision-loop))
+                          (t
+                           ;; The worker exited without a graceful end: an
+                           ;; unsettled delivery or an unexpected failure.
+                           ;; Report not-running for honest readiness, return
+                           ;; the stream, and restart with capped backoff.
+                           (log:warn "Consumer ~a worker exited; supervised restart (attempt ~d)"
+                                     (consumer-name consumer)
+                                     (1+ restart-attempts))
+                           (setf (consumer-running-p consumer) nil
+                                 stream-open-p nil)
+                           (reset-consumer-stream stream)
+                           (incf restart-attempts)
+                           (funcall *retry-sleep-function*
+                                    (/ (retry-delay-ms
+                                        policy
+                                        (min (1- restart-attempts) 20))
+                                       1000.0d0)))))))
+         (when (and stream-open-p (consumer-running-p consumer))
+           (handler-case
+               (close-stream (consumer-stream consumer))
+             (error (condition)
+               (log:warn "Consumer ~a stream close failed during shutdown: ~a"
+                         (consumer-name consumer)
+                         condition))))
+         (setf (consumer-running-p consumer) nil)
+         (consumer-update-state consumer :stopped))
+       consumer)))
+
 
 (defun join-consumer-owned-threads (consumer)
   "Join only threads explicitly retained by CONSUMER."
@@ -113,7 +255,14 @@
   (start-couchdb-inserts *sys*)
   (start-target-timer)
   (start-target-actor *sys*)
+  ;; Actor hooks complete registry population before persisted work is replayed.
   (nhooks:run-hook star:*actors-start-hook*)
+  ;; #360: durable recurring targets must survive restart.  Rehydrate the
+  ;; process-local schedule wheel from persisted target documents before
+  ;; ingest resumes; failing to rehydrate fails boot loudly instead of
+  ;; silently stopping all recurring collection.
+  (let ((summary (recover-persisted-targets)))
+    (log:info "Boot target rehydration: ~a" summary))
   *sys*)
 
 (defun stop-actors (&key (timeout-seconds 5))
@@ -245,6 +394,10 @@
   lock)
 
 (defun default-couchdb-readiness-probe ()
+  ;; Auth-required fronts (issue #416): a locked-down CouchDB answers
+  ;; anonymous /_up with 401, so the probe must carry the configured
+  ;; admin credential or readiness reports unavailable while the real
+  ;; write path is healthy.  dexador takes basic-auth as a cons.
   (handler-case
       (multiple-value-bind (body status)
           (dex:get
@@ -252,6 +405,7 @@
                    star:*couchdb-scheme*
                    star:*couchdb-host*
                    star:*couchdb-port*)
+           :basic-auth (cons star:*couchdb-user* star:*couchdb-password*)
            :connect-timeout 1
            :read-timeout 1
            :use-connection-pool nil)

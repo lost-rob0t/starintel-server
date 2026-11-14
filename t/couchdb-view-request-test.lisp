@@ -236,3 +236,83 @@
     (is (null (jsown:val (star.databases.couchdb:query-view
                          (test-view-client) "records" "fixture" "by_key")
                         "rows")))))
+
+;; #360 follow-up: by_actor keys repeat (one key per actor, many rows per
+;; key), so page draining needs a (startkey, startkey_docid) cursor.
+(test view-cursor-carries-startkey-docid
+  (let ((request
+          (build-test-view-request
+           :include-docs t :reduce nil :limit 200
+           :start-key "reddit" :start-key-doc-id "target:abc")))
+    (is-true (request-uri-contains-p request "startkey_docid=target%3Aabc"))
+    (is-true (request-uri-contains-p request "startkey=%22reddit%22"))))
+
+;; #360 follow-up: recovery must drain every view page, not the first 50
+;; rows (query-view's default limit).
+(defun drains-test-row (id key)
+  (jsown:new-js
+    ("id" id)
+    ("key" key)
+    ("doc" (jsown:new-js ("_id" id) ("dtype" "target")))))
+
+(defun drains-test-response (rows)
+  (jsown:to-json (jsown:new-js ("rows" rows))))
+
+(test recovery-drains-all-by-actor-pages-with-key-cursor
+  (let* ((page-one
+           (list (drains-test-row "target:a" "reddit")
+                 (drains-test-row "target:b" "reddit")))
+         (page-two
+           (list (drains-test-row "target:c" "subfinder")))
+         (calls nil)
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request)
+             (declare (ignore client))
+             (push (star.databases.couchdb:couchdb-view-request-uri request)
+                   calls)
+             (drains-test-response
+              (if (cdr calls) page-two page-one)))))
+    (let ((documents
+            (star.actors::query-persisted-target-documents
+             (test-view-client) "records" :page-limit 2)))
+      (is (= 3 (length documents)))
+      (is (equal '("target:a" "target:b" "target:c")
+                 (mapcar (lambda (document)
+                           (jsown:val document "_id"))
+                         documents)))
+      ;; two pages fetched; the second continues from the first page's
+      ;; last (key, id) cursor instead of repeating it
+      (is (= 2 (length calls)))
+      (is-true (search "startkey_docid=target%3Ab" (first calls)))
+      (is-true (search "startkey=%22reddit%22" (first calls))))))
+
+;; issue #360: unfiltered boot recovery must bound the by_actor query so
+;; null-actor rows (which sort before every string key in CouchDB
+;; collation) cannot reach parse-target-record and quarantine-storm boot.
+(test recovery-view-query-excludes-null-actor-rows
+  (let* ((unfiltered-request nil)
+         (actor-scoped-request nil)
+         (star.databases.couchdb:*couchdb-view-transport*
+           (lambda (client request)
+             (declare (ignore client))
+             (cond ((null unfiltered-request)
+                    (setf unfiltered-request request))
+                   (t (setf actor-scoped-request request)))
+             "{\"rows\":[]}")))
+    (star.actors::query-persisted-target-documents
+     (test-view-client) "records")
+    (star.actors::query-persisted-target-documents
+     (test-view-client) "records" :actors '("subfinder"))
+    (is-true (request-uri-contains-p unfiltered-request "startkey=%22%22")
+             "unfiltered recovery must skip null-actor rows")
+    (is-false (request-uri-contains-p unfiltered-request "keys=")
+              "unfiltered recovery must remain a single range query")
+    (is-false (request-uri-contains-p actor-scoped-request "startkey=")
+              "actor-scoped recovery must use exact keys, not a range")
+    (is (eq :post
+            (star.databases.couchdb:couchdb-view-request-method
+             actor-scoped-request))
+        "actor-scoped recovery sends its key set in the POST body")
+    (is (search "keys" (star.databases.couchdb:couchdb-view-request-body
+                       actor-scoped-request)
+                :test #'char=))))

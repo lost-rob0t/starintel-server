@@ -169,7 +169,7 @@
     (dolist (row (star.databases.couchdb:view-reduced-result-rows result))
       (is-false (jsown:keyp row "doc")))))
 
-(test real-couchdb-pool-replaces-client-after-session-loss
+(test real-couchdb-boundary-renews-client-after-session-loss
   (let* ((connect-count 0)
          (pool
            (star.databases.couchdb::make-star-couchdb-pool
@@ -182,40 +182,31 @@
               (cl-couch:new-couchdb star:*couchdb-host*
                                     star:*couchdb-port*
                                     :scheme star:*couchdb-scheme*)))))
-    (let ((first (anypool:fetch pool)))
-      (is (star.databases.couchdb::couchdb-client-session-valid-p first))
-      (cl-couch:remove-auth first)
-      (anypool:putback first pool)
-      (let ((replacement (anypool:fetch pool)))
-        (unwind-protect
-             (progn
-               (is (= 2 connect-count))
-               (is-false (eq first replacement))
-               (is
-                (star.databases.couchdb::couchdb-client-session-valid-p
-                 replacement))
-               (is
-                (cl-couch:database-exists-p
-                 replacement *view-integration-database*)))
-          (anypool:putback replacement pool))))))
+    (star.databases.couchdb:with-couchdb-client (client pool)
+      (is (star.databases.couchdb::couchdb-client-session-valid-p client))
+      ;; Simulate AuthSession expiry on the pooled client.
+      (cl-couch:remove-auth client))
+    ;; The next checkout must renew the same client before use (#221).
+    (star.databases.couchdb:with-couchdb-client (client pool)
+      (is (= 1 connect-count)
+          "renewal re-authenticates in place; no replacement client")
+      (is (star.databases.couchdb::couchdb-client-session-valid-p client)
+          "expired session was renewed at the checkout boundary")
+      (is
+       (cl-couch:database-exists-p
+        client *view-integration-database*)))))
 
-(test auth-couchdb-pool-replaces-client-through-shared-session-policy
+(test auth-couchdb-pool-renews-client-through-shared-session-policy
   (let ((pool (star.auth::make-auth-couchdb-pool)))
-    (let ((first (anypool:fetch pool)))
-      (is (star.databases.couchdb::couchdb-client-session-valid-p first))
-      (cl-couch:remove-auth first)
-      (anypool:putback first pool)
-      (let ((replacement (anypool:fetch pool)))
-        (unwind-protect
-             (progn
-               (is-false (eq first replacement))
-               (is
-                (star.databases.couchdb::couchdb-client-session-valid-p
-                 replacement))
-               (is
-                (cl-couch:database-exists-p
-                 replacement *view-integration-database*)))
-          (anypool:putback replacement pool))))))
+    (star.databases.couchdb:with-couchdb-client (client pool)
+      (is (star.databases.couchdb::couchdb-client-session-valid-p client))
+      (cl-couch:remove-auth client))
+    (star.databases.couchdb:with-couchdb-client (client pool)
+      (is (star.databases.couchdb::couchdb-client-session-valid-p client)
+          "auth pool renews expired sessions at the same boundary")
+      (is
+       (cl-couch:database-exists-p
+        client *view-integration-database*)))))
 
 (test real-couchdb-outbox-recovery-drains-pages-after-crash
   ;; The actual _design/outbox map emits one row per pending entry.  Bind a

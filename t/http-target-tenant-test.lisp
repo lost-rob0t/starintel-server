@@ -214,3 +214,47 @@
     (is-true view)
     (is (search "tenant_id" map-source))
     (is (search "emit([tenant, v('actor')]" map-source))))
+
+;; issue #360: the v1 target collection listing (GET /api/v1/targets) must
+;; reuse the tenant-scoped by_tenant_actor view with a bounded tenant key
+;; range instead of an actorless unscoped scan.
+(test target-collection-list-uses-tenant-key-range-when-no-actor
+  (let* ((principal
+           (make-target-list-principal
+            "collection-reader"
+            '("targets:read"
+              "tenant:agent-zero"
+              "actor:*")))
+         (document
+           (make-tenant-target-document
+            "target-collection" "agent-zero" "test-actor"))
+         (query-calls 0)
+         (captured-arguments nil)
+         (result
+           (star.frontends.http-api::query-authorized-target-documents
+            nil
+            "records"
+            nil
+            "agent-zero"
+            principal
+            '(:route "/api/v1/targets" :method "GET")
+            :query-fn
+            (lambda (client database design view &rest arguments)
+              (declare (ignore client))
+              (incf query-calls)
+              (is (string= "records" database))
+              (is (string= "targets" design))
+              (is (string= "by_tenant_actor" view))
+              (setf captured-arguments arguments)
+              (target-view-response document)))))
+    (is (= 1 query-calls))
+    (is-false (getf captured-arguments :key)
+              "collection listing must not use an exact actor key")
+    (is (equal '("agent-zero") (getf captured-arguments :start-key))
+        "collection listing must bound the tenant prefix")
+    (is (equal (list "agent-zero" (jsown:empty-object))
+               (getf captured-arguments :end-key))
+        "collection listing must stay inside one tenant")
+    (is-true (getf captured-arguments :include-docs))
+    (is (= 1 (length result)))
+    (is (string= "target-collection" (jsown:val (first result) "_id")))))

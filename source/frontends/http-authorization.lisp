@@ -28,6 +28,18 @@
        ((path-suffix-p "/revoke" path) "credentials:revoke")
        ((path-suffix-p "/disable" path) "credentials:disable")
        (t nil)))
+    ((string= path "/auth/users")
+     (case method
+       (:get "principals:manage")
+       (:post "principals:manage")
+       (otherwise nil)))
+    ((and (eq method :post)
+          (path-prefix-p "/auth/users/" path)
+          (path-suffix-p "/password" path))
+     "principals:manage")
+    ((and (eq method :post)
+          (string= path "/auth/password"))
+     :authenticated)
     ((and (eq method :post)
           (string= path "/api/v1/documents"))
      "documents:write")
@@ -106,6 +118,11 @@
   (let ((action (route-action method path)))
     (cond
       ((eq action :public) nil)
+      ((eq action :authenticated)
+       (unless (star.auth:current-request-principal)
+         (star.authorization:authorize!
+          "unauthenticated:http-route"
+          :metadata (request-policy-metadata method path correlation-id))))
       ((null action)
        (star.authorization:authorize!
         "unmapped:http-route"
@@ -153,7 +170,7 @@
 
 (defmacro couchdb-handler ((client pool) &body body)
   `(handler-case
-       (anypool:with-connection (,client ,pool)
+       (star.databases.couchdb:with-couchdb-client (,client ,pool)
          (handler-case
              (progn ,@body)
            (dex:http-request-not-found (condition)

@@ -158,8 +158,8 @@ Query the by_size view in the breaches design document.
  (STAR.DATABASES.COUCHDB::INCLUDE-DOCS NIL) (REDUCE NIL)
  (STAR.DATABASES.COUCHDB::UPDATE T) STAR.DATABASES.COUCHDB::KEY
  STAR.DATABASES.COUCHDB::KEYS STAR.DATABASES.COUCHDB::START-KEY
- STAR.DATABASES.COUCHDB::END-KEY (STAR.DATABASES.COUCHDB::GROUP NIL)
- STAR.DATABASES.COUCHDB::GROUP-LEVEL))
+ STAR.DATABASES.COUCHDB::END-KEY STAR.DATABASES.COUCHDB::START-KEY-DOC-ID
+ (STAR.DATABASES.COUCHDB::GROUP NIL) STAR.DATABASES.COUCHDB::GROUP-LEVEL))
 #+end_src
 Build one validated CouchDB view request without performing network I/O.
 *** by-channel
@@ -203,6 +203,16 @@ Return quarantine documents through the checked-in status view.
  STAR.DATABASES.COUCHDB::ACCEPTANCE-ID))
 #+end_src
 Load the acceptance state for a target.
+*** couchdb-load-target-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-load-target-document (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::TARGET-ID))
+#+end_src
+Load one standalone persisted target document, or nil (#59).
 *** couchdb-pending-outbox-documents
 :PROPERTIES:
 :KIND: fn
@@ -246,6 +256,12 @@ Apply one outbox mutation to the document store.
  STAR.DATABASES.COUCHDB::RECORD))
 #+end_src
 Persist one server-internal quarantine record before Rabbit settlement.
+
+A conflict means a record with this id already exists: a duplicate
+quarantine of a redelivered failure. Return the existing record so
+settlement stays idempotent instead of killing the consumer (issue #38:
+raw couch 409s escaping quarantine persistence stopped documents-ingest
+workers mid-drain).
 *** couchdb-save-target-acceptance
 :PROPERTIES:
 :KIND: fn
@@ -256,6 +272,19 @@ Persist one server-internal quarantine record before Rabbit settlement.
  STAR.DATABASES.COUCHDB::DOCUMENT))
 #+end_src
 Create or update one durable target acceptance document.
+*** couchdb-save-target-document
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(couchdb-save-target-document (STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::DATABASE
+ STAR.DATABASES.COUCHDB::DOCUMENT))
+#+end_src
+Save one standalone target document under optimistic revision control.
+
+Signals OUTBOX-STORE-CONFLICT when the stored revision moved, so callers can
+retry under the fresh revision.
 *** couchdb-update-target-acceptance
 :PROPERTIES:
 :KIND: fn
@@ -651,6 +680,29 @@ Create or update all view documents in DATABASE.
 Documents come from =star:*couchdb-views*= (the =views/= directory).
 Existing views are updated in place using their current =_rev=;
 missing views are created.  Conflicts are logged and re-signalled.
+*** make-star-couchdb-pool
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(make-star-couchdb-pool (&KEY STAR.DATABASES.COUCHDB::NAME STAR.DATABASES.COUCHDB::MAX-OPEN-COUNT
+ STAR.DATABASES.COUCHDB::MAX-IDLE-COUNT
+ (STAR.DATABASES.COUCHDB::CONNECTOR
+  (LAMBDA ()
+    (CL-COUCH:NEW-COUCHDB STARINTEL-GSERVER:*COUCHDB-HOST*
+                          STARINTEL-GSERVER:*COUCHDB-PORT* :SCHEME
+                          STARINTEL-GSERVER:*COUCHDB-SCHEME*)))
+ (STAR.DATABASES.COUCHDB::DISCONNECTOR
+  (LAMBDA (STAR.DATABASES.COUCHDB::CLIENT)
+    (CL-COUCH:REMOVE-AUTH STAR.DATABASES.COUCHDB::CLIENT)))))
+#+end_src
+Create a StarIntel CouchDB client pool.
+
+The connector must be a pure constructor: the pool lock is held while
+it runs, so it must not perform network I/O.  Authentication and
+session validation happen at with-couchdb-client, outside the pool
+lock; the pool itself never probes sessions (#433).
 *** map-view-results
 :PROPERTIES:
 :KIND: fn
@@ -849,6 +901,13 @@ Return a new insert candidate with caller `_rev` removed.
 Prepare one atomic document revision containing document and pending event state.
 
 Returns STATE, ENTRY, and either :CREATED or :DUPLICATE.
+
+A :new mutation for a document that already exists is a re-observation from
+recurring collection, not a conflict (issue #38: 825k+ quarantined
+re-observations drained the ingest lane): it is applied as an :updated
+mutation publishing documents.updated.*, while its ledger key stays derived
+from the incoming :new content so identical redeliveries remain idempotent
+duplicates.
 *** process-outbox-mutation
 :PROPERTIES:
 :KIND: fn
@@ -876,8 +935,9 @@ If publication fails, the durable pending entry remains recoverable.
  (STAR.DATABASES.COUCHDB::INCLUDE-DOCS NIL) (REDUCE NIL)
  (STAR.DATABASES.COUCHDB::UPDATE T) STAR.DATABASES.COUCHDB::KEY
  STAR.DATABASES.COUCHDB::KEYS STAR.DATABASES.COUCHDB::START-KEY
- STAR.DATABASES.COUCHDB::END-KEY (STAR.DATABASES.COUCHDB::GROUP NIL)
- STAR.DATABASES.COUCHDB::GROUP-LEVEL &ALLOW-OTHER-KEYS))
+ STAR.DATABASES.COUCHDB::END-KEY STAR.DATABASES.COUCHDB::START-KEY-DOC-ID
+ (STAR.DATABASES.COUCHDB::GROUP NIL) STAR.DATABASES.COUCHDB::GROUP-LEVEL
+ &ALLOW-OTHER-KEYS))
 #+end_src
 Execute a validated view query against a CouchDB design document.
 
@@ -1331,3 +1391,24 @@ The =reason= slot of =view-query-error=.
 (view-registry-error-reason (CONDITION))
 #+end_src
 The =view-registry-error-reason= slot of =view-registry-error=.
+
+* Macros
+*** with-couchdb-client
+:PROPERTIES:
+:KIND: macro
+:PACKAGE: STAR.DATABASES.COUCHDB
+:END:
+#+begin_src lisp
+(with-couchdb-client ((STAR.DATABASES.COUCHDB::CLIENT STAR.DATABASES.COUCHDB::POOL &KEY
+  STAR.DATABASES.COUCHDB::SESSION-VALID-P
+  STAR.DATABASES.COUCHDB::AUTHENTICATOR)
+ &BODY STAR.DATABASES.COUCHDB::BODY))
+#+end_src
+Check out CLIENT from CouchDB POOL for the duration of BODY.
+
+Single canonical CouchDB checkout boundary (#433): the pool lock is held
+only for queue operations.  Session validation and re-authentication
+run here, outside the pool lock, so a slow or parked session probe on
+one client cannot block unrelated checkouts or returns.  An expired
+session is renewed before BODY runs (#221); if renewal fails the client
+is still returned to the pool and the error is propagated.

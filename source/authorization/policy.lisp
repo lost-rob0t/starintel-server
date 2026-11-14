@@ -12,8 +12,10 @@
     "actor-credentials:read"
     "targets:read"
     "targets:dispatch"
+    "targets:update"
     "targets:lease"
     "targets:force-release"
+    "targets:own"
     "events:write"
     "events:replay"
     "credentials:read"
@@ -61,7 +63,7 @@
 (defstruct (authorization-resource
             (:constructor make-authorization-resource
                 (&key tenant-id dataset-id actor-name account-id credential-type target-id
-                      target-namespace program-id resource-id dtype))
+                      target-namespace program-id creator-digest resource-id dtype))
             (:copier nil))
   "The resource side of an authorization request."
   (tenant-id nil :read-only t)
@@ -72,6 +74,7 @@
   (target-id nil :read-only t)
   (target-namespace nil :read-only t)
   (program-id nil :read-only t)
+  (creator-digest nil :read-only t)
   (resource-id nil :read-only t)
   (dtype nil :read-only t))
 
@@ -88,6 +91,8 @@
 "The =dtype= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-PROGRAM-ID 'function)
 "The =program-id= slot of =authorization-resource=.")
+(setf (documentation 'AUTHORIZATION-RESOURCE-CREATOR-DIGEST 'function)
+"The =creator-digest= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-RESOURCE-ID 'function)
 "The =resource-id= slot of =authorization-resource=.")
 (setf (documentation 'AUTHORIZATION-RESOURCE-TARGET-ID 'function)
@@ -300,7 +305,41 @@
             (member "*" values :test #'string=)
             (member value values :test #'string=)))))
 
-(defun resource-granted-p (scopes resource)
+(defun principal-creator-digest (principal-id)
+  "SHA-256 digest of PRINCIPAL-ID used only for creator matching.
+
+Must stay byte-identical to the =submitted_by= stamp written by
+=target-v1-document-from-request=; cross-layer equality is pinned by
+=authorization-policy-tests=."
+  (ironclad:byte-array-to-hex-string
+   (ironclad:digest-sequence
+    :sha256
+    (babel:string-to-octets principal-id :encoding :utf-8))))
+
+(defun document-creator-digest (document)
+  "Creator digest recorded on a target document; NIL for legacy documents."
+  (let ((extensions (document-value document "extensions")))
+    (and (consp extensions)
+         (eq (first extensions) :obj)
+         (let ((value (jsown:val-safe extensions "submitted_by")))
+           (and (stringp value)
+                (plusp (length value))
+                value)))))
+
+(defun owner-scoped-target-p (scopes principal-id resource)
+  "True when PRINCIPAL-ID created RESOURCE and holds the TARGETS:OWN grant.
+
+The creator match compares the digest of the requesting principal against the
+resource creator digest, so no raw principal identifier is persisted or
+compared. Owner scope waives only the =target:= dimension; the action
+capability and every other resource dimension still apply."
+  (and (capability-granted-p scopes "targets:own")
+       (stringp principal-id)
+       (stringp (authorization-resource-creator-digest resource))
+       (string= (principal-creator-digest principal-id)
+                (authorization-resource-creator-digest resource))))
+
+(defun resource-granted-p (scopes resource &optional principal-id)
   (or (null resource)
       (and (dimension-granted-p
             scopes "tenant:" (authorization-resource-tenant-id resource))
@@ -313,8 +352,9 @@
            (dimension-granted-p
             scopes "credential-type:"
             (authorization-resource-credential-type resource))
-           (dimension-granted-p
-            scopes "target:" (authorization-resource-target-id resource))
+           (or (dimension-granted-p
+                scopes "target:" (authorization-resource-target-id resource))
+               (owner-scoped-target-p scopes principal-id resource))
            (dimension-granted-p
             scopes "target-namespace:"
             (authorization-resource-target-namespace resource))
@@ -327,7 +367,8 @@
     ((null (principal-id principal)) "invalid_principal_context")
     ((not (member action +capabilities+ :test #'string=)) "unknown_action")
     ((not (capability-granted-p scopes action)) "missing_capability")
-    ((not (resource-granted-p scopes resource)) "scope_mismatch")
+    ((not (resource-granted-p scopes resource (principal-id principal)))
+     "scope_mismatch")
     (t "matching_grant")))
 
 (defmethod evaluate-authorization
@@ -370,6 +411,8 @@
                              (authorization-resource-target-namespace resource)))
         ("program_id" (json-nullable
                        (authorization-resource-program-id resource)))
+        ("creator_digest" (json-nullable
+                           (authorization-resource-creator-digest resource)))
         ("resource_id" (json-nullable
                         (authorization-resource-resource-id resource)))
         ("dtype" (json-nullable
@@ -475,6 +518,7 @@
           (document-value document "target_namespace" "namespace"))
      :program-id (and target-p
                       (document-value document "program_id" "program"))
+     :creator-digest (and target-p (document-creator-digest document))
      :resource-id (document-value document "_id")
      :dtype (document-value document "dtype"))))
 

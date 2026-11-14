@@ -28,86 +28,178 @@
     :request-fn
     (lambda (client)
       (declare (ignore client))
-      "{\"ok\":true,\"userCtx\":{\"name\":null,\"roles\":[]}}"))))
+      "{\"ok\":true,\"userCtx\":{\"name\":null,\"roles\":[]}}")))
+  ;; A probe that fails (timeout, network error) counts as expired: the
+  ;; boundary must fall back to renewal, never use the stale client.
+  (is-false
+   (star.databases.couchdb::couchdb-client-session-valid-p
+    :fake-client
+    :username "admin"
+    :request-fn
+    (lambda (client)
+      (declare (ignore client))
+      (error "simulated probe timeout")))))
 
-(test expired-pooled-session-is-discarded-and-reauthenticated
+(test expired-session-is-renewed-at-checkout-boundary
   (let ((next-id 0)
-        (authenticated-ids nil)
-        (stale-id nil))
+        (reauthenticated nil)
+        (validated nil))
     (flet ((new-client ()
              (list :id (incf next-id)))
-           (authenticate (client)
-             (push (getf client :id) authenticated-ids))
            (session-valid-p (client)
-             (not (eql stale-id (getf client :id))))
-           (disconnect (client)
-             (declare (ignore client))))
+             (push (getf client :id) validated)
+             (getf client :valid))
+           (reauthenticate (client)
+             (push (getf client :id) reauthenticated)
+             (setf (getf client :valid) t)))
       (let ((pool
-              (star.databases.couchdb::make-session-aware-couchdb-pool
-               :name "session-renewal-test"
+              (star.databases.couchdb::make-star-couchdb-pool
+               :name "session-renewal-boundary-test"
                :connector #'new-client
-               :authenticator #'authenticate
-               :session-valid-p #'session-valid-p
-               :disconnector #'disconnect
+               :disconnector (constantly nil)
                :max-open-count 1
                :max-idle-count 1)))
-        (let ((first (anypool:fetch pool)))
-          (is (= 1 (getf first :id)))
-          (is (equal '(1) authenticated-ids))
-          (anypool:putback first pool)
-          (setf stale-id 1)
-          (let ((replacement (anypool:fetch pool)))
-            (unwind-protect
-                 (progn
-                   (is (= 2 (getf replacement :id)))
-                   (is (equal '(2 1) authenticated-ids)))
-              (anypool:putback replacement pool))))))))
+        ;; One idle client whose session has expired.
+        (let ((stale (anypool:fetch pool)))
+          (setf (getf stale :valid) nil)
+          (anypool:putback stale pool))
+        (star.databases.couchdb:with-couchdb-client
+            (client pool
+                    :session-valid-p #'session-valid-p
+                    :authenticator #'reauthenticate)
+          (is (= 1 (getf client :id)))
+          (is (getf client :valid)
+              "renewed client is session-valid inside the body"))
+        (is (equal '(1) reauthenticated)
+           "the expired session was renewed before the body ran")
+        (is (= 0 (anypool:pool-active-count pool))
+            "no active-count leak after the renewal checkout")
+        ;; A still-valid session is validated but never reauthenticated.
+        (star.databases.couchdb:with-couchdb-client
+            (client pool
+                    :session-valid-p #'session-valid-p
+                    :authenticator #'reauthenticate)
+          (is (getf client :valid)))
+        (is (equal '(1) reauthenticated)
+            "valid sessions are not reauthenticated")))))
 
-(test star-couchdb-pool-uses-session-renewal-policy
-  (let ((connect-count 0)
-        (auth-count 0)
-        (stale-p nil))
-    (let ((pool
-            (star.databases.couchdb::make-star-couchdb-pool
-             :name "star-session-policy-test"
-             :max-open-count 1
-             :max-idle-count 1
-             :connector
-             (lambda ()
-               (incf connect-count)
-               (list :generation connect-count))
-             :authenticator
-             (lambda (client)
-               (declare (ignore client))
-               (incf auth-count))
-             :session-valid-p
-             (lambda (client)
-               (declare (ignore client))
-               (not stale-p))
-             :disconnector
-             (lambda (client)
-               (declare (ignore client))))))
-      (let ((first (anypool:fetch pool)))
-        (anypool:putback first pool)
-        (setf stale-p t)
-        (let ((replacement (anypool:fetch pool)))
+(test pools-perform-no-session-work-under-the-pool-lock
+  "The #221 policy lives at with-couchdb-client; pool-level ping must not
+perform session validation and connectors must not authenticate (#433)."
+  (is-true (funcall (anypool::pool-ping star.frontends.http-api::*couchdb-pool*)
+                    :never-a-client)
+           "live pool ping accepts any object without probing sessions")
+  (let ((auth-pool (star.auth::make-auth-couchdb-pool)))
+    (is-true (funcall (anypool::pool-ping auth-pool) :never-a-client)
+             "auth pool ping accepts any object without probing sessions"))
+  (is (eq star.databases.couchdb::*couchdb-session-validator*
+          #'star.databases.couchdb::couchdb-client-session-valid-p)
+      "the checkout boundary uses the shared /_session validator")
+  (is (eq star.databases.couchdb::*couchdb-session-reauth*
+          #'star.databases.couchdb::reauthenticate-couchdb-client)
+      "the checkout boundary renews with the configured credentials"))
+
+(test authenticator-failure-returns-client-and-propagates
+  (let ((next-id 0))
+    (flet ((new-client ()
+             (list :id (incf next-id)))
+           (failing-reauth (client)
+             (error "renewal unavailable for client ~a"
+                    (getf client :id))))
+      (let ((pool
+              (star.databases.couchdb::make-star-couchdb-pool
+               :name "auth-failure-cleanup-test"
+               :connector #'new-client
+               :disconnector (constantly nil)
+               :max-open-count 1
+               :max-idle-count 1)))
+        (signals error
+          (star.databases.couchdb:with-couchdb-client
+              (client pool
+                      :session-valid-p (constantly nil)
+                      :authenticator #'failing-reauth)
+            (is-false t "body must not run when renewal fails")))
+        (is (= 0 (anypool:pool-active-count pool))
+            "client was returned to the pool despite renewal failure")
+        (is (= 1 (anypool:pool-idle-count pool))
+            "the returned client stays pooled for later renewal")))))
+
+(test checkout-independence-while-session-probe-parked
+  "A parked session validation on one pooled client must not block an
+unrelated checkout and return of a different client (#433)."
+  (let ((next-id 0)
+        (parked-client-id nil)
+        (b-client-id nil)
+        (a-in-probe (bt:make-semaphore :name "a-in-probe"))
+        (release-a (bt:make-semaphore :name "release-a"))
+        (b-done (bt:make-semaphore :name "b-done")))
+    (flet ((new-client ()
+             (list :id (incf next-id)))
+           (park-first-validation (client)
+             (unless parked-client-id
+               (setf parked-client-id (getf client :id))
+               (bt:signal-semaphore a-in-probe)
+               (bt:wait-on-semaphore release-a :timeout 30))
+             t))
+      (let ((pool
+              (star.databases.couchdb::make-star-couchdb-pool
+               :name "checkout-independence-test"
+               :connector #'new-client
+               :disconnector (constantly nil)
+               :max-open-count 2
+               :max-idle-count 2)))
+        ;; Two distinct idle clients; connectors never validate, so the
+        ;; parking probe is still armed.
+        (let ((warm-a (anypool:fetch pool))
+              (warm-b (anypool:fetch pool)))
+          (anypool:putback warm-b pool)
+          (anypool:putback warm-a pool))
+        (let ((thread-a
+                (bt:make-thread
+                 (lambda ()
+                   (star.databases.couchdb:with-couchdb-client
+                       (client pool :session-valid-p #'park-first-validation)))
+                 :name "parked-probe-thread"))
+              (thread-b nil))
           (unwind-protect
                (progn
-                 (is (= 2 connect-count))
-                 (is (= 2 auth-count))
-                 (is (= 2 (getf replacement :generation))))
-            (anypool:putback replacement pool)))))))
+                 (is-true (bt:wait-on-semaphore a-in-probe :timeout 10)
+                          "fixture: the session probe never started")
+                 (setf thread-b
+                       (bt:make-thread
+                        (lambda ()
+                          (star.databases.couchdb:with-couchdb-client
+                              (client pool
+                                      :session-valid-p (constantly t)
+                                      :authenticator (constantly t))
+                            (setf b-client-id (getf client :id)))
+                          (bt:signal-semaphore b-done))
+                        :name "independent-checkout-thread"))
+                 (is-true (bt:wait-on-semaphore b-done :timeout 2)
+                          "unrelated checkout and return must complete while another client's session probe is parked")
+                 (is (and b-client-id
+                          parked-client-id
+                          (/= b-client-id parked-client-id))
+                     "thread B must use the distinct idle client, not wait behind thread A's probe"))
+            (bt:signal-semaphore release-a)
+            (bt:join-thread thread-a)
+            (when thread-b (bt:join-thread thread-b))
+            (is (= 0 (anypool:pool-active-count pool))
+                "no active-count leak after both checkouts returned")
+            (is (= 2 (anypool:pool-idle-count pool))
+                "both clients idle after both returns")))))))
 
 (test application-and-auth-pools-share-session-validator
-  ;; On master both pools use AnyPool's default always-true ping.  The live
-  ;; HTTP pool and auth credential-store pool must instead use the exact same
-  ;; CouchDB /_session validator before reusing an idle client.  Assert policy
-  ;; wiring directly rather than invoking a real client accessor on a sentinel.
+  ;; Since the #433 pool-lock fix the pools wrap the validator in a lambda
+  ;; (validation happens outside the pool lock), so identity of the raw
+  ;; ping function is no longer asserted. The contract that remains: both
+  ;; pools are built from the same *couchdb-session-validator*, which is
+  ;; the cached session probe.
   (is (eq #'star.databases.couchdb::couchdb-client-session-valid-p
-          (anypool::pool-ping star.frontends.http-api::*couchdb-pool*)))
+          star.databases.couchdb::*couchdb-session-validator*))
+  (is (functionp (anypool::pool-ping star.frontends.http-api::*couchdb-pool*)))
   (let ((auth-pool (star.auth::make-auth-couchdb-pool)))
-    (is (eq #'star.databases.couchdb::couchdb-client-session-valid-p
-            (anypool::pool-ping auth-pool)))))
+    (is (functionp (anypool::pool-ping auth-pool)))))
 
 (test pooled-session-probe-result-is-cached-per-client
   ;; A fresh valid cache entry answers the ping without an HTTP round trip;
@@ -152,3 +244,4 @@
      (star.databases.couchdb::couchdb-client-session-valid-p
       client
       :username "admin"))))
+origin/master

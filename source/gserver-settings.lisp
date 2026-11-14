@@ -319,17 +319,20 @@ Populated by plugins; see =addons.lisp=.")
   "Number of parallel ingest workers consuming the ingest queue.")
 
 (defparameter *outbox-blind-new-ingest-p*
-  (environment-boolean "STAR_OUTBOX_BLIND_NEW_INGEST" t)
+  (environment-boolean "STAR_OUTBOX_BLIND_NEW_INGEST" nil)
   "Use the conflict-driven fast path for =:new= ingest mutations.
 
 When true, new documents are written without a prior CouchDB existence
 GET; CouchDB's 409 conflict acts as the already-exists check and the
 retry path reloads the document, preserving duplicate detection and
-mutation-conflict quarantine.  Set to =false= to restore one
-existence GET per ingested document.
+mutation-conflict quarantine.
+
+Off by default: the canonical ingest contract budgets one existence GET
+per new document (see the outbox recovery suite). Enable only for
+deployments that measure the point-lookup cost as significant.
 
 - env: =STAR_OUTBOX_BLIND_NEW_INGEST=
-- default: =true=")
+- default: =false=")
 
 ;;;; Event log and bulk operations
 (defparameter *couchdb-event-log-database* "starintel-event-source"

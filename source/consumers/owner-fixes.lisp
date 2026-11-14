@@ -97,11 +97,7 @@ cannot silently acknowledge a Rabbit delivery."
          (rabbit-stream-exchange stream)
          (rabbit-exchange-type stream)
          :durable (rabbit-exchange-durable-p stream))
-        (cl-rabbit:queue-declare
-         connection
-         channel
-         :queue (rabbit-stream-queue-name stream)
-         :durable (rabbit-stream-queue-durable-p stream))
+        (declare-queue-with-reconciliation stream connection channel)
         (cl-rabbit:queue-bind
          connection
          channel

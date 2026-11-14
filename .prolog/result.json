@@ -1,14 +1,16 @@
 {
-  "checked_at": "2026-09-14T16:46:48Z",
-  "facts_sha256": "5c4d02de0705dacb9e6dc4f6bd6a54dba50140e75571a75792f5dbd771df114d",
-  "head": "51713d561b06a24f2954e8aa37a8339329c3a435",
+  "checked_at": "2026-11-13T03:37:29Z",
+  "facts_sha256": "656a0585e691af83cef30f797513a848219b624554eff26817323705a882c18e",
+  "head": "f50a441e1fcaad73277932195e05f2578eb972bf",
   "reason": "verification passed",
-  "run_file": "run-51713d561b06a24f2954e8aa37a8339329c3a435.pl",
-  "run_sha256": "c2aad4a8e88f5a79152fb6966b8d96c174fc54998a0e24f8ff5196fa2910cc4f",
+  "run": "32e52b2a5a614148b8746b18af6b2f2f",
+  "run_file": "evidence.pl",
+  "run_sha256": "44d9a78603c3703aa89623e73a730736b45671dc5c5f52900e31b981c4635941",
   "status": "pass",
-  "stderr_sha256": "a31921831b4af757a3fcf0c472fa0ffc4fb6eed40d0477af50d62f78c018057f",
+  "stderr_sha256": "3f58487f8b178faab8411ba0285a21d4387b34d17785b054fc75e9ddaa05d772",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "swipl_exit": 0,
-  "verify_sha256": "1a5c3a6812202233e38320bd2c9aec404f185b1f74164ef21759f1c66e233edb",
-  "worktree_digest": "84b032da066dbe02c94c9db660e6d64a9dfc15dc61d46d1534e9c011cadb4cf8"
+  "task": "433-pool-probe-lock",
+  "verify_sha256": "e78b5e80fcf0af76206366221d8471683f219d05c79fb6ae161b4e5f4d1414ab",
+  "worktree_digest": "867e6f2db8296cd6edac6cb4066fa327b023feb3f9a4ed0c7972b0953b4cee3d"
 }

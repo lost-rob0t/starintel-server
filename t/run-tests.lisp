@@ -8,6 +8,7 @@
     system-load-tests
     couchdb-actor-tests
     couchdb-outbox-recovery-tests
+    drain-resilience-tests
     couchdb-session-tests
     event-actor-tests
     dataset-export-tests

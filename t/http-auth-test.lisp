@@ -5,6 +5,50 @@
 
 (in-suite http-auth-tests)
 
+(test authenticated-search-query-length-is-bounded-before-query-work
+  ;; Exercise the mounted authenticated handlers without a database. Reaching
+  ;; the query scoper is the sentinel: the oversized request must stop earlier.
+  (let* ((symbol 'star.authorization:authorized-search-query)
+         (original (symbol-function symbol))
+         (calls 0))
+    (unwind-protect
+         (progn
+           (setf (symbol-function symbol)
+                 (lambda (&rest args)
+                   (declare (ignore args))
+                   (incf calls)
+                   (star.frontends.http-api::signal-http-input-error
+                    400 "probe_query_reached" "Test query sentinel")))
+           (dolist (path '("/search" "/api/v1/documents/search"))
+             (dolist (size '(512 513))
+               (setf calls 0)
+               (let* ((response
+                        (lack.component:call
+                         star.frontends.http-api:*app*
+                         (list :request-method :get
+                               :path-info path
+                               :url-scheme "http"
+                               :server-name "127.0.0.1"
+                               :server-port 5000
+                               :remote-addr "127.0.0.1"
+                               :headers (make-hash-table :test #'equal)
+                               :query-string
+                               (format nil "q=~a"
+                                       (make-string size :initial-element #\a)))))
+                      (body (third response))
+                      (parsed (jsown:parse
+                               (if (consp body)
+                                   (apply #'concatenate 'string body)
+                                   body))))
+                 (is (= 400 (first response)))
+                 (is (= (if (= size 512) 1 0) calls))
+                 (is (string=
+                      (if (= size 512)
+                          "probe_query_reached"
+                          "search_query_too_long")
+                      (jsown:val parsed "code")))))))
+      (setf (symbol-function symbol) original))))
+
 (defun captured-authentication-code (thunk)
   (handler-case
       (progn
@@ -279,3 +323,98 @@
         (star:*auth-dev-bypass* t)
         (star:*http-api-address* "127.0.0.1"))
     (is-true (star.auth:validate-auth-configuration))))
+
+(defun auth-user-route-env (method path &key authorization body)
+  (let ((headers (make-hash-table :test #'equal)))
+    (when authorization
+      (setf (gethash "authorization" headers) authorization))
+    (when body
+      (setf (gethash "content-type" headers) "application/json"))
+    (list :request-method method
+          :path-info path
+          :url-scheme "http"
+          :server-name "127.0.0.1"
+          :server-port 5000
+          :remote-addr "127.0.0.1"
+          :content-type (and body "application/json")
+          :raw-body (and body
+                         (flexi-streams:make-in-memory-input-stream
+                          (babel:string-to-octets body :encoding :utf-8)))
+          :content-length (and body (length body))
+          :headers headers)))
+
+(defun auth-user-route-body (response)
+  (let ((body (third response)))
+    (if (consp body)
+        (apply #'concatenate 'string body)
+        body)))
+
+(defun auth-user-route-code (response)
+  (let ((parsed (jsown:parse (auth-user-route-body response))))
+    (jsown:val-safe parsed "code")))
+
+(test admin-user-routes-are-authorized-through-the-boundary
+  (let* ((star:*auth-pepper* "issue-386-boundary-pepper")
+         (star:*auth-password-iterations* 1000)
+         (star:*auth-password-min-length* 12)
+         (star:*auth-mode* "api-key")
+         (store (star.auth:make-memory-credential-store)))
+    (star.auth:create-user "star" "unit-admin-password-123"
+                           "administrator" '("admin")
+                           :must-change-password nil
+                           :store store)
+    (star.auth:create-user "alice" "alice-password-12345"
+                           "user" '("documents:read")
+                           :must-change-password nil
+                           :store store)
+    (multiple-value-bind (admin-user admin-credential admin-key)
+        (star.auth:login-user "star" "unit-admin-password-123" :store store)
+      (declare (ignore admin-user admin-credential))
+      (multiple-value-bind (alice-user alice-credential alice-key)
+          (star.auth:login-user "alice" "alice-password-12345" :store store)
+        (declare (ignore alice-user alice-credential))
+        (let ((star.auth:*credential-store* store))
+          ;; An administrator reaches the user list through the full
+          ;; middleware stack without any credential material in the body.
+          (let ((response
+                  (lack.component:call
+                   star.frontends.http-api::*server*
+                   (auth-user-route-env
+                    :get "/auth/users"
+                    :authorization (format nil "Bearer ~a" admin-key)))))
+            (is (= 200 (first response)))
+            (let ((body (auth-user-route-body response)))
+              (is (search "\"username\":\"alice\"" body))
+              (is (search "\"username\":\"star\"" body))
+              (is (null (search "password_hash" body :test #'char-equal)))
+              (is (null (search admin-key body)))))
+          ;; Ordinary principals remain denied for user administration.
+          (let ((response
+                  (lack.component:call
+                   star.frontends.http-api::*server*
+                   (auth-user-route-env
+                    :get "/auth/users"
+                    :authorization (format nil "Bearer ~a" alice-key)))))
+            (is (= 403 (first response)))
+            (is (string= "access_denied" (auth-user-route-code response))))
+          ;; Unauthenticated requests never reach authorization.
+          (let ((response
+                  (lack.component:call
+                   star.frontends.http-api::*server*
+                   (auth-user-route-env :post "/auth/password"))))
+            (is (= 401 (first response)))
+            (is (string= "invalid_credential"
+                         (auth-user-route-code response))))
+          ;; Self password change is admitted by the middleware for any
+          ;; authenticated principal; the handler still rejects a wrong
+          ;; current password with invalid_credential.
+          (let ((response
+                  (lack.component:call
+                   star.frontends.http-api::*server*
+                   (auth-user-route-env
+                    :post "/auth/password"
+                    :authorization (format nil "Bearer ~a" alice-key)
+                    :body "{\"current_password\":\"definitely-wrong-1\",\"new_password\":\"alice-new-password-12345\"}"))))
+            (is (= 401 (first response)))
+            (is (string= "invalid_credential"
+                         (auth-user-route-code response)))))))))

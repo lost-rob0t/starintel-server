@@ -17,16 +17,10 @@
 
 ;; Somhere in here a plugin called http api could be made, except not a normal plugin its a service and would start this web server instead of embeding it
 
-(defparameter *couchdb-pool* (anypool:make-pool :name "couchdb-connections"
-                                                :connector (lambda ()
-                                                             (let ((client (cl-couch:new-couchdb star:*couchdb-host* star:*couchdb-port* :scheme star:*couchdb-scheme*)))
-                                                               (cl-couch:password-auth client star:*couchdb-user* star:*couchdb-password*)
-                                                               client))
-
-                                                :disconnector (lambda (obj)
-                                                                (setf (cl-couch:couchdb-headers obj) nil))
-                                                :max-open-count 20
-                                                :max-idle-count 10)
+(defparameter *couchdb-pool* (star.databases.couchdb:make-star-couchdb-pool
+                               :name "couchdb-connections"
+                               :max-open-count 20
+                               :max-idle-count 10)
   "Connection pool of CouchDB clients.")
 
 (defun connect-rabbitmq ()
@@ -97,7 +91,7 @@
 
 (defmacro couchdb-handler ((client pool) &body body)
   `(handler-case
-       (anypool:with-connection (,client ,pool)
+       (star.databases.couchdb:with-couchdb-client (,client ,pool)
          (handler-case ,@body
            (dex:http-request-not-found (e)
              (log:warn "CouchDB request not found: ~a" e)
@@ -295,7 +289,7 @@
           (let ((document-id (cdr (assoc :id params :test #'string=))))
             (log:info "DELETE /document/:id - document-id: ~a" document-id)
             (handler-case
-                (anypool:with-connection (client *couchdb-pool*)
+                (star.databases.couchdb:with-couchdb-client (client *couchdb-pool*)
                   (handler-case
                       (progn
                         (log:debug "Fetching document to get revision")

@@ -129,6 +129,8 @@
    #:format-key
    #:from-json
    #:*couchdb-pool*
+   #:with-couchdb-client
+   #:make-star-couchdb-pool
    #:groups
    #:lazy
    #:events-by-actor

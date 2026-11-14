@@ -1583,3 +1583,160 @@ discovered keys back in as the frontier.  Returns an assoc graph of
     (if include-docs
         (funcall sort-fn (get-view-docs rows))
         rows)))
+
+(defparameter *couchdb-session-probe-timeout* 5
+  "Seconds a session-validity GET /_session may take before it counts
+as expired.  Bounds the worst-case consumer stall when CouchDB is
+unresponsive (#433).")
+
+(defun couchdb-session-username (response)
+  "Return the authenticated CouchDB username from a /_session RESPONSE."
+  (handler-case
+      (let* ((document (if (stringp response)
+                           (jsown:parse response)
+                           response))
+             (context (and document (jsown:val-safe document "userCtx")))
+             (username (and context (jsown:val-safe context "name"))))
+        (and (stringp username) username))
+    (error () nil)))
+
+(defun couchdb-session-response (client)
+  "Fetch CLIENT's CouchDB /_session response using its live cookie jar."
+  (dexador:request
+   (quri:merge-uris
+    (quri:make-uri :path "/_session")
+    (cl-couch:couchdb-url client))
+   :method :get
+   :headers (cl-couch:couchdb-headers client)
+   :cookie-jar (cl-couch:couchdb-cookie client)
+   :keep-alive t
+   :timeout *couchdb-session-probe-timeout*))
+
+(defvar *session-validity-cache*
+  (make-hash-table :test #'eq #+sbcl :weakness #+sbcl :key)
+  "Per-client cached /_session probe results, trusted for a bounded TTL.
+
+Keys are weak so discarded pool clients drop their entries.")
+
+(defvar *session-validity-cache-lock*
+  (bt2:make-lock :name "couchdb-session-validity-cache")
+  "Guards concurrent probe-result bookkeeping across pooled clients.")
+
+(defun session-cache-ttl-internal ()
+  "Cache TTL in internal time units, or NIL when caching is disabled."
+  (let ((seconds star:*couchdb-session-cache-seconds*))
+    (and (numberp seconds)
+         (plusp seconds)
+         (* seconds internal-time-units-per-second))))
+
+(defun couchdb-client-session-valid-p
+    (client
+     &key
+       (username star:*couchdb-user*)
+       (request-fn #'couchdb-session-response))
+  "Return true only when CLIENT still has an authenticated CouchDB session.
+
+The checkout boundary invokes this ping on every checkout.  To keep ingest
+from issuing one =GET /_session= per operation, a successful probe is
+trusted for =star:*couchdb-session-cache-seconds*=.  Caching applies only
+to the real probe; test-supplied request functions always run."
+  (let ((ttl (session-cache-ttl-internal)))
+    (flet ((probe ()
+             (handler-case
+                 (let ((actual-username
+                         (couchdb-session-username
+                          (funcall request-fn client))))
+                   (and actual-username
+                        (string= username actual-username)))
+               (error () nil))))
+      (if (or (null ttl) (not (eq request-fn #'couchdb-session-response)))
+          (probe)
+          (let ((now (get-internal-real-time)))
+            (bt2:with-lock-held (*session-validity-cache-lock*)
+              (let ((entry (gethash client *session-validity-cache*)))
+                (when (and entry
+                           (getf entry :valid)
+                           (< (- now (getf entry :checked-at)) ttl)
+                           (string= username (getf entry :username)))
+                  (return-from couchdb-client-session-valid-p t))))
+            (let ((valid (probe)))
+              (bt2:with-lock-held (*session-validity-cache-lock*)
+                (setf (gethash client *session-validity-cache*)
+                      (list :valid valid
+                            :checked-at now
+                            :username username)))
+              valid))))))
+
+(defun reauthenticate-couchdb-client (client)
+  "Renew CLIENT's CouchDB AuthSession with the configured credentials."
+  (cl-couch:password-auth
+   client
+   star:*couchdb-user*
+   star:*couchdb-password*))
+
+(defparameter *couchdb-session-validator* #'couchdb-client-session-valid-p
+  "Session-validity predicate applied by the checkout boundary (#221).")
+
+(defparameter *couchdb-session-reauth* #'reauthenticate-couchdb-client
+  "Session-renewal function applied by the checkout boundary (#221).")
+
+(defun ensure-couchdb-session
+    (client
+     &key
+       (session-valid-p *couchdb-session-validator*)
+       (authenticator *couchdb-session-reauth*))
+  "Keep the AuthSession-expiry guarantee (#221) at the checkout boundary:
+CLIENT is only handed out while its CouchDB session is still valid, and
+an expired session is renewed first."
+  (unless (funcall session-valid-p client)
+    (funcall authenticator client)))
+
+(defmacro with-couchdb-client ((client pool &key session-valid-p authenticator)
+                               &body body)
+  "Check out CLIENT from CouchDB POOL for the duration of BODY.
+
+Single canonical CouchDB checkout boundary (#433): the pool lock is held
+only for queue operations.  Session validation and re-authentication
+run here, outside the pool lock, so a slow or parked session probe on
+one client cannot block unrelated checkouts or returns.  An expired
+session is renewed before BODY runs (#221); if renewal fails the client
+is still returned to the pool and the error is propagated."
+  `(let ((,client (anypool:fetch ,pool)))
+     (unwind-protect
+          (progn
+            (ensure-couchdb-session
+             ,client
+             ,@(when session-valid-p
+                 `(:session-valid-p ,session-valid-p))
+             ,@(when authenticator
+                 `(:authenticator ,authenticator)))
+            ,@body)
+       (anypool:putback ,client ,pool))))
+
+(defun make-star-couchdb-pool
+    (&key
+       name
+       max-open-count
+       max-idle-count
+       (connector
+         (lambda ()
+           (cl-couch:new-couchdb
+            star:*couchdb-host*
+            star:*couchdb-port*
+            :scheme star:*couchdb-scheme*)))
+       (disconnector
+         (lambda (client)
+           (cl-couch:remove-auth client))))
+  "Create a StarIntel CouchDB client pool.
+
+The connector must be a pure constructor: the pool lock is held while
+it runs, so it must not perform network I/O.  Authentication and
+session validation happen at with-couchdb-client, outside the pool
+lock; the pool itself never probes sessions (#433)."
+  (anypool:make-pool
+   :name name
+   :connector connector
+   :ping (constantly t)
+   :disconnector disconnector
+   :max-open-count max-open-count
+   :max-idle-count max-idle-count))
