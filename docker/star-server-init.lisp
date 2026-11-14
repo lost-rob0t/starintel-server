@@ -18,6 +18,10 @@
       *couchdb-password*
       (or (environment-secret "COUCHDB_PASSWORD" "COUCHDB_PASSWORD_FILE")
           *couchdb-password*)
+      *couchdb-read-timeout-seconds*
+      (environment-integer
+       "STAR_COUCHDB_READ_TIMEOUT_SECONDS"
+       *couchdb-read-timeout-seconds*)
       *rabbit-address*
       (or (uiop:getenv "RABBITMQ_ADDRESS") *rabbit-address*)
       *rabbit-user*

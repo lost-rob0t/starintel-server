@@ -30,6 +30,7 @@
    #:*http-cors-allowed-methods*
    #:*http-cors-allowed-headers*
    #:*couchdb-default-database*
+   #:*couchdb-read-timeout-seconds*
    #:*couchdb-auth-database*
    #:*couchdb-host*
    #:*couchdb-port*

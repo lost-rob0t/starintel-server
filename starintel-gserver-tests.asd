@@ -60,6 +60,7 @@
      (:file "gserver-client-test")
      (:file "gserver-client-final-test")
      (:file "http-contract-documents-test")
+     (:file "http-search-timeout-test")
      (:file "runtime-lifecycle-test")
      (:file "observability-test")
      (:file "run-tests"))))
