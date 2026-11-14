@@ -62,6 +62,7 @@
    (:file "init-loader")
    (:file "actors")
    (:file "actor-registry")
+   (:file "actor-manifest-projection")
    (:file "actors/couchdb-service")
    (:file "target-repository")
    (:file "target-recovery")

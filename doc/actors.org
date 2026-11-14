@@ -354,3 +354,42 @@ tests should verify:
 8. recurring target behavior.
 
 Run the repository test commands from [[file:testing.md][testing.md]].
+* Persisted manifest catalog
+
+=GET /v1/actors= (=actors.list=, =actors:read=) projects persisted canonical
+=actor-manifest= documents from =starintel-system= through the same validator
+and emitter as trusted in-process manifests. The existing =data/count_by_dtype=
+CouchDB view is scanned in pages of 128 records plus one lookahead. Only
+distinct eligible declarations consume the 128-entry persisted catalog capacity;
+private, deleted, invalid, non-system and duplicate records do not consume it.
+Trusted local claims retain precedence and are excluded from that persisted
+capacity. A separate 128-page scan budget fails explicitly if exhausted,
+without returning a partial catalog or misreporting unrelated rows as overflow.
+Each request reads persisted state, so restart, updates and deletion require no
+second index or ingest callback. Storage failure fails the request rather than
+silently reporting a complete catalog. Explicitly non-public visibility is
+excluded; explicit =tenant_id= or =tenant= must be =public=. Effective tenancy
+is resolved by the existing authorization authority, including configured
+dataset adaptation and tenant fallback. An unstamped manifest is eligible only
+when that resolution is =public=; the historical =default= tenant is not public.
+Private declarations never enter this global projection, even when they omit
+visibility or claim public visibility. Inconsistent canonical =id= and stored
+=_id= values are rejected as invalid declarations without aborting discovery;
+storage query failures still propagate.
+
+Document actor names map to =star://document-manifests/actor/<actor>=; operators
+may configure =star.actors::*actor-manifest-authority*= as a stable catalog
+namespace before serving requests. This is declaration identity, not transport
+routing. =actorVersion= supplies semantic version, and SHA-256 of the normalized
+descriptor supplies its semantic digest. =accepts= and =produces= classify the
+=target= dtype as targets and other dtypes as documents. Capabilities and keyed
+=targetOptions= become validated capability and option arrays. A redundant
+option =key= must agree with the map key. Runtime paths, endpoints and arbitrary
+extensions are excluded; declaration alone never establishes readiness.
+
+Invalid declarations are omitted independently. Existing in-process claims win
+conflicts, and trusted registration still rejects duplicate resource claims.
+Option schemas are bounded, recursively JSON-validated and deeply copied on
+registration and emission, preventing malformed Lisp values or caller mutation
+from poisoning catalog serialization. Legacy manifest envelopes remain outside
+this canonical projection; producers must migrate through their own schema lock.
