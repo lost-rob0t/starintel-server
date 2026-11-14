@@ -84,6 +84,19 @@ Documents, targets and views live here.
 
 Never log this value; session renewal relies on it.")
 
+(defparameter *couchdb-session-cache-seconds*
+  (environment-integer "STAR_COUCHDB_SESSION_CACHE_SECONDS" 60)
+  "Seconds a pooled client's CouchDB =/_session= probe result is trusted.
+
+The pool ping runs on every checkout; caching its result removes one
+=GET /_session= per ingest operation.  Set to =0= to probe on every
+checkout again.  A cached-valid session that expires mid-flight simply
+fails the operation and is retried on a fresh client after the cache
+entry lapses.
+
+- env: =STAR_COUCHDB_SESSION_CACHE_SECONDS=
+- default: =60=")
+
 (defparameter *couchdb-views*
   (let ((files
           (uiop:directory-files
@@ -294,6 +307,19 @@ Plugins may register functions here to start their own actors.")
 Populated by plugins; see =addons.lisp=.")
 (defparameter *ingest-workers* 4
   "Number of parallel ingest workers consuming the ingest queue.")
+
+(defparameter *outbox-blind-new-ingest-p*
+  (environment-boolean "STAR_OUTBOX_BLIND_NEW_INGEST" t)
+  "Use the conflict-driven fast path for =:new= ingest mutations.
+
+When true, new documents are written without a prior CouchDB existence
+GET; CouchDB's 409 conflict acts as the already-exists check and the
+retry path reloads the document, preserving duplicate detection and
+mutation-conflict quarantine.  Set to =false= to restore one
+existence GET per ingested document.
+
+- env: =STAR_OUTBOX_BLIND_NEW_INGEST=
+- default: =true=")
 
 ;;;; Event log and bulk operations
 (defparameter *couchdb-event-log-database* "starintel-event-source"

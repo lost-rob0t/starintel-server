@@ -309,12 +309,23 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
        :created))))
 
 (defun persist-outbox-mutation (load-fn save-fn incoming operation
-                                &key (max-attempts 8))
-  "Persist a mutation into the document outbox before publishing."
-  (let ((document-id (jsown:val incoming "_id")))
+                                &key (max-attempts 8)
+                                  (blind-new-p star:*outbox-blind-new-ingest-p*))
+  "Persist a mutation into the document outbox before publishing.
+
+When BLIND-NEW-P (default =star:*outbox-blind-new-ingest-p*=) and
+OPERATION is =:NEW=, the first attempt saves without a prior existence
+load: CouchDB's 409 conflict is the already-exists check, and the
+conflicting retry loads the document so duplicate/idempotent replays and
+mutation conflicts keep their exact semantics."
+  (let ((document-id (jsown:val incoming "_id"))
+        (blind-first-attempt (and blind-new-p (eq operation :new))))
     (loop for attempt from 1 to max-attempts
           do
-             (let ((existing (funcall load-fn document-id)))
+             (let ((existing
+                     (if (and blind-first-attempt (= attempt 1))
+                         nil
+                         (funcall load-fn document-id))))
                (multiple-value-bind (state entry disposition)
                    (prepare-outbox-mutation existing incoming operation)
                  (when (eq disposition :duplicate)
@@ -386,6 +397,32 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
                       "Outbox publication marker retry budget exhausted for ~a"
                       mutation-id))))))))
 
+(defun mark-outbox-published-with-state (load-fn save-fn state mutation-id
+                                         &key (max-attempts 8))
+  "Mark STATE's outbox entry published using its own revision, no reload.
+
+STATE is the document revision this process just saved, so the reload
+inside MARK-OUTBOX-PUBLISHED is a redundant point lookup on the hot
+ingest path.  A conflicting save falls back to the load-based loop."
+  (handler-case
+      (funcall save-fn
+               (update-outbox-entry
+                state
+                mutation-id
+                (lambda (outbox-entry)
+                  (setf (jsown:val outbox-entry "status")
+                        "published"
+                        (jsown:val outbox-entry "published_at")
+                        (star.documents:utc-now))
+                  outbox-entry)))
+    (outbox-store-conflict ()
+      (mark-outbox-published
+       load-fn
+       save-fn
+       (jsown:val state "_id")
+       mutation-id
+       :max-attempts max-attempts))))
+
 (defun publish-outbox-entry (publish-fn entry)
   (funcall publish-fn
            (jsown:val entry "routing_key")
@@ -395,18 +432,22 @@ Returns STATE, ENTRY, and either :CREATED or :DUPLICATE."
 (defun process-outbox-mutation (load-fn save-fn publish-fn incoming operation)
   "Persist mutation state, publish at least once, then mark the logical event.
 
-If publication fails, the durable pending entry remains recoverable."
+If publication fails, the durable pending entry remains recoverable.
+
+For freshly created documents the publication marker reuses the revision
+this process just saved instead of reloading the document, removing one
+point GET per ingested document."
   (multiple-value-bind (state entry disposition)
       (persist-outbox-mutation load-fn save-fn incoming operation)
-    (declare (ignore disposition))
     (unless (outbox-entry-published-p entry)
       (publish-outbox-entry publish-fn entry)
-      (setf state
-            (mark-outbox-published
-             load-fn
-             save-fn
-             (jsown:val state "_id")
-             (outbox-entry-mutation-id entry))))
+      (let ((mutation-id (outbox-entry-mutation-id entry)))
+        (setf state
+              (if (eq disposition :created)
+                  (mark-outbox-published-with-state
+                   load-fn save-fn state mutation-id)
+                  (mark-outbox-published
+                   load-fn save-fn (jsown:val state "_id") mutation-id)))))
     state))
 
 (defun pending-outbox-tuples (documents)

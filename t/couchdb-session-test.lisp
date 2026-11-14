@@ -108,3 +108,47 @@
   (let ((auth-pool (star.auth::make-auth-couchdb-pool)))
     (is (eq #'star.databases.couchdb::couchdb-client-session-valid-p
             (anypool::pool-ping auth-pool)))))
+
+(test pooled-session-probe-result-is-cached-per-client
+  ;; A fresh valid cache entry answers the ping without an HTTP round trip;
+  ;; the real probe would fail on this sentinel client.
+  (let ((client (list :sentinel))
+        (star:*couchdb-session-cache-seconds* 60))
+    (bt2:with-lock-held (star.databases.couchdb::*session-validity-cache-lock*)
+      (setf (gethash client star.databases.couchdb::*session-validity-cache*)
+            (list :valid t
+                  :checked-at (get-internal-real-time)
+                  :username "admin")))
+    (is-true
+     (star.databases.couchdb::couchdb-client-session-valid-p
+      client
+      :username "admin"))))
+
+(test stale-session-probe-cache-entry-is-reprobed
+  ;; Expired entries must not mask a dead session.
+  (let ((client (list :sentinel))
+        (star:*couchdb-session-cache-seconds* 60))
+    (bt2:with-lock-held (star.databases.couchdb::*session-validity-cache-lock*)
+      (setf (gethash client star.databases.couchdb::*session-validity-cache*)
+            (list :valid t
+                  :checked-at
+                  (- (get-internal-real-time)
+                     (* 120 internal-time-units-per-second))
+                  :username "admin")))
+    (is-false
+     (star.databases.couchdb::couchdb-client-session-valid-p
+      client
+      :username "admin"))))
+
+(test session-probe-caching-disabled-at-zero-ttl
+  (let ((client (list :sentinel))
+        (star:*couchdb-session-cache-seconds* 0))
+    (bt2:with-lock-held (star.databases.couchdb::*session-validity-cache-lock*)
+      (setf (gethash client star.databases.couchdb::*session-validity-cache*)
+            (list :valid t
+                  :checked-at (get-internal-real-time)
+                  :username "admin")))
+    (is-false
+     (star.databases.couchdb::couchdb-client-session-valid-p
+      client
+      :username "admin"))))

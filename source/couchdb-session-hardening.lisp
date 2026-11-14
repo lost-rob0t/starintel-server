@@ -22,19 +22,60 @@
    :cookie-jar (cl-couch:couchdb-cookie client)
    :keep-alive t))
 
+(defvar *session-validity-cache*
+  (make-hash-table :test #'eq #+sbcl :weakness #+sbcl :key)
+  "Per-client cached /_session probe results, trusted for a bounded TTL.
+
+Keys are weak so discarded pool clients drop their entries.")
+
+(defvar *session-validity-cache-lock*
+  (bt2:make-lock :name "couchdb-session-validity-cache")
+  "Guards concurrent probe-result bookkeeping across pooled clients.")
+
+(defun session-cache-ttl-internal ()
+  "Cache TTL in internal time units, or NIL when caching is disabled."
+  (let ((seconds star:*couchdb-session-cache-seconds*))
+    (and (numberp seconds)
+         (plusp seconds)
+         (* seconds internal-time-units-per-second))))
+
 (defun couchdb-client-session-valid-p
     (client
      &key
        (username star:*couchdb-user*)
        (request-fn #'couchdb-session-response))
-  "Return true only when CLIENT still has an authenticated CouchDB session."
-  (handler-case
-      (let ((actual-username
-              (couchdb-session-username
-               (funcall request-fn client))))
-        (and actual-username
-             (string= username actual-username)))
-    (error () nil)))
+  "Return true only when CLIENT still has an authenticated CouchDB session.
+
+AnyPool invokes this ping on every checkout.  To keep ingest from issuing
+one =GET /_session= per operation, a successful probe is trusted for
+=star:*couchdb-session-cache-seconds*=.  Caching applies only to the real
+probe; test-supplied request functions always run."
+  (let ((ttl (session-cache-ttl-internal)))
+    (flet ((probe ()
+             (handler-case
+                 (let ((actual-username
+                         (couchdb-session-username
+                          (funcall request-fn client))))
+                   (and actual-username
+                        (string= username actual-username)))
+               (error () nil))))
+      (if (or (null ttl) (not (eq request-fn #'couchdb-session-response)))
+          (probe)
+          (let ((now (get-internal-real-time)))
+            (bt2:with-lock-held (*session-validity-cache-lock*)
+              (let ((entry (gethash client *session-validity-cache*)))
+                (when (and entry
+                           (getf entry :valid)
+                           (< (- now (getf entry :checked-at)) ttl)
+                           (string= username (getf entry :username)))
+                  (return-from couchdb-client-session-valid-p t))))
+            (let ((valid (probe)))
+              (bt2:with-lock-held (*session-validity-cache-lock*)
+                (setf (gethash client *session-validity-cache*)
+                      (list :valid valid
+                            :checked-at now
+                            :username username)))
+              valid))))))
 
 (defun make-session-aware-couchdb-pool
     (&key

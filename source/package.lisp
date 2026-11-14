@@ -36,6 +36,7 @@
    #:*couchdb-user*
    #:*couchdb-password*
    #:*couchdb-scheme*
+   #:*couchdb-session-cache-seconds*
    #:*auth-mode*
    #:*auth-pepper*
    #:*auth-bootstrap-secret*
@@ -58,6 +59,7 @@
    #:*actors-start-hook*
    #:*document-patterns*
    #:*ingest-workers*
+   #:*outbox-blind-new-ingest-p*
    #:*couchdb-event-log-database*
    #:*couchdb-views*
    #:*star-server-version*

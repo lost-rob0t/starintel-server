@@ -134,3 +134,126 @@
     (is (zerop remaining))
     (is (= 2 passes))
     (is (= 3 queries))))
+
+;;;; Conflict-driven ingest fast path (perf/ingest-hot-path)
+
+(defun make-outbox-ingest-document (document-id)
+  (let ((document (jsown:empty-object))
+        (extensions (jsown:empty-object)))
+    (setf (jsown:val extensions "mutation_id")
+          (format nil "mutation-~a" document-id)
+          (jsown:val document "_id")
+          document-id
+          (jsown:val document "dtype")
+          "person"
+          (jsown:val document "extensions")
+          extensions)
+    document))
+
+(defun make-duplicate-outbox-document (incoming &key (operation :new))
+  "Build the stored revision INCOMING idempotently collides with."
+  (let* ((public (star.databases.couchdb::public-document-copy incoming))
+         (mutation-id
+           (star.databases.couchdb::document-mutation-id operation public))
+         (content-hash
+           (star.databases.couchdb::mutation-content-hash operation public))
+         (entry (jsown:empty-object))
+         (ledger (jsown:empty-object))
+         (extensions (jsown:empty-object)))
+    (setf (jsown:val entry "mutation_id") mutation-id
+          (jsown:val entry "sequence") 1
+          (jsown:val entry "status") "pending"
+          (jsown:val ledger mutation-id) content-hash
+          (jsown:val extensions "_server_outbox") (vector entry)
+          (jsown:val extensions "_server_mutations") ledger
+          (jsown:val public "extensions") extensions
+          (jsown:val public "_rev") "1-abc")
+    public))
+
+(test blind-new-ingest-creates-without-point-lookups
+  ;; Happy path: no existence GET before the write and no reload before the
+  ;; publication marker; exactly one save-create and one save-marker.
+  (let ((incoming (make-outbox-ingest-document "blind-doc-create"))
+        (loads 0)
+        (saves 0)
+        (published 0)
+        (saved-state nil))
+    (let ((star:*outbox-blind-new-ingest-p* t))
+      (star.databases.couchdb::process-outbox-mutation
+       (lambda (document-id)
+         (declare (ignore document-id))
+         (incf loads)
+         nil)
+       (lambda (state)
+         (incf saves)
+         (setf saved-state state))
+       (lambda (routing-key payload event-id)
+         (declare (ignore routing-key payload event-id))
+         (incf published))
+       incoming
+       :new))
+    (is (= 0 loads))
+    (is (= 2 saves))
+    (is (= 1 published))
+    (is-true
+     (star.databases.couchdb::outbox-entry-published-p
+      (first (star.databases.couchdb::document-outbox-entries saved-state))))))
+
+(test blind-new-conflict-falls-back-to-duplicate-detection
+  ;; The blind save 409s against an existing document; the retry must reload
+  ;; and resolve through the mutation ledger exactly like the old path.
+  (let* ((incoming (make-outbox-ingest-document "blind-doc-duplicate"))
+         (existing (make-duplicate-outbox-document incoming))
+         (loads 0)
+         (saves 0))
+    (let ((star:*outbox-blind-new-ingest-p* t))
+      (multiple-value-bind (state entry disposition)
+          (star.databases.couchdb::persist-outbox-mutation
+           (lambda (document-id)
+             (declare (ignore document-id))
+             (incf loads)
+             existing)
+           (lambda (state)
+             (declare (ignore state))
+             (incf saves)
+             (error 'star.databases.couchdb::outbox-store-conflict))
+           incoming
+           :new)
+        (is (eq :duplicate disposition))
+        (is (eq existing state))
+        (is (string= "mutation-blind-doc-duplicate"
+                     (star.databases.couchdb::outbox-entry-mutation-id entry)))
+        (is (= 1 loads))
+        (is (= 1 saves))))))
+
+(test blind-new-opt-out-restores-existence-check
+  ;; STAR_OUTBOX_BLIND_NEW_INGEST=false must keep the load-first behavior.
+  (let ((incoming (make-outbox-ingest-document "blind-doc-optout"))
+        (loads 0))
+    (star.databases.couchdb::persist-outbox-mutation
+     (lambda (document-id)
+       (declare (ignore document-id))
+       (incf loads)
+       nil)
+     (lambda (state) state)
+     incoming
+     :new
+     :blind-new-p nil)
+    (is (= 1 loads))))
+
+(test updated-mutations-never-skip-the-existence-load
+  ;; :updated requires the stored revision, fast path must not apply.
+  (let ((incoming (make-outbox-ingest-document "blind-doc-update"))
+        (loads 0))
+    (let ((star:*outbox-blind-new-ingest-p* t))
+      (star.databases.couchdb::persist-outbox-mutation
+       (lambda (document-id)
+         (declare (ignore document-id))
+         (incf loads)
+         (make-duplicate-outbox-document
+          (make-outbox-ingest-document "blind-doc-update")
+          :operation :updated))
+       (lambda (state) state)
+       incoming
+       :updated))
+    (is (= 1 loads))))
