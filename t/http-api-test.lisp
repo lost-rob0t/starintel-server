@@ -395,6 +395,39 @@ instead of being mistaken for an expected broker failure."
 ;;; Root Endpoint Tests
 ;;; ----------------------------------------------------------------------
 
+(test stored-canonical-actor-options-are-discoverable-without-runtime-registration
+  (let* ((actor "search-http-fixture")
+         (id "actor-manifest:http-search-fixture")
+         (document
+           (jsown:new-js
+             ("id" id) ("_id" id) ("schemaVersion" "0.10.1")
+             ("dtype" "actor-manifest") ("dataset" "starintel-system")
+             ("tenant_id" "default") ("actor" actor) ("actorVersion" "0.3.0")
+             ("accepts" (list "target")) ("produces" (list "url" "observation"))
+             ("capabilities" (list "native-yacy-json-api"))
+             ("metadata" (jsown:new-js ("operatorVisible" :true)
+                                        ("privateEndpoint" "must-not-leak")))
+             ("targetOptions"
+              (jsown:new-js
+                ("backend" (jsown:new-js
+                             ("description" "Fixture backend") ("required" :false)
+                             ("schema" (jsown:new-js ("type" "string"))))))))))
+    (star.documents:validate-stored-document document)
+    (insert-test-document document)
+    (let* ((body (dex:get (make-test-url "/v1/actors")))
+           (actors (jsown:val (jsown:val (jsown:parse body) "data") "actors"))
+           (matches (remove-if-not
+                     (lambda (entry)
+                       (string= actor (jsown:val (jsown:val entry "semantic") "name")))
+                     actors)))
+      (is (= 1 (length matches)))
+      (when matches
+        (let ((entry (first matches)))
+          (is (string= "unavailable" (jsown:val entry "status")))
+          (is (null (jsown:val entry "ready")))
+          (is (string= "backend" (jsown:val (first (jsown:val entry "options")) "key")))))
+      (is (not (search "must-not-leak" body))))))
+
 (test test-root-endpoint
       "Test GET / returns server metadata."
       (dbg "TEST: test-root-endpoint")

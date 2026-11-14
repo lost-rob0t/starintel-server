@@ -332,14 +332,80 @@ are rejected. Returns fresh copies, or nil when no options are advertised."
              (actor-registry-entry-resource-uri entry) observations)))
    #'string< :key (lambda (object) (jsown:val object "resourceUri"))))
 
-(defun actor-registry-document ()
+(defun stored-actor-manifest-entry (document)
+  "Project an explicitly visible canonical declaration through registry validation.
+
+The caller must authorize DOCUMENT before calling. No runtime state or private
+manifest fields are imported, and the result is never installed globally."
+  (let* ((wire (star.documents:canonical-wire-document document))
+         (metadata (jsown:val-safe wire "metadata")))
+    (unless (and (star.documents:canonical-document-p wire)
+                 (equal "actor-manifest" (jsown:val-safe wire "dtype"))
+                 (not (member (jsown:val-safe wire "deleted") '(t :true)))
+                 (member (and metadata (jsown:val-safe metadata "operatorVisible"))
+                         '(t :true)))
+      (return-from stored-actor-manifest-entry nil))
+    (star.documents:validate-document wire)
+    (let* ((actor (required-manifest-string wire "actor" "document"))
+           (version (required-manifest-string wire "actorVersion" "document"))
+           (target-options (jsown:val-safe wire "targetOptions"))
+           (options nil))
+      (unless (cl-ppcre:scan "^[A-Za-z0-9][A-Za-z0-9._:-]*$" actor)
+        (invalid-actor-manifest "document.actor must be a dispatch actor name"))
+      (when target-options
+        (unless (manifest-object-p target-options)
+          (invalid-actor-manifest "document.targetOptions must be an object"))
+        (dolist (key (sort (copy-list (jsown:keywords target-options)) #'string<))
+          (let ((hint (jsown:val target-options key)))
+            (validate-object-keys hint +actor-option-keys+
+                                  '("description" "required") "document.targetOptions")
+            (when (and (jsown:keyp hint "key")
+                       (not (equal key (jsown:val hint "key"))))
+              (invalid-actor-manifest "target option key disagrees with its map key"))
+            (let ((option (jsown:new-js
+                            ("key" key)
+                            ("description" (jsown:val hint "description"))
+                            ("required" (jsown:val hint "required")))))
+              (when (jsown:keyp hint "schema")
+                (setf (jsown:val option "schema") (jsown:val hint "schema")))
+              (push option options)))))
+      (labels ((contract (values)
+                 (let ((types (if (vectorp values) (coerce values 'list) values)))
+                   (jsown:new-js
+                     ("targets" (when (member "target" types :test #'equal) (list "target")))
+                     ("documents" (remove "target" types :test #'equal))
+                     ("messages" nil)))))
+        (let* ((manifest
+                 (jsown:new-js
+                   ("resourceUri" (format nil "star://python/actor/~a" actor))
+                   ("resourceKind" "actor")
+                   ("semantic" (jsown:new-js ("name" actor) ("version" version) ("digest" "pending")))
+                   ("accepts" (contract (jsown:val-safe wire "accepts")))
+                   ("produces" (contract (jsown:val-safe wire "produces")))
+                   ("capabilities" (let ((values (jsown:val-safe wire "capabilities")))
+                                     (if (vectorp values) (coerce values 'list) values)))
+                   ("options" (nreverse options))
+                   ("operatorVisible" :true)
+                   ("provenance" (jsown:new-js ("sourcePackage" "stored-actor-manifest")))))
+               (digest (ironclad:byte-array-to-hex-string
+                        (ironclad:digest-sequence
+                         :sha256 (babel:string-to-octets (jsown:to-json manifest) :encoding :utf-8)))))
+          (setf (jsown:val (jsown:val manifest "semantic") "digest")
+                (concatenate 'string "sha256:" digest))
+          (actor-registry-entry-from-manifest manifest))))))
+
+(defun actor-registry-document (&key documents)
   "Return the safe actor/service catalog envelope consumed by =GET /v1/actors=."
   (bt:with-lock-held (*actor-registry-lock*)
-    (let ((actors (actor-registry-public-entries)))
+    (let ((registry (alexandria:copy-hash-table *actor-registry*)))
+      (dolist (document documents)
+        (let ((entry (stored-actor-manifest-entry document)))
+          (when entry (add-actor-registry-entry registry entry))))
+      (let ((actors (actor-registry-public-entries registry)))
       (jsown:new-js
         ("status" "ok")
         ("data"
          (jsown:new-js
            ("schema" "starintel-actor-registry-v1")
            ("actors" actors)
-           ("count" (length actors))))))))
+            ("count" (length actors)))))))))

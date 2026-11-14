@@ -1,5 +1,14 @@
 (in-package :star.http.contract)
 
+(defparameter +actor-registry-option-schema+
+  (object-schema
+   (list (cons "key" (string-schema :min-length 1))
+         (cons "description" (string-schema :min-length 1))
+         (cons "required" (boolean-schema))
+         (cons "schema" (generic-object-schema)))
+   :required '("key" "description" "required")
+   :additional-properties nil))
+
 (defparameter +actor-registry-entry-schema+
   (object-schema
    (list
@@ -9,6 +18,7 @@
     (cons "accepts" (generic-object-schema))
     (cons "produces" (generic-object-schema))
     (cons "capabilities" (array-schema (string-schema)))
+    (cons "options" (array-schema +actor-registry-option-schema+))
     (cons "operatorVisible" (boolean-schema))
     (cons "provenance" (generic-object-schema))
     (cons "status" (string-schema :min-length 1))
@@ -44,7 +54,9 @@
   :summary "List registered operator-visible actors and services"
   :tags '("actors")
   :authority :authenticated
-  :scopes '("actors:read")
+   :scopes '("actors:read")
+   :query-parameters
+   (list '(:name "tenant" :required nil) '(:name "dataset" :required nil))
   :responses
   (append
    (list
