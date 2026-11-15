@@ -236,3 +236,54 @@ supervised worker restart for backlog drains (issue #38).")
         "the consumer must land in a contained stopped state")
     (is-false (star.consumers::consumer-ready-p consumer)
               "readiness must honestly report not-ready")))
+
+;;; --- Diff-gated updates (issue #438): churn is not data ----------------
+
+(defun make-drain-document-with-bookkeeping (document-id dtype title bookkeeping)
+  (let ((document (make-drain-mutation-document document-id dtype :title title)))
+    (loop for (key value) in bookkeeping
+          do (setf (jsown:val document key) value))
+    document))
+
+(test bookkeeping-only-redelivery-is-noop
+  (let* ((document (make-drain-mutation-document "drain:person:5" "person"))
+         (first-state
+           (persist-stub (nth-value 0 (ingest-new-document nil document))))
+         (churned
+           (make-drain-document-with-bookkeeping
+            "drain:person:5" "person" "first"
+            '(("date_updated" "2026-11-15T23:00:00Z")
+              ("collectedAt" "2026-11-15T23:00:00Z")
+              ("version" 2)))))
+    (multiple-value-bind (state entry disposition)
+        (ingest-new-document first-state churned)
+      (is (eq :no-op disposition)
+          "bookkeeping-only churn must not mint a revision or event")
+      (is (null entry)
+          "a no-op redelivery carries no outbox entry")
+      (is (= (length (star.databases.couchdb::document-outbox-entries
+                      first-state))
+             (length (star.databases.couchdb::document-outbox-entries state)))
+          "no-op redelivery appends no outbox entry"))))
+
+(test changed-redelivery-merges-minimal-patch
+  (let* ((seed (make-drain-mutation-document "drain:person:6" "person"
+                                               :title "first"))
+         (first-state nil)
+         (changed (make-drain-mutation-document "drain:person:6" "person"
+                                                :title "second"))
+         (state nil)
+         (entry nil))
+    (setf (jsown:val seed "note") "enriched server-side")
+    (setf first-state
+          (persist-stub (nth-value 0 (ingest-new-document nil seed))))
+    (multiple-value-setq (state entry)
+      (ingest-new-document first-state changed))
+    (is (string= "documents.updated.person"
+                 (jsown:val entry "routing_key"))
+        "real delta still publishes as an update event")
+    (is (string= "second" (jsown:val state "title"))
+        "changed field takes the incoming value")
+    (is (string= "enriched server-side"
+                 (star.databases.couchdb::outbox-object-value state "note"))
+        "upsert must not blind-overwrite live fields the payload omitted")))
