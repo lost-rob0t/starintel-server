@@ -253,6 +253,34 @@
           target-extensions)
     target))
 
+(defparameter +bookkeeping-keys+
+  '("date_updated" "version" "_rev" "date_added" "collectedAt")
+  "Metadata churn that must never count as a content delta (issue #438).")
+
+(defun normalized-public-copy (document)
+  "Public copy of DOCUMENT without bookkeeping noise."
+  (copy-json-object-excluding
+   (public-document-copy document)
+   +bookkeeping-keys+))
+
+(defun documents-normalized-equal-p (existing incoming)
+  "True when EXISTING and INCOMING differ in nothing but bookkeeping."
+  (string=
+   (outbox-digest-string (jsown:to-json (normalized-public-copy existing)))
+   (outbox-digest-string (jsown:to-json (normalized-public-copy incoming)))))
+
+(defun merge-minimal-patch (existing incoming)
+  "Carry live public top-level fields the incoming payload omitted.
+
+The re-observation upsert must reflect real deltas without blind
+overwriting the stored document with the payload (issue #438)."
+  (let* ((existing-public (public-document-copy existing))
+         (merged (clone-outbox-json incoming)))
+    (jsown:do-json-keys (key value) existing-public
+      (unless (outbox-object-has-key-p merged key)
+        (setf (jsown:val merged key) value)))
+    merged))
+
 (defun prepare-outbox-mutation (existing incoming operation)
   "Prepare one atomic document revision containing document and pending event state.
 
@@ -291,7 +319,12 @@ duplicates."
                      mutation-id))
             (return-from prepare-outbox-mutation
               (values existing entry :duplicate))))))
+      (when (and existing
+                 (documents-normalized-equal-p existing document))
+        (return-from prepare-outbox-mutation
+          (values existing nil :no-op)))
     (when existing
+      (setf document (merge-minimal-patch existing document))
       (setf (jsown:val document "_rev")
             (jsown:val existing "_rev")))
     (let* ((sequence (next-outbox-sequence (or existing document)))
@@ -332,7 +365,7 @@ mutation conflicts keep their exact semantics."
                          (funcall load-fn document-id))))
                (multiple-value-bind (state entry disposition)
                    (prepare-outbox-mutation existing incoming operation)
-                 (when (eq disposition :duplicate)
+                 (when (member disposition '(:duplicate :no-op))
                    (return (values state entry disposition)))
                  (handler-case
                      (return
@@ -419,7 +452,7 @@ this process just saved instead of reloading the document, removing one
 point GET per ingested document."
   (multiple-value-bind (state entry disposition)
       (persist-outbox-mutation load-fn save-fn incoming operation)
-    (unless (outbox-entry-published-p entry)
+    (unless (or (null entry) (outbox-entry-published-p entry))
       (publish-outbox-entry publish-fn entry)
       (setf state
             (mark-outbox-published
