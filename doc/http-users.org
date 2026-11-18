@@ -38,33 +38,36 @@ configured minimum length, which defaults to 12 characters.
 * Remote CLI
 
 =star-cli= consumes =starintel-gserver-client= rather than constructing auth
-routes or HTTP headers itself. Set a server URL globally with =--url= or
-=STAR_SERVER_URL=. Authenticated management commands accept =--token= or
-=STAR_SERVER_TOKEN=.
+routes or HTTP headers itself. Select a server with =--profile= or set a server
+URL with =--url= / =STAR_SERVER_URL=. Bearer keys come from the selected host
+wallet profile or the legacy =STAR_SERVER_TOKEN= / =STAR_SERVER_API_KEY=
+environment variables. Do not pass keys on the command line; see
+[[file:star-cli-auth.org][star-cli auth profiles and host wallet]].
 
-Login prints machine-readable JSON containing the newly minted key:
+Login stores the newly minted key in the selected profile's host wallet and
+prints metadata only:
 
 #+begin_src sh
+star-cli auth profile add --name local --server-url http://127.0.0.1:5000
 printf '%s\n' 'intel' | \
-  star-cli --url http://127.0.0.1:5000 \
-    auth login --username star --password-stdin
+  star-cli --profile local auth login --username star --password-stdin
 #+end_src
 
-Use the returned key for remote administration:
+Use the selected profile for remote administration:
 
 #+begin_src sh
-export STAR_SERVER_TOKEN='star_sk_v1_...'
-
-star-cli admin user list
-star-cli admin user create \
+star-cli --profile local admin user list
+star-cli --profile local admin user create \
   --username analyst \
   --scopes documents:read,search:read \
   --password-stdin
 
-star-cli admin credential create \
+star-cli auth profile add --name quasar-reader --server-url http://127.0.0.1:5000
+star-cli --profile local admin credential create \
   --owner quasar \
   --principal-type service \
-  --scopes documents:read,search:read
+  --scopes documents:read,search:read \
+  --store-as quasar-reader
 #+end_src
 
 The remote command families are:

@@ -1,0 +1,105 @@
+#+title: star-cli auth profiles and host wallet
+#+options: toc:2
+
+* Profile storage
+
+=star-cli= stores profile metadata in =auth.json= and bearer credentials in the
+host's Freedesktop Secret Service wallet. GNOME Keyring, KeePassXC, and other
+Secret Service-compatible implementations work through =secret-tool=. There is
+no plaintext-file fallback. Native KWallet and macOS Keychain adapters are
+separate follow-up work; a KWallet setup that exposes Secret Service is usable.
+
+The default configuration path is
+=${XDG_CONFIG_HOME:-~/.config}/starintel/auth.json=. Set =STAR_AUTH_CONFIG= or
+pass =--auth-config= to select another file; =auth profile path= prints the
+active path. A profile contains a name and an
+optional server/API base URL; it never contains a token. Example:
+
+#+begin_src json
+{
+  "version": 1,
+  "default_profile": "prod",
+  "profiles": [
+    {"name": "local", "server_url": "http://127.0.0.1:5000"},
+    {"name": "prod", "server_url": "https://server.example"},
+    {"name": "general-api", "server_url": "https://api.example"}
+  ]
+}
+#+end_src
+
+Create/select profiles without putting a secret on the command line:
+
+#+begin_src sh
+star-cli auth profile add --name prod --server-url https://server.example
+star-cli auth profile add --name local --server-url http://127.0.0.1:5000
+star-cli auth profile list
+star-cli auth profile use --name prod
+star-cli auth profile path
+#+end_src
+
+The first added profile becomes the default unless another default is selected.
+Use =--profile NAME= or =STAR_SERVER_PROFILE= to select a profile per command.
+Explicit =--url= / =STAR_SERVER_URL= takes precedence over the profile URL; the
+profile URL takes precedence over the local default. The legacy token environment
+variables override the selected wallet item; there is no bearer-token command-line
+option.
+
+* Wallet credentials
+
+Unlock a Secret Service-compatible wallet in the desktop session. To store an
+existing token, pipe it to stdin (do not put it in shell history):
+
+#+begin_src sh
+read -rsp 'StarIntel token: ' token; printf '\n'
+printf '%s\n' "$token" | star-cli --profile prod auth token set --name prod
+unset token
+#+end_src
+
+Login and API credential create/rotate store each one-time key in the selected
+wallet entry before reporting success. They print credential metadata and the
+local profile label, never the bearer value. If wallet storage fails, the CLI
+fails closed and attempts to revoke the newly issued credential where the
+current credential has authority to do so. Inspect server credential metadata
+before retrying a failed store. The server cannot return a previously-issued
+API key; it stores only verification material.
+
+The explicit =auth token clear --name NAME= operation removes that local
+wallet item. =auth profile list= and =admin credential list= show local labels
+and server-side metadata, respectively; neither reveals key material.
+
+Creating or rotating a server credential requires =--store-as PROFILE= so the
+one-time result has a named wallet item. Create the =--store-as= profile first;
+it may use the same server URL or a different one. The server's =admin=
+scope is the documented unrestricted capability/resource grant. Creating one
+requires the explicit =--confirm-admin= flag; protect the resulting wallet
+entry as a full server administrator credential and set an intentional expiry.
+Clingon's boolean syntax requires an explicit value, so confirm with
+=--confirm-admin t=.
+
+#+begin_src sh
+star-cli auth profile add --name prod-reader --server-url https://server.example
+star-cli --profile prod admin credential create \
+  --owner operator --principal-type service \
+  --scopes documents:read,search:read --store-as prod-reader \
+  --expires-in-seconds 2592000
+#+end_src
+
+An unrestricted operator credential is explicitly high risk:
+
+#+begin_src sh
+star-cli auth profile add --name nsaspy-admin --server-url https://server.example
+star-cli --profile prod admin credential create \
+  --owner nsaspy --principal-type service --scopes admin \
+  --store-as nsaspy-admin --confirm-admin t \
+  --expires-in-seconds 2592000
+#+end_src
+
+* Recovery and platform limits
+
+The wallet is the secret store; back it up using the wallet application's
+protected backup/export flow. Do not copy tokens into =auth.json=, source
+control, shell arguments, logs, or screenshots. If =secret-tool= is missing,
+the session has no Secret Service, or its collection is locked, unlock/install a
+compatible wallet and retry. The CLI will not silently write credentials to a
+file. The configuration file contains no bearer secrets and can be recreated
+from the example and =auth profile add= commands.

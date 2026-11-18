@@ -47,7 +47,17 @@ server-owned authorization scope before the backend query executes."
                            :name "public-search-needle" :platform "github"))
          (private-document
            (make-test-user :id "private-search-test-user"
-                           :name "public-search-needle" :platform "github")))
+                           :name "public-search-needle" :platform "github"))
+         (public-domain
+           (jsown:new-js
+             ("_id" "public-search-test-domain") ("id" "public-search-test-domain")
+             ("schemaVersion" "0.10.1") ("dtype" "domain") ("dataset" "testing")
+             ("name" "public-search-needle.example") ("tenant_id" "public")))
+         (private-domain
+           (jsown:new-js
+             ("_id" "private-search-test-domain") ("id" "private-search-test-domain")
+             ("schemaVersion" "0.10.1") ("dtype" "domain") ("dataset" "testing")
+             ("name" "public-search-needle.example") ("tenant_id" "private"))))
     (unwind-protect
          (progn
            (setf star.frontends.http-api::*public-search-datasets* '("testing")
@@ -55,6 +65,9 @@ server-owned authorization scope before the backend query executes."
                  (jsown:val private-document "tenant_id") "private")
            (insert-test-document public-document)
            (insert-test-document private-document)
+           (dolist (document (list public-domain private-domain))
+             (star.documents:validate-stored-document document)
+             (insert-test-document document))
            (sleep 2)
            (multiple-value-bind (status body)
                (perform-request
@@ -65,7 +78,9 @@ server-owned authorization scope before the backend query executes."
              (report-public-api-response "public-search" status body)
              (is (= 200 status))
              (is (search "public-search-test-user" body))
-             (is (null (search "private-search-test-user" body)))))
+             (is (null (search "private-search-test-user" body)))
+             (is (search "public-search-test-domain" body))
+             (is (null (search "private-search-test-domain" body)))))
       (setf star.frontends.http-api::*public-search-datasets* original))))
 
 (test test-public-reads-fail-closed-without-datasets
