@@ -24,6 +24,7 @@
     "credentials:revoke"
     "credentials:disable"
     "principals:manage"
+    "biz-auth:admin"
     "audit:read")
   "Closed capability vocabulary. Unknown capabilities are rejected at issuance.")
 

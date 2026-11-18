@@ -70,6 +70,13 @@
 ;;;
 ;;; Example:
 ;;; (load-addon :starintel-bixby)
+;;;
+;;; biz-auth: identity lifecycle (create/ban/unban/status) in the
+;;; canonical auth system (ZITADEL) for service principals holding
+;;; `biz-auth:admin`. Requires STAR_ZITADEL_TOKEN (STAR_ZITADEL_TOKEN_FILE
+;;; in compose); fails closed without it.
+;;;
+;;; (load-addon :starintel-biz-auth)
 
 ;;; Optional durable target leases ------------------------------------------
 ;;;

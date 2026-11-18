@@ -205,6 +205,16 @@ EOF
         dontStrip = true;
       };
 
+      starintel-biz-auth = sbcl'.buildASDFSystem {
+        pname = "starintel-biz-auth";
+        version = "0.1.0";
+        src = ./.;
+        lispLibs = with sbcl'.pkgs; [ starintel-gserver ];
+        systems = [ "starintel-biz-auth" ];
+        asdFilesToKeep = [ "starintel-biz-auth.asd" ];
+        dontStrip = true;
+      };
+
       starintel-gserver-tests = sbcl'.buildASDFSystem {
         pname = "starintel-gserver-tests";
         version = "0.1.0";
@@ -214,6 +224,7 @@ EOF
           starintel-gserver
           starintel-bixby
           starintel-actor-credentials
+          starintel-biz-auth
           starintel-gserver-client
           star-cli-lib
           star-ui-lib
@@ -672,6 +683,7 @@ PY
         starintel-gserver = starintel-gserver;
         starintel-bixby = starintel-bixby;
         starintel-actor-credentials = starintel-actor-credentials;
+        starintel-biz-auth = starintel-biz-auth;
         starintel-gserver-tests = starintel-gserver-tests;
         starintel-actor-registry-tests = starintel-actor-registry-tests;
         starintel-gserver-integration-tests =

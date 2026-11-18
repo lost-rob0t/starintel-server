@@ -7,6 +7,7 @@
   :depends-on
   (#:starintel-gserver
    #:starintel-actor-credentials
+   #:starintel-biz-auth
    #:starintel-gserver-client
    #:star-cli
    #:star-ui
@@ -51,6 +52,7 @@
      (:file "oauth-http-provider-test")
      (:file "addon-system-test")
      (:file "actor-credentials-test")
+     (:file "biz-auth-test")
      (:file "http-auth-oracle-test")
      (:file "http-auth-immutability-test")
      (:file "authorization-policy-test")

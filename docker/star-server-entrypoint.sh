@@ -24,6 +24,7 @@ load_secret COUCHDB_PASSWORD
 load_secret RABBITMQ_PASSWORD
 load_secret STAR_AUTH_PEPPER
 load_secret STAR_AUTH_BOOTSTRAP_SECRET
+load_secret STAR_ZITADEL_TOKEN
 
 STAR_SERVER_INIT_FILE="${STAR_SERVER_INIT_FILE:-/etc/starintel/init.lisp}"
 
