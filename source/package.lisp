@@ -57,6 +57,7 @@
    #:reload
    #:start-debugger
    #:*slynk-port*
+   #:*slynk-enabled*
    #:*actors-start-hook*
    #:*document-patterns*
    #:*ingest-workers*
