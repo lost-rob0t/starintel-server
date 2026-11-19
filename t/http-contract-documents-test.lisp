@@ -25,7 +25,9 @@
              ("documents.delete"
               :delete "/api/v1/documents/:id" "documents:delete")
              ("documents.search"
-              :get "/api/v1/documents/search" "search:read")))
+              :get "/api/v1/documents/search" "search:read")
+             ("documents.list"
+              :get "/api/v1/documents" "documents:read")))
     (destructuring-bind (id method path scope) case
       (is (equal (list method path :authenticated (list scope))
                  (document-operation-case-values
@@ -39,10 +41,21 @@
                 (star.http.contract:find-http-operation id)))
         "operation ~a must expose the id path parameter" id))
   (dolist (id '("documents.create" "documents.bulk.create"
-                "documents.search"))
+                "documents.search" "documents.list"))
     (is (null (star.http.contract:http-operation-path-parameters
                (star.http.contract:find-http-operation id)))
         "operation ~a must not declare path parameters" id)))
+
+(test documents-list-route-authorizes-as-documents-read
+  (is (string= "documents:read"
+               (star.frontends.http-api::route-action :get "/api/v1/documents"))
+      "GET /api/v1/documents must map to documents:read, not the unmapped fail-closed path")
+  (is (string= "documents:write"
+               (star.frontends.http-api::route-action :post "/api/v1/documents"))
+      "POST /api/v1/documents must keep mapping to documents:write")
+  (is (string= "search:read"
+               (star.frontends.http-api::route-action :get "/api/v1/documents/search"))
+      "GET /api/v1/documents/search must keep mapping to search:read"))
 
 (test registry-document-request-shapes-advertise-generated-canonical-and-legacy
   (flet ((document-request-schema (operation-id)

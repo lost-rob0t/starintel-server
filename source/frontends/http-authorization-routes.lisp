@@ -154,6 +154,16 @@ backend read times out under load."
 
 
 
+(defun handle-authorized-document-list-route
+    (params &optional (route "/api/v1/documents"))
+  "List documents through the same authorized FTS scoping as
+/api/v1/documents/search, using a match-all query so callers page the
+documents within their scope instead of free-text searching."
+  (handle-authorized-search-route (acons "q" "*:*" params) route))
+
+
+
+
 (defun handle-authorized-document-get-route
     (params &optional (route "/document/:id"))
   (with-http-boundary ()

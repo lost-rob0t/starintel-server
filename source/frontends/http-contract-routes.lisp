@@ -286,6 +286,9 @@ server-owned public scopes. No caller principal or caller scope enters here."
 (defun handle-contracted-document-search-route (params)
   (handle-authorized-search-route params "/api/v1/documents/search"))
 
+(defun handle-contracted-document-list-route (params)
+  (handle-authorized-document-list-route params "/api/v1/documents"))
+
 ;; Re-mount the contracted surface from operation IDs. Some legacy route
 ;; declarations still exist in their historical source files; these final
 ;; mounts are authoritative and prevent method/path drift for the contracted
@@ -316,6 +319,8 @@ server-owned public scopes. No caller principal or caller scope enters here."
 ;; route would otherwise be captured by the /:id route.
 (mount-http-operation "documents.search"
                       #'handle-contracted-document-search-route)
+(mount-http-operation "documents.list"
+                      #'handle-contracted-document-list-route)
 (mount-http-operation "documents.create"
                       #'handle-contracted-document-create-route)
 (mount-http-operation "documents.bulk.create"

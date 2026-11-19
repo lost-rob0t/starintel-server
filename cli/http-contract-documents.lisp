@@ -217,6 +217,34 @@ and persists it only when valid."))
                          (generic-object-schema)))
               (standard-errors))))
 
+(defparameter +document-list-query-parameters+
+  (list
+   (list :name "limit"
+         :schema (integer-schema :minimum 1
+                                 :description "Maximum number of documents."))
+   (list :name "bookmark"
+         :schema (string-schema :description "Search pagination bookmark."))
+   (list :name "sort")
+   (list :name "dataset")
+   (list :name "tenant")))
+
+(upsert-http-operation
+ (make-http-operation
+  :id "documents.list"
+  :client-name "document-list"
+  :method :get
+  :path "/api/v1/documents"
+  :summary "List documents scoped to the caller's datasets and tenants"
+  :tags '("documents")
+  :authority :authenticated
+  :scopes '("documents:read")
+  :query-parameters +document-list-query-parameters+
+  :responses (append
+              (list
+               (response 200 "Documents within the caller's scope."
+                         (generic-object-schema)))
+              (standard-errors))))
+
 ;; Re-run the schema literal normalization over the whole contract so the
 ;; operations registered by this file (and by files loaded before the final
 ;; normalization pass) emit JSON boolean literals instead of bare lists.
