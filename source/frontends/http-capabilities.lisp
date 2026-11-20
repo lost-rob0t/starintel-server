@@ -120,7 +120,10 @@
        :scopes '("documents:delete"))
       (capability-endpoint
        "document_search_v1" "GET" "/api/v1/documents/search"
-       :scopes '("search:read"))))
+       :scopes '("search:read"))
+      (capability-endpoint
+       "document_recent" "GET" "/documents/recent"
+       :legacy t :scopes '("views:read"))))
     ("compatibility"
      (jsown:new-js
        ("legacy_routes" :true)
