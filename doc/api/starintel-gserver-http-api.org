@@ -102,6 +102,17 @@ The =succeeded= slot of =bulk-ingest-job=.
 (bulk-request-mode (STARINTEL-GSERVER-HTTP-API::DOCUMENT-COUNT))
 #+end_src
 How a bulk request behaves on failure (atomic or best effort).
+*** call-couchdb-search
+:PROPERTIES:
+:KIND: fn
+:PACKAGE: STARINTEL-GSERVER-HTTP-API
+:END:
+#+begin_src lisp
+(call-couchdb-search (STARINTEL-GSERVER-HTTP-API::SEARCH-THUNK))
+#+end_src
+Run SEARCH-THUNK (one idempotent CouchDB FTS search attempt) under
+*couchdb-read-timeout-seconds*, retrying exactly once when the
+backend read times out under load.
 *** execute-bulk-job
 :PROPERTIES:
 :KIND: fn
