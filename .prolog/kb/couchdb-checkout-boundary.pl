@@ -58,3 +58,13 @@ fact(session_probe_timeout,
 dexador :timeout errors hit the existing handler-case and count as
 expired, so an unresponsive CouchDB degrades to renewal-attempt errors
 on the consumer thread instead of an indefinite stall.").
+
+%% Recents views (merged #445): data/recent + data/recent_by_dataset are
+%% pushed by init-views at boot, but CouchDB builds their indexes LAZILY on
+%% first query. On a ~616k-doc store the first update=true query times out
+%% (CouchDB 500 "could not be processed in a reasonable amount of time")
+%% while the indexer continues in the background - the route recovers by
+%% itself once indexing lands. Never assume a 500 right after a ddoc change
+%% means the route is broken; poll it (45s cadence) until 200.
+wiring_gotcha(new_view_first_query_timeout,
+    'New design-doc views index lazily; first /documents/recent queries 500-timeout on large stores while CouchDB builds. Poll until 200 (~10-30+ min for 600k+ docs); do not redeploy.').
