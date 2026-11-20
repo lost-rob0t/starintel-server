@@ -350,6 +350,129 @@ otherwise the exact [tenant, actor] key is used."
              :requested-tenant tenant
              :metadata metadata))))))))
 
+(defun %valid-recents-key-p (key)
+  "Recents cursors are a date (global recents) or a [dataset, date] pair
+(scoped recents); jsown represents arrays as (:ARRAY . elements)."
+  (or (numberp key)
+      (and (consp key)
+           (let ((elements (if (eq (first key) :array) (cdr key) key)))
+             (and (proper-list-p elements)
+                  (= (length elements) 2)
+                  (stringp (first elements))
+                  (numberp (second elements)))))))
+
+(defun decode-json-key-parameter (raw name)
+  "Decode a JSON-encoded view key passed as a pagination cursor.
+
+jsown is a lenient parser - it happily returns scalars for non-JSON
+input - so the decoded shape is validated here, before any store I/O."
+  (unless (non-empty-string-p raw)
+    (signal-http-input-error
+     400
+     "invalid_query_parameter"
+     (format nil "Query parameter ~a must be a JSON value" name)))
+  (let ((parsed
+          (handler-case
+              (jsown:with-injective-reader (jsown:parse raw))
+            (error ()
+              (signal-http-input-error
+               400
+               "invalid_query_parameter"
+               (format nil "Query parameter ~a is not valid JSON" name))))))
+    (unless (%valid-recents-key-p parsed)
+      (signal-http-input-error
+       400
+       "invalid_query_parameter"
+       (format nil "Query parameter ~a is not a valid recents cursor" name)))
+    (if (and (consp parsed) (eq (first parsed) :array))
+        (cdr parsed)
+        parsed)))
+
+(defun recents-next-cursor (rows)
+  "Pagination cursor for a newest-first view page: the last visible row's
+key and document id, so the next request resumes after it."
+  (let ((last-row (first (last rows))))
+    (when last-row
+      (list (jsown:val-safe last-row "key")
+            (jsown:val-safe last-row "id")))))
+
+(defun handle-authorized-recent-documents-route (params)
+  "GET /documents/recent - newest-first listing for empty-query browsing.
+
+Queries the recents views by date_updated/date_added, descending. With a
+dataset filter the key range is scoped server-side; without one the page
+spans every dataset. Bounded page plus a key cursor for the next page;
+rows pass the same authorization filter as the scoped view route."
+  (with-http-boundary ()
+    (let* ((dataset (query-value params "dataset"))
+           (tenant (or (query-value params "tenant") "default"))
+           (limit (bounded-query-integer
+                   params "limit" :default 25 :minimum 1))
+           (start-key-raw (query-value params "start_key"))
+           (start-key-doc-id (query-value params "start_key_doc_id"))
+           (start-key
+             (and start-key-raw
+                  (decode-json-key-parameter start-key-raw "start_key")))
+           (metadata (route-policy-metadata "/documents/recent" "GET")))
+      (when (and dataset
+                 (not (non-empty-string-p dataset)))
+        (signal-http-input-error
+         400
+         "invalid_query_parameter"
+         "Query parameter dataset must be a non-empty string"))
+      (star.authorization:authorize!
+       "views:read"
+       :principal (current-policy-principal)
+       :resource (star.authorization:make-authorization-resource
+                  :tenant-id tenant
+                  :dataset-id dataset)
+       :metadata metadata)
+      (couchdb-handler (client *couchdb-pool*)
+        (let ((response
+                (if dataset
+                    (query-view
+                     client
+                     star:*couchdb-default-database*
+                     "data" "recent_by_dataset"
+                     :descending t
+                     :include-docs t
+                     :limit limit
+                     :reduce nil
+                     ;; Newest-first within the dataset: [dataset, {}] sorts
+                     ;; after every [dataset, date]; the resume cursor
+                     ;; re-enters the same [dataset, date] span.
+                     :start-key (if start-key
+                                    start-key
+                                    (list dataset (jsown:new-js)))
+                     :end-key (list dataset)
+                     :start-key-doc-id start-key-doc-id)
+                    (query-view
+                     client
+                     star:*couchdb-default-database*
+                     "data" "recent"
+                     :descending t
+                     :include-docs t
+                     :limit limit
+                     :reduce nil
+                     :start-key start-key
+                     :start-key-doc-id start-key-doc-id))))
+          (let* ((authorized
+                  (star.authorization:authorized-view-response
+                   response
+                   :principal (current-policy-principal)
+                   :requested-dataset dataset
+                   :requested-tenant tenant
+                   :metadata metadata))
+                 (rows (or (jsown:val-safe authorized "rows") nil))
+                 (cursor (recents-next-cursor rows))
+                 (result
+                   (if cursor
+                       (jsown:extend-js authorized
+                         ("next_start_key" (first cursor))
+                         ("next_start_key_doc_id" (second cursor)))
+                       authorized)))
+            (jsown:to-json (strip-server-tenant-from-rows result))))))))
+
 (defun handle-authorized-dataset-size-route (params)
   (with-http-boundary ()
     (let* ((dataset (require-query-string params "dataset"))
@@ -462,6 +585,8 @@ otherwise the exact [tenant, actor] key is used."
       #'handle-authorized-targets-route)
 (setf (ningle:route *app* "/views/:design/:view" :method :get)
       #'handle-authorized-scoped-view-route)
+(setf (ningle:route *app* "/documents/recent" :method :get)
+      #'handle-authorized-recent-documents-route)
 (setf (ningle:route *app* "/dataset-size" :method :get)
       #'handle-authorized-dataset-size-route)
 (setf (ningle:route *app* "/targets/:actor/:target-id/lease" :method :post)

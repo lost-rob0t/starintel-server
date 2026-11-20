@@ -189,9 +189,10 @@
     (dolist (pair alist table)
       (setf (gethash (string-downcase (car pair)) table) (cdr pair)))))
 
-(defun boundary-env (method path &key body content-type headers)
+(defun boundary-env (method path &key body content-type headers query-string)
   (list :request-method method
         :path-info path
+        :query-string query-string
         :url-scheme "http"
         :server-name "127.0.0.1"
         :server-port 5000
@@ -367,3 +368,37 @@
           do (incf matches))
     (is (= 1 matches)
         "http-api.lisp must define /dataset-size exactly once")))
+
+(test recent-documents-route-is-mounted
+  (is (functionp
+       (ningle:route star.frontends.http-api:*app*
+                     "/documents/recent" :method :get))
+      "GET /documents/recent must be mounted"))
+
+(test recent-documents-route-is-advertised-in-capabilities
+  (let ((response
+          (lack.component:call
+           star.frontends.http-api::*server*
+           (boundary-env :get "/api/v1/capabilities")))
+        (found nil))
+    (let* ((body (jsown:parse (boundary-body response)))
+           (endpoints (jsown:val (jsown:val body "data") "endpoints")))
+      (dolist (endpoint endpoints)
+        (when (string= (jsown:val endpoint "id") "document_recent")
+          (setf found t)))
+      (is-true found "capabilities must advertise document_recent"))))
+
+(test recent-documents-route-rejects-invalid-start-key-with-400
+  ;; Param validation happens before the couchdb boundary, so a malformed
+  ;; cursor must come back as a structured 400 without any store I/O.
+  (let ((star:*auth-mode* "disabled")
+        (star:*auth-dev-bypass* t))
+    (let ((response
+            (lack.component:call
+             star.frontends.http-api::*server*
+             (boundary-env
+              :get "/documents/recent"
+              :query-string "dataset=reddit&start_key=not-json"))))
+      (is (= 400 (boundary-status response)))
+      (is (string= "invalid_query_parameter"
+                   (boundary-response-code response))))))

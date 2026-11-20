@@ -857,9 +857,17 @@ Per-document monotonic sequence of the outbox entry.
 #+begin_src lisp
 (persist-outbox-mutation (STAR.DATABASES.COUCHDB::LOAD-FN STAR.DATABASES.COUCHDB::SAVE-FN
  STAR.DATABASES.COUCHDB::INCOMING STAR.DATABASES.COUCHDB::OPERATION &KEY
- (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)))
+ (STAR.DATABASES.COUCHDB::MAX-ATTEMPTS 8)
+ (STAR.DATABASES.COUCHDB::BLIND-NEW-P
+  STARINTEL-GSERVER:*OUTBOX-BLIND-NEW-INGEST-P*)))
 #+end_src
 Persist a mutation into the document outbox before publishing.
+
+When BLIND-NEW-P (default =star:*outbox-blind-new-ingest-p*=) and
+OPERATION is =:NEW=, the first attempt saves without a prior existence
+load: CouchDB's 409 conflict is the already-exists check, and the
+conflicting retry loads the document so duplicate/idempotent replays and
+mutation conflicts keep their exact semantics.
 *** persons-by-name
 :PROPERTIES:
 :KIND: fn
@@ -921,6 +929,10 @@ duplicates.
 Persist mutation state, publish at least once, then mark the logical event.
 
 If publication fails, the durable pending entry remains recoverable.
+
+For freshly created documents the publication marker reuses the revision
+this process just saved instead of reloading the document, removing one
+point GET per ingested document.
 *** query-view
 :PROPERTIES:
 :KIND: fn
